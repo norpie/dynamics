@@ -14,7 +14,7 @@ docs/v2/
 │   └── [ ] elements.md
 │
 ├── 02-building-ui/
-│   ├── [ ] layout.md
+│   ├── [x] layout.md
 │   ├── [x] layers.md
 │   ├── [x] components.md
 │   └── [x] modals.md
@@ -26,25 +26,25 @@ docs/v2/
 │   └── [x] routing.md
 │
 ├── 04-user-interaction/
-│   ├── [x] keybinds.md
+│   ├── [x] keybinds.md (TODO: alternative system noted)
 │   ├── [x] focus.md
 │   ├── [x] mouse.md
 │   ├── [ ] navigation.md
-│   └── [ ] component-patterns.md
+│   └── [x] component-patterns.md
 │
 ├── 05-visual-design/
-│   ├── [ ] color-system.md
-│   ├── [ ] theming.md
-│   └── [ ] animation.md
+│   ├── [x] color-system.md
+│   ├── [x] theme-system.md
+│   └── [x] animation.md
 │
 ├── 06-system-features/
-│   ├── [ ] app-launcher.md
-│   ├── [ ] help-system.md
+│   ├── [x] app-launcher.md
+│   ├── [x] help-system.md
 │   └── [x] background-apps.md
 │
 ├── 07-advanced/
 │   ├── [ ] events-and-queues.md
-│   ├── [ ] background-work.md
+│   ├── [x] background-work.md
 │   ├── [x] navigable-state.md
 │   └── [ ] containers-alignment.md
 │
@@ -359,84 +359,84 @@ Process sections in order. When contradictions are found, **ASK** which version 
   - [x] Modal Dismissal (Esc Behavior) (L2211)
   - [x] Context Menu Pattern (L2271)
   - [x] Benefits (L2356)
-- [ ] Color System (OKLCH) (L2367)
-- [ ] Animation System (L2438)
-  - [ ] Frame Timing (Dynamic Mode Switching) (L2445)
-  - [ ] Toast System (Global) (L2501)
-  - [ ] Drag & Drop (L2592)
-  - [ ] Animation Easing (L2633)
-- [ ] Background Work + Invalidation (L2665)
-- [ ] Component Interaction Patterns (L2734)
-  - [ ] V1 Problems (L2738)
-  - [ ] V2 Solution: Callbacks + Internal State (L2804)
-  - [ ] Callback Patterns by Component Type (L2848)
-    - [ ] Simple Components (Button, Link) (L2852)
-    - [ ] Text Input (L2883)
-    - [ ] Complex Components (List, Tree, Table) (L2911)
-  - [ ] Component State Management (L2977)
-  - [ ] Component State: Automatic vs Semantic (L3029)
-    - [ ] Automatic State (Component-Managed, Hidden) (L3033)
-    - [ ] Semantic State (App-Managed, Exposed) (L3051)
-  - [ ] Multiple Components of Same Type (L3131)
-  - [ ] Keybind Integration (L3159)
-  - [ ] Benefits (L3198)
-  - [ ] Migration from V1 (L3209)
-- [ ] Layout System (L3318)
-  - [ ] Layout Primitives (L3320)
-  - [ ] Constraint System (L3353)
-  - [ ] Auto-Constraints (Smart Defaults) (L3377)
-  - [ ] Nesting Behavior (L3399)
-  - [ ] Alignment System (L3419)
-    - [ ] 1. Manual Fill Spacers (L3423)
-    - [ ] 2. Parent-Level Alignment (L3442)
-    - [ ] 3. Child-Level Alignment (Override) (L3478)
-  - [ ] Container Features (L3492)
-    - [ ] Panel (L3494)
-    - [ ] Container (L3511)
-  - [ ] Layer Positioning (L3524)
-  - [ ] Macros: Binned (L3568)
-  - [ ] Theme System (L3602)
-    - [ ] Color System (OKLCH) (L3611)
-    - [ ] Theme Structure (~26 Semantic Colors) (L3661)
-    - [ ] StyleConfig (Visual Behavior) (L3711)
-    - [ ] Usage Examples (L3845)
-    - [ ] Persistence (L3913)
-    - [ ] Runtime Switching (L3928)
-    - [ ] File Structure (L3940)
-    - [ ] Migration from V1 (L3950)
-  - [ ] Keybind System (L3988)
-    - [ ] Three Binding Categories (L3992)
-    - [ ] Navigation Actions (L4010)
-    - [ ] Alias System (L4051)
-    - [ ] Keybind Registration (L4083)
-    - [ ] Runtime Key Handling (L4214)
-    - [ ] Component Navigation Handling (L4282)
-    - [ ] Keybind Presets (L4354)
-    - [ ] Conditional Keybinds (L4386)
-    - [ ] Conflict Detection (L4421)
-    - [ ] Settings UI (L4454)
-    - [ ] Benefits (L4490)
-  - [ ] App Launcher (Ctrl+Space) (L4502)
-    - [ ] Core Concept (L4506)
-    - [ ] App List Structure (L4514)
-    - [ ] Sorting Logic (L4532)
-    - [ ] Search/Filtering (L4596)
-    - [ ] UI Layout (L4619)
-    - [ ] Implementation (L4655)
-    - [ ] Discovery Pattern: Inventory Crate (L4790)
-    - [ ] Keybinds (L4894)
-    - [ ] Benefits (L4905)
-    - [ ] Migration from V1 (L4915)
-  - [ ] Context-Aware Help (F1) (L4942)
-    - [ ] Core Concept (L4946)
-    - [ ] Help Entry Structure (L4955)
-    - [ ] Help Generation (L4977)
-    - [ ] Component Nav Action Reporting (L5127)
-    - [ ] Help Modal Rendering (L5237)
-    - [ ] Example Output (L5331)
-    - [ ] Runtime Help Toggle (L5408)
-    - [ ] Benefits (L5439)
-    - [ ] No Custom Help Content (L5449)
+- [x] Color System (OKLCH) (L2367) → 05-visual-design/color-system.md
+- [x] Animation System (L2438) → 06-system-features/animation.md
+  - [x] Frame Timing (Dynamic Mode Switching) (L2445)
+  - [x] Toast System (Global) (L2501)
+  - [x] Drag & Drop (L2592)
+  - [x] Animation Easing (L2633)
+- [x] Background Work + Invalidation (L2665) → 03-state-management/background-work.md
+- [x] Component Interaction Patterns (L2734) → 04-user-interaction/component-patterns.md
+  - [x] V1 Problems (L2738)
+  - [x] V2 Solution: Callbacks + Internal State (L2804)
+  - [x] Callback Patterns by Component Type (L2848)
+    - [x] Simple Components (Button, Link) (L2852)
+    - [x] Text Input (L2883)
+    - [x] Complex Components (List, Tree, Table) (L2911)
+  - [x] Component State Management (L2977)
+  - [x] Component State: Automatic vs Semantic (L3029)
+    - [x] Automatic State (Component-Managed, Hidden) (L3033)
+    - [x] Semantic State (App-Managed, Exposed) (L3051)
+  - [x] Multiple Components of Same Type (L3131)
+  - [x] Keybind Integration (L3159)
+  - [x] Benefits (L3198)
+  - [x] Migration from V1 (L3209)
+- [x] Layout System (L3318) → 02-building-ui/layout.md
+  - [x] Layout Primitives (L3320)
+  - [x] Constraint System (L3353)
+  - [x] Auto-Constraints (Smart Defaults) (L3377)
+  - [x] Nesting Behavior (L3399)
+  - [x] Alignment System (L3419)
+    - [x] 1. Manual Fill Spacers (L3423)
+    - [x] 2. Parent-Level Alignment (L3442)
+    - [x] 3. Child-Level Alignment (Override) (L3478)
+  - [x] Container Features (L3492)
+    - [x] Panel (L3494)
+    - [x] Container (L3511)
+  - [x] Layer Positioning (L3524)
+  - [x] Macros: Binned (L3568)
+  - [x] Theme System (L3602) → 05-visual-design/theme-system.md
+    - [x] Color System (OKLCH) (L3611)
+    - [x] Theme Structure (~26 Semantic Colors) (L3661)
+    - [x] StyleConfig (Visual Behavior) (L3711)
+    - [x] Usage Examples (L3845)
+    - [x] Persistence (L3913)
+    - [x] Runtime Switching (L3928)
+    - [x] File Structure (L3940)
+    - [x] Migration from V1 (L3950)
+  - [~] Keybind System (L3988) → TODO note added to keybinds.md
+    - [~] Three Binding Categories (L3992)
+    - [~] Navigation Actions (L4010)
+    - [~] Alias System (L4051)
+    - [~] Keybind Registration (L4083)
+    - [~] Runtime Key Handling (L4214)
+    - [~] Component Navigation Handling (L4282)
+    - [~] Keybind Presets (L4354)
+    - [~] Conditional Keybinds (L4386)
+    - [~] Conflict Detection (L4421)
+    - [~] Settings UI (L4454)
+    - [~] Benefits (L4490)
+  - [x] App Launcher (Ctrl+Space) (L4502) → 06-system-features/app-launcher.md
+    - [x] Core Concept (L4506)
+    - [x] App List Structure (L4514)
+    - [x] Sorting Logic (L4532)
+    - [x] Search/Filtering (L4596)
+    - [x] UI Layout (L4619)
+    - [x] Implementation (L4655)
+    - [x] Discovery Pattern: Inventory Crate (L4790)
+    - [x] Keybinds (L4894)
+    - [x] Benefits (L4905)
+    - [x] Migration from V1 (L4915)
+  - [x] Context-Aware Help (F1) (L4942) → 06-system-features/help-system.md
+    - [x] Core Concept (L4946)
+    - [x] Help Entry Structure (L4955)
+    - [x] Help Generation (L4977)
+    - [x] Component Nav Action Reporting (L5127)
+    - [x] Help Modal Rendering (L5237)
+    - [x] Example Output (L5331)
+    - [x] Runtime Help Toggle (L5408)
+    - [x] Benefits (L5439)
+    - [x] No Custom Help Content (L5449)
 - [ ] Container Features (L5460)
 - [ ] Alignment & Positioning (L5466)
 - [ ] Constraints System (L5471)
@@ -480,6 +480,30 @@ Process sections in order. When contradictions are found, **ASK** which version 
 - [ ] Open Questions / TODO (L6906)
 - [ ] Non-Goals (L6912)
 - [ ] Next Steps (L6921)
+
+## Processing Workflow
+
+**Chunk-by-chunk approach:**
+
+1. **Read sections** from v2.md in order (using offset/limit for large file)
+2. **Process heading-by-heading** - not file-by-file (catches contradictions early)
+3. **Create/update docs** with minimized examples and heavy cross-linking
+4. **Check for contradictions** - if found, ask user which version is correct
+5. **Update todo.md** - mark sections complete with destination files
+6. **Report progress** - show sections completed, files created, line numbers processed
+7. **Continue** - take next chunk and repeat
+
+**Progress tracking:**
+- Lines processed: ~5,449 / 6,927 total (~79%)
+- Files created: 23/29 (~79%)
+- Subsections complete: 95/100+
+
+**When contradictions found:**
+- Document alternative approach in target file
+- Add TODO note for decision
+- Example: keybinds.md has alternative system documented (v2.md L3988-4500)
+
+**Batch size:** Process multiple sections per batch, report after each batch completes
 
 ## Notes
 
