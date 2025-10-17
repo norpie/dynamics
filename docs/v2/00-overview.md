@@ -40,11 +40,35 @@ V2 addresses major pain points from the V1 architecture:
 
 ## Non-Goals
 
-*(Content to be added from v2.md L6912)*
+V2 deliberately excludes certain features to maintain focus and simplicity:
+
+- **V1 Compatibility** - Clean slate, rewrite apps from scratch
+- **Web/GUI Support** - TUI only, don't over-abstract
+- **Time-Travel Debug** - Nice to have but not priority
+
+**Rationale:**
+- **V1 Compatibility:** A clean break allows removing architectural debt without compromise
+- **Multi-platform:** Abstracting for web/GUI would complicate the API unnecessarily
+- **Debug features:** Focus on getting the core right first, tooling can come later
+
+**See Also:**
+- [Open Questions](08-reference/open-questions.md) - Future considerations
 
 ## Next Steps
 
-*(Content to be added from v2.md L6921)*
+Implementation roadmap for V2:
+
+1. **Continue brainstorming edge cases** - Validate design against real-world scenarios
+2. **Prototype core abstractions** - Build Context, Layer, Resource types
+3. **Build 1-2 example apps** - Validate API ergonomics with real apps
+4. **Iterate on ergonomics** - Refine based on prototype feedback
+5. **Implementation plan** - Separate from design docs, focus on execution
+
+**Current Phase:** Design & documentation (this document set)
+
+**See Also:**
+- [Migration Guide](08-reference/migration-guide.md) - Converting V1 apps to V2
+- [Open Questions](08-reference/open-questions.md) - Unresolved design items
 
 ---
 
