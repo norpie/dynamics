@@ -21,7 +21,7 @@ docs/v2/
 │
 ├── 03-state-management/
 │   ├── [x] resource-pattern.md
-│   ├── [ ] error-recovery.md
+│   ├── [x] error-recovery.md
 │   ├── [x] pubsub.md
 │   └── [x] routing.md
 │
@@ -43,10 +43,10 @@ docs/v2/
 │   └── [x] background-apps.md
 │
 ├── 07-advanced/
-│   ├── [ ] events-and-queues.md
+│   ├── [x] events-and-queues.md
 │   ├── [x] background-work.md
 │   ├── [x] navigable-state.md
-│   └── [ ] containers-alignment.md
+│   └── [x] containers-alignment.md
 │
 └── 08-reference/
     ├── [ ] migration-guide.md
@@ -437,46 +437,46 @@ Process sections in order. When contradictions are found, **ASK** which version 
     - [x] Runtime Help Toggle (L5408)
     - [x] Benefits (L5439)
     - [x] No Custom Help Content (L5449)
-- [ ] Container Features (L5460)
-- [ ] Alignment & Positioning (L5466)
-- [ ] Constraints System (L5471)
-- [ ] Events & Queue System (L5477)
-  - [ ] Event Broadcast System (L5486)
-    - [ ] Publishing Events (L5490)
-    - [ ] Subscribing to Events (L5502)
-    - [ ] Persistent Subscriptions (L5530)
-    - [ ] Event System Characteristics (L5545)
-  - [ ] Work Queue System (L5553)
-    - [ ] Queue Registration (L5557)
-    - [ ] Sending Work to Queues (L5576)
-    - [ ] Processing Queue Items (L5599)
-    - [ ] WorkQueue API (L5621)
-    - [ ] Queue Persistence (L5654)
-    - [ ] Queue System Characteristics (L5674)
-  - [ ] Type Safety Architecture (L5682)
-    - [ ] Implementation Pattern (L5686)
-  - [ ] Usage Guidelines (L5743)
-  - [ ] Examples (L5762)
-    - [ ] Example 1: Operation Queue (L5764)
-    - [ ] Example 2: Migration Events (L5818)
-    - [ ] Example 3: Theme Changes (L5851)
-- [ ] Resource Progress Tracking (L5885)
-  - [ ] Progress Enum (L5889)
-  - [ ] Updated Resource Enum (L5934)
-  - [ ] Helper Methods (L5947)
-  - [ ] Usage Examples (L6072)
-  - [ ] Updating Progress from Async Tasks (L6186)
-  - [ ] UI Rendering (L6237)
-  - [ ] Migration from V1 (L6298)
-- [ ] Resource Error Recovery (L6336)
-  - [ ] Error Types (L6340)
-  - [ ] ResourceError Constructors (L6406)
-  - [ ] Automatic From Implementations (L6516)
-  - [ ] Resource Helper Methods (L6587)
-  - [ ] Usage Examples (L6647)
-  - [ ] UI Rendering with Retry (L6764)
-  - [ ] Error Kind Guidelines (L6855)
-  - [ ] Migration from V1 (L6867)
+- [x] Container Features (L5460) → 07-advanced/containers-alignment.md
+- [x] Alignment & Positioning (L5466) → 07-advanced/containers-alignment.md
+- [x] Constraints System (L5471) → 07-advanced/containers-alignment.md
+- [x] Events & Queue System (L5477) → 07-advanced/events-and-queues.md
+  - [x] Event Broadcast System (L5486)
+    - [x] Publishing Events (L5490)
+    - [x] Subscribing to Events (L5502)
+    - [x] Persistent Subscriptions (L5530)
+    - [x] Event System Characteristics (L5545)
+  - [x] Work Queue System (L5553)
+    - [x] Queue Registration (L5557)
+    - [x] Sending Work to Queues (L5576)
+    - [x] Processing Queue Items (L5599)
+    - [x] WorkQueue API (L5621)
+    - [x] Queue Persistence (L5654)
+    - [x] Queue System Characteristics (L5674)
+  - [x] Type Safety Architecture (L5682)
+    - [x] Implementation Pattern (L5686)
+  - [x] Usage Guidelines (L5743)
+  - [x] Examples (L5762)
+    - [x] Example 1: Operation Queue (L5764)
+    - [x] Example 2: Migration Events (L5818)
+    - [x] Example 3: Theme Changes (L5851)
+- [x] Resource Progress Tracking (L5885) → 03-state-management/resource-pattern.md
+  - [x] Progress Enum (L5889)
+  - [x] Updated Resource Enum (L5934)
+  - [x] Helper Methods (L5947)
+  - [x] Usage Examples (L6072)
+  - [x] Updating Progress from Async Tasks (L6186)
+  - [x] UI Rendering (L6237)
+  - [x] Migration from V1 (L6298)
+- [x] Resource Error Recovery (L6336) → 03-state-management/error-recovery.md
+  - [x] Error Types (L6340)
+  - [x] ResourceError Constructors (L6406)
+  - [x] Automatic From Implementations (L6516)
+  - [x] Resource Helper Methods (L6587)
+  - [x] Usage Examples (L6647)
+  - [x] UI Rendering with Retry (L6764)
+  - [x] Error Kind Guidelines (L6855)
+  - [x] Migration from V1 (L6867)
 - [ ] Open Questions / TODO (L6906)
 - [ ] Non-Goals (L6912)
 - [ ] Next Steps (L6921)
@@ -494,9 +494,9 @@ Process sections in order. When contradictions are found, **ASK** which version 
 7. **Continue** - take next chunk and repeat
 
 **Progress tracking:**
-- Lines processed: ~5,449 / 6,927 total (~79%)
-- Files created: 23/29 (~79%)
-- Subsections complete: 95/100+
+- Lines processed: ~6,903 / 6,927 total (~99.7%)
+- Files created: 26/29 (~90%)
+- Subsections complete: 133/136+ (~98%)
 
 **When contradictions found:**
 - Document alternative approach in target file
