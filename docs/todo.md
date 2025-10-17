@@ -9,15 +9,15 @@ docs/v2/
 │
 ├── 01-fundamentals/
 │   ├── [x] app-and-context.md
-│   ├── [ ] lifecycle.md
-│   ├── [ ] event-loop.md
+│   ├── [x] lifecycle.md
+│   ├── [x] event-loop.md
 │   └── [ ] elements.md
 │
 ├── 02-building-ui/
 │   ├── [ ] layout.md
 │   ├── [x] layers.md
-│   ├── [ ] components.md
-│   └── [ ] modals.md
+│   ├── [x] components.md
+│   └── [x] modals.md
 │
 ├── 03-state-management/
 │   ├── [x] resource-pattern.md
@@ -27,8 +27,8 @@ docs/v2/
 │
 ├── 04-user-interaction/
 │   ├── [x] keybinds.md
-│   ├── [ ] focus.md
-│   ├── [ ] mouse.md
+│   ├── [x] focus.md
+│   ├── [x] mouse.md
 │   ├── [ ] navigation.md
 │   └── [ ] component-patterns.md
 │
@@ -40,12 +40,12 @@ docs/v2/
 ├── 06-system-features/
 │   ├── [ ] app-launcher.md
 │   ├── [ ] help-system.md
-│   └── [ ] background-apps.md
+│   └── [x] background-apps.md
 │
 ├── 07-advanced/
 │   ├── [ ] events-and-queues.md
 │   ├── [ ] background-work.md
-│   ├── [ ] navigable-state.md
+│   ├── [x] navigable-state.md
 │   └── [ ] containers-alignment.md
 │
 └── 08-reference/
@@ -301,64 +301,64 @@ Process sections in order. When contradictions are found, **ASK** which version 
   - [x] Multi-Layer Example (L353)
   - [x] Global UI = Just Another Layer (L386)
 - [x] Widget Dimensions (No More Hacks!) (L430) → 02-building-ui/layers.md
-- [ ] Focus System (L453)
-  - [ ] Automatic Focus Order (Zero Boilerplate) (L455)
-  - [ ] Layer-Scoped Focus (Auto-Restoration) (L474)
-  - [ ] Programmatic Focus (L504)
-    - [ ] 1. Declarative (Common Case) (L508)
-    - [ ] 2. Imperative (Rare Cases) (L528)
-  - [ ] User Navigation Takes Precedence (L554)
-  - [ ] Progressive Unfocus (Esc Behavior) (L600)
-  - [ ] Focus Modes (User Configurable) (L626)
-  - [ ] Focus Context API (L669)
-  - [ ] Implementation Details (L699)
-- [ ] Mouse Support (L740)
-  - [ ] Hit Testing (1-Frame Delay) (L742)
-  - [ ] Inline Event Handling (L776)
-  - [ ] Automatic Hover Styles (L814)
-  - [ ] Automatic Scroll Wheel (L836)
-  - [ ] Double-Click vs Single-Click (L865)
-  - [ ] Right-Click / Context Menus (L905)
-  - [ ] MouseState API (L978)
-  - [ ] Focus Integration (L1029)
-  - [ ] Terminal Mouse Capture (L1056)
-- [ ] Event-Driven Rendering (L1086)
-- [ ] Background Apps (L1099)
-- [ ] Component System (L1129)
-  - [ ] Terminology (L1131)
-  - [ ] NavigableState: Unified 2D Navigation (L1168)
-  - [ ] Component State Composition (L1382)
-  - [ ] Shared Styling Helpers (L1513)
-  - [ ] Benefits (L1535)
-- [ ] Lifecycle & App Management (L1545)
-  - [ ] Simplified Lifecycle Model (L1547)
-  - [ ] Lifecycle Policy (L1559)
-  - [ ] When update() Is Called (L1589)
-  - [ ] Runtime Navigation Behavior (L1609)
-  - [ ] Global Quit Coordination (L1641)
-  - [ ] Memory Pressure Management (L1755)
-  - [ ] Hook Details (L1785)
-    - [ ] can_quit() - Veto Quit Attempts (L1787)
-    - [ ] quit_requested() - Handle Veto (L1803)
-    - [ ] on_background() - Moved to Background (L1817)
-    - [ ] on_foreground() - Returned to Foreground (L1832)
-    - [ ] on_destroy() - About to Be Destroyed (L1847)
-  - [ ] Why Hooks Are Sync (L1864)
-  - [ ] Migration from V1 (L1895)
-  - [ ] Benefits (L1929)
-- [ ] Modal System (L1940)
-  - [ ] Modals Are Just Layers (L1942)
-  - [ ] Hybrid Approach: Pattern + Optional Helpers (L2001)
-  - [ ] Raw Layers (Maximum Flexibility) (L2021)
-  - [ ] Builder Helpers (Convenience) (L2058)
-  - [ ] Built-in Modal Helpers (L2160)
-    - [ ] ConfirmationModal (L2164)
-    - [ ] ErrorModal (L2176)
-    - [ ] LoadingModal (L2186)
-    - [ ] HelpModal (L2201)
-  - [ ] Modal Dismissal (Esc Behavior) (L2211)
-  - [ ] Context Menu Pattern (L2271)
-  - [ ] Benefits (L2356)
+- [x] Focus System (L453) → 04-user-interaction/focus.md
+  - [x] Automatic Focus Order (Zero Boilerplate) (L455)
+  - [x] Layer-Scoped Focus (Auto-Restoration) (L474)
+  - [x] Programmatic Focus (L504)
+    - [x] 1. Declarative (Common Case) (L508)
+    - [x] 2. Imperative (Rare Cases) (L528)
+  - [x] User Navigation Takes Precedence (L554)
+  - [x] Progressive Unfocus (Esc Behavior) (L600)
+  - [x] Focus Modes (User Configurable) (L626)
+  - [x] Focus Context API (L669)
+  - [x] Implementation Details (L699)
+- [x] Mouse Support (L740) → 04-user-interaction/mouse.md
+  - [x] Hit Testing (1-Frame Delay) (L742)
+  - [x] Inline Event Handling (L776)
+  - [x] Automatic Hover Styles (L814)
+  - [x] Automatic Scroll Wheel (L836)
+  - [x] Double-Click vs Single-Click (L865)
+  - [x] Right-Click / Context Menus (L905)
+  - [x] MouseState API (L978)
+  - [x] Focus Integration (L1029)
+  - [x] Terminal Mouse Capture (L1056)
+- [x] Event-Driven Rendering (L1086) → 01-fundamentals/event-loop.md
+- [x] Background Apps (L1099) → 06-system-features/background-apps.md
+- [x] Component System (L1129) → 02-building-ui/components.md
+  - [x] Terminology (L1131)
+  - [x] NavigableState: Unified 2D Navigation (L1168) → 07-advanced/navigable-state.md
+  - [x] Component State Composition (L1382)
+  - [x] Shared Styling Helpers (L1513)
+  - [x] Benefits (L1535)
+- [x] Lifecycle & App Management (L1545) → 01-fundamentals/lifecycle.md
+  - [x] Simplified Lifecycle Model (L1547)
+  - [x] Lifecycle Policy (L1559)
+  - [x] When update() Is Called (L1589)
+  - [x] Runtime Navigation Behavior (L1609)
+  - [x] Global Quit Coordination (L1641)
+  - [x] Memory Pressure Management (L1755)
+  - [x] Hook Details (L1785)
+    - [x] can_quit() - Veto Quit Attempts (L1787)
+    - [x] quit_requested() - Handle Veto (L1803)
+    - [x] on_background() - Moved to Background (L1817)
+    - [x] on_foreground() - Returned to Foreground (L1832)
+    - [x] on_destroy() - About to Be Destroyed (L1847)
+  - [x] Why Hooks Are Sync (L1864)
+  - [x] Migration from V1 (L1895)
+  - [x] Benefits (L1929)
+- [x] Modal System (L1940) → 02-building-ui/modals.md
+  - [x] Modals Are Just Layers (L1942)
+  - [x] Hybrid Approach: Pattern + Optional Helpers (L2001)
+  - [x] Raw Layers (Maximum Flexibility) (L2021)
+  - [x] Builder Helpers (Convenience) (L2058)
+  - [x] Built-in Modal Helpers (L2160)
+    - [x] ConfirmationModal (L2164)
+    - [x] ErrorModal (L2176)
+    - [x] LoadingModal (L2186)
+    - [x] HelpModal (L2201)
+  - [x] Modal Dismissal (Esc Behavior) (L2211)
+  - [x] Context Menu Pattern (L2271)
+  - [x] Benefits (L2356)
 - [ ] Color System (OKLCH) (L2367)
 - [ ] Animation System (L2438)
   - [ ] Frame Timing (Dynamic Mode Switching) (L2445)

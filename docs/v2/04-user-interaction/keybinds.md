@@ -2,6 +2,16 @@
 
 **Prerequisites:** [App & Context API](../01-fundamentals/app-and-context.md)
 
+> **TODO:** Alternative keybind system design exists (v2.md L3988-4500) with:
+> - Three categories (Navigation/Global/App) instead of two
+> - NavAction enum for semantic navigation (Up/Down/Left/Right/etc)
+> - Alias system (`.alias1`, `.alias2`) for multiple keys per action
+> - OptionsRegistry registration instead of KeybindMap
+> - SQLite database storage (not TOML)
+> - Vim mode presets, conflict detection, settings UI
+>
+> Need to resolve which design is final before implementation.
+
 ## Declarative Definition
 
 Apps define keybinds in the `keybinds()` method:
