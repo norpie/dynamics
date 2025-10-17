@@ -5,28 +5,28 @@
 ```
 docs/v2/
 ├── [ ] README.md
-├── [ ] 00-overview.md
+├── [x] 00-overview.md
 │
 ├── 01-fundamentals/
-│   ├── [ ] app-and-context.md
+│   ├── [x] app-and-context.md
 │   ├── [ ] lifecycle.md
 │   ├── [ ] event-loop.md
 │   └── [ ] elements.md
 │
 ├── 02-building-ui/
 │   ├── [ ] layout.md
-│   ├── [ ] layers.md
+│   ├── [x] layers.md
 │   ├── [ ] components.md
 │   └── [ ] modals.md
 │
 ├── 03-state-management/
-│   ├── [ ] resource-pattern.md
+│   ├── [x] resource-pattern.md
 │   ├── [ ] error-recovery.md
-│   ├── [ ] pubsub.md
-│   └── [ ] routing.md
+│   ├── [x] pubsub.md
+│   └── [x] routing.md
 │
 ├── 04-user-interaction/
-│   ├── [ ] keybinds.md
+│   ├── [x] keybinds.md
 │   ├── [ ] focus.md
 │   ├── [ ] mouse.md
 │   ├── [ ] navigation.md
@@ -282,25 +282,25 @@ docs/v2/
 
 Process sections in order. When contradictions are found, **ASK** which version is correct.
 
-- [ ] Core Philosophy (L5)
-  - [ ] Immediate Mode + Structured Concurrency (L7)
-  - [ ] What We're Fixing from V1 (L14)
-- [ ] Architecture (L26)
-  - [ ] App Trait (L28)
-  - [ ] Context API (L51)
-  - [ ] Example: Simple App (L69)
-- [ ] Multi-View Apps (L115)
-- [ ] Pub/Sub (Auto-Managed) (L189)
-- [ ] Resource Pattern (Auto-Managed Async) (L228)
-- [ ] Keybinds (First-Class) (L260)
-  - [ ] Declarative Definition (L262)
-  - [ ] User Configuration (L275)
-  - [ ] Automatic Widget Navigation (L290)
-  - [ ] Button Keybind Integration (L318)
-- [ ] Layer System (Simple Stack) (L329)
-  - [ ] Multi-Layer Example (L353)
-  - [ ] Global UI = Just Another Layer (L386)
-- [ ] Widget Dimensions (No More Hacks!) (L430)
+- [x] Core Philosophy (L5) → 00-overview.md
+  - [x] Immediate Mode + Structured Concurrency (L7)
+  - [x] What We're Fixing from V1 (L14)
+- [x] Architecture (L26) → 01-fundamentals/app-and-context.md
+  - [x] App Trait (L28)
+  - [x] Context API (L51)
+  - [x] Example: Simple App (L69)
+- [x] Multi-View Apps (L115) → 03-state-management/routing.md
+- [x] Pub/Sub (Auto-Managed) (L189) → 03-state-management/pubsub.md
+- [x] Resource Pattern (Auto-Managed Async) (L228) → 03-state-management/resource-pattern.md
+- [x] Keybinds (First-Class) (L260) → 04-user-interaction/keybinds.md
+  - [x] Declarative Definition (L262)
+  - [x] User Configuration (L275)
+  - [x] Automatic Widget Navigation (L290)
+  - [x] Button Keybind Integration (L318)
+- [x] Layer System (Simple Stack) (L329) → 02-building-ui/layers.md
+  - [x] Multi-Layer Example (L353)
+  - [x] Global UI = Just Another Layer (L386)
+- [x] Widget Dimensions (No More Hacks!) (L430) → 02-building-ui/layers.md
 - [ ] Focus System (L453)
   - [ ] Automatic Focus Order (Zero Boilerplate) (L455)
   - [ ] Layer-Scoped Focus (Auto-Restoration) (L474)
