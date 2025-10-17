@@ -38,6 +38,67 @@ V2 addresses major pain points from the V1 architecture:
 - [Layer System](02-building-ui/layers.md) - Flexible layer composition
 - [Keybinds](04-user-interaction/keybinds.md) - Configurable keybind system
 
+---
+
+## Documentation Index
+
+### 01. Fundamentals
+Core concepts and architecture:
+- [App & Context API](01-fundamentals/app-and-context.md) - App trait, Context API
+- [Lifecycle](01-fundamentals/lifecycle.md) - App lifecycle, hooks, navigation behavior
+- [Event Loop](01-fundamentals/event-loop.md) - Event-driven rendering model
+- **Elements** *(TODO)* - Element tree concepts
+
+### 02. Building UI
+Declarative UI construction:
+- [Layout](02-building-ui/layout.md) - Layout primitives, constraints, macros
+- [Layers](02-building-ui/layers.md) - Layer system, positioning, stacking
+- [Components](02-building-ui/components.md) - Component system, state composition
+- [Modals](02-building-ui/modals.md) - Modal patterns, builders, dismissal
+
+### 03. State Management
+Managing app state and async operations:
+- [Resource Pattern](03-state-management/resource-pattern.md) - Async state, progress tracking
+- [Error Recovery](03-state-management/error-recovery.md) - Error types, retry strategies
+- [Pub/Sub](03-state-management/pubsub.md) - Event broadcasting
+- [Routing](03-state-management/routing.md) - Multi-view apps
+
+### 04. User Interaction
+Input handling and navigation:
+- [Keybinds](04-user-interaction/keybinds.md) - Declarative keybinds, configuration
+- [Focus](04-user-interaction/focus.md) - Focus system, layer-scoped focus
+- [Mouse](04-user-interaction/mouse.md) - Mouse support, hit testing
+- **Navigation** *(TODO)* - Widget navigation patterns
+- [Component Patterns](04-user-interaction/component-patterns.md) - Interaction callbacks
+
+### 05. Visual Design
+Theming and visual effects:
+- [Color System](05-visual-design/color-system.md) - OKLCH color space
+- [Theme System](05-visual-design/theme-system.md) - Themes, persistence, runtime switching
+- [Animation](05-visual-design/animation.md) - Frame timing, toasts, drag & drop
+
+### 06. System Features
+Framework-provided features:
+- [App Launcher](06-system-features/app-launcher.md) - Ctrl+Space launcher
+- [Help System](06-system-features/help-system.md) - F1 context-aware help
+- [Background Apps](06-system-features/background-apps.md) - Background execution
+
+### 07. Advanced Topics
+Advanced patterns and systems:
+- [Events & Queues](07-advanced/events-and-queues.md) - Event broadcast, work queues
+- [Background Work](07-advanced/background-work.md) - Background tasks, invalidation
+- [Navigable State](07-advanced/navigable-state.md) - Unified 2D navigation
+- [Containers & Alignment](07-advanced/containers-alignment.md) - Container features, alignment
+
+### 08. Reference
+Reference materials:
+- **Migration Guide** *(TODO)* - Converting V1 apps to V2
+- **V1 vs V2 Comparison** *(TODO)* - Side-by-side comparison
+- **Glossary** *(TODO)* - Term index
+- [Open Questions](08-reference/open-questions.md) - Future considerations
+
+---
+
 ## Non-Goals
 
 V2 deliberately excludes certain features to maintain focus and simplicity:
