@@ -114,49 +114,112 @@ fn filter_entries(entries: &[AppLauncherEntry], query: &str) -> Vec<AppLauncherE
 
 ## Implementation
 
+### State
+
 ```rust
 struct AppLauncherState {
-    entries: Vec<AppLauncherEntry>,
-    filtered_entries: Vec<AppLauncherEntry>,
     search_query: String,
-    selected_index: usize,
-    last_active_time: HashMap<String, Instant>,
+    text_input_state: TextInputState,
+    list_state: ListState,
+    all_entries: Vec<AppLauncherEntry>,       // Full list (pre-sorted)
+    filtered_entries: Vec<AppLauncherEntry>,  // After search filter
+}
+```
+
+### View
+
+```rust
+fn update(&mut self, ctx: &mut Context) -> Vec<Layer> {
+    vec![
+        Layer::fill(self.main_ui()),
+
+        Layer::centered(60, 20, panel("App Launcher", |ui| {
+            // Search input
+            ui.text_input(&mut self.search_query)
+                .placeholder("Search apps...")
+                .on_change(Self::on_search_changed);
+
+            ui.spacer(1);
+
+            // App list
+            ui.list(&self.filtered_entries)
+                .on_activate(Self::on_select);
+
+            ui.spacer(1);
+
+            // Footer hint
+            ui.text("[↑↓ Navigate | Enter Select | Esc Cancel]")
+                .style(ctx.theme.text_dim)
+                .align(Align::Center);
+        }))
+        .dim_below(true),
+    ]
+}
+```
+
+### Discovery Pattern: Inventory Crate
+
+**Apps auto-register using the `inventory` crate** - no manual registration:
+
+```rust
+use inventory;
+
+pub struct AppRegistration {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub constructor: fn(&AppContext) -> Box<dyn App>,
+    pub lifecycle: Lifecycle,
 }
 
-impl AppLauncher {
-    fn update_entries(&mut self, runtime: &Runtime) {
-        self.entries = runtime.list_apps().map(|app| {
-            AppLauncherEntry {
-                app_id: app.id(),
-                name: app.name(),
-                description: app.description(),
-                status: if app.is_active() {
-                    AppStatus::Running
-                } else if app.is_background() {
-                    AppStatus::Background
-                } else {
-                    AppStatus::NotStarted
-                },
-            }
-        }).collect();
+inventory::collect!(AppRegistration);
+```
 
-        sort_app_entries(&mut self.entries, &self.last_active_time);
-        self.update_filtered_entries();
-    }
+**Each app file has ONE inventory submission:**
 
-    fn update_filtered_entries(&mut self) {
-        self.filtered_entries = filter_entries(&self.entries, &self.search_query);
-    }
-
-    fn handle_select(&mut self, ctx: &mut Context) {
-        if let Some(entry) = self.filtered_entries.get(self.selected_index) {
-            ctx.router.navigate(&entry.app_id);
-            self.last_active_time.insert(entry.app_id.clone(), Instant::now());
-            ctx.close_launcher();
-        }
+```rust
+// At the bottom of migration_environment_app.rs
+inventory::submit! {
+    AppRegistration {
+        id: "migration_environments",
+        name: "Migration Environments",
+        description: "Manage Dynamics 365 migration environments",
+        constructor: |ctx| Box::new(MigrationEnvironmentApp::new(ctx)),
+        lifecycle: Lifecycle::Background,
     }
 }
 ```
+
+**Runtime auto-discovers all apps at compile time:**
+
+```rust
+impl Runtime {
+    pub fn new() -> Self {
+        let registrations: HashMap<String, &'static AppRegistration> =
+            inventory::iter::<AppRegistration>()
+                .map(|reg| (reg.id.to_string(), reg))
+                .collect();
+
+        Self {
+            registrations,
+            active_app: "app_launcher".to_string(),
+            background_apps: HashMap::new(),
+            // ...
+        }
+    }
+
+    pub fn navigate_to(&mut self, app_id: &str) {
+        let reg = self.registrations.get(app_id).expect("Unknown app ID");
+        let app = (reg.constructor)(&self.app_context);
+        self.active_app = app_id.to_string();
+    }
+}
+```
+
+**Adding a new app:**
+1. Create app file implementing `App` trait
+2. Add `inventory::submit!` at the bottom
+3. Done! App appears in launcher automatically
 
 ## Keybinds
 
