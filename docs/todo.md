@@ -52,7 +52,7 @@ docs/v2/
     ├── [ ] migration-guide.md
     ├── [ ] v1-vs-v2-comparison.md
     ├── [ ] glossary.md
-    └── [ ] open-questions.md
+    └── [x] open-questions.md
 ```
 
 ## Content Mapping: v2.md → docs/v2/
@@ -477,9 +477,9 @@ Process sections in order. When contradictions are found, **ASK** which version 
   - [x] UI Rendering with Retry (L6764)
   - [x] Error Kind Guidelines (L6855)
   - [x] Migration from V1 (L6867)
-- [ ] Open Questions / TODO (L6906)
-- [ ] Non-Goals (L6912)
-- [ ] Next Steps (L6921)
+- [x] Open Questions / TODO (L6906) → 08-reference/open-questions.md
+- [x] Non-Goals (L6912) → 00-overview.md
+- [x] Next Steps (L6921) → 00-overview.md
 
 ## Processing Workflow
 
@@ -494,9 +494,11 @@ Process sections in order. When contradictions are found, **ASK** which version 
 7. **Continue** - take next chunk and repeat
 
 **Progress tracking:**
-- Lines processed: ~6,903 / 6,927 total (~99.7%)
-- Files created: 26/29 (~90%)
-- Subsections complete: 133/136+ (~98%)
+- Lines processed: 6,927 / 6,927 total (100%)
+- Files created: 27/29 (~93%)
+- Subsections complete: 136/136 (100%)
+
+**Content split complete!** Only reference docs (migration-guide.md, v1-vs-v2-comparison.md, glossary.md) remain to be authored.
 
 **When contradictions found:**
 - Document alternative approach in target file
