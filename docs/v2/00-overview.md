@@ -29,6 +29,7 @@ V2 addresses major pain points from the V1 architecture:
 5. **Hardcoded Layers** - GlobalUI, AppModal, etc. baked into framework
 6. **Viewport Dimension Hacks** - "20" fallback + on_render callback for real size
 7. **Keybind Hell** - Hardcoded keys, no user configuration
+8. **System Feature Sprawl** - Adding features (help, launcher) requires runtime changes
 
 **See Also:**
 - [V1 vs V2 Comparison](08-reference/v1-vs-v2-comparison.md) - Detailed comparison table
@@ -37,6 +38,7 @@ V2 addresses major pain points from the V1 architecture:
 - [Multi-View Routing](03-state-management/routing.md) - Replacing separate apps
 - [Layer System](02-building-ui/layers.md) - Flexible layer composition
 - [Keybinds](04-user-interaction/keybinds.md) - Configurable keybind system
+- [Plugin System](06-system-features/plugin-system.md) - Extensible system features
 
 ---
 
@@ -79,6 +81,7 @@ Theming and visual effects:
 
 ### 06. System Features
 Framework-provided features:
+- [Plugin System](06-system-features/plugin-system.md) - Runtime extensions with system-level access
 - [App Launcher](06-system-features/app-launcher.md) - Ctrl+Space launcher
 - [Help System](06-system-features/help-system.md) - F1 context-aware help
 - [Background Apps](06-system-features/background-apps.md) - Background execution
