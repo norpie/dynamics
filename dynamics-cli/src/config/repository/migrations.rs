@@ -135,6 +135,29 @@ pub async fn insert_comparison(pool: &SqlitePool, comparison: SavedComparison) -
     Ok(result.last_insert_rowid())
 }
 
+/// Get a single comparison by id
+pub async fn get_comparison_by_id(pool: &SqlitePool, id: i64) -> Result<Option<SavedComparison>> {
+    let row: Option<DbComparison> = sqlx::query_as(
+        "SELECT id, migration_name, name, source_entity, target_entity, entity_comparison, created_at, last_used
+         FROM comparisons WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .with_context(|| format!("Failed to get comparison with id {}", id))?;
+
+    Ok(row.map(|r| SavedComparison {
+        id: r.id,
+        migration_name: r.migration_name,
+        name: r.name,
+        source_entity: r.source_entity,
+        target_entity: r.target_entity,
+        entity_comparison: r.entity_comparison,
+        created_at: r.created_at,
+        last_used: r.last_used,
+    }))
+}
+
 /// Get comparisons for a migration
 pub async fn get_comparisons(pool: &SqlitePool, migration_name: &str) -> Result<Vec<SavedComparison>> {
     let rows: Vec<DbComparison> = sqlx::query_as(

@@ -246,6 +246,10 @@ impl Config {
         repository::migrations::insert_comparison(&self.pool, comparison).await
     }
 
+    pub async fn get_comparison_by_id(&self, id: i64) -> Result<Option<SavedComparison>> {
+        repository::migrations::get_comparison_by_id(&self.pool, id).await
+    }
+
     pub async fn get_comparisons(&self, migration_name: &str) -> Result<Vec<SavedComparison>> {
         repository::migrations::get_comparisons(&self.pool, migration_name).await
     }

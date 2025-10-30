@@ -5,7 +5,8 @@ use crate::tui::{
     subscription::Subscription,
     state::theme::Theme,
     widgets::list::{ListItem, ListState},
-    widgets::{AutocompleteField, AutocompleteEvent, TextInputField, TextInputEvent},
+    widgets::{AutocompleteField, AutocompleteEvent, TextInputField, TextInputEvent, FileBrowserEvent},
+    widgets::file_browser::{FileBrowserState, FileBrowserAction},
     renderer::LayeredView,
     Resource,
 };
@@ -18,6 +19,8 @@ use ratatui::{
     text::{Line, Span},
 };
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::collections::{HashMap, HashSet};
 use crate::{col, row, spacer, button_row, use_constraints, error_display};
 
 pub struct MigrationComparisonSelectApp;
@@ -42,7 +45,37 @@ pub struct RenameComparisonForm {
     new_name: TextInputField,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Validate)]
+pub struct ImportComparisonForm {
+    #[validate(not_empty, message = "Comparison name is required")]
+    name: TextInputField,
+
+    validation_error: Option<String>,
+}
+
+/// Export/Import JSON structure
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ComparisonExportData {
+    pub version: String,
+    pub export_date: String,
+    pub source_entity: String,
+    pub target_entity: String,
+    pub field_mappings: HashMap<String, Vec<String>>,
+    pub prefix_mappings: HashMap<String, Vec<String>>,
+    pub imported_mappings: HashMap<String, Vec<String>>,
+    pub import_source_file: Option<String>,
+    pub ignored_items: Vec<String>,
+    pub example_pairs: Vec<ExamplePairExport>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ExamplePairExport {
+    pub source_record_id: String,
+    pub target_record_id: String,
+    pub label: Option<String>,
+}
+
+#[derive(Clone)]
 pub struct State {
     migration_name: Option<String>,
     source_env: Option<String>,
@@ -59,6 +92,55 @@ pub struct State {
     show_rename_modal: bool,
     rename_comparison_id: Option<i64>,
     rename_form: RenameComparisonForm,
+    // Export state
+    show_export_modal: bool,
+    export_browser: FileBrowserState,
+    export_filename: TextInputField,
+    export_comparison_id: Option<i64>,
+    export_comparison_name: Option<String>,
+    // Import state
+    show_import_browser: bool,
+    show_import_config: bool,
+    import_browser: FileBrowserState,
+    import_form: ImportComparisonForm,
+    import_file_path: Option<PathBuf>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        let home_dir = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+        Self {
+            migration_name: None,
+            source_env: None,
+            target_env: None,
+            comparisons: Vec::new(),
+            list_state: ListState::default(),
+            source_entities: Resource::default(),
+            target_entities: Resource::default(),
+            show_create_modal: false,
+            create_form: CreateComparisonForm::default(),
+            show_delete_confirm: false,
+            delete_comparison_id: None,
+            delete_comparison_name: None,
+            show_rename_modal: false,
+            rename_comparison_id: None,
+            rename_form: RenameComparisonForm::default(),
+            show_export_modal: false,
+            export_browser: FileBrowserState::new(home_dir.clone()),
+            export_filename: TextInputField::default(),
+            export_comparison_id: None,
+            export_comparison_name: None,
+            show_import_browser: false,
+            show_import_config: false,
+            import_browser: FileBrowserState::new(home_dir),
+            import_form: ImportComparisonForm::default(),
+            import_file_path: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -98,6 +180,22 @@ pub enum Msg {
     ComparisonRenamed(Result<(), String>),
     PreloadAllComparisons,
     PreloadTaskComplete, // Ignore individual preload task results
+    // Export messages
+    RequestExport,
+    ExportBrowseNavigate(KeyCode),
+    ExportDirectoryEntered(PathBuf),
+    ExportFilenameEvent(TextInputEvent),
+    ExportConfirm,
+    ExportCancel,
+    ExportComplete(Result<(), String>),
+    // Import messages
+    RequestImport,
+    ImportBrowseNavigate(KeyCode),
+    ImportFileSelected(PathBuf),
+    ImportFormNameEvent(TextInputEvent),
+    ImportFormSubmit,
+    ImportFormCancel,
+    ImportComplete(Result<i64, String>),
     Back,
 }
 
@@ -157,6 +255,78 @@ impl State {
     fn close_create_modal(&mut self) {
         self.show_create_modal = false;
         self.create_form.validation_error = None;
+    }
+
+    fn open_export_modal(&mut self, comparison_id: i64, comparison_name: String) {
+        self.export_comparison_id = Some(comparison_id);
+        self.export_comparison_name = Some(comparison_name.clone());
+
+        // Initialize file browser to home directory
+        let home_dir = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+        self.export_browser = FileBrowserState::new(home_dir);
+
+        // Set filter to show only directories
+        self.export_browser.set_filter(|entry| entry.is_dir);
+
+        // Set default filename
+        let default_filename = format!("{}.json", comparison_name);
+        self.export_filename.set_value(default_filename);
+
+        self.show_export_modal = true;
+    }
+
+    fn close_export_modal(&mut self) {
+        self.show_export_modal = false;
+        self.export_comparison_id = None;
+        self.export_comparison_name = None;
+        self.export_filename = TextInputField::default();
+    }
+
+    fn open_import_browser(&mut self) {
+        let home_dir = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+        self.import_browser = FileBrowserState::new(home_dir);
+
+        // Set filter to show .json files and directories
+        self.import_browser.set_filter(|entry| {
+            entry.is_dir || entry.name.ends_with(".json")
+        });
+
+        self.show_import_browser = true;
+    }
+
+    fn close_import_browser(&mut self) {
+        self.show_import_browser = false;
+    }
+
+    fn open_import_config(&mut self, file_path: PathBuf) {
+        self.import_file_path = Some(file_path.clone());
+
+        // Extract filename without extension as default name
+        let default_name = file_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("Imported Comparison")
+            .to_string();
+
+        self.import_form = ImportComparisonForm::default();
+        self.import_form.name.set_value(default_name);
+
+        self.show_import_browser = false;
+        self.show_import_config = true;
+    }
+
+    fn close_import_config(&mut self) {
+        self.show_import_config = false;
+        self.import_file_path = None;
+        self.import_form = ImportComparisonForm::default();
     }
 }
 
@@ -637,6 +807,175 @@ impl App for MigrationComparisonSelectApp {
                 // No-op: preload tasks complete, cache already populated
                 Command::None
             }
+            // Export handlers
+            Msg::RequestExport => {
+                if let Some(selected_idx) = state.list_state.selected() {
+                    if let Some(comparison) = state.comparisons.get(selected_idx) {
+                        state.open_export_modal(comparison.id, comparison.name.clone());
+                        return Command::set_focus(FocusId::new("export-file-browser"));
+                    }
+                }
+                Command::None
+            }
+            Msg::ExportBrowseNavigate(key) => {
+                match key {
+                    KeyCode::Enter => {
+                        // Handle Enter key specially - activate the selected item
+                        if let Some(action) = state.export_browser.handle_event(FileBrowserEvent::Activate) {
+                            match action {
+                                FileBrowserAction::DirectoryEntered(path) => {
+                                    // Enter the directory
+                                    let _ = state.export_browser.set_path(path);
+                                }
+                                _ => {}
+                            }
+                        }
+                        Command::None
+                    }
+                    _ => {
+                        // Handle other navigation keys normally
+                        state.export_browser.handle_navigation_key(key);
+                        Command::None
+                    }
+                }
+            }
+            Msg::ExportDirectoryEntered(_path) => {
+                // No longer used since we handle Enter in Navigate
+                Command::None
+            }
+            Msg::ExportFilenameEvent(event) => {
+                state.export_filename.handle_event(event, Some(255));
+                Command::None
+            }
+            Msg::ExportConfirm => {
+                if let (Some(id), Some(_name)) = (state.export_comparison_id, &state.export_comparison_name) {
+                    let directory = state.export_browser.current_path().to_path_buf();
+                    let filename = state.export_filename.value().trim().to_string();
+
+                    if filename.is_empty() {
+                        return Command::None;
+                    }
+
+                    let file_path = directory.join(&filename);
+
+                    // Close modal immediately
+                    state.close_export_modal();
+
+                    // Perform export asynchronously
+                    Command::perform(
+                        async move {
+                            export_comparison(id, file_path).await
+                        },
+                        Msg::ExportComplete
+                    )
+                } else {
+                    Command::None
+                }
+            }
+            Msg::ExportCancel => {
+                state.close_export_modal();
+                Command::None
+            }
+            Msg::ExportComplete(result) => {
+                match result {
+                    Ok(()) => {
+                        log::info!("Comparison exported successfully");
+                        // TODO: Show success message to user
+                    }
+                    Err(e) => {
+                        log::error!("Failed to export comparison: {}", e);
+                        // TODO: Show error modal
+                    }
+                }
+                Command::None
+            }
+            // Import handlers
+            Msg::RequestImport => {
+                state.open_import_browser();
+                Command::set_focus(FocusId::new("import-file-browser"))
+            }
+            Msg::ImportBrowseNavigate(key) => {
+                match key {
+                    KeyCode::Enter => {
+                        // Handle Enter key specially - activate the selected item
+                        if let Some(action) = state.import_browser.handle_event(FileBrowserEvent::Activate) {
+                            match action {
+                                FileBrowserAction::FileSelected(path) => {
+                                    // File selected, open import config
+                                    state.open_import_config(path);
+                                    return Command::set_focus(FocusId::new("import-name-input"));
+                                }
+                                FileBrowserAction::DirectoryEntered(path) => {
+                                    // Enter the directory
+                                    let _ = state.import_browser.set_path(path);
+                                }
+                                _ => {}
+                            }
+                        }
+                        Command::None
+                    }
+                    _ => {
+                        // Handle other navigation keys normally
+                        state.import_browser.handle_navigation_key(key);
+                        Command::None
+                    }
+                }
+            }
+            Msg::ImportFileSelected(file_path) => {
+                // No longer used since we handle Enter in Navigate
+                state.open_import_config(file_path);
+                Command::set_focus(FocusId::new("import-name-input"))
+            }
+            Msg::ImportFormNameEvent(event) => {
+                state.import_form.name.handle_event(event, Some(50));
+                Command::None
+            }
+            Msg::ImportFormSubmit => {
+                // Validate form
+                match state.import_form.validate() {
+                    Ok(_) => {
+                        let name = state.import_form.name.value().trim().to_string();
+                        let file_path = state.import_file_path.clone();
+                        let migration_name = state.migration_name.clone().unwrap_or_default();
+
+                        state.close_import_config();
+
+                        if let Some(path) = file_path {
+                            Command::perform(
+                                async move {
+                                    import_comparison(path, migration_name, name).await
+                                },
+                                Msg::ImportComplete
+                            )
+                        } else {
+                            Command::None
+                        }
+                    }
+                    Err(validation_error) => {
+                        state.import_form.validation_error = Some(validation_error);
+                        Command::None
+                    }
+                }
+            }
+            Msg::ImportFormCancel => {
+                state.close_import_config();
+                state.close_import_browser();
+                Command::None
+            }
+            Msg::ImportComplete(result) => {
+                match result {
+                    Ok(id) => {
+                        log::info!("Comparison imported successfully with ID: {}", id);
+                        let migration_name = state.migration_name.clone().unwrap_or_default();
+                        reload_comparisons(migration_name)
+                    }
+                    Err(e) => {
+                        log::error!("Failed to import comparison: {}", e);
+                        // TODO: Show error modal
+                        Command::None
+                    }
+                }
+            }
             Msg::Back => Command::batch(vec![
                 Command::navigate_to(AppId::MigrationEnvironment),
                 Command::quit_self(),
@@ -833,6 +1172,170 @@ impl App for MigrationComparisonSelectApp {
             .build();
 
             LayeredView::new(main_ui).with_app_modal(modal_content, crate::tui::Alignment::Center)
+        } else if state.show_export_modal {
+            // Export modal with file browser and filename input
+            let current_path_str = state.export_browser.current_path()
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+
+            let path_display = Element::panel(
+                Element::text(current_path_str)
+            )
+            .title("Current Directory")
+            .build();
+
+            let file_browser = Element::panel(
+                Element::file_browser(
+                    "export-file-browser",
+                    &state.export_browser,
+                    theme
+                )
+                .on_navigate(Msg::ExportBrowseNavigate)
+                .build()
+            )
+            .title("Select Directory")
+            .build();
+
+            let filename_input = Element::panel(
+                Element::text_input(
+                    "export-filename-input",
+                    state.export_filename.value(),
+                    &state.export_filename.state
+                )
+                .placeholder("filename.json")
+                .on_event(Msg::ExportFilenameEvent)
+                .build()
+            )
+            .title("Filename")
+            .build();
+
+            let buttons = button_row![
+                ("export-cancel", "Cancel", Msg::ExportCancel),
+                ("export-confirm", "Export", Msg::ExportConfirm),
+            ];
+
+            let modal_content = Element::panel(
+                Element::container(
+                    col![
+                        path_display => Length(3),
+                        spacer!() => Length(1),
+                        file_browser => Fill(1),
+                        spacer!() => Length(1),
+                        filename_input => Length(3),
+                        spacer!() => Length(1),
+                        buttons => Length(3),
+                    ]
+                )
+                .padding(2)
+                .build()
+            )
+            .title("Export Comparison")
+            .width(100)
+            .height(35)
+            .build();
+
+            LayeredView::new(main_ui).with_app_modal(modal_content, crate::tui::Alignment::Center)
+        } else if state.show_import_browser {
+            // Import file browser modal
+            let current_path_str = state.import_browser.current_path()
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+
+            let path_display = Element::panel(
+                Element::text(current_path_str)
+            )
+            .title("Current Directory")
+            .build();
+
+            let file_browser = Element::panel(
+                Element::file_browser(
+                    "import-file-browser",
+                    &state.import_browser,
+                    theme
+                )
+                .on_navigate(Msg::ImportBrowseNavigate)
+                .build()
+            )
+            .title("Select JSON File")
+            .build();
+
+            let buttons = button_row![
+                ("import-browse-cancel", "Cancel", Msg::ImportFormCancel),
+            ];
+
+            let modal_content = Element::panel(
+                Element::container(
+                    col![
+                        path_display => Length(3),
+                        spacer!() => Length(1),
+                        file_browser => Fill(1),
+                        spacer!() => Length(1),
+                        Element::text("Press Enter to select file") => Length(1),
+                        spacer!() => Length(1),
+                        buttons => Length(3),
+                    ]
+                )
+                .padding(2)
+                .build()
+            )
+            .title("Import Comparison")
+            .width(100)
+            .height(35)
+            .build();
+
+            LayeredView::new(main_ui).with_app_modal(modal_content, crate::tui::Alignment::Center)
+        } else if state.show_import_config {
+            // Import configuration modal (name only, entities come from JSON)
+            let name_input = Element::panel(
+                Element::text_input(
+                    "import-name-input",
+                    state.import_form.name.value(),
+                    &state.import_form.name.state,
+                )
+                .placeholder("Comparison name")
+                .on_event(Msg::ImportFormNameEvent)
+                .build()
+            )
+            .title("Comparison Name")
+            .build();
+
+            let buttons = button_row![
+                ("import-config-cancel", "Cancel", Msg::ImportFormCancel),
+                ("import-config-confirm", "Import", Msg::ImportFormSubmit),
+            ];
+
+            let modal_body = if state.import_form.validation_error.is_some() {
+                col![
+                    Element::text("Entities will be read from the JSON file.") => Length(1),
+                    spacer!() => Length(1),
+                    name_input => Length(3),
+                    spacer!() => Length(1),
+                    error_display!(state.import_form.validation_error, theme) => Length(2),
+                    buttons => Length(3),
+                ]
+            } else {
+                col![
+                    Element::text("Entities will be read from the JSON file.") => Length(1),
+                    spacer!() => Length(1),
+                    name_input => Length(3),
+                    spacer!() => Length(1),
+                    buttons => Length(3),
+                ]
+            };
+
+            let modal_content = Element::panel(
+                Element::container(modal_body)
+                .padding(2)
+                .build()
+            )
+            .title("Import Comparison")
+            .width(60)
+            .height(if state.import_form.validation_error.is_some() { 15 } else { 13 })
+            .build();
+
+            LayeredView::new(main_ui).with_app_modal(modal_content, crate::tui::Alignment::Center)
         } else {
             LayeredView::new(main_ui)
         }
@@ -841,7 +1344,8 @@ impl App for MigrationComparisonSelectApp {
     fn subscriptions(state: &Self::State) -> Vec<Subscription<Self::Msg>> {
         let mut subs = vec![];
 
-        if !state.show_create_modal && !state.show_delete_confirm && !state.show_rename_modal {
+        if !state.show_create_modal && !state.show_delete_confirm && !state.show_rename_modal
+            && !state.show_export_modal && !state.show_import_browser && !state.show_import_config {
             let config = crate::global_runtime_config();
 
             subs.push(Subscription::keyboard(KeyCode::Esc, "Back to migration list", Msg::Back));
@@ -866,12 +1370,24 @@ impl App for MigrationComparisonSelectApp {
 
             let preload_kb = config.get_keybind("migration_comparison.preload");
             subs.push(Subscription::keyboard(preload_kb, "Preload all comparisons", Msg::PreloadAllComparisons));
+
+            // Export/Import hotkeys (only when comparison is selected)
+            if state.list_state.selected().is_some() {
+                subs.push(Subscription::keyboard(KeyCode::Char('e'), "Export comparison", Msg::RequestExport));
+            }
+            subs.push(Subscription::keyboard(KeyCode::Char('i'), "Import comparison", Msg::RequestImport));
         } else if state.show_create_modal {
             subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CreateFormCancel));
         } else if state.show_delete_confirm {
             subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel delete", Msg::CancelDelete));
         } else if state.show_rename_modal {
             subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::RenameFormCancel));
+        } else if state.show_export_modal {
+            subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel export", Msg::ExportCancel));
+        } else if state.show_import_browser {
+            subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel import", Msg::ImportFormCancel));
+        } else if state.show_import_config {
+            subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel import", Msg::ImportFormCancel));
         }
 
         subs
@@ -931,4 +1447,200 @@ fn reload_comparisons(migration_name: String) -> Command<Msg> {
         },
         Msg::ComparisonsLoaded
     )
+}
+
+/// Export comparison data to JSON file
+async fn export_comparison(comparison_id: i64, file_path: PathBuf) -> Result<(), String> {
+    log::info!("Exporting comparison {} to {:?}", comparison_id, file_path);
+
+    let config = crate::global_config();
+
+    // Fetch comparison from database
+    let comparison = config.get_comparison_by_id(comparison_id)
+        .await
+        .map_err(|e| format!("Failed to fetch comparison: {}", e))?
+        .ok_or_else(|| "Comparison not found".to_string())?;
+
+    // Parse entity_comparison JSON if present
+    let (field_mappings, prefix_mappings, imported_mappings, import_source_file, ignored_items) =
+        if let Some(json_str) = &comparison.entity_comparison {
+            parse_entity_comparison_json(json_str)?
+        } else {
+            (HashMap::new(), HashMap::new(), HashMap::new(), None, Vec::new())
+        };
+
+    // Fetch example pairs
+    let example_pairs = config.get_example_pairs(&comparison.source_entity, &comparison.target_entity)
+        .await
+        .map_err(|e| format!("Failed to fetch example pairs: {}", e))?
+        .into_iter()
+        .map(|pair| ExamplePairExport {
+            source_record_id: pair.source_record_id,
+            target_record_id: pair.target_record_id,
+            label: pair.label,
+        })
+        .collect();
+
+    // Build export data
+    let export_data = ComparisonExportData {
+        version: "1.0".to_string(),
+        export_date: chrono::Utc::now().to_rfc3339(),
+        source_entity: comparison.source_entity,
+        target_entity: comparison.target_entity,
+        field_mappings,
+        prefix_mappings,
+        imported_mappings,
+        import_source_file,
+        ignored_items,
+        example_pairs,
+    };
+
+    // Serialize to JSON
+    let json = serde_json::to_string_pretty(&export_data)
+        .map_err(|e| format!("Failed to serialize: {}", e))?;
+
+    // Write to file
+    std::fs::write(&file_path, json)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    log::info!("Successfully exported comparison to {:?}", file_path);
+    Ok(())
+}
+
+/// Import comparison data from JSON file
+async fn import_comparison(
+    file_path: PathBuf,
+    migration_name: String,
+    name: String,
+) -> Result<i64, String> {
+    log::info!("Importing comparison from {:?}", file_path);
+
+    // Read file
+    let json = std::fs::read_to_string(&file_path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    // Parse JSON
+    let import_data: ComparisonExportData = serde_json::from_str(&json)
+        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+
+    // Get entities from JSON file
+    let source_entity = import_data.source_entity.clone();
+    let target_entity = import_data.target_entity.clone();
+
+    // Build entity_comparison JSON
+    let entity_comparison_json = build_entity_comparison_json(
+        import_data.field_mappings,
+        import_data.prefix_mappings,
+        import_data.imported_mappings,
+        import_data.import_source_file,
+        import_data.ignored_items,
+    )?;
+
+    // Create SavedComparison
+    let config = crate::global_config();
+    let comparison = SavedComparison {
+        id: 0, // Will be assigned by database
+        name,
+        migration_name,
+        source_entity: source_entity.clone(),
+        target_entity: target_entity.clone(),
+        entity_comparison: Some(entity_comparison_json),
+        created_at: chrono::Utc::now(),
+        last_used: chrono::Utc::now(),
+    };
+
+    let comparison_id = config.add_comparison(comparison)
+        .await
+        .map_err(|e| format!("Failed to save comparison: {}", e))?;
+
+    // Get existing example pairs to avoid duplicates
+    let existing_pairs = config.get_example_pairs(&source_entity, &target_entity)
+        .await
+        .map_err(|e| format!("Failed to get existing example pairs: {}", e))?;
+
+    // Save example pairs (skip if already exists)
+    for pair in import_data.example_pairs {
+        // Check if this pair already exists (same source and target UUIDs)
+        let already_exists = existing_pairs.iter().any(|existing| {
+            existing.source_record_id == pair.source_record_id
+                && existing.target_record_id == pair.target_record_id
+        });
+
+        if already_exists {
+            log::debug!("Skipping duplicate example pair: {} -> {}", pair.source_record_id, pair.target_record_id);
+            continue;
+        }
+
+        let example_pair = crate::tui::apps::migration::entity_comparison::ExamplePair {
+            id: uuid::Uuid::new_v4().to_string(),
+            source_record_id: pair.source_record_id,
+            target_record_id: pair.target_record_id,
+            label: pair.label,
+        };
+
+        config.save_example_pair(&source_entity, &target_entity, &example_pair)
+            .await
+            .map_err(|e| format!("Failed to save example pair: {}", e))?;
+    }
+
+    log::info!("Successfully imported comparison with ID: {}", comparison_id);
+    Ok(comparison_id)
+}
+
+/// Parse entity_comparison JSON string from database
+fn parse_entity_comparison_json(json_str: &str) -> Result<(
+    HashMap<String, Vec<String>>,
+    HashMap<String, Vec<String>>,
+    HashMap<String, Vec<String>>,
+    Option<String>,
+    Vec<String>,
+), String> {
+    #[derive(Deserialize)]
+    struct EntityComparisonData {
+        field_mappings: Option<HashMap<String, Vec<String>>>,
+        prefix_mappings: Option<HashMap<String, Vec<String>>>,
+        imported_mappings: Option<HashMap<String, Vec<String>>>,
+        import_source_file: Option<String>,
+        ignored_items: Option<Vec<String>>,
+    }
+
+    let data: EntityComparisonData = serde_json::from_str(json_str)
+        .map_err(|e| format!("Failed to parse entity_comparison JSON: {}", e))?;
+
+    Ok((
+        data.field_mappings.unwrap_or_default(),
+        data.prefix_mappings.unwrap_or_default(),
+        data.imported_mappings.unwrap_or_default(),
+        data.import_source_file,
+        data.ignored_items.unwrap_or_default(),
+    ))
+}
+
+/// Build entity_comparison JSON string for database
+fn build_entity_comparison_json(
+    field_mappings: HashMap<String, Vec<String>>,
+    prefix_mappings: HashMap<String, Vec<String>>,
+    imported_mappings: HashMap<String, Vec<String>>,
+    import_source_file: Option<String>,
+    ignored_items: Vec<String>,
+) -> Result<String, String> {
+    #[derive(Serialize)]
+    struct EntityComparisonData {
+        field_mappings: HashMap<String, Vec<String>>,
+        prefix_mappings: HashMap<String, Vec<String>>,
+        imported_mappings: HashMap<String, Vec<String>>,
+        import_source_file: Option<String>,
+        ignored_items: Vec<String>,
+    }
+
+    let data = EntityComparisonData {
+        field_mappings,
+        prefix_mappings,
+        imported_mappings,
+        import_source_file,
+        ignored_items,
+    };
+
+    serde_json::to_string(&data)
+        .map_err(|e| format!("Failed to serialize entity_comparison: {}", e))
 }
