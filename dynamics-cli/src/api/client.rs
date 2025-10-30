@@ -944,18 +944,21 @@ impl DynamicsClient {
         log::debug!("XML returned {} fields for {}", xml_fields.len(), entity_name);
         log::debug!("API returned {} fields for {}", api_fields.len(), entity_name);
 
-        // Build lookup by logical_name from API fields (better metadata)
+        // Build lookup by lowercase logical_name from API fields (better metadata)
+        // Use lowercase for case-insensitive deduplication (Dynamics sometimes returns different casing)
         let api_lookup: HashMap<String, super::metadata::FieldMetadata> = api_fields
             .into_iter()
-            .map(|f| (f.logical_name.clone(), f))
+            .map(|f| (f.logical_name.to_lowercase(), f))
             .collect();
 
         // Start with XML fields, but upgrade any that have better data from API
+        // Use lowercase keys for case-insensitive deduplication
         let mut combined: HashMap<String, super::metadata::FieldMetadata> = HashMap::new();
 
         for xml_field in xml_fields {
-            // If API has this field with better data, prefer it
-            if let Some(api_field) = api_lookup.get(&xml_field.logical_name) {
+            // If API has this field with better data, prefer it (case-insensitive lookup)
+            let lookup_key = xml_field.logical_name.to_lowercase();
+            if let Some(api_field) = api_lookup.get(&lookup_key) {
                 // Check if both are NavigationProperties/relationships
                 let xml_is_nav = matches!(&xml_field.field_type, super::metadata::FieldType::Other(t) if t.starts_with("Relationship:"))
                     || matches!(&xml_field.field_type, super::metadata::FieldType::Lookup);
@@ -965,26 +968,27 @@ impl DynamicsClient {
                     // Both represent the same relationship - prefer API version (has better metadata)
                     log::trace!("Deduplicating relationship {}: XML({:?}) + API({:?}) -> API",
                         xml_field.logical_name, xml_field.field_type, api_field.field_type);
-                    combined.insert(xml_field.logical_name.clone(), api_field.clone());
+                    combined.insert(lookup_key, api_field.clone());
                 } else if api_field.related_entity.is_some() || api_field.display_name.is_some() {
                     // Prefer API version if it has related_entity (lookup fields) or display name
                     log::trace!("Upgrading field {}: XML({:?}) -> API({:?})",
                         xml_field.logical_name, xml_field.field_type, api_field.field_type);
-                    combined.insert(xml_field.logical_name.clone(), api_field.clone());
+                    combined.insert(lookup_key, api_field.clone());
                 } else {
                     log::trace!("Keeping XML field {}: {:?}", xml_field.logical_name, xml_field.field_type);
-                    combined.insert(xml_field.logical_name.clone(), xml_field);
+                    combined.insert(lookup_key, xml_field);
                 }
             } else {
                 // Only in XML (NavigationProperty)
                 log::trace!("XML-only field {}: {:?}", xml_field.logical_name, xml_field.field_type);
-                combined.insert(xml_field.logical_name.clone(), xml_field);
+                combined.insert(lookup_key, xml_field);
             }
         }
 
         // Add any API-only fields that weren't in XML
-        for (name, api_field) in api_lookup {
-            combined.entry(name).or_insert(api_field);
+        // Note: api_lookup keys are already lowercase
+        for (lowercase_name, api_field) in api_lookup {
+            combined.entry(lowercase_name).or_insert(api_field);
         }
 
         let mut result: Vec<_> = combined.into_values().collect();

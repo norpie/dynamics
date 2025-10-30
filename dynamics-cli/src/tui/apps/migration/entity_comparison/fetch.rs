@@ -32,10 +32,22 @@ pub async fn fetch_with_cache(
         // Note: Cached metadata already has relationships extracted and lookup fields removed
         if let Some(cached) = cached_metadata {
             return match fetch_type {
-                FetchType::SourceFields => Ok(FetchedData::SourceFields(cached.fields)),
+                FetchType::SourceFields | FetchType::TargetFields => {
+                    // Apply virtual field filtering to cached fields too
+                    // (in case cache was created before this filtering was added)
+                    let relationship_names: std::collections::HashSet<String> = cached.relationships.iter()
+                        .map(|r| r.name.clone())
+                        .collect();
+                    let fields = process_lookup_fields(cached.fields, &relationship_names);
+
+                    match fetch_type {
+                        FetchType::SourceFields => Ok(FetchedData::SourceFields(fields)),
+                        FetchType::TargetFields => Ok(FetchedData::TargetFields(fields)),
+                        _ => unreachable!()
+                    }
+                }
                 FetchType::SourceForms => Ok(FetchedData::SourceForms(cached.forms)),
                 FetchType::SourceViews => Ok(FetchedData::SourceViews(cached.views)),
-                FetchType::TargetFields => Ok(FetchedData::TargetFields(cached.fields)),
                 FetchType::TargetForms => Ok(FetchedData::TargetForms(cached.forms)),
                 FetchType::TargetViews => Ok(FetchedData::TargetViews(cached.views)),
             };
@@ -48,8 +60,14 @@ pub async fn fetch_with_cache(
 
     match fetch_type {
         FetchType::SourceFields => {
-            let mut fields = client.fetch_entity_fields_combined(entity_name).await.map_err(|e| e.to_string())?;
-            fields = process_lookup_fields(fields);
+            let fields = client.fetch_entity_fields_combined(entity_name).await.map_err(|e| e.to_string())?;
+            // Extract relationships to get their names for filtering virtual fields
+            let relationships = extract_relationships(&fields);
+            let relationship_names: std::collections::HashSet<String> = relationships.iter()
+                .map(|r| r.name.clone())
+                .collect();
+            // Filter virtual fields using relationship names
+            let fields = process_lookup_fields(fields, &relationship_names);
             Ok(FetchedData::SourceFields(fields))
         }
         FetchType::SourceForms => {
@@ -61,8 +79,14 @@ pub async fn fetch_with_cache(
             Ok(FetchedData::SourceViews(views))
         }
         FetchType::TargetFields => {
-            let mut fields = client.fetch_entity_fields_combined(entity_name).await.map_err(|e| e.to_string())?;
-            fields = process_lookup_fields(fields);
+            let fields = client.fetch_entity_fields_combined(entity_name).await.map_err(|e| e.to_string())?;
+            // Extract relationships to get their names for filtering virtual fields
+            let relationships = extract_relationships(&fields);
+            let relationship_names: std::collections::HashSet<String> = relationships.iter()
+                .map(|r| r.name.clone())
+                .collect();
+            // Filter virtual fields using relationship names
+            let fields = process_lookup_fields(fields, &relationship_names);
             Ok(FetchedData::TargetFields(fields))
         }
         FetchType::TargetForms => {
@@ -133,8 +157,21 @@ pub fn extract_relationships(fields: &[crate::api::metadata::FieldMetadata]) -> 
 
 /// Process lookup fields by filtering out _*_value virtual fields and ensuring
 /// base lookup fields are properly typed
-fn process_lookup_fields(fields: Vec<crate::api::metadata::FieldMetadata>) -> Vec<crate::api::metadata::FieldMetadata> {
+///
+/// Also filters out relationship-derived virtual fields (e.g., customeridname, customeridyominame)
+/// by using the provided relationship names.
+fn process_lookup_fields(
+    fields: Vec<crate::api::metadata::FieldMetadata>,
+    relationship_names: &std::collections::HashSet<String>
+) -> Vec<crate::api::metadata::FieldMetadata> {
     use std::collections::HashMap;
+
+    log::info!("🔍 Processing {} fields with {} known relationships", fields.len(), relationship_names.len());
+    if !relationship_names.is_empty() {
+        let mut rel_vec: Vec<_> = relationship_names.iter().collect();
+        rel_vec.sort();
+        log::info!("📋 Relationships to check for virtual fields: {:?}", rel_vec);
+    }
 
     // Build map of _*_value fields to their related entity info
     let mut value_field_map: HashMap<String, Option<String>> = HashMap::new();
@@ -153,7 +190,8 @@ fn process_lookup_fields(fields: Vec<crate::api::metadata::FieldMetadata>) -> Ve
     }
 
     // Filter and update fields
-    fields.into_iter()
+    let original_count = fields.len();
+    let filtered_fields: Vec<_> = fields.into_iter()
         .filter_map(|mut field| {
             // Filter out _*_value fields
             if field.logical_name.starts_with('_') && field.logical_name.ends_with("_value") {
@@ -166,6 +204,16 @@ fn process_lookup_fields(fields: Vec<crate::api::metadata::FieldMetadata>) -> Ve
             if matches!(field.field_type, crate::api::metadata::FieldType::Other(ref t) if t == "Virtual") {
                 log::debug!("Filtering out virtual display field: {}", field.logical_name);
                 return None;
+            }
+
+            // Filter out relationship-derived virtual fields (e.g., customeridname, customeridyominame)
+            // These are fields that start with a relationship name but have a suffix
+            for rel_name in relationship_names {
+                if field.logical_name != *rel_name && field.logical_name.starts_with(rel_name) {
+                    log::info!("✂️ Filtering relationship-derived virtual field: '{}' (derived from relationship '{}')",
+                               field.logical_name, rel_name);
+                    return None;
+                }
             }
 
             // Check if this field has a corresponding _*_value field
@@ -184,7 +232,14 @@ fn process_lookup_fields(fields: Vec<crate::api::metadata::FieldMetadata>) -> Ve
 
             Some(field)
         })
-        .collect()
+        .collect();
+
+    let filtered_count = original_count - filtered_fields.len();
+    if filtered_count > 0 {
+        log::info!("✅ Filtered {} virtual fields, {} fields remaining", filtered_count, filtered_fields.len());
+    }
+
+    filtered_fields
 }
 
 /// Fetch example record data for a pair
