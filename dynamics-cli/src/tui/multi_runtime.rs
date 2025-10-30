@@ -654,17 +654,23 @@ impl MultiAppRuntime {
         let config = crate::global_runtime_config();
         let theme = &config.theme;
 
-        // Calculate available width for status text
-        // Total width - title width - separator " │ " (3 chars) - help text width (approx 15) - padding (4)
+        // Calculate help text width first (needed for available space calculation)
         use unicode_width::UnicodeWidthStr;
+        let help_key_str = config.get_keybind("global.help").to_string();
+        let help_text = format!("[?] {} Help", help_key_str);
+        let help_text_width = help_text.width();
+
+        // Calculate available width for status text
+        // Total width - title width - separator " │ " (3 chars) - help text width - spacing (1) - panel borders (2)
         let title_width = title.width();
         let separator_width = 3; // " │ "
-        let help_text_width = 15; // "[?] F1 Help" or similar
-        let padding = 4; // Panel padding
+        let spacing_width = 1; // Spacing between status and help text
+        let panel_borders = 2; // Panel left + right borders (1 + 1)
         let available_for_status = area.width.saturating_sub(title_width as u16)
-            .saturating_sub(separator_width)
-            .saturating_sub(help_text_width)
-            .saturating_sub(padding) as usize;
+            .saturating_sub(separator_width as u16)
+            .saturating_sub(help_text_width as u16)
+            .saturating_sub(spacing_width)
+            .saturating_sub(panel_borders) as usize;
 
         // Store the calculated available width for scroll logic
         self.status_available_width = available_for_status;
@@ -691,18 +697,15 @@ impl MultiAppRuntime {
         };
 
         let header_left = Element::styled_text(title_line).build();
-
-        // Use configured help keybind
-        let help_key_str = config.get_keybind("global.help").to_string();
         let header_right = Element::styled_text(Line::from(vec![
-            Span::styled(format!("[?] {} Help", help_key_str), Style::default().fg(theme.border_primary))
+            Span::styled(help_text, Style::default().fg(theme.border_primary))
         ])).build();
 
         let header = Element::panel(
             RowBuilder::new()
                 .add(header_left, LayoutConstraint::Fill(1))
-                .add(header_right, LayoutConstraint::Length(15))
-                .spacing(0)
+                .add(header_right, LayoutConstraint::Length(help_text_width as u16))
+                .spacing(1)
                 .build()
         )
         .build();
