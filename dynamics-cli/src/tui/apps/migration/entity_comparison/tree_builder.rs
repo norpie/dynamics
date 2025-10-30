@@ -534,21 +534,43 @@ fn sort_items(items: &mut [ComparisonTreeItem], sort_mode: super::models::SortMo
             });
         }
         super::models::SortMode::MatchesFirst | super::models::SortMode::SourceMatches => {
-            // Sort matched items first (alphabetically), then unmatched (alphabetically)
+            // Sort in three tiers:
+            // 1. Matched items (alphabetically)
+            // 2. Unmatched items (alphabetically)
+            // 3. Ignored items (alphabetically)
             // For SourceMatches, this is only applied to source side - target side uses special logic
             items.sort_by(|a, b| {
                 let a_has_match = item_has_match(a);
                 let b_has_match = item_has_match(b);
+                let a_is_ignored = item_is_ignored(a);
+                let b_is_ignored = item_is_ignored(b);
 
-                match (a_has_match, b_has_match) {
-                    (true, false) => std::cmp::Ordering::Less,    // Matched before unmatched
-                    (false, true) => std::cmp::Ordering::Greater, // Unmatched after matched
-                    _ => {
-                        // Both matched or both unmatched - sort alphabetically
+                // Determine sort tier (lower number = higher priority)
+                let a_tier = if a_is_ignored {
+                    2  // Ignored items last
+                } else if a_has_match {
+                    0  // Matched items first
+                } else {
+                    1  // Unmatched items in the middle
+                };
+
+                let b_tier = if b_is_ignored {
+                    2
+                } else if b_has_match {
+                    0
+                } else {
+                    1
+                };
+
+                // First sort by tier
+                match a_tier.cmp(&b_tier) {
+                    std::cmp::Ordering::Equal => {
+                        // Same tier - sort alphabetically
                         let a_name = item_name(a);
                         let b_name = item_name(b);
                         a_name.cmp(&b_name)
                     }
+                    other => other,
                 }
             });
         }
@@ -573,6 +595,16 @@ fn item_has_match(item: &ComparisonTreeItem) -> bool {
         ComparisonTreeItem::Relationship(node) => node.match_info.is_some(),
         ComparisonTreeItem::Entity(node) => node.match_info.is_some(),
         ComparisonTreeItem::Container(node) => node.match_info.is_some(),
+        _ => false,
+    }
+}
+
+/// Check if an item is ignored
+fn item_is_ignored(item: &ComparisonTreeItem) -> bool {
+    match item {
+        ComparisonTreeItem::Field(node) => node.is_ignored,
+        ComparisonTreeItem::Relationship(node) => node.is_ignored,
+        ComparisonTreeItem::Entity(node) => node.is_ignored,
         _ => false,
     }
 }

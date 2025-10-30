@@ -729,7 +729,8 @@ pub fn filter_example_matches(items: Vec<super::tree_items::ComparisonTreeItem>)
 
 /// Sort target items to align with source order in SourceMatches mode
 /// Matched target items appear at the same index as their source match
-/// Unmatched target items are appended alphabetically at the end
+/// Unmatched target items are appended alphabetically in the middle
+/// Ignored target items are appended alphabetically at the end
 fn sort_target_by_source_order(
     source_items: &[ComparisonTreeItem],
     mut target_items: Vec<ComparisonTreeItem>,
@@ -757,19 +758,28 @@ fn sort_target_by_source_order(
         }
     }
 
-    // Second pass: Add remaining unmatched target items alphabetically
-    let mut unmatched: Vec<ComparisonTreeItem> = target_items
+    // Second pass: Separate remaining items into unmatched and ignored
+    let (mut ignored, mut unmatched): (Vec<ComparisonTreeItem>, Vec<ComparisonTreeItem>) = target_items
         .into_iter()
         .filter(|item| !used_targets.contains(get_item_name(item)))
-        .collect();
+        .partition(|item| get_item_is_ignored(item));
 
+    // Sort both groups alphabetically
     unmatched.sort_by(|a, b| {
         let a_name = get_item_name(a);
         let b_name = get_item_name(b);
         a_name.cmp(&b_name)
     });
 
+    ignored.sort_by(|a, b| {
+        let a_name = get_item_name(a);
+        let b_name = get_item_name(b);
+        a_name.cmp(&b_name)
+    });
+
+    // Add unmatched first, then ignored
     result.extend(unmatched);
+    result.extend(ignored);
     result
 }
 
@@ -792,6 +802,16 @@ fn get_item_match_target(item: &ComparisonTreeItem) -> Option<&str> {
         ComparisonTreeItem::Entity(node) => node.match_info.as_ref().and_then(|m| m.primary_target()).map(|s| s.as_str()),
         ComparisonTreeItem::Container(node) => node.match_info.as_ref().and_then(|m| m.primary_target()).map(|s| s.as_str()),
         _ => None,
+    }
+}
+
+/// Check if an item is ignored
+fn get_item_is_ignored(item: &ComparisonTreeItem) -> bool {
+    match item {
+        ComparisonTreeItem::Field(node) => node.is_ignored,
+        ComparisonTreeItem::Relationship(node) => node.is_ignored,
+        ComparisonTreeItem::Entity(node) => node.is_ignored,
+        _ => false,
     }
 }
 
