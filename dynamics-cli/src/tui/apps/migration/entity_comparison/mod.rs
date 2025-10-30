@@ -34,6 +34,7 @@ pub enum Msg {
     DeleteManualMapping,  // Delete mapping from selected field
     CycleHideMode,        // Cycle through hide modes (Off -> HideMatched -> HideIgnored -> HideBoth)
     ToggleSortMode,       // Toggle between Alphabetical and MatchesFirst sorting
+    ToggleSortDirection,  // Toggle sort direction (Ascending <-> Descending)
     ToggleTechnicalNames, // Toggle between technical (logical) and display names
     ToggleMirrorMode,     // Toggle mirror mode (Off -> Source -> Target -> Off)
     MappingsLoaded(std::collections::HashMap<String, Vec<String>>, std::collections::HashMap<String, Vec<String>>, std::collections::HashMap<String, Vec<String>>, Option<String>, Vec<ExamplePair>, std::collections::HashSet<String>), // field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items

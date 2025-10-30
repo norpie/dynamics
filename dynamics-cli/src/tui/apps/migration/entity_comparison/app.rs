@@ -68,6 +68,7 @@ struct TreeCacheKey {
     active_tab: ActiveTab,
     show_technical_names: bool,
     sort_mode: super::models::SortMode,
+    sort_direction: super::models::SortDirection,
     examples_enabled: bool,
     // Use count of mappings as simple change detector (more sophisticated version could hash the actual mappings)
     field_mappings_count: usize,
@@ -84,6 +85,7 @@ impl Default for TreeCacheKey {
             active_tab: ActiveTab::default(),
             show_technical_names: true,
             sort_mode: super::models::SortMode::default(),
+            sort_direction: super::models::SortDirection::default(),
             examples_enabled: false,
             field_mappings_count: 0,
             relationship_mappings_count: 0,
@@ -101,6 +103,7 @@ impl TreeCacheKey {
             active_tab: state.active_tab,
             show_technical_names: state.show_technical_names,
             sort_mode: state.sort_mode,
+            sort_direction: state.sort_direction,
             examples_enabled: state.examples.enabled,
             field_mappings_count: state.field_matches.len(),
             relationship_mappings_count: state.relationship_matches.len(),
@@ -154,6 +157,7 @@ pub struct State {
     pub(super) import_source_file: Option<String>,       // filename of imported C# file
     pub(super) hide_mode: super::models::HideMode,
     pub(super) sort_mode: super::models::SortMode,
+    pub(super) sort_direction: super::models::SortDirection,
     pub(super) mirror_mode: super::models::MirrorMode,
     pub(super) show_technical_names: bool, // true = logical names, false = display names
 
@@ -265,6 +269,7 @@ impl Default for State {
             import_source_file: None,
             hide_mode: super::models::HideMode::default(),
             sort_mode: super::models::SortMode::default(),
+            sort_direction: super::models::SortDirection::default(),
             mirror_mode: super::models::MirrorMode::default(),
             show_technical_names: true,
             field_matches: HashMap::new(),
@@ -385,6 +390,7 @@ impl State {
                 &self.source_entity,
                 self.show_technical_names,
                 self.sort_mode,
+                self.sort_direction,
                 &self.ignored_items,
             )
         } else {
@@ -436,6 +442,7 @@ impl State {
                 &self.target_entity,
                 self.show_technical_names,
                 self.sort_mode,
+                self.sort_direction,
                 &self.ignored_items,
             )
         } else {
@@ -477,6 +484,7 @@ impl App for EntityComparisonApp {
             import_source_file: None,
             hide_mode: super::models::HideMode::default(),
             sort_mode: super::models::SortMode::default(),
+            sort_direction: super::models::SortDirection::default(),
             mirror_mode: super::models::MirrorMode::default(),
             show_technical_names: true, // Default to showing logical/technical names
             field_matches: HashMap::new(),
@@ -637,6 +645,9 @@ impl App for EntityComparisonApp {
 
             // Sort mode toggle
             Subscription::keyboard(config.get_keybind("entity_comparison.toggle_sort"), "Toggle sort mode", Msg::ToggleSortMode),
+
+            // Sort direction toggle
+            Subscription::keyboard(KeyCode::Char('S'), "Toggle sort direction", Msg::ToggleSortDirection),
 
             // Technical/display name toggle
             Subscription::keyboard(config.get_keybind("entity_comparison.toggle_technical_names"), "Toggle technical names", Msg::ToggleTechnicalNames),
@@ -878,10 +889,10 @@ impl App for EntityComparisonApp {
             Style::default().fg(theme.text_secondary),
         ));
 
-        // Sort mode
+        // Sort mode with direction
         spans.push(Span::styled(" | ", Style::default().fg(theme.border_primary)));
         spans.push(Span::styled(
-            format!("Sort: {}", state.sort_mode.label()),
+            format!("Sort: {} {}", state.sort_mode.label(), state.sort_direction.label()),
             Style::default().fg(theme.text_secondary),
         ));
 

@@ -91,7 +91,7 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
 
     // Apply SourceMatches sorting to target side if enabled
     if sort_mode == super::models::SortMode::SourceMatches {
-        target_items = sort_target_by_source_order(&source_items, target_items);
+        target_items = sort_target_by_source_order(&source_items, target_items, state.sort_direction);
     }
 
     // Calculate detailed completion statistics
@@ -671,6 +671,7 @@ pub fn filter_example_matches(items: Vec<super::tree_items::ComparisonTreeItem>)
 fn sort_target_by_source_order(
     source_items: &[ComparisonTreeItem],
     mut target_items: Vec<ComparisonTreeItem>,
+    sort_direction: super::models::SortDirection,
 ) -> Vec<ComparisonTreeItem> {
     use std::collections::HashMap;
 
@@ -701,17 +702,25 @@ fn sort_target_by_source_order(
         .filter(|item| !used_targets.contains(get_item_name(item)))
         .partition(|item| get_item_is_ignored(item));
 
-    // Sort both groups alphabetically
+    // Sort both groups alphabetically, respecting direction
     unmatched.sort_by(|a, b| {
         let a_name = get_item_name(a);
         let b_name = get_item_name(b);
-        a_name.cmp(&b_name)
+        let ordering = a_name.cmp(&b_name);
+        match sort_direction {
+            super::models::SortDirection::Ascending => ordering,
+            super::models::SortDirection::Descending => ordering.reverse(),
+        }
     });
 
     ignored.sort_by(|a, b| {
         let a_name = get_item_name(a);
         let b_name = get_item_name(b);
-        a_name.cmp(&b_name)
+        let ordering = a_name.cmp(&b_name);
+        match sort_direction {
+            super::models::SortDirection::Ascending => ordering,
+            super::models::SortDirection::Descending => ordering.reverse(),
+        }
     });
 
     // Add unmatched first, then ignored

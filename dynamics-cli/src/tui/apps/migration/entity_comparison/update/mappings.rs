@@ -266,6 +266,11 @@ pub fn handle_toggle_sort_mode(state: &mut State) -> Command<Msg> {
     Command::None
 }
 
+pub fn handle_toggle_sort_direction(state: &mut State) -> Command<Msg> {
+    state.sort_direction = state.sort_direction.toggle();
+    Command::None
+}
+
 pub fn handle_toggle_technical_names(state: &mut State) -> Command<Msg> {
     state.show_technical_names = !state.show_technical_names;
     Command::None

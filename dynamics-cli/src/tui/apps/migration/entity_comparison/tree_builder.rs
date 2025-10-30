@@ -20,6 +20,7 @@ pub fn build_tree_items(
     entity_name: &str,
     show_technical_names: bool,
     sort_mode: super::models::SortMode,
+    sort_direction: super::models::SortDirection,
     ignored_items: &std::collections::HashSet<String>,
 ) -> Vec<ComparisonTreeItem> {
     let tab_prefix = match active_tab {
@@ -32,11 +33,11 @@ pub fn build_tree_items(
     let side_prefix = if is_source { "source" } else { "target" };
 
     match active_tab {
-        ActiveTab::Fields => build_fields_tree(&metadata.fields, field_matches, examples, is_source, entity_name, show_technical_names, sort_mode, ignored_items, tab_prefix, side_prefix),
-        ActiveTab::Relationships => build_relationships_tree(&metadata.relationships, relationship_matches, sort_mode, ignored_items, tab_prefix, side_prefix),
+        ActiveTab::Fields => build_fields_tree(&metadata.fields, field_matches, examples, is_source, entity_name, show_technical_names, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix),
+        ActiveTab::Relationships => build_relationships_tree(&metadata.relationships, relationship_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix),
         ActiveTab::Views => build_views_tree(&metadata.views, field_matches, &metadata.fields, examples, is_source, entity_name, show_technical_names, ignored_items, tab_prefix, side_prefix),
         ActiveTab::Forms => build_forms_tree(&metadata.forms, field_matches, &metadata.fields, examples, is_source, entity_name, show_technical_names, ignored_items, tab_prefix, side_prefix),
-        ActiveTab::Entities => build_entities_tree(entities, entity_matches, sort_mode, ignored_items, tab_prefix, side_prefix),
+        ActiveTab::Entities => build_entities_tree(entities, entity_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix),
     }
 }
 
@@ -50,6 +51,7 @@ fn build_fields_tree(
     entity_name: &str,
     show_technical_names: bool,
     sort_mode: super::models::SortMode,
+    sort_direction: super::models::SortDirection,
     ignored_items: &std::collections::HashSet<String>,
     tab_prefix: &str,
     side_prefix: &str,
@@ -75,7 +77,7 @@ fn build_fields_tree(
         })
         .collect();
 
-    sort_items(&mut items, sort_mode);
+    sort_items(&mut items, sort_mode, sort_direction);
     items
 }
 
@@ -84,6 +86,7 @@ fn build_relationships_tree(
     relationships: &[crate::api::metadata::RelationshipMetadata],
     relationship_matches: &HashMap<String, MatchInfo>,
     sort_mode: super::models::SortMode,
+    sort_direction: super::models::SortDirection,
     ignored_items: &std::collections::HashSet<String>,
     tab_prefix: &str,
     side_prefix: &str,
@@ -101,7 +104,7 @@ fn build_relationships_tree(
         })
         .collect();
 
-    sort_items(&mut items, sort_mode);
+    sort_items(&mut items, sort_mode, sort_direction);
     items
 }
 
@@ -500,6 +503,7 @@ fn build_entities_tree(
     entities: &[(String, usize)],
     entity_matches: &HashMap<String, MatchInfo>,
     sort_mode: super::models::SortMode,
+    sort_direction: super::models::SortDirection,
     ignored_items: &std::collections::HashSet<String>,
     tab_prefix: &str,
     side_prefix: &str,
@@ -518,19 +522,28 @@ fn build_entities_tree(
         })
         .collect();
 
-    sort_items(&mut items, sort_mode);
+    sort_items(&mut items, sort_mode, sort_direction);
     items
 }
 
-/// Sort tree items based on sort mode
-fn sort_items(items: &mut [ComparisonTreeItem], sort_mode: super::models::SortMode) {
+/// Sort tree items based on sort mode and direction
+fn sort_items(
+    items: &mut [ComparisonTreeItem],
+    sort_mode: super::models::SortMode,
+    sort_direction: super::models::SortDirection,
+) {
     match sort_mode {
         super::models::SortMode::Alphabetical => {
             // Sort alphabetically by name
             items.sort_by(|a, b| {
                 let a_name = item_name(a);
                 let b_name = item_name(b);
-                a_name.cmp(&b_name)
+                let ordering = a_name.cmp(&b_name);
+                // Apply direction
+                match sort_direction {
+                    super::models::SortDirection::Ascending => ordering,
+                    super::models::SortDirection::Descending => ordering.reverse(),
+                }
             });
         }
         super::models::SortMode::MatchesFirst | super::models::SortMode::SourceMatches => {
@@ -545,7 +558,7 @@ fn sort_items(items: &mut [ComparisonTreeItem], sort_mode: super::models::SortMo
                 let a_is_ignored = item_is_ignored(a);
                 let b_is_ignored = item_is_ignored(b);
 
-                // Determine sort tier (lower number = higher priority)
+                // Determine sort tier (lower number = higher priority in ascending)
                 let a_tier = if a_is_ignored {
                     2  // Ignored items last
                 } else if a_has_match {
@@ -563,12 +576,25 @@ fn sort_items(items: &mut [ComparisonTreeItem], sort_mode: super::models::SortMo
                 };
 
                 // First sort by tier
-                match a_tier.cmp(&b_tier) {
+                let tier_ordering = a_tier.cmp(&b_tier);
+
+                // Apply direction to tier ordering
+                let tier_ordering = match sort_direction {
+                    super::models::SortDirection::Ascending => tier_ordering,
+                    super::models::SortDirection::Descending => tier_ordering.reverse(),
+                };
+
+                match tier_ordering {
                     std::cmp::Ordering::Equal => {
                         // Same tier - sort alphabetically
                         let a_name = item_name(a);
                         let b_name = item_name(b);
-                        a_name.cmp(&b_name)
+                        let name_ordering = a_name.cmp(&b_name);
+                        // Apply direction to name ordering too
+                        match sort_direction {
+                            super::models::SortDirection::Ascending => name_ordering,
+                            super::models::SortDirection::Descending => name_ordering.reverse(),
+                        }
                     }
                     other => other,
                 }

@@ -30,6 +30,30 @@ impl SortMode {
     }
 }
 
+/// Sort direction that applies to all sort modes
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SortDirection {
+    #[default]
+    Ascending,
+    Descending,
+}
+
+impl SortDirection {
+    pub fn label(&self) -> &'static str {
+        match self {
+            SortDirection::Ascending => "↑",
+            SortDirection::Descending => "↓",
+        }
+    }
+
+    pub fn toggle(&self) -> Self {
+        match self {
+            SortDirection::Ascending => SortDirection::Descending,
+            SortDirection::Descending => SortDirection::Ascending,
+        }
+    }
+}
+
 /// Hide mode for filtering tree items
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HideMode {
