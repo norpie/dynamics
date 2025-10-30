@@ -72,6 +72,7 @@ pub struct TreeState {
     selected: Option<String>,        // Selected node ID (primary/anchor)
     scroll_offset: usize,
     scroll_off: usize,               // Scrolloff distance (vim-like)
+    wrap_around: bool,               // Wrap to bottom/top when reaching edges
     viewport_height: Option<usize>,  // Last known viewport height from renderer
 
     // Multi-selection support
@@ -99,6 +100,7 @@ impl TreeState {
             selected: None,
             scroll_offset: 0,
             scroll_off: 5,
+            wrap_around: true,
             viewport_height: None,
             multi_selected: HashSet::new(),
             anchor_selection: None,
@@ -129,6 +131,12 @@ impl TreeState {
     /// Set the scroll-off distance (rows from edge before scrolling)
     pub fn with_scroll_off(mut self, scroll_off: usize) -> Self {
         self.scroll_off = scroll_off;
+        self
+    }
+
+    /// Set whether to wrap around at edges (default: true)
+    pub fn with_wrap_around(mut self, wrap_around: bool) -> Self {
+        self.wrap_around = wrap_around;
         self
     }
 
@@ -205,6 +213,9 @@ impl TreeState {
             if let Some(pos) = self.visible_order.iter().position(|id| id == current) {
                 if pos + 1 < self.visible_order.len() {
                     self.selected = Some(self.visible_order[pos + 1].clone());
+                } else if self.wrap_around && !self.visible_order.is_empty() {
+                    // At bottom, wrap to top
+                    self.selected = Some(self.visible_order[0].clone());
                 }
             } else {
                 // Current selection not in visible order (stale state), select first
@@ -229,6 +240,9 @@ impl TreeState {
             if let Some(pos) = self.visible_order.iter().position(|id| id == current) {
                 if pos > 0 {
                     self.selected = Some(self.visible_order[pos - 1].clone());
+                } else if self.wrap_around && !self.visible_order.is_empty() {
+                    // At top, wrap to bottom
+                    self.selected = Some(self.visible_order[self.visible_order.len() - 1].clone());
                 }
             } else {
                 // Current selection not in visible order (stale state), select first
