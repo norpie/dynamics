@@ -69,3 +69,4 @@ fuzzy-matcher = "0.3"
 include_dir = "0.7"
 self_update = { version = "0.42", default-features = false, features = ["archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate", "compression-zip-bzip2", "rustls"] }
 semver = "1.0"
+unicode-width = "0.2"

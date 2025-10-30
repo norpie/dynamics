@@ -82,6 +82,16 @@ pub struct MultiAppRuntime {
 
     /// Last time Tab key was pressed (for debouncing)
     last_tab_press: Option<Instant>,
+
+    // Status scroll animation
+    /// Current scroll offset for status text (character position)
+    status_scroll_offset: usize,
+    /// Last time the status scroll was updated
+    status_scroll_timer: Instant,
+    /// Cached status text to detect changes
+    cached_status_text: Option<String>,
+    /// Available width for status text (calculated during render)
+    status_available_width: usize,
 }
 
 impl MultiAppRuntime {
@@ -126,6 +136,10 @@ impl MultiAppRuntime {
             global_focus_registry: crate::tui::renderer::FocusRegistry::new(),
             global_focused_id: None,
             last_tab_press: None,
+            status_scroll_offset: 0,
+            status_scroll_timer: Instant::now(),
+            cached_status_text: None,
+            status_available_width: 40, // Default, will be updated during render
         };
 
         // Eagerly create the AppLauncher since it's the starting app
@@ -636,17 +650,40 @@ impl MultiAppRuntime {
         }
     }
 
-    fn render_header(&self, frame: &mut Frame, area: ratatui::layout::Rect, title: &str, status: Option<Line<'static>>) {
+    fn render_header(&mut self, frame: &mut Frame, area: ratatui::layout::Rect, title: &str, status: Option<Line<'static>>) {
         let config = crate::global_runtime_config();
         let theme = &config.theme;
+
+        // Calculate available width for status text
+        // Total width - title width - separator " │ " (3 chars) - help text width (approx 15) - padding (4)
+        use unicode_width::UnicodeWidthStr;
+        let title_width = title.width();
+        let separator_width = 3; // " │ "
+        let help_text_width = 15; // "[?] F1 Help" or similar
+        let padding = 4; // Panel padding
+        let available_for_status = area.width.saturating_sub(title_width as u16)
+            .saturating_sub(separator_width)
+            .saturating_sub(help_text_width)
+            .saturating_sub(padding) as usize;
+
+        // Store the calculated available width for scroll logic
+        self.status_available_width = available_for_status;
+
         // Build title line with optional status
         let title_line = if let Some(status_line) = status {
+            // Apply scroll offset if scrolling is active
+            let scrolled_status = if self.status_scroll_offset > 0 {
+                self.apply_scroll_to_status(status_line)
+            } else {
+                status_line
+            };
+
             // Combine title and status with separator
             let mut spans = vec![
                 Span::styled(String::from(title), Style::default().fg(theme.accent_secondary).bold()),
                 Span::styled(" │ ", Style::default().fg(theme.border_primary)),
             ];
-            spans.extend(status_line.spans);
+            spans.extend(scrolled_status.spans);
             Line::from(spans)
         } else {
             // Just title
@@ -1108,7 +1145,126 @@ impl MultiAppRuntime {
         for runtime in self.runtimes.values_mut() {
             runtime.poll_timers()?;
         }
+
+        // Update status scroll animation
+        self.update_status_scroll();
+
         Ok(())
+    }
+
+    /// Apply scroll offset to status line
+    fn apply_scroll_to_status(&self, status_line: Line<'static>) -> Line<'static> {
+        use unicode_width::UnicodeWidthStr;
+        use unicode_width::UnicodeWidthChar;
+
+        // Calculate character positions for each span
+        let mut char_positions: Vec<(usize, usize, &Span)> = Vec::new(); // (start_pos, end_pos, span)
+        let mut current_pos = 0;
+
+        for span in &status_line.spans {
+            let text = span.content.as_ref();
+            let width = text.width();
+            char_positions.push((current_pos, current_pos + width, span));
+            current_pos += width;
+        }
+
+        // Build new spans starting from offset
+        let offset = self.status_scroll_offset;
+        let mut result_spans: Vec<Span> = Vec::new();
+
+        // Find spans that overlap with the visible region [offset, ...]
+        for (start, end, span) in char_positions {
+            if end <= offset {
+                // Span is completely before the visible region
+                continue;
+            }
+
+            if start >= offset {
+                // Span is completely within or after the visible region - include it
+                result_spans.push(span.clone());
+            } else {
+                // Span starts before offset but ends within/after visible region - slice it
+                let text = span.content.as_ref();
+                let chars_to_skip = offset - start;
+
+                // Use char indices to properly handle unicode
+                let sliced_text: String = text.chars().skip(chars_to_skip).collect();
+                result_spans.push(Span::styled(sliced_text, span.style));
+            }
+        }
+
+        Line::from(result_spans)
+    }
+
+    /// Update the status scroll offset for long status text
+    fn update_status_scroll(&mut self) {
+        const SCROLL_INTERVAL_MS: u128 = 150; // Milliseconds between scroll updates
+        const PAUSE_AT_START_MS: u128 = 2000; // Pause at the start before scrolling
+        const PAUSE_AT_END_MS: u128 = 1000; // Pause at the end before resetting
+
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.status_scroll_timer).as_millis();
+
+        // Get current status text from active app
+        if let Some(runtime) = self.runtimes.get(&self.active_app) {
+            if let Some(status_line) = runtime.get_status() {
+                // Convert status Line to plain text for length calculation
+                let status_text: String = status_line.spans.iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<Vec<_>>()
+                    .join("");
+
+                // If status text changed, reset scroll
+                if self.cached_status_text.as_ref() != Some(&status_text) {
+                    self.cached_status_text = Some(status_text.clone());
+                    self.status_scroll_offset = 0;
+                    self.status_scroll_timer = now;
+                    return;
+                }
+
+                // Calculate text width using unicode-width
+                use unicode_width::UnicodeWidthStr;
+                let text_width = status_text.width();
+
+                // Use the calculated available width from render_header
+                let available_width = self.status_available_width;
+
+                // Only scroll if text is longer than available space
+                if text_width > available_width {
+                    let max_offset = text_width.saturating_sub(available_width);
+
+                    // Handle pause at start
+                    if self.status_scroll_offset == 0 && elapsed < PAUSE_AT_START_MS {
+                        return;
+                    }
+
+                    // Handle pause at end
+                    if self.status_scroll_offset >= max_offset && elapsed < PAUSE_AT_END_MS {
+                        return;
+                    }
+
+                    // Time to scroll
+                    if elapsed >= SCROLL_INTERVAL_MS {
+                        self.status_scroll_timer = now;
+
+                        if self.status_scroll_offset >= max_offset {
+                            // Reset to beginning
+                            self.status_scroll_offset = 0;
+                        } else {
+                            // Scroll by 1 character
+                            self.status_scroll_offset += 1;
+                        }
+                    }
+                } else {
+                    // Text fits, no scrolling needed
+                    self.status_scroll_offset = 0;
+                }
+            } else {
+                // No status, reset
+                self.cached_status_text = None;
+                self.status_scroll_offset = 0;
+            }
+        }
     }
 
     /// Check if any navigation commands were issued
