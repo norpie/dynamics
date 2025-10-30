@@ -1166,9 +1166,15 @@ fn filter_tree_items_by_search(
     items.into_iter().filter_map(|item| {
         match &item {
             ComparisonTreeItem::Field(node) => {
-                // Search both logical name and display name
+                // Search technical name (logical_name)
                 let logical_match = text_matches(&node.metadata.logical_name);
-                let display_match = text_matches(&node.display_name);
+
+                // Search friendly name (display_name from metadata) if it exists
+                // This ensures we search both names regardless of current display mode
+                let display_match = node.metadata.display_name
+                    .as_ref()
+                    .map(|name| text_matches(name))
+                    .unwrap_or(false);
 
                 // Search example value if examples are enabled
                 let example_match = if examples.enabled {
