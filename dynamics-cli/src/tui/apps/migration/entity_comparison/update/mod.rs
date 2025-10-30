@@ -14,6 +14,12 @@ use super::Msg;
 use super::app::State;
 
 pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
+    // Rebuild tree cache if dependencies changed
+    // This happens once per state change, not every frame
+    if state.should_rebuild_cache() {
+        state.rebuild_tree_cache();
+    }
+
     match msg {
         // Navigation
         Msg::Back => navigation::handle_back(state),

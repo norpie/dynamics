@@ -21,6 +21,7 @@ use super::{Msg, Side, ExamplesState, ExamplePair, ActiveTab, FetchType, fetch_w
 use super::matching::recompute_all_matches;
 use super::tree_sync::{update_mirrored_selection, mirror_container_toggle};
 use super::view::{render_main_layout, render_back_confirmation_modal, render_examples_modal};
+use super::tree_items::ComparisonTreeItem;
 
 /// Deduplicate example pairs based on (source_record_id, target_record_id)
 /// Logs warnings for any duplicates found and keeps only the first occurrence
@@ -59,6 +60,67 @@ fn deduplicate_example_pairs(pairs: Vec<ExamplePair>) -> Vec<ExamplePair> {
 }
 
 pub struct EntityComparisonApp;
+
+/// Cache key for detecting when trees need rebuilding
+/// Trees only rebuild when these dependencies change
+#[derive(Clone, PartialEq, Eq)]
+struct TreeCacheKey {
+    active_tab: ActiveTab,
+    show_technical_names: bool,
+    sort_mode: super::models::SortMode,
+    examples_enabled: bool,
+    // Use count of mappings as simple change detector (more sophisticated version could hash the actual mappings)
+    field_mappings_count: usize,
+    relationship_mappings_count: usize,
+    entity_mappings_count: usize,
+    ignored_items_count: usize,
+    source_metadata_loaded: bool,
+    target_metadata_loaded: bool,
+}
+
+impl Default for TreeCacheKey {
+    fn default() -> Self {
+        Self {
+            active_tab: ActiveTab::default(),
+            show_technical_names: true,
+            sort_mode: super::models::SortMode::default(),
+            examples_enabled: false,
+            field_mappings_count: 0,
+            relationship_mappings_count: 0,
+            entity_mappings_count: 0,
+            ignored_items_count: 0,
+            source_metadata_loaded: false,
+            target_metadata_loaded: false,
+        }
+    }
+}
+
+impl TreeCacheKey {
+    fn from_state(state: &State) -> Self {
+        Self {
+            active_tab: state.active_tab,
+            show_technical_names: state.show_technical_names,
+            sort_mode: state.sort_mode,
+            examples_enabled: state.examples.enabled,
+            field_mappings_count: state.field_matches.len(),
+            relationship_mappings_count: state.relationship_matches.len(),
+            entity_mappings_count: state.entity_matches.len(),
+            ignored_items_count: state.ignored_items.len(),
+            source_metadata_loaded: matches!(state.source_metadata, Resource::Success(_)),
+            target_metadata_loaded: matches!(state.target_metadata, Resource::Success(_)),
+        }
+    }
+}
+
+/// Cached tree data to avoid rebuilding every frame
+#[derive(Clone)]
+pub(super) struct TreeCache {
+    pub(super) source_items: Vec<ComparisonTreeItem>,
+    pub(super) target_items: Vec<ComparisonTreeItem>,
+    pub(super) reverse_field_matches: HashMap<String, MatchInfo>,
+    pub(super) reverse_relationship_matches: HashMap<String, MatchInfo>,
+    pub(super) reverse_entity_matches: HashMap<String, MatchInfo>,
+}
 
 #[derive(Clone, Debug)]
 pub struct ImportResults {
@@ -158,6 +220,10 @@ pub struct State {
 
     // Modal state
     pub(super) show_back_confirmation: bool,
+
+    // Performance: Cached tree data (rebuilt only when dependencies change)
+    pub(super) tree_cache: Option<TreeCache>,
+    pub(super) tree_cache_key: TreeCacheKey,
 }
 
 pub struct EntityComparisonParams {
@@ -245,6 +311,8 @@ impl Default for State {
             source_search: crate::tui::widgets::TextInputField::new(),
             target_search: crate::tui::widgets::TextInputField::new(),
             show_back_confirmation: false,
+            tree_cache: None,
+            tree_cache_key: TreeCacheKey::default(),
         }
     }
 }
@@ -270,6 +338,121 @@ impl State {
             ActiveTab::Forms => &mut self.target_forms_tree,
             ActiveTab::Entities => &mut self.target_entities_tree,
         }
+    }
+
+    /// Invalidate tree cache - forces rebuild on next access
+    pub(super) fn invalidate_tree_cache(&mut self) {
+        self.tree_cache = None;
+        log::debug!("Tree cache invalidated");
+    }
+
+    /// Check if tree cache needs rebuilding based on dependencies
+    pub(super) fn should_rebuild_cache(&self) -> bool {
+        // No cache? Need to build
+        if self.tree_cache.is_none() {
+            return true;
+        }
+
+        // Check if dependencies changed
+        let current_key = TreeCacheKey::from_state(self);
+        self.tree_cache_key != current_key
+    }
+
+    /// Rebuild tree cache from current state
+    /// This is the expensive operation that was happening every frame in view()
+    pub(super) fn rebuild_tree_cache(&mut self) {
+        let current_key = TreeCacheKey::from_state(self);
+
+        // Skip if cache is still valid
+        if self.tree_cache.is_some() && self.tree_cache_key == current_key {
+            log::debug!("Tree cache still valid, skipping rebuild");
+            return;
+        }
+
+        log::debug!("Rebuilding tree cache for tab {:?}", self.active_tab);
+
+        // Build source tree
+        let source_items = if let Resource::Success(ref metadata) = self.source_metadata {
+            super::tree_builder::build_tree_items(
+                metadata,
+                self.active_tab,
+                &self.field_matches,
+                &self.relationship_matches,
+                &self.entity_matches,
+                &self.source_entities,
+                &self.examples,
+                true, // is_source
+                &self.source_entity,
+                self.show_technical_names,
+                self.sort_mode,
+                &self.ignored_items,
+            )
+        } else {
+            vec![]
+        };
+
+        // Build reverse matches for target side
+        let reverse_field_matches: HashMap<String, MatchInfo> = self.field_matches.iter()
+            .flat_map(|(source_field, match_info)| {
+                match_info.target_fields.iter().map(move |target_field| {
+                    let match_type = match_info.match_types.get(target_field).copied().unwrap_or(super::models::MatchType::Manual);
+                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
+                    (target_field.clone(), MatchInfo::single(source_field.clone(), match_type, confidence))
+                })
+            })
+            .collect();
+
+        let reverse_relationship_matches: HashMap<String, MatchInfo> = self.relationship_matches.iter()
+            .flat_map(|(source_rel, match_info)| {
+                match_info.target_fields.iter().map(move |target_field| {
+                    let match_type = match_info.match_types.get(target_field).copied().unwrap_or(super::models::MatchType::Manual);
+                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
+                    (target_field.clone(), MatchInfo::single(source_rel.clone(), match_type, confidence))
+                })
+            })
+            .collect();
+
+        let reverse_entity_matches: HashMap<String, MatchInfo> = self.entity_matches.iter()
+            .flat_map(|(source_entity, match_info)| {
+                match_info.target_fields.iter().map(move |target_field| {
+                    let match_type = match_info.match_types.get(target_field).copied().unwrap_or(super::models::MatchType::Manual);
+                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
+                    (target_field.clone(), MatchInfo::single(source_entity.clone(), match_type, confidence))
+                })
+            })
+            .collect();
+
+        // Build target tree
+        let target_items = if let Resource::Success(ref metadata) = self.target_metadata {
+            super::tree_builder::build_tree_items(
+                metadata,
+                self.active_tab,
+                &reverse_field_matches,
+                &reverse_relationship_matches,
+                &reverse_entity_matches,
+                &self.target_entities,
+                &self.examples,
+                false, // is_source
+                &self.target_entity,
+                self.show_technical_names,
+                self.sort_mode,
+                &self.ignored_items,
+            )
+        } else {
+            vec![]
+        };
+
+        // Store in cache
+        self.tree_cache = Some(TreeCache {
+            source_items,
+            target_items,
+            reverse_field_matches,
+            reverse_relationship_matches,
+            reverse_entity_matches,
+        });
+        self.tree_cache_key = current_key;
+
+        log::debug!("Tree cache rebuilt successfully");
     }
 }
 
@@ -340,6 +523,8 @@ impl App for EntityComparisonApp {
             source_search: crate::tui::widgets::TextInputField::new(),
             target_search: crate::tui::widgets::TextInputField::new(),
             show_back_confirmation: false,
+            tree_cache: None,
+            tree_cache_key: TreeCacheKey::default(),
         };
 
         // First, load mappings to know which example pairs to fetch

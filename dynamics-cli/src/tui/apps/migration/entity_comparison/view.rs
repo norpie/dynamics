@@ -20,26 +20,16 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
     let theme = &crate::global_runtime_config().theme;
     use_constraints!();
 
-    // Build tree items for the active tab from metadata
+    // Get tree items from cache (already built in update())
+    // This eliminates the expensive rebuild that was happening every frame
     let active_tab = state.active_tab;
     let hide_mode = state.hide_mode;
     let sort_mode = state.sort_mode;
-    let mut source_items = if let Resource::Success(ref metadata) = state.source_metadata {
-        build_tree_items(
-            metadata,
-            active_tab,
-            &state.field_matches,
-            &state.relationship_matches,
-            &state.entity_matches,
-            &state.source_entities,
-            &state.examples,
-            true, // is_source
-            &state.source_entity,
-            state.show_technical_names,
-            sort_mode,
-            &state.ignored_items,
-        )
+    let mut source_items = if let Some(ref cache) = state.tree_cache {
+        cache.source_items.clone()
     } else {
+        // Fallback: should never happen since update() rebuilds cache
+        log::warn!("Tree cache missing in view(), using empty tree");
         vec![]
     };
 
@@ -69,54 +59,11 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
         );
     }
 
-    let mut target_items = if let Resource::Success(ref metadata) = state.target_metadata {
-        // Create reverse matches for target side (target_field -> source_field)
-        // For 1-to-N mappings, each target gets its own reverse mapping back to the source
-        let reverse_field_matches: HashMap<String, MatchInfo> = state.field_matches.iter()
-            .flat_map(|(source_field, match_info)| {
-                match_info.target_fields.iter().map(move |target_field| {
-                    let match_type = match_info.match_types.get(target_field).copied().unwrap_or(MatchType::Manual);
-                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
-                    (target_field.clone(), MatchInfo::single(source_field.clone(), match_type, confidence))
-                })
-            })
-            .collect();
-
-        let reverse_relationship_matches: HashMap<String, MatchInfo> = state.relationship_matches.iter()
-            .flat_map(|(source_rel, match_info)| {
-                match_info.target_fields.iter().map(move |target_field| {
-                    let match_type = match_info.match_types.get(target_field).copied().unwrap_or(MatchType::Manual);
-                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
-                    (target_field.clone(), MatchInfo::single(source_rel.clone(), match_type, confidence))
-                })
-            })
-            .collect();
-
-        let reverse_entity_matches: HashMap<String, MatchInfo> = state.entity_matches.iter()
-            .flat_map(|(source_entity, match_info)| {
-                match_info.target_fields.iter().map(move |target_field| {
-                    let match_type = match_info.match_types.get(target_field).copied().unwrap_or(MatchType::Manual);
-                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
-                    (target_field.clone(), MatchInfo::single(source_entity.clone(), match_type, confidence))
-                })
-            })
-            .collect();
-
-        build_tree_items(
-            metadata,
-            active_tab,
-            &reverse_field_matches,
-            &reverse_relationship_matches,
-            &reverse_entity_matches,
-            &state.target_entities,
-            &state.examples,
-            false, // is_source
-            &state.target_entity,
-            state.show_technical_names,
-            sort_mode,
-            &state.ignored_items,
-        )
+    let mut target_items = if let Some(ref cache) = state.tree_cache {
+        cache.target_items.clone()
     } else {
+        // Fallback: should never happen since update() rebuilds cache
+        log::warn!("Tree cache missing in view(), using empty tree");
         vec![]
     };
 
