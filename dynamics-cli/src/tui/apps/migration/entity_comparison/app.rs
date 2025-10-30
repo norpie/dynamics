@@ -16,11 +16,47 @@ use ratatui::{
     style::Style,
     text::{Line, Span},
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use super::{Msg, Side, ExamplesState, ExamplePair, ActiveTab, FetchType, fetch_with_cache, extract_relationships, extract_entities, MatchInfo};
 use super::matching::recompute_all_matches;
 use super::tree_sync::{update_mirrored_selection, mirror_container_toggle};
 use super::view::{render_main_layout, render_back_confirmation_modal, render_examples_modal};
+
+/// Deduplicate example pairs based on (source_record_id, target_record_id)
+/// Logs warnings for any duplicates found and keeps only the first occurrence
+fn deduplicate_example_pairs(pairs: Vec<ExamplePair>) -> Vec<ExamplePair> {
+    let mut seen = HashSet::new();
+    let mut deduplicated = Vec::new();
+    let mut duplicates_found = 0;
+
+    for pair in pairs {
+        let key = (pair.source_record_id.clone(), pair.target_record_id.clone());
+
+        if seen.insert(key) {
+            // First time seeing this pair
+            deduplicated.push(pair);
+        } else {
+            // Duplicate found
+            duplicates_found += 1;
+            log::warn!(
+                "Skipping duplicate example pair: source={}, target={}, id={}",
+                pair.source_record_id,
+                pair.target_record_id,
+                pair.id
+            );
+        }
+    }
+
+    if duplicates_found > 0 {
+        log::warn!(
+            "Removed {} duplicate example pair(s), {} unique pairs remain",
+            duplicates_found,
+            deduplicated.len()
+        );
+    }
+
+    deduplicated
+}
 
 pub struct EntityComparisonApp;
 
@@ -324,11 +360,15 @@ impl App for EntityComparisonApp {
                         log::error!("Failed to load imported mappings: {}", e);
                         (HashMap::new(), None)
                     });
-                let example_pairs = config.get_example_pairs(&source_entity, &target_entity).await
+                let example_pairs_raw = config.get_example_pairs(&source_entity, &target_entity).await
                     .unwrap_or_else(|e| {
                         log::error!("Failed to load example pairs: {}", e);
                         Vec::new()
                     });
+
+                // Deduplicate example pairs to prevent issues
+                let example_pairs = deduplicate_example_pairs(example_pairs_raw);
+
                 let ignored_items = config.get_ignored_items(&source_entity, &target_entity).await
                     .unwrap_or_else(|e| {
                         log::error!("Failed to load ignored items: {}", e);
