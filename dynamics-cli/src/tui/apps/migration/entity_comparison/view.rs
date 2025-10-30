@@ -154,16 +154,6 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
     let source_entity_name = state.source_entity.clone();
     let target_entity_name = state.target_entity.clone();
 
-    // Get active example label if enabled
-    let example_label = if state.examples.enabled {
-        state.examples.get_active_pair()
-            .and_then(|pair| pair.label.as_ref())
-            .map(|label| format!(" [{}]", label))
-            .unwrap_or_else(|| " [Example]".to_string())
-    } else {
-        String::new()
-    };
-
     // Get the appropriate tree state for the active tab based on which side
     let (source_tree_state, target_tree_state) = match active_tab {
         ActiveTab::Fields => (&mut state.source_fields_tree, &mut state.target_fields_tree),
@@ -201,9 +191,9 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
         let multi_select_count = source_tree_state.total_selection_count();
         let stats_str = source_stats.format_compact();
         if multi_select_count > 1 {
-            format!("Source: {} ({}) - {} selected{}", source_entity_name, stats_str, multi_select_count, example_label)
+            format!("Source: {} ({}) - {} selected", source_entity_name, stats_str, multi_select_count)
         } else {
-            format!("Source: {} ({}){}", source_entity_name, stats_str, example_label)
+            format!("Source: {} ({})", source_entity_name, stats_str)
         }
     };
 
@@ -227,7 +217,7 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
             .on_focus(Msg::TargetTreeFocused)
             .build()
     )
-    .title(format!("Target: {} ({}){}", target_entity_name, target_stats.format_compact(), example_label))
+    .title(format!("Target: {} ({})", target_entity_name, target_stats.format_compact()))
     .build();
 
     // Count filtered results

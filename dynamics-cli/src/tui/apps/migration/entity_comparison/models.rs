@@ -121,6 +121,33 @@ pub enum Side {
     Target,
 }
 
+/// Mirror mode for tree selection synchronization
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MirrorMode {
+    #[default]
+    Off,     // No mirroring
+    Source,  // Mirror source → target (target follows source selection)
+    Target,  // Mirror target → source (source follows target selection)
+}
+
+impl MirrorMode {
+    pub fn label(&self) -> &'static str {
+        match self {
+            MirrorMode::Off => "Mirror: Off",
+            MirrorMode::Source => "Mirror: Source→Target",
+            MirrorMode::Target => "Mirror: Target→Source",
+        }
+    }
+
+    pub fn toggle(&self) -> Self {
+        match self {
+            MirrorMode::Off => MirrorMode::Source,
+            MirrorMode::Source => MirrorMode::Target,
+            MirrorMode::Target => MirrorMode::Off,
+        }
+    }
+}
+
 /// Search mode for filtering tree items
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SearchMode {

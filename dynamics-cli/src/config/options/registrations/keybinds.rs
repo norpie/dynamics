@@ -262,6 +262,14 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
     )?;
 
     registry.register(
+        OptionDefBuilder::new("keybind", "entity_comparison.toggle_mirror")
+            .display_name("Toggle Mirror Mode")
+            .description("Cycle through mirror modes (Off/Source/Target)")
+            .keybind_type(KeyCode::Char('r'))
+            .build()?
+    )?;
+
+    registry.register(
         OptionDefBuilder::new("keybind", "entity_comparison.cycle_example")
             .display_name("Cycle Example Pairs")
             .description("Cycle through configured example data pairs")

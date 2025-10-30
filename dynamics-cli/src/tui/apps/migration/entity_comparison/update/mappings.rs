@@ -271,6 +271,11 @@ pub fn handle_toggle_technical_names(state: &mut State) -> Command<Msg> {
     Command::None
 }
 
+pub fn handle_toggle_mirror_mode(state: &mut State) -> Command<Msg> {
+    state.mirror_mode = state.mirror_mode.toggle();
+    Command::None
+}
+
 pub fn handle_export_to_excel(state: &mut State) -> Command<Msg> {
     // Check if metadata is loaded
     if !matches!(state.source_metadata, Resource::Success(_)) ||

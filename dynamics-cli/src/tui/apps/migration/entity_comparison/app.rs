@@ -92,6 +92,7 @@ pub struct State {
     pub(super) import_source_file: Option<String>,       // filename of imported C# file
     pub(super) hide_mode: super::models::HideMode,
     pub(super) sort_mode: super::models::SortMode,
+    pub(super) mirror_mode: super::models::MirrorMode,
     pub(super) show_technical_names: bool, // true = logical names, false = display names
 
     // Computed matches (cached)
@@ -198,6 +199,7 @@ impl Default for State {
             import_source_file: None,
             hide_mode: super::models::HideMode::default(),
             sort_mode: super::models::SortMode::default(),
+            mirror_mode: super::models::MirrorMode::default(),
             show_technical_names: true,
             field_matches: HashMap::new(),
             relationship_matches: HashMap::new(),
@@ -292,6 +294,7 @@ impl App for EntityComparisonApp {
             import_source_file: None,
             hide_mode: super::models::HideMode::default(),
             sort_mode: super::models::SortMode::default(),
+            mirror_mode: super::models::MirrorMode::default(),
             show_technical_names: true, // Default to showing logical/technical names
             field_matches: HashMap::new(),
             relationship_matches: HashMap::new(),
@@ -452,6 +455,9 @@ impl App for EntityComparisonApp {
 
             // Technical/display name toggle
             Subscription::keyboard(config.get_keybind("entity_comparison.toggle_technical_names"), "Toggle technical names", Msg::ToggleTechnicalNames),
+
+            // Mirror mode toggle
+            Subscription::keyboard(config.get_keybind("entity_comparison.toggle_mirror"), "Toggle mirror mode", Msg::ToggleMirrorMode),
 
             // Examples management
             Subscription::keyboard(config.get_keybind("entity_comparison.cycle_example"), "Cycle example pairs", Msg::CycleExamplePair),
@@ -708,21 +714,12 @@ impl App for EntityComparisonApp {
             Style::default().fg(theme.text_secondary),
         ));
 
-        // Example display status
-        if state.examples.enabled {
-            if let Some(active_pair_id) = &state.examples.active_pair_id {
-                // Find the index of the active pair
-                if let Some(index) = state.examples.pairs.iter().position(|p| &p.id == active_pair_id) {
-                    let pair_num = index + 1;
-                    let total = state.examples.pairs.len();
-                    spans.push(Span::styled(" | ", Style::default().fg(theme.border_primary)));
-                    spans.push(Span::styled(
-                        format!("Example: {}/{}", pair_num, total),
-                        Style::default().fg(theme.palette_4),
-                    ));
-                }
-            }
-        }
+        // Mirror mode
+        spans.push(Span::styled(" | ", Style::default().fg(theme.border_primary)));
+        spans.push(Span::styled(
+            state.mirror_mode.label(),
+            Style::default().fg(theme.text_secondary),
+        ));
 
         Some(Line::from(spans))
     }
