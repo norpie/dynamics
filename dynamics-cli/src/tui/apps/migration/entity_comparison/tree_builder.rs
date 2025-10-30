@@ -91,7 +91,8 @@ fn build_relationships_tree(
     let mut items: Vec<ComparisonTreeItem> = relationships
         .iter()
         .map(|r| {
-            let item_id = format!("{}:{}:{}", tab_prefix, side_prefix, r.name);
+            // IMPORTANT: Must use "rel_{name}" to match RelationshipNode::id() in tree_items.rs
+            let item_id = format!("{}:{}:rel_{}", tab_prefix, side_prefix, r.name);
             ComparisonTreeItem::Relationship(RelationshipNode {
                 metadata: r.clone(),
                 match_info: relationship_matches.get(&r.name).cloned(),
@@ -506,7 +507,8 @@ fn build_entities_tree(
     let mut items: Vec<ComparisonTreeItem> = entities
         .iter()
         .map(|(name, usage_count)| {
-            let item_id = format!("{}:{}:{}", tab_prefix, side_prefix, name);
+            // IMPORTANT: Must use "entity_{name}" to match EntityNode::id() in tree_items.rs
+            let item_id = format!("{}:{}:entity_{}", tab_prefix, side_prefix, name);
             ComparisonTreeItem::Entity(EntityNode {
                 name: name.clone(),
                 match_info: entity_matches.get(name).cloned(),
