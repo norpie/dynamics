@@ -63,7 +63,7 @@ Each layer must have an ID. The ID is **hierarchically composed** from context:
 
 ### ID Requirements
 
-Each layer must provide a single segment ID (no dots). See [App ID Requirements](../01-fundamentals/app-and-context.md#app-id-requirements) for validation rules - layer IDs follow the same pattern.
+Each layer must provide a single segment ID (no dots). Layer IDs follow the same validation rules as App IDs - see [App ID Requirements](../01-fundamentals/app-and-context.md#app-id-requirements).
 
 ### Display Names
 

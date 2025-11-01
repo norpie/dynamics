@@ -4,16 +4,7 @@
 
 ## Modals Are Just Layers
 
-**Core concept:** Modals are not a special framework type - they're just layers with specific properties:
-
-```rust
-struct Layer {
-    element: Component,
-    area: LayerArea,
-    dim_below: bool,      // Modals set this to true
-    blocks_input: bool,   // Modals set this to true
-}
-```
+**Core concept:** Modals are not a special framework type - they're layers (see [Layer System](layers.md)) with `dim_below: true` and `blocks_input: true`.
 
 **Apps control visibility** - framework doesn't auto-show/hide modals:
 

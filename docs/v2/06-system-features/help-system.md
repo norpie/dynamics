@@ -26,15 +26,15 @@ pub struct HelpEntry {
     /// Human-readable description
     pub description: String,
 
-    /// Category for grouping in UI
+    /// Category for grouping in UI (see [Keybind Categories](../04-user-interaction/keybinds.md#three-keybind-categories))
     pub category: HelpCategory,
 }
 
 pub enum HelpCategory {
-    Global,      // F1, Ctrl+Space, Ctrl+Q, etc.
-    Navigation,  // Arrow keys, Page Up/Down, etc.
+    Global,      // Runtime-level actions
+    Navigation,  // Semantic navigation
     App,         // App-specific actions
-    Component,   // Currently focused component's navigation
+    Component,   // Focused component navigation
 }
 ```
 

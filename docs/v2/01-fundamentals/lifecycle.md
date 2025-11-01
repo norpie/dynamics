@@ -107,6 +107,45 @@ impl App for OperationQueue {
 
 Runtime automatically cleans up old background apps when limit exceeded (MAX_BACKGROUND_APPS = 10). **Apps don't specify cleanup timers** - that's runtime policy.
 
+## Background Apps: Use Cases & Patterns
+
+Apps with `Lifecycle::Background` continue processing while not visible - useful for:
+
+**Good for:**
+- Operation queues (processing API calls)
+- File watchers (monitoring filesystem)
+- Background sync tasks (polling servers)
+- System monitors (tracking resources)
+
+**Avoid for:**
+- Heavy computation (blocks UI thread)
+- Apps that don't need background processing
+
+**Example: Operation queue with pub/sub**
+```rust
+impl App for OperationQueue {
+    fn new(ctx: &AppContext) -> Self {
+        ctx.set_lifecycle(Lifecycle::Background);
+
+        // Subscribe to messages even when backgrounded
+        ctx.subscribe("operations:add", Self::on_operations_received);
+
+        Self { queue: Vec::new() }
+    }
+
+    fn update(&mut self, ctx: &mut Context) -> Vec<Layer> {
+        // Process queue even when user views other apps
+        if self.current.is_none() && !self.queue.is_empty() {
+            let op = self.queue.remove(0);
+            self.current = Some(op.clone());
+            self.progress.load(ctx, execute_operation(op));
+        }
+
+        vec![Layer::fill(self.render_queue_ui())]
+    }
+}
+```
+
 ## Hook Details
 
 ### can_quit() - Veto Quit Attempts

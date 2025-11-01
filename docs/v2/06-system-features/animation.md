@@ -11,47 +11,13 @@ Animations in terminals have specific limitations:
 
 ## Frame Timing (Dynamic Mode Switching)
 
-V2 uses **two rendering modes** that switch automatically:
+V2 automatically switches between **event-driven** (0% CPU when idle) and **frame-driven** (60fps during animations) modes. See [Event Loop](../01-fundamentals/event-loop.md) for the core rendering architecture.
 
-### 1. Event-Driven (Default - 0% CPU)
-
-- Runtime blocks waiting for events
-- No rendering until event arrives
-- Perfect for battery life
-- App can idle for minutes at 0% CPU
-
-### 2. Frame-Driven (Only When Animating)
-
-- Runtime renders at 60fps
-- Switches automatically when animations active
-- Back to event-driven when animations complete
-- ~1-2% CPU during animation
-
-```rust
-impl Runtime {
-    async fn run(&mut self) {
-        loop {
-            let animating = self.has_active_animations();
-
-            if animating {
-                // FRAME-DRIVEN: 60fps
-                tokio::select! {
-                    Some(event) = self.events.recv() => { /* ... */ }
-                    _ = tokio::time::sleep(Duration::from_millis(16)) => { /* ... */ }
-                }
-                self.render();
-            } else {
-                // EVENT-DRIVEN: Block until event (0% CPU)
-                let event = self.events.recv().await;
-                self.handle_event(event);
-                self.render();
-            }
-        }
-    }
-}
-```
-
-**Automatic switching** - no user intervention needed.
+**Animation-specific behavior:**
+- Runtime detects active animations via `has_active_animations()`
+- Switches to 60fps loop automatically
+- Returns to event-driven when animations complete
+- ~1-2% CPU during animation only
 
 ## Toast System (Global)
 

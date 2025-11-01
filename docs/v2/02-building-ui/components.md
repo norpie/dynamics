@@ -22,58 +22,13 @@ fn update(&mut self, ctx: &mut Context) -> Vec<Layer> {
 
 ## Component State Composition
 
-Components compose `NavigableState` for consistent navigation behavior:
+Components compose `NavigableState` for consistent navigation behavior across 1D (List, Tree) and 2D (Table) widgets. NavigableState provides unified scrolling, vim-style scrolloff, and selection management.
 
-```rust
-// List (1D - only vertical navigation)
-pub struct ListState {
-    nav: NavigableState,
-    last_click: Option<(usize, Instant)>,
-}
-
-impl ListState {
-    pub fn new() -> Self {
-        Self {
-            nav: NavigableState::new_1d(),
-            last_click: None,
-        }
-    }
-
-    // Delegate navigation to shared state
-    pub fn navigate_up(&mut self, count: usize) {
-        self.nav.navigate_up(count);
-    }
-
-    pub fn selected(&self) -> Option<usize> {
-        self.nav.selected_index()
-    }
-}
-
-// Table (2D - both vertical and horizontal navigation)
-pub struct TableState {
-    nav: NavigableState,
-    rows: usize,
-    cols: usize,
-}
-
-impl TableState {
-    pub fn new(rows: usize, cols: usize) -> Self {
-        Self {
-            nav: NavigableState::new_2d(),  // selected_col = Some(0)
-            rows,
-            cols,
-        }
-    }
-
-    pub fn navigate_left(&mut self) {
-        self.nav.navigate_left(self.cols);
-    }
-
-    pub fn selected(&self) -> Option<(usize, usize)> {
-        self.nav.selected_cell()
-    }
-}
-```
+**See [NavigableState](../07-advanced/navigable-state.md) for complete details on:**
+- 1D vs 2D constructors
+- Navigation methods (up/down/left/right)
+- Scrolloff logic
+- Selection accessors
 
 ## Shared Styling Helpers
 

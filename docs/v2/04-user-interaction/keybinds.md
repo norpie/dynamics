@@ -259,26 +259,7 @@ impl App for MyApp {
 
 ---
 
-## Implementation Details
-
-### Three Keybind Categories
-
-**1. Navigation Bindings** (`keybind.global.nav.*`)
-   - Semantic navigation actions (up, down, activate, cancel, etc.)
-   - Sent directly to focused components as `NavAction` enum
-   - Components handle internally (no app code needed)
-   - User can add vim-style or custom aliases
-
-**2. Global Bindings** (`keybind.global.*`)
-   - Runtime-level actions (help menu, app launcher, quit, etc.)
-   - Checked after navigation but before app bindings
-
-**3. App Bindings** (`keybind.{app_id}.*`)
-   - App-specific actions
-   - Lowest priority in key handling
-   - Auto-registered via `#[derive(Keybinds)]` macro
-
-### Runtime Key Dispatch
+## Runtime Key Dispatch
 
 **Priority order when key is pressed:**
 
