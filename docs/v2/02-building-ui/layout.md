@@ -206,34 +206,6 @@ ui.container(|ui| {
 .padding_y(1);   // Top/bottom
 ```
 
-## Layer Positioning
-
-Layers use `LayerArea` for positioning (separate from internal layout):
-
-```rust
-enum LayerArea {
-    Fill,                      // Use all available space
-    Centered(u16, u16),        // Width, height - centered
-    Rect(Rect),                // Explicit position
-    Anchor(Anchor, u16, u16),  // Anchor point + size
-    DockTop(u16),              // Reserve N lines at top
-    DockBottom(u16),           // Reserve N lines at bottom
-    DockLeft(u16),             // Reserve N columns at left
-    DockRight(u16),            // Reserve N columns at right
-}
-```
-
-**Usage:**
-```rust
-fn update(&mut self, ctx: &mut Context) -> Vec<Layer> {
-    vec![
-        Layer::fill(self.main_ui()),
-        Layer::centered(60, 20, panel("Modal", |ui| { /* ... */ })),
-        Layer::dock_top(3, panel("Header", |ui| { /* ... */ })),
-    ]
-}
-```
-
 ## No Layout Macros
 
 **Decision:** No layout macros in V2.

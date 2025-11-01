@@ -83,15 +83,7 @@ async fn poll_api(&mut self, ctx: &mut Context) {
 
 ## Event Sources
 
-All these wake runtime from sleep:
-
-- **Keyboard/mouse events** - OS wakes us (~1-3ms latency)
-- **Resource completion** - Async task finishes
-- **Pub/sub messages** - From other apps
-- **Timers** - Tokio timers
-- **Explicit invalidation** - `invalidator.invalidate()`
-
-**Total keypress latency: ~7-11ms** (competitive with native GUIs)
+See [Event-Driven Rendering](../01-fundamentals/event-loop.md#event-sources) for complete details on event sources and latency characteristics.
 
 ## Benefits
 
@@ -107,4 +99,4 @@ All these wake runtime from sleep:
 
 ---
 
-**Next:** Learn about [Resource Pattern](resource-pattern.md) or explore [Pub/Sub](pubsub.md).
+**Next:** Learn about [Resource Pattern](resource-pattern.md) or explore [Events & Queues](../07-advanced/events-and-queues.md).

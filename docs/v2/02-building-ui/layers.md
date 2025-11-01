@@ -28,6 +28,27 @@ enum LayerArea {
 }
 ```
 
+### Layer Positioning
+
+Use `LayerArea` variants to position layers on screen:
+
+```rust
+fn update(&mut self, ctx: &mut Context) -> Vec<Layer> {
+    vec![
+        Layer::fill(self.main_ui()),
+        Layer::centered(60, 20, panel("Modal", |ui| { /* ... */ })),
+        Layer::dock_top(3, panel("Header", |ui| { /* ... */ })),
+    ]
+}
+```
+
+**Positioning options:**
+- **Fill** - Use all available space (typical for main UI)
+- **Centered(w, h)** - Fixed size, centered on screen (modals)
+- **Rect(rect)** - Explicit position (tooltips, context menus)
+- **Anchor(anchor, w, h)** - Position relative to screen edge
+- **Dock** - Reserve space at screen edge (headers, footers)
+
 ## Hierarchical ID System
 
 Each layer must have an ID. The ID is **hierarchically composed** from context:
@@ -42,26 +63,7 @@ Each layer must have an ID. The ID is **hierarchically composed** from context:
 
 ### ID Requirements
 
-Each layer declares a **single segment** (no dots):
-
-- **✅ Mandatory** - Every layer must call `.id()`
-- **✅ Lowercase** - Letters, numbers, `_`, `-` only
-- **❌ No dots** - Runtime composes the full path
-- **❌ No `_` prefix** - Reserved for auto-generated widget IDs
-- **❌ No `system`** - Reserved for runtime layers
-
-```rust
-// ✅ Valid segments
-.id("main")
-.id("delete_modal")
-.id("environment-selector")
-
-// ❌ Invalid segments
-.id("apps.migration.main")  // Contains dots
-.id("DeleteModal")           // Contains uppercase
-.id("_internal")             // Underscore prefix reserved
-.id("system")                // Reserved keyword
-```
+Each layer must provide a single segment ID (no dots). See [App ID Requirements](../01-fundamentals/app-and-context.md#app-id-requirements) for validation rules - layer IDs follow the same pattern.
 
 ### Display Names
 

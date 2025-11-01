@@ -190,4 +190,4 @@ No hue shifts or weird interpolation - OKLCH guarantees perceptually uniform fad
 
 ---
 
-**Next:** Learn about [Background Apps](background-apps.md) or explore [Pub/Sub](../03-state-management/pubsub.md).
+**Next:** Learn about [Background Apps](background-apps.md) or explore [Events & Queues](../07-advanced/events-and-queues.md).

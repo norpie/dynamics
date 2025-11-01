@@ -1,6 +1,6 @@
 # Background Apps
 
-**Prerequisites:** [App & Context API](../01-fundamentals/app-and-context.md), [Pub/Sub](../03-state-management/pubsub.md)
+**Prerequisites:** [App & Context API](../01-fundamentals/app-and-context.md), [Events & Queues](../07-advanced/events-and-queues.md)
 
 ## Overview
 
@@ -51,7 +51,7 @@ impl App for OperationQueue {
 - Apps that don't need background processing
 
 **See Also:**
-- [Pub/Sub](../03-state-management/pubsub.md) - Background message handling
+- [Events & Queues](../07-advanced/events-and-queues.md) - Background message handling
 - [Lifecycle](../01-fundamentals/lifecycle.md) - Lifecycle hooks and states
 - [Background Work](../07-advanced/background-work.md) - Background task patterns
 

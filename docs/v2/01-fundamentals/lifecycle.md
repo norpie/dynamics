@@ -46,8 +46,7 @@ enum Lifecycle {
 
 ## When update() Is Called
 
-**Foreground app:** User input, pub/sub, timers, async completion
-**Background app:** Pub/sub, timers, async completion (no user input)
+See [Event-Driven Rendering](event-loop.md#foreground-vs-background-apps) for comprehensive list of event sources and foreground/background behavior.
 
 ## Runtime Navigation Behavior
 
@@ -209,7 +208,7 @@ impl App for ErrorScreen {
 
 **See Also:**
 - [Background Apps](../06-system-features/background-apps.md) - Background processing details
-- [Pub/Sub](../03-state-management/pubsub.md) - Background message handling
+- [Events & Queues](../07-advanced/events-and-queues.md) - Background message handling
 
 ---
 

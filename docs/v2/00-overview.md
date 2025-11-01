@@ -60,9 +60,7 @@ Declarative UI construction:
 
 ### 03. State Management
 Managing app state and async operations:
-- [Resource Pattern](03-state-management/resource-pattern.md) - Async state, progress tracking
-- [Error Recovery](03-state-management/error-recovery.md) - Error types, retry strategies
-- [Pub/Sub](03-state-management/pubsub.md) - Event broadcasting
+- [Resource Pattern & Error Handling](03-state-management/resource-pattern.md) - Async state, progress tracking, error recovery
 - [Routing](03-state-management/routing.md) - Multi-view apps
 
 ### 04. User Interaction
@@ -91,7 +89,6 @@ Advanced patterns and systems:
 - [Events & Queues](07-advanced/events-and-queues.md) - Event broadcast, work queues
 - [Background Work](07-advanced/background-work.md) - Background tasks, invalidation
 - [Navigable State](07-advanced/navigable-state.md) - Unified 2D navigation
-- [Containers & Alignment](07-advanced/containers-alignment.md) - Container features, alignment
 
 ### 08. Reference
 Reference materials:

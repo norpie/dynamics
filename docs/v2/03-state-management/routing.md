@@ -54,4 +54,4 @@ impl App for DeadlinesApp {
 
 ---
 
-**Next:** Learn about [Pub/Sub](pubsub.md) for cross-app communication.
+**Next:** Learn about [Events & Queues](../07-advanced/events-and-queues.md) for cross-app communication.

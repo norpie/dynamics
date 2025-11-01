@@ -923,7 +923,7 @@ src/
 - [Layers](../02-building-ui/layers.md) - Layer system (plugins inject layers)
 - [Focus System](../04-user-interaction/focus.md) - Focus management (plugins can request focus)
 - [Keybinds](../04-user-interaction/keybinds.md) - Keybind system (plugins declare keybinds)
-- [Pub/Sub](../03-state-management/pubsub.md) - Cross-plugin communication
+- [Events & Queues](../07-advanced/events-and-queues.md) - Cross-plugin communication
 
 ---
 

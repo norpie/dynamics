@@ -18,6 +18,38 @@ V2 uses **event-driven rendering** - no continuous rendering loop!
 - **Battery friendly** - No wasted cycles
 - **Responsive** - Immediate response to user input
 
+## Event Sources
+
+All these wake the runtime from sleep and trigger `update()`:
+
+- **Keyboard/mouse events** - OS wakes us (~1-3ms latency)
+- **Resource completion** - Async task finishes
+- **Pub/sub messages** - From other apps
+- **Timers** - Tokio timers
+- **Explicit invalidation** - `ctx.invalidate()` or `invalidator.invalidate()`
+
+**Total keypress latency: ~7-11ms** (competitive with native GUIs)
+
+## Foreground vs Background Apps
+
+Which events trigger `update()` depends on app state:
+
+**Foreground app (visible):**
+- User input (keyboard, mouse)
+- Pub/sub messages
+- Timers
+- Async completion
+- Explicit invalidation
+
+**Background app (not visible):**
+- Pub/sub messages
+- Timers
+- Async completion
+- Explicit invalidation
+- **No user input** (keyboard/mouse only go to foreground app)
+
+See [Lifecycle](lifecycle.md) for details on foreground/background transitions.
+
 ## Explicit Invalidation
 
 Apps can request re-render via `ctx.invalidate()`:
@@ -38,7 +70,7 @@ async fn handle_save(&mut self, ctx: &mut Context) {
 
 **See Also:**
 - [Resource Pattern](../03-state-management/resource-pattern.md) - Auto-invalidation on async completion
-- [Pub/Sub](../03-state-management/pubsub.md) - Auto-invalidation on message receipt
+- [Events & Queues](../07-advanced/events-and-queues.md) - Auto-invalidation on message receipt
 - [Background Work](../07-advanced/background-work.md) - Invalidation patterns
 
 ---

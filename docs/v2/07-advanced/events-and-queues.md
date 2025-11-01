@@ -2,7 +2,6 @@
 
 **Prerequisites:**
 - [App and Context](../01-fundamentals/app-and-context.md) - Understanding the Context API
-- [Pub/Sub](../03-state-management/pubsub.md) - Basic pub/sub concepts
 
 V2 provides **two parallel communication systems** for inter-app communication:
 
@@ -437,6 +436,5 @@ impl App for AnyApp {
 
 ## See Also
 
-- [Pub/Sub](../03-state-management/pubsub.md) - Basic pub/sub concepts
 - [App and Context](../01-fundamentals/app-and-context.md) - Context API reference
 - [Background Work](../03-state-management/background-work.md) - Async task patterns

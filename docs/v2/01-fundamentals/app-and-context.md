@@ -130,7 +130,7 @@ ctx.with_segment("environment", |ctx| {
 **See Also:**
 - [Multi-View Routing](../03-state-management/routing.md) - Router usage
 - [Resource Pattern](../03-state-management/resource-pattern.md) - Async task management
-- [Pub/Sub](../03-state-management/pubsub.md) - Message passing
+- [Events & Queues](../07-advanced/events-and-queues.md) - Message passing and work queues
 - [Elements](elements.md) - UI builder usage
 - [Plugin System](../06-system-features/plugin-system.md) - Plugins use extended PluginContext
 
