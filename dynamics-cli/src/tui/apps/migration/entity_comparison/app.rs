@@ -917,6 +917,28 @@ impl App for EntityComparisonApp {
             Style::default().fg(theme.text_secondary),
         ));
 
+        // Show loaded example if examples are enabled
+        if state.examples.enabled {
+            if let Some(active_pair) = state.examples.get_active_pair() {
+                // Find the index of the active pair
+                let active_index = state.examples.pairs.iter().position(|p| p.id == active_pair.id).unwrap_or(0);
+                let total_count = state.examples.pairs.len();
+
+                spans.push(Span::styled(" | ", Style::default().fg(theme.border_primary)));
+
+                let example_text = if let Some(label) = &active_pair.label {
+                    format!("Example: {} ({}/{})", label, active_index + 1, total_count)
+                } else {
+                    format!("Example: {}/{}", active_index + 1, total_count)
+                };
+
+                spans.push(Span::styled(
+                    example_text,
+                    Style::default().fg(theme.accent_primary),
+                ));
+            }
+        }
+
         Some(Line::from(spans))
     }
 }
