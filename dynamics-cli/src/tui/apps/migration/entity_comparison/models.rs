@@ -213,6 +213,63 @@ impl MatchMode {
     }
 }
 
+/// Type filter mode for filtering by field types
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TypeFilterMode {
+    #[default]
+    Unified,      // One type filter for both sides
+    Independent,  // Two type filters, each for one side
+}
+
+impl TypeFilterMode {
+    pub fn toggle(&self) -> Self {
+        match self {
+            TypeFilterMode::Unified => TypeFilterMode::Independent,
+            TypeFilterMode::Independent => TypeFilterMode::Unified,
+        }
+    }
+}
+
+/// Helper functions for type filtering
+pub fn cycle_type_filter(
+    current: &Option<crate::api::metadata::models::FieldType>,
+    available_types: &[crate::api::metadata::models::FieldType],
+) -> Option<crate::api::metadata::models::FieldType> {
+    if available_types.is_empty() {
+        return None;
+    }
+
+    match current {
+        None => {
+            // From "All" -> go to first type
+            Some(available_types[0].clone())
+        }
+        Some(current_type) => {
+            // Find current position and move to next
+            if let Some(pos) = available_types.iter().position(|t| t == current_type) {
+                if pos + 1 < available_types.len() {
+                    // Move to next type
+                    Some(available_types[pos + 1].clone())
+                } else {
+                    // Wrap around to "All"
+                    None
+                }
+            } else {
+                // Current type not in list, go to first
+                Some(available_types[0].clone())
+            }
+        }
+    }
+}
+
+/// Format type filter display
+pub fn format_type_filter(filter: &Option<crate::api::metadata::models::FieldType>) -> String {
+    match filter {
+        None => "All".to_string(),
+        Some(field_type) => format!("{:?}", field_type),
+    }
+}
+
 /// Example record pair for live data preview
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExamplePair {

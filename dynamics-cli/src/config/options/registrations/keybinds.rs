@@ -270,6 +270,30 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
     )?;
 
     registry.register(
+        OptionDefBuilder::new("keybind", "entity_comparison.cycle_source_type_filter")
+            .display_name("Cycle Source Type Filter")
+            .description("Cycle through source field types (All -> String -> Integer -> ...)")
+            .keybind_type(KeyCode::Char('t'))
+            .build()?
+    )?;
+
+    registry.register(
+        OptionDefBuilder::new("keybind", "entity_comparison.cycle_target_type_filter")
+            .display_name("Cycle Target Type Filter")
+            .description("Cycle through target field types (All -> String -> Integer -> ...)")
+            .keybind_type(KeyCode::Char('T'))
+            .build()?
+    )?;
+
+    registry.register(
+        OptionDefBuilder::new("keybind", "entity_comparison.toggle_type_filter_mode")
+            .display_name("Toggle Type Filter Mode")
+            .description("Toggle between Unified and Independent type filter modes")
+            .keybind_type(KeyCode::Char('Y'))
+            .build()?
+    )?;
+
+    registry.register(
         OptionDefBuilder::new("keybind", "entity_comparison.cycle_example")
             .display_name("Cycle Example Pairs")
             .description("Cycle through configured example data pairs")

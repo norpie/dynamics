@@ -227,6 +227,14 @@ pub struct State {
     pub(super) source_search: crate::tui::widgets::TextInputField,
     pub(super) target_search: crate::tui::widgets::TextInputField,
 
+    // Type filter state
+    pub(super) type_filter_mode: super::models::TypeFilterMode,
+    pub(super) unified_type_filter: Option<crate::api::metadata::models::FieldType>,
+    pub(super) source_type_filter: Option<crate::api::metadata::models::FieldType>,
+    pub(super) target_type_filter: Option<crate::api::metadata::models::FieldType>,
+    pub(super) available_source_types: Vec<crate::api::metadata::models::FieldType>,
+    pub(super) available_target_types: Vec<crate::api::metadata::models::FieldType>,
+
     // Modal state
     pub(super) show_back_confirmation: bool,
 
@@ -323,6 +331,12 @@ impl Default for State {
             unified_search: crate::tui::widgets::TextInputField::new(),
             source_search: crate::tui::widgets::TextInputField::new(),
             target_search: crate::tui::widgets::TextInputField::new(),
+            type_filter_mode: super::models::TypeFilterMode::default(),
+            unified_type_filter: None,
+            source_type_filter: None,
+            target_type_filter: None,
+            available_source_types: Vec::new(),
+            available_target_types: Vec::new(),
             show_back_confirmation: false,
             tree_cache: None,
             tree_cache_key: TreeCacheKey::default(),
@@ -541,6 +555,12 @@ impl App for EntityComparisonApp {
             unified_search: crate::tui::widgets::TextInputField::new(),
             source_search: crate::tui::widgets::TextInputField::new(),
             target_search: crate::tui::widgets::TextInputField::new(),
+            type_filter_mode: super::models::TypeFilterMode::default(),
+            unified_type_filter: None,
+            source_type_filter: None,
+            target_type_filter: None,
+            available_source_types: Vec::new(),
+            available_target_types: Vec::new(),
             show_back_confirmation: false,
             tree_cache: None,
             tree_cache_key: TreeCacheKey::default(),
@@ -675,6 +695,9 @@ impl App for EntityComparisonApp {
             // Mirror mode toggle
             Subscription::keyboard(config.get_keybind("entity_comparison.toggle_mirror"), "Toggle mirror mode", Msg::ToggleMirrorMode),
 
+            // Type filtering (conditional based on mode)
+            Subscription::keyboard(config.get_keybind("entity_comparison.toggle_type_filter_mode"), "Toggle type filter mode", Msg::ToggleTypeFilterMode),
+
             // Examples management
             Subscription::keyboard(config.get_keybind("entity_comparison.cycle_example"), "Cycle example pairs", Msg::CycleExamplePair),
             Subscription::keyboard(config.get_keybind("entity_comparison.open_examples"), "Open examples modal", Msg::OpenExamplesModal),
@@ -698,6 +721,20 @@ impl App for EntityComparisonApp {
             // Export
             Subscription::keyboard(config.get_keybind("entity_comparison.export"), "Export to Excel", Msg::ExportToExcel),
         ];
+
+        // Type filter cycling (conditional based on mode)
+        match state.type_filter_mode {
+            super::models::TypeFilterMode::Unified => {
+                // In unified mode, both t and T cycle the unified filter
+                subs.push(Subscription::keyboard(config.get_keybind("entity_comparison.cycle_source_type_filter"), "Cycle type filter", Msg::CycleSourceTypeFilter));
+                subs.push(Subscription::keyboard(config.get_keybind("entity_comparison.cycle_target_type_filter"), "Cycle type filter", Msg::CycleTargetTypeFilter));
+            }
+            super::models::TypeFilterMode::Independent => {
+                // In independent mode, t controls source, T controls target
+                subs.push(Subscription::keyboard(config.get_keybind("entity_comparison.cycle_source_type_filter"), "Cycle source type filter", Msg::CycleSourceTypeFilter));
+                subs.push(Subscription::keyboard(config.get_keybind("entity_comparison.cycle_target_type_filter"), "Cycle target type filter", Msg::CycleTargetTypeFilter));
+            }
+        }
 
         // Multi-selection shortcuts (active when no modal is open and search is not focused)
         // Only apply to source tree for now

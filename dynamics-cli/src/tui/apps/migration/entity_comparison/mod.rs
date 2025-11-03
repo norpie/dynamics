@@ -91,6 +91,11 @@ pub enum Msg {
     ClearSearch,               // Clear search (Esc when focused)
     SearchSelectFirstMatch,    // Enter in search box
 
+    // Type filter messages
+    ToggleTypeFilterMode,      // Toggle between Unified and Independent modes (Shift+T)
+    CycleSourceTypeFilter,     // Cycle through source types (t)
+    CycleTargetTypeFilter,     // Cycle through target types (T)
+
     // Export
     ExportToExcel,
 

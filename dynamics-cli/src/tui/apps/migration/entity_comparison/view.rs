@@ -89,6 +89,27 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
         );
     }
 
+    // Apply type filtering based on type filter mode
+    let (source_type_filter, target_type_filter) = match state.type_filter_mode {
+        super::models::TypeFilterMode::Unified => {
+            (&state.unified_type_filter, &state.unified_type_filter)
+        }
+        super::models::TypeFilterMode::Independent => {
+            (&state.source_type_filter, &state.target_type_filter)
+        }
+    };
+
+    let source_type_filter_active = source_type_filter.is_some();
+    let target_type_filter_active = target_type_filter.is_some();
+
+    if let Some(filter_type) = source_type_filter {
+        source_items = filter_tree_items_by_type(source_items, filter_type);
+    }
+
+    if let Some(filter_type) = target_type_filter {
+        target_items = filter_tree_items_by_type(target_items, filter_type);
+    }
+
     // Apply SourceMatches sorting to target side if enabled
     if sort_mode == super::models::SortMode::SourceMatches {
         target_items = sort_target_by_source_order(&source_items, target_items, state.sort_direction);
@@ -110,26 +131,26 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
         ActiveTab::Entities => (&mut state.source_entities_tree, &mut state.target_entities_tree),
     };
 
-    // Auto-expand containers with matching children when searching
+    // Auto-expand containers with matching children when searching or type filtering
     // This ensures filtered children are visible even if containers were collapsed
-    if source_search_active {
+    if source_search_active || source_type_filter_active {
         auto_expand_containers_with_children(&source_items, source_tree_state);
-        // CRITICAL: Reset scroll offset when search is active
+        // CRITICAL: Reset scroll offset when search or type filter is active
         source_tree_state.reset_scroll();
     }
 
-    if target_search_active {
+    if target_search_active || target_type_filter_active {
         auto_expand_containers_with_children(&target_items, target_tree_state);
-        // CRITICAL: Reset scroll offset when search is active
+        // CRITICAL: Reset scroll offset when search or type filter is active
         target_tree_state.reset_scroll();
     }
 
-    // Invalidate tree cache when search or hide mode filtering is active
+    // Invalidate tree cache when search, type filter, or hide mode filtering is active
     // This ensures visible_order reflects the actual filtered items
-    if source_search_active || hide_mode != super::models::HideMode::Off {
+    if source_search_active || source_type_filter_active || hide_mode != super::models::HideMode::Off {
         source_tree_state.invalidate_cache();
     }
-    if target_search_active || hide_mode != super::models::HideMode::Off {
+    if target_search_active || target_type_filter_active || hide_mode != super::models::HideMode::Off {
         target_tree_state.invalidate_cache();
     }
 
@@ -247,10 +268,41 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
         }
     };
 
-    // Main layout with search
-    // Note: Both modes use 3 lines (1 panel with input = 3 lines height)
+    // Create type filter UI based on mode
+    use super::models::{TypeFilterMode, format_type_filter};
+    let type_filter_ui = match state.type_filter_mode {
+        TypeFilterMode::Unified => {
+            let filter_text = format_type_filter(&state.unified_type_filter);
+            let title = format!("Type Filter (Unified): {}", filter_text);
+            Element::panel(Element::text(&title))
+                .title("Type Filter")
+                .build()
+        }
+        TypeFilterMode::Independent => {
+            let source_filter_text = format_type_filter(&state.source_type_filter);
+            let target_filter_text = format_type_filter(&state.target_type_filter);
+
+            let source_panel = Element::panel(Element::text(&format!("Type: {}", source_filter_text)))
+                .title("Source Type")
+                .build();
+
+            let target_panel = Element::panel(Element::text(&format!("Type: {}", target_filter_text)))
+                .title("Target Type")
+                .build();
+
+            row![
+                source_panel => Fill(1),
+                target_panel => Fill(1),
+            ]
+        }
+    };
+
+    // Main layout with search and type filter
+    // Note: Both search modes use 3 lines (1 panel with input = 3 lines height)
+    // Type filter uses 3 lines as well
     col![
         search_ui => Length(3),
+        type_filter_ui => Length(3),
         row![
             source_panel => Fill(1),
             target_panel => Fill(1),
@@ -1286,6 +1338,54 @@ fn filter_tree_items_by_search(
                     None
                 }
             }
+        }
+    }).collect()
+}
+
+/// Filter tree items by field type
+/// Only filters Field items, keeps all other item types (Containers, Views, Forms, etc.)
+fn filter_tree_items_by_type(
+    items: Vec<super::tree_items::ComparisonTreeItem>,
+    filter_type: &crate::api::metadata::models::FieldType,
+) -> Vec<super::tree_items::ComparisonTreeItem> {
+    use super::tree_items::ComparisonTreeItem;
+
+    items.into_iter().filter_map(|item| {
+        match &item {
+            ComparisonTreeItem::Field(node) => {
+                // Only keep fields matching the filter type
+                if &node.metadata.field_type == filter_type {
+                    Some(item)
+                } else {
+                    None
+                }
+            }
+            ComparisonTreeItem::Container(node) => {
+                // Recursively filter container children
+                let filtered_children = filter_tree_items_by_type(
+                    node.children.clone(),
+                    filter_type,
+                );
+
+                // Keep container if it has matching children
+                if !filtered_children.is_empty() {
+                    Some(ComparisonTreeItem::Container(super::tree_items::ContainerNode {
+                        id: node.id.clone(),
+                        label: node.label.clone(),
+                        children: filtered_children,
+                        container_match_type: node.container_match_type.clone(),
+                        match_info: node.match_info.clone(),
+                    }))
+                } else {
+                    None
+                }
+            }
+            // Keep all non-field items as-is (Views, Forms, Relationships, Entities)
+            // Type filtering only applies to Field items
+            ComparisonTreeItem::View(_) |
+            ComparisonTreeItem::Form(_) |
+            ComparisonTreeItem::Relationship(_) |
+            ComparisonTreeItem::Entity(_) => Some(item),
         }
     }).collect()
 }

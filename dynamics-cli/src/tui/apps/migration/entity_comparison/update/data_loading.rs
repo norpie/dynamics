@@ -5,6 +5,19 @@ use super::super::{Msg, FetchType, FetchedData, ExamplePair, fetch_with_cache, e
 use super::super::app::State;
 use super::super::matching::recompute_all_matches;
 
+/// Collect unique field types from a list of fields, sorted for consistent cycling
+fn collect_field_types(fields: &[crate::api::metadata::FieldMetadata]) -> Vec<crate::api::metadata::models::FieldType> {
+    let mut types: Vec<_> = fields.iter()
+        .map(|f| f.field_type.clone())
+        .collect();
+
+    // Deduplicate while preserving order
+    types.sort_by(|a, b| format!("{:?}", a).cmp(&format!("{:?}", b)));
+    types.dedup();
+
+    types
+}
+
 pub fn handle_parallel_data_loaded(
     state: &mut State,
     _task_idx: usize,
@@ -195,6 +208,10 @@ pub fn handle_parallel_data_loaded(
                     state.entity_matches = entity_matches;
                     state.source_entities = source_entities;
                     state.target_entities = target_entities;
+
+                    // Collect available field types for type filtering
+                    state.available_source_types = collect_field_types(&source.fields);
+                    state.available_target_types = collect_field_types(&target.fields);
 
                     // Cache both metadata objects asynchronously
                     let source_env = state.source_env.clone();

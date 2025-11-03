@@ -9,6 +9,7 @@ pub mod data_loading;
 pub mod import;
 pub mod ignore;
 pub mod search;
+pub mod type_filter;
 
 use crate::tui::command::Command;
 use super::Msg;
@@ -103,6 +104,11 @@ pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         Msg::TargetSearchBlur => search::handle_target_search_blur(state),
         Msg::ClearSearch => search::handle_clear_search(state),
         Msg::SearchSelectFirstMatch => search::handle_search_select_first_match(state),
+
+        // Type filtering
+        Msg::ToggleTypeFilterMode => type_filter::handle_toggle_type_filter_mode(state),
+        Msg::CycleSourceTypeFilter => type_filter::handle_cycle_source_type_filter(state),
+        Msg::CycleTargetTypeFilter => type_filter::handle_cycle_target_type_filter(state),
 
         // Export
         Msg::ExportToExcel => mappings::handle_export_to_excel(state),
