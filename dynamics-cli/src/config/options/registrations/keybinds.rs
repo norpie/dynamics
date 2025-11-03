@@ -257,7 +257,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
         OptionDefBuilder::new("keybind", "entity_comparison.toggle_technical_names")
             .display_name("Toggle Technical Names")
             .description("Switch between technical and display names")
-            .keybind_type(KeyCode::Char('t'))
+            .keybind_type(KeyCode::Char('n'))
             .build()?
     )?;
 
