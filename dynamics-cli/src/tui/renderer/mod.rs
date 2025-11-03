@@ -722,24 +722,43 @@ impl Renderer {
             let dropdown_inner = dropdown_block.inner(dropdown_area);
             frame.render_widget(dropdown_block, dropdown_area);
 
-            // Render options (simple iteration, no virtual scrolling needed for small lists)
+            // Calculate scroll offset to keep highlighted item visible
             let max_visible = dropdown_inner.height as usize;
-            let num_to_render = dropdown.options.len().min(max_visible);
+            let total_options = dropdown.options.len();
 
-            for idx in 0..num_to_render {
+            // Calculate scroll offset so that highlighted item is always visible
+            let scroll_offset = if total_options <= max_visible {
+                // All items fit - no scrolling needed
+                0
+            } else if dropdown.highlight < max_visible / 2 {
+                // Near top - show from beginning
+                0
+            } else if dropdown.highlight >= total_options - (max_visible / 2) {
+                // Near bottom - show last page
+                total_options.saturating_sub(max_visible)
+            } else {
+                // Middle - center the highlight
+                dropdown.highlight.saturating_sub(max_visible / 2)
+            };
+
+            let num_to_render = (total_options - scroll_offset).min(max_visible);
+
+            for display_idx in 0..num_to_render {
+                let actual_idx = scroll_offset + display_idx;
+
                 let line_area = Rect {
                     x: dropdown_inner.x,
-                    y: dropdown_inner.y + idx as u16,
+                    y: dropdown_inner.y + display_idx as u16,
                     width: dropdown_inner.width,
                     height: 1,
                 };
 
-                let option_text = &dropdown.options[idx];
+                let option_text = &dropdown.options[actual_idx];
 
                 // Determine styling for this option
-                let (prefix, fg_color, bg_color) = if idx == dropdown.highlight {
+                let (prefix, fg_color, bg_color) = if actual_idx == dropdown.highlight {
                     ("> ", theme.text_primary, theme.bg_surface)
-                } else if Some(idx) == dropdown.selected {
+                } else if Some(actual_idx) == dropdown.selected {
                     ("✓ ", theme.accent_success, theme.bg_base)
                 } else {
                     ("  ", theme.text_primary, theme.bg_base)
@@ -753,14 +772,14 @@ impl Renderer {
                     .style(Style::default().fg(fg_color).bg(bg_color));
                 frame.render_widget(option_widget, line_area);
 
-                // Register click handler for this option
+                // Register click handler for this option (use actual_idx, not display_idx)
                 match &dropdown.on_select {
                     DropdownCallback::Select(Some(select_fn)) => {
-                        registry.register_click(line_area, select_fn(idx));
+                        registry.register_click(line_area, select_fn(actual_idx));
                     }
                     DropdownCallback::SelectEvent(Some(event_fn)) => {
                         use crate::tui::widgets::SelectEvent;
-                        registry.register_click(line_area, event_fn(SelectEvent::Select(idx)));
+                        registry.register_click(line_area, event_fn(SelectEvent::Select(actual_idx)));
                     }
                     DropdownCallback::Autocomplete(Some(select_fn)) => {
                         registry.register_click(line_area, select_fn(option_text.clone()));
