@@ -67,7 +67,7 @@ impl AutocompleteState {
         self.highlight_index
     }
 
-    /// Get filtered options (top 15 by score)
+    /// Get filtered options (top 100 by score)
     pub fn filtered_options(&self) -> Vec<String> {
         self.filtered_options.iter().map(|(opt, _)| opt.clone()).collect()
     }
@@ -101,8 +101,8 @@ impl AutocompleteState {
         // Sort by score descending (higher score = better match)
         scored.sort_by(|a, b| b.1.cmp(&a.1));
 
-        // Take top 15 results
-        self.filtered_options = scored.into_iter().take(15).collect();
+        // Take top 100 results (with scrolling, we can handle larger lists)
+        self.filtered_options = scored.into_iter().take(100).collect();
 
         // Auto-open dropdown if we have results
         if !self.filtered_options.is_empty() {
