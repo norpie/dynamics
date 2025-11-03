@@ -37,7 +37,7 @@ pub enum Msg {
     ToggleSortDirection,  // Toggle sort direction (Ascending <-> Descending)
     ToggleTechnicalNames, // Toggle between technical (logical) and display names
     ToggleMirrorMode,     // Toggle mirror mode (Off -> Source -> Target -> Off)
-    MappingsLoaded(std::collections::HashMap<String, Vec<String>>, std::collections::HashMap<String, Vec<String>>, std::collections::HashMap<String, Vec<String>>, Option<String>, Vec<ExamplePair>, std::collections::HashSet<String>), // field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items
+    MappingsLoaded(std::collections::HashMap<String, Vec<String>>, std::collections::HashMap<String, Vec<String>>, std::collections::HashMap<String, Vec<String>>, Option<String>, Vec<ExamplePair>, std::collections::HashSet<String>, std::collections::HashSet<String>), // field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches
 
     // Examples modal messages
     OpenExamplesModal,
@@ -62,6 +62,14 @@ pub enum Msg {
     PrefixTargetInputEvent(crate::tui::widgets::TextInputEvent),
     AddPrefixMapping,
     DeletePrefixMapping,
+
+    // Negative matches modal messages
+    OpenNegativeMatchesModal,
+    CloseNegativeMatchesModal,
+    NegativeMatchesListNavigate(crossterm::event::KeyCode),
+    NegativeMatchesListSelect(usize),
+    DeleteNegativeMatch,
+    AddNegativeMatchFromTree,  // Context-aware 'd' key on prefix-matched field
 
     // Manual mappings modal messages
     OpenManualMappingsModal,

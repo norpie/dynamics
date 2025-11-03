@@ -136,6 +136,7 @@ pub fn compute_field_matches(
     examples: &super::ExamplesState,
     source_entity: &str,
     target_entity: &str,
+    negative_matches: &std::collections::HashSet<String>,
 ) -> HashMap<String, MatchInfo> {
     let mut matches = HashMap::new();
 
@@ -222,32 +223,35 @@ pub fn compute_field_matches(
         }
 
         // 4. Check prefix-transformed matches (1-to-N support)
-        let transformed_names = apply_prefix_transform(source_name, prefix_mappings);
-        let mut valid_transformed = Vec::new();
-        for transformed in transformed_names {
-            if let Some(target_field) = target_lookup.get(&transformed) {
-                let types_match = source_field.field_type == target_field.field_type;
-                valid_transformed.push((
-                    transformed.clone(),
-                    if types_match { MatchType::Prefix } else { MatchType::TypeMismatch },
-                    if types_match { 0.9 } else { 0.6 },
-                ));
+        // Skip if this field is in negative_matches (blocks prefix matching)
+        if !negative_matches.contains(source_name) {
+            let transformed_names = apply_prefix_transform(source_name, prefix_mappings);
+            let mut valid_transformed = Vec::new();
+            for transformed in transformed_names {
+                if let Some(target_field) = target_lookup.get(&transformed) {
+                    let types_match = source_field.field_type == target_field.field_type;
+                    valid_transformed.push((
+                        transformed.clone(),
+                        if types_match { MatchType::Prefix } else { MatchType::TypeMismatch },
+                        if types_match { 0.9 } else { 0.6 },
+                    ));
+                }
             }
-        }
 
-        if !valid_transformed.is_empty() {
-            let mut match_info = MatchInfo {
-                target_fields: valid_transformed.iter().map(|(name, _, _)| name.clone()).collect(),
-                match_types: HashMap::new(),
-                confidences: HashMap::new(),
-            };
-            for (target, match_type, confidence) in valid_transformed {
-                match_info.match_types.insert(target.clone(), match_type);
-                match_info.confidences.insert(target.clone(), confidence);
-                already_matched.insert(target);
+            if !valid_transformed.is_empty() {
+                let mut match_info = MatchInfo {
+                    target_fields: valid_transformed.iter().map(|(name, _, _)| name.clone()).collect(),
+                    match_types: HashMap::new(),
+                    confidences: HashMap::new(),
+                };
+                for (target, match_type, confidence) in valid_transformed {
+                    match_info.match_types.insert(target.clone(), match_type);
+                    match_info.confidences.insert(target.clone(), confidence);
+                    already_matched.insert(target);
+                }
+                matches.insert(source_name.clone(), match_info);
+                continue;
             }
-            matches.insert(source_name.clone(), match_info);
-            continue;
         }
 
         // 5. Check example-based matching (only for unmatched fields)
@@ -432,6 +436,7 @@ pub fn compute_hierarchical_field_matches(
     imported_mappings: &HashMap<String, Vec<String>>,
     prefix_mappings: &HashMap<String, Vec<String>>,
     tab_type: &str, // "forms" or "views"
+    negative_matches: &std::collections::HashSet<String>,
 ) -> HashMap<String, MatchInfo> {
     let mut matches = HashMap::new();
 
@@ -600,30 +605,33 @@ pub fn compute_hierarchical_field_matches(
             }
 
             // 4. Check prefix-transformed matches (1-to-N support)
-            let transformed_names = apply_prefix_transform(source_field_name, prefix_mappings);
-            let mut valid_transformed = Vec::new();
-            for transformed_name in transformed_names {
-                if let Some(target_field) = target_field_lookup.get(&transformed_name) {
-                    let types_match = source_field.field_type == target_field.field_type;
-                    valid_transformed.push((
-                        target_field.path.clone(),
-                        if types_match { MatchType::Prefix } else { MatchType::TypeMismatch },
-                        if types_match { 0.9 } else { 0.6 },
-                    ));
+            // Skip if this field path is in negative_matches (blocks prefix matching)
+            if !negative_matches.contains(&source_field.path) {
+                let transformed_names = apply_prefix_transform(source_field_name, prefix_mappings);
+                let mut valid_transformed = Vec::new();
+                for transformed_name in transformed_names {
+                    if let Some(target_field) = target_field_lookup.get(&transformed_name) {
+                        let types_match = source_field.field_type == target_field.field_type;
+                        valid_transformed.push((
+                            target_field.path.clone(),
+                            if types_match { MatchType::Prefix } else { MatchType::TypeMismatch },
+                            if types_match { 0.9 } else { 0.6 },
+                        ));
+                    }
                 }
-            }
 
-            if !valid_transformed.is_empty() {
-                let mut match_info = MatchInfo {
-                    target_fields: valid_transformed.iter().map(|(path, _, _)| path.clone()).collect(),
-                    match_types: HashMap::new(),
-                    confidences: HashMap::new(),
-                };
-                for (target_path, match_type, confidence) in valid_transformed {
-                    match_info.match_types.insert(target_path.clone(), match_type);
-                    match_info.confidences.insert(target_path, confidence);
+                if !valid_transformed.is_empty() {
+                    let mut match_info = MatchInfo {
+                        target_fields: valid_transformed.iter().map(|(path, _, _)| path.clone()).collect(),
+                        match_types: HashMap::new(),
+                        confidences: HashMap::new(),
+                    };
+                    for (target_path, match_type, confidence) in valid_transformed {
+                        match_info.match_types.insert(target_path.clone(), match_type);
+                        match_info.confidences.insert(target_path, confidence);
+                    }
+                    matches.insert(source_field.path.clone(), match_info);
                 }
-                matches.insert(source_field.path.clone(), match_info);
             }
         }
     }
@@ -743,6 +751,7 @@ pub fn recompute_all_matches(
     examples: &super::ExamplesState,
     source_entity: &str,
     target_entity: &str,
+    negative_matches: &std::collections::HashSet<String>,
 ) -> (
     HashMap<String, MatchInfo>,  // field_matches
     HashMap<String, MatchInfo>,  // relationship_matches
@@ -760,6 +769,7 @@ pub fn recompute_all_matches(
         examples,
         source_entity,
         target_entity,
+        negative_matches,
     );
 
     // Hierarchical matching for Forms tab
@@ -770,6 +780,7 @@ pub fn recompute_all_matches(
         imported_mappings,
         prefix_mappings,
         "forms",
+        negative_matches,
     );
     all_field_matches.extend(forms_matches);
 
@@ -781,6 +792,7 @@ pub fn recompute_all_matches(
         imported_mappings,
         prefix_mappings,
         "views",
+        negative_matches,
     );
     all_field_matches.extend(views_matches);
 

@@ -258,6 +258,7 @@ pub fn handle_csv_loaded(state: &mut State, csv_data: crate::csv_parser::CsvImpo
                 &state.examples,
                 &state.source_entity,
                 &state.target_entity,
+                &state.negative_matches,
             );
 
         state.field_matches = field_matches;
@@ -384,6 +385,7 @@ pub fn handle_mappings_loaded(state: &mut State, mappings: HashMap<String, Strin
                 &state.examples,
                 &state.source_entity,
                 &state.target_entity,
+                &state.negative_matches,
             );
 
         state.field_matches = field_matches;
@@ -439,6 +441,7 @@ pub fn handle_clear_imported(state: &mut State) -> Command<Msg> {
                 &state.examples,
                 &state.source_entity,
                 &state.target_entity,
+                &state.negative_matches,
             );
 
         state.field_matches = field_matches;

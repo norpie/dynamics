@@ -332,6 +332,31 @@ pub fn render_prefix_mappings_modal(state: &State) -> Element<Msg> {
         .build()
 }
 
+pub fn render_negative_matches_modal(state: &State) -> Element<Msg> {
+    let theme = &crate::global_runtime_config().theme;
+    use crate::tui::modals::{NegativeMatchesModal, NegativeMatchItem};
+
+    // Convert negative matches to sorted list items
+    let mut negative_items: Vec<NegativeMatchItem<Msg>> = state.negative_matches.iter().map(|source_field| {
+        NegativeMatchItem {
+            source_field: source_field.clone(),
+            on_delete: Msg::DeleteNegativeMatch,
+        }
+    }).collect();
+
+    // Sort alphabetically for consistent display
+    negative_items.sort_by(|a, b| a.source_field.cmp(&b.source_field));
+
+    NegativeMatchesModal::new()
+        .matches(negative_items)
+        .list_state(state.negative_matches_list_state.clone())
+        .on_list_navigate(Msg::NegativeMatchesListNavigate)
+        .on_list_select(Msg::NegativeMatchesListSelect)
+        .on_delete(Msg::DeleteNegativeMatch)
+        .on_close(Msg::CloseNegativeMatchesModal)
+        .build()
+}
+
 /// Filter out matched items from tree (hide unmatched, show matched)
 /// Exception: ExampleValue matches are treated as unmatched (shown)
 pub fn filter_matched_items(items: Vec<super::tree_items::ComparisonTreeItem>) -> Vec<super::tree_items::ComparisonTreeItem> {

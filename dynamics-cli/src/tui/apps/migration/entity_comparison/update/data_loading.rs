@@ -187,6 +187,7 @@ pub fn handle_parallel_data_loaded(
                             &state.examples,
                             &state.source_entity,
                             &state.target_entity,
+                &state.negative_matches,
                         );
 
                     state.field_matches = field_matches;
@@ -247,7 +248,8 @@ pub fn handle_mappings_loaded(
     imported_mappings: HashMap<String, Vec<String>>,
     import_source_file: Option<String>,
     example_pairs: Vec<ExamplePair>,
-    ignored_items: std::collections::HashSet<String>
+    ignored_items: std::collections::HashSet<String>,
+    negative_matches: std::collections::HashSet<String>,
 ) -> Command<Msg> {
     // Update state with loaded mappings and examples
     state.field_mappings = field_mappings;
@@ -256,6 +258,7 @@ pub fn handle_mappings_loaded(
     state.import_source_file = import_source_file;
     state.examples.pairs = example_pairs.clone();
     state.ignored_items = ignored_items;
+    state.negative_matches = negative_matches;
 
     // Set first pair as active if any exist
     if !state.examples.pairs.is_empty() {

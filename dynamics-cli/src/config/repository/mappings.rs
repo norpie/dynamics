@@ -372,3 +372,68 @@ pub async fn clear_ignored_items(
 
     Ok(())
 }
+
+/// Get all negative matches for a source/target entity pair
+/// Returns HashSet of source field names that should be blocked from prefix matching
+pub async fn get_negative_matches(
+    pool: &SqlitePool,
+    source_entity: &str,
+    target_entity: &str,
+) -> Result<std::collections::HashSet<String>> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT source_field FROM negative_matches
+         WHERE source_entity = ? AND target_entity = ?
+         ORDER BY source_field",
+    )
+    .bind(source_entity)
+    .bind(target_entity)
+    .fetch_all(pool)
+    .await
+    .context("Failed to get negative matches")?;
+
+    Ok(rows.into_iter().map(|(field,)| field).collect())
+}
+
+/// Add a negative match to block a specific source field from prefix matching
+pub async fn add_negative_match(
+    pool: &SqlitePool,
+    source_entity: &str,
+    target_entity: &str,
+    source_field: &str,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO negative_matches (source_entity, target_entity, source_field)
+         VALUES (?, ?, ?)
+         ON CONFLICT(source_entity, target_entity, source_field)
+         DO NOTHING",
+    )
+    .bind(source_entity)
+    .bind(target_entity)
+    .bind(source_field)
+    .execute(pool)
+    .await
+    .context("Failed to add negative match")?;
+
+    Ok(())
+}
+
+/// Delete a negative match, allowing the source field to be prefix-matched again
+pub async fn delete_negative_match(
+    pool: &SqlitePool,
+    source_entity: &str,
+    target_entity: &str,
+    source_field: &str,
+) -> Result<()> {
+    sqlx::query(
+        "DELETE FROM negative_matches
+         WHERE source_entity = ? AND target_entity = ? AND source_field = ?",
+    )
+    .bind(source_entity)
+    .bind(target_entity)
+    .bind(source_field)
+    .execute(pool)
+    .await
+    .context("Failed to delete negative match")?;
+
+    Ok(())
+}

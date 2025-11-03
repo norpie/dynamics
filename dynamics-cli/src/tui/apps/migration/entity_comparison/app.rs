@@ -199,6 +199,11 @@ pub struct State {
     pub(super) prefix_source_input: crate::tui::widgets::TextInputField,
     pub(super) prefix_target_input: crate::tui::widgets::TextInputField,
 
+    // Negative matches modal state
+    pub(super) show_negative_matches_modal: bool,
+    pub(super) negative_matches_list_state: crate::tui::widgets::ListState,
+    pub(super) negative_matches: HashSet<String>,
+
     // Manual mappings modal state
     pub(super) show_manual_mappings_modal: bool,
     pub(super) manual_mappings_list_state: crate::tui::widgets::ListState,
@@ -298,6 +303,9 @@ impl Default for State {
             prefix_mappings_list_state: crate::tui::widgets::ListState::new(),
             prefix_source_input: crate::tui::widgets::TextInputField::new(),
             prefix_target_input: crate::tui::widgets::TextInputField::new(),
+            show_negative_matches_modal: false,
+            negative_matches_list_state: crate::tui::widgets::ListState::new(),
+            negative_matches: HashSet::new(),
             show_manual_mappings_modal: false,
             manual_mappings_list_state: crate::tui::widgets::ListState::new(),
             show_import_modal: false,
@@ -513,6 +521,9 @@ impl App for EntityComparisonApp {
             prefix_mappings_list_state: crate::tui::widgets::ListState::new(),
             prefix_source_input: crate::tui::widgets::TextInputField::new(),
             prefix_target_input: crate::tui::widgets::TextInputField::new(),
+            show_negative_matches_modal: false,
+            negative_matches_list_state: crate::tui::widgets::ListState::new(),
+            negative_matches: HashSet::new(),
             show_manual_mappings_modal: false,
             manual_mappings_list_state: crate::tui::widgets::ListState::new(),
             show_import_modal: false,
@@ -570,10 +581,15 @@ impl App for EntityComparisonApp {
                         log::error!("Failed to load ignored items: {}", e);
                         std::collections::HashSet::new()
                     });
-                (field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items)
+                let negative_matches = config.get_negative_matches(&source_entity, &target_entity).await
+                    .unwrap_or_else(|e| {
+                        log::error!("Failed to load negative matches: {}", e);
+                        std::collections::HashSet::new()
+                    });
+                (field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches)
             }
-        }, |(field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items)| {
-            Msg::MappingsLoaded(field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items)
+        }, |(field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches)| {
+            Msg::MappingsLoaded(field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches)
         });
 
         (state, init_cmd)
@@ -597,6 +613,10 @@ impl App for EntityComparisonApp {
 
         if state.show_prefix_mappings_modal {
             view = view.with_app_modal(super::view::render_prefix_mappings_modal(state), LayerAlignment::Center);
+        }
+
+        if state.show_negative_matches_modal {
+            view = view.with_app_modal(super::view::render_negative_matches_modal(state), LayerAlignment::Center);
         }
 
         if state.show_manual_mappings_modal {
@@ -662,6 +682,9 @@ impl App for EntityComparisonApp {
             // Prefix mappings
             Subscription::keyboard(config.get_keybind("entity_comparison.open_prefix_mappings"), "Open prefix mappings modal", Msg::OpenPrefixMappingsModal),
 
+            // Negative matches
+            Subscription::keyboard(KeyCode::Char('D'), "Open negative matches modal", Msg::OpenNegativeMatchesModal),
+
             // Manual mappings
             Subscription::keyboard(config.get_keybind("entity_comparison.open_manual_mappings"), "View manual mappings modal", Msg::OpenManualMappingsModal),
 
@@ -681,6 +704,7 @@ impl App for EntityComparisonApp {
         let any_modal_open = state.show_back_confirmation
             || state.show_examples_modal
             || state.show_prefix_mappings_modal
+            || state.show_negative_matches_modal
             || state.show_manual_mappings_modal
             || state.show_import_modal
             || state.show_import_results_modal
@@ -774,6 +798,7 @@ impl App for EntityComparisonApp {
         let any_modal_open = state.show_back_confirmation
             || state.show_examples_modal
             || state.show_prefix_mappings_modal
+            || state.show_negative_matches_modal
             || state.show_manual_mappings_modal
             || state.show_import_modal
             || state.show_import_results_modal
@@ -810,6 +835,13 @@ impl App for EntityComparisonApp {
             subs.push(Subscription::keyboard(KeyCode::Char('d'), "Delete prefix mapping", Msg::DeletePrefixMapping));
             subs.push(Subscription::keyboard(KeyCode::Char('c'), "Close modal", Msg::ClosePrefixMappingsModal));
             subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::ClosePrefixMappingsModal));
+        }
+
+        // When showing negative matches modal, add hotkeys
+        if state.show_negative_matches_modal {
+            subs.push(Subscription::keyboard(KeyCode::Char('d'), "Delete negative match", Msg::DeleteNegativeMatch));
+            subs.push(Subscription::keyboard(KeyCode::Char('c'), "Close modal", Msg::CloseNegativeMatchesModal));
+            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseNegativeMatchesModal));
         }
 
         // When showing manual mappings modal, add hotkeys

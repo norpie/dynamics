@@ -168,6 +168,7 @@ pub fn handle_create_manual_mapping(state: &mut State) -> Command<Msg> {
                     &state.examples,
                     &state.source_entity,
                     &state.target_entity,
+                &state.negative_matches,
                 );
             state.field_matches = field_matches;
             state.relationship_matches = relationship_matches;
@@ -204,53 +205,85 @@ pub fn handle_delete_manual_mapping(state: &mut State) -> Command<Msg> {
             ActiveTab::Forms | ActiveTab::Views => source_id.clone(),
         };
 
-        // Try to remove from field_mappings and get the targets that were deleted
-        if let Some(deleted_targets) = state.field_mappings.remove(&source_key) {
-            let target_count = deleted_targets.len();
-
-            // Log what's being deleted
-            if target_count > 1 {
-                log::info!(
-                    "Deleting 1-to-N mapping: {} → {} ({} targets)",
-                    source_key,
-                    deleted_targets.join(", "),
-                    target_count
-                );
-            } else {
-                log::info!("Deleting mapping: {} → {}", source_key, deleted_targets.join(", "));
+        // CONTEXT-AWARE 'd' KEY LOGIC:
+        // Check if this field currently has a prefix match visible (including type mismatch from prefix)
+        let has_prefix_match = state.field_matches.get(&source_key).map_or(false, |match_info| {
+            use super::super::models::MatchType;
+            // Check if it's explicitly a Prefix match
+            if match_info.match_types.values().any(|mt| matches!(mt, MatchType::Prefix)) {
+                return true;
             }
+            // Check if it's a TypeMismatch that came from prefix transformation
+            // (as opposed to exact name match with type mismatch)
+            if match_info.match_types.values().any(|mt| matches!(mt, MatchType::TypeMismatch)) {
+                // If the target name is different from source name, it must be from prefix transformation
+                return match_info.target_fields.iter().any(|target| target != &source_key);
+            }
+            false
+        });
 
-            // Recompute matches
-            if let (Resource::Success(source), Resource::Success(target)) =
-                (&state.source_metadata, &state.target_metadata)
-            {
-                let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
-                    recompute_all_matches(
-                        source,
-                        target,
-                        &state.field_mappings,
-                        &state.imported_mappings,
-                        &state.prefix_mappings,
-                        &state.examples,
-                        &state.source_entity,
-                        &state.target_entity,
+        // Check if this field has a manual mapping
+        let has_manual_mapping = state.field_mappings.contains_key(&source_key);
+
+        log::debug!("DeleteManualMapping: field='{}', has_manual={}, has_prefix={}", source_key, has_manual_mapping, has_prefix_match);
+
+        // Priority: If has manual mapping, delete it. Otherwise, if has prefix match, add negative match.
+        if has_manual_mapping {
+            // Try to remove from field_mappings and get the targets that were deleted
+            if let Some(deleted_targets) = state.field_mappings.remove(&source_key) {
+                let target_count = deleted_targets.len();
+
+                // Log what's being deleted
+                if target_count > 1 {
+                    log::info!(
+                        "Deleting 1-to-N mapping: {} → {} ({} targets)",
+                        source_key,
+                        deleted_targets.join(", "),
+                        target_count
                     );
-                state.field_matches = field_matches;
-                state.relationship_matches = relationship_matches;
-                state.entity_matches = entity_matches;
-                state.source_entities = source_entities;
-                state.target_entities = target_entities;
-            }
-
-            // Delete from database (deletes all targets for this source)
-            let source_entity = state.source_entity.clone();
-            let target_entity = state.target_entity.clone();
-            tokio::spawn(async move {
-                let config = crate::global_config();
-                if let Err(e) = config.delete_field_mapping(&source_entity, &target_entity, &source_key).await {
-                    log::error!("Failed to delete field mapping: {}", e);
+                } else {
+                    log::info!("Deleting mapping: {} → {}", source_key, deleted_targets.join(", "));
                 }
-            });
+
+                // Recompute matches
+                if let (Resource::Success(source), Resource::Success(target)) =
+                    (&state.source_metadata, &state.target_metadata)
+                {
+                    let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
+                        recompute_all_matches(
+                            source,
+                            target,
+                            &state.field_mappings,
+                            &state.imported_mappings,
+                            &state.prefix_mappings,
+                            &state.examples,
+                            &state.source_entity,
+                            &state.target_entity,
+                            &state.negative_matches,
+                        );
+                    state.field_matches = field_matches;
+                    state.relationship_matches = relationship_matches;
+                    state.entity_matches = entity_matches;
+                    state.source_entities = source_entities;
+                    state.target_entities = target_entities;
+                }
+
+                // Delete from database (deletes all targets for this source)
+                let source_entity = state.source_entity.clone();
+                let target_entity = state.target_entity.clone();
+                let source_key_for_db = source_key.clone();
+                tokio::spawn(async move {
+                    let config = crate::global_config();
+                    if let Err(e) = config.delete_field_mapping(&source_entity, &target_entity, &source_key_for_db).await {
+                        log::error!("Failed to delete field mapping: {}", e);
+                    }
+                });
+            }
+        } else if has_prefix_match {
+            // No manual mapping, but has prefix match → add negative match to block it
+            return super::negative_matches::handle_add_negative_match_from_tree(state);
+        } else {
+            log::warn!("Cannot delete mapping: field '{}' has neither manual mapping nor prefix match", source_key);
         }
     }
     Command::None

@@ -3,6 +3,7 @@ pub mod tree_events;
 pub mod mappings;
 pub mod examples;
 pub mod prefix_mappings;
+pub mod negative_matches;
 pub mod manual_mappings;
 pub mod data_loading;
 pub mod import;
@@ -39,7 +40,7 @@ pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
 
         // Data loading
         Msg::ParallelDataLoaded(idx, result) => data_loading::handle_parallel_data_loaded(state, idx, result),
-        Msg::MappingsLoaded(fm, pm, im, isf, ep, ig) => data_loading::handle_mappings_loaded(state, fm, pm, im, isf, ep, ig),
+        Msg::MappingsLoaded(fm, pm, im, isf, ep, ig, nm) => data_loading::handle_mappings_loaded(state, fm, pm, im, isf, ep, ig, nm),
         Msg::Refresh => data_loading::handle_refresh(state),
 
         // Mappings
@@ -74,6 +75,14 @@ pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         Msg::PrefixTargetInputEvent(event) => prefix_mappings::handle_target_input_event(state, event),
         Msg::AddPrefixMapping => prefix_mappings::handle_add_prefix_mapping(state),
         Msg::DeletePrefixMapping => prefix_mappings::handle_delete_prefix_mapping(state),
+
+        // Negative matches
+        Msg::OpenNegativeMatchesModal => negative_matches::handle_open_modal(state),
+        Msg::CloseNegativeMatchesModal => negative_matches::handle_close_modal(state),
+        Msg::NegativeMatchesListNavigate(key) => negative_matches::handle_list_navigate(state, key),
+        Msg::NegativeMatchesListSelect(idx) => negative_matches::handle_list_select(state, idx),
+        Msg::DeleteNegativeMatch => negative_matches::handle_delete_negative_match(state),
+        Msg::AddNegativeMatchFromTree => negative_matches::handle_add_negative_match_from_tree(state),
 
         // Manual mappings
         Msg::OpenManualMappingsModal => manual_mappings::handle_open_modal(state),

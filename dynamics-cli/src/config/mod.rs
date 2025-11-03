@@ -399,6 +399,18 @@ impl Config {
         repository::mappings::clear_ignored_items(&self.pool, source_entity, target_entity).await
     }
 
+    pub async fn get_negative_matches(&self, source_entity: &str, target_entity: &str) -> Result<std::collections::HashSet<String>> {
+        repository::mappings::get_negative_matches(&self.pool, source_entity, target_entity).await
+    }
+
+    pub async fn add_negative_match(&self, source_entity: &str, target_entity: &str, source_field: &str) -> Result<()> {
+        repository::mappings::add_negative_match(&self.pool, source_entity, target_entity, source_field).await
+    }
+
+    pub async fn delete_negative_match(&self, source_entity: &str, target_entity: &str, source_field: &str) -> Result<()> {
+        repository::mappings::delete_negative_match(&self.pool, source_entity, target_entity, source_field).await
+    }
+
     /// Get example pairs for entity comparison
     pub async fn get_example_pairs(&self, source_entity: &str, target_entity: &str) -> Result<Vec<crate::tui::apps::migration::entity_comparison::ExamplePair>> {
         repository::examples::get_example_pairs(&self.pool, source_entity, target_entity).await
