@@ -214,7 +214,7 @@ pub fn compute_field_matches(
                 source_name.clone(),
                 MatchInfo::single(
                     source_name.clone(),
-                    if types_match { MatchType::Exact } else { MatchType::TypeMismatch },
+                    if types_match { MatchType::Exact } else { MatchType::TypeMismatch(Box::new(MatchType::Exact)) },
                     if types_match { 1.0 } else { 0.7 },
                 ),
             );
@@ -232,7 +232,7 @@ pub fn compute_field_matches(
                     let types_match = source_field.field_type == target_field.field_type;
                     valid_transformed.push((
                         transformed.clone(),
-                        if types_match { MatchType::Prefix } else { MatchType::TypeMismatch },
+                        if types_match { MatchType::Prefix } else { MatchType::TypeMismatch(Box::new(MatchType::Prefix)) },
                         if types_match { 0.9 } else { 0.6 },
                     ));
                 }
@@ -343,7 +343,7 @@ pub fn compute_relationship_matches(
                 source_name.clone(),
                 MatchInfo::single(
                     source_name.clone(),
-                    if types_match { MatchType::Exact } else { MatchType::TypeMismatch },
+                    if types_match { MatchType::Exact } else { MatchType::TypeMismatch(Box::new(MatchType::Exact)) },
                     if types_match { 1.0 } else { 0.7 },
                 ),
             );
@@ -360,7 +360,7 @@ pub fn compute_relationship_matches(
                     && entities_match(&source_rel.related_entity, &target_rel.related_entity, entity_matches);
                 valid_transformed.push((
                     transformed.clone(),
-                    if types_match { MatchType::Prefix } else { MatchType::TypeMismatch },
+                    if types_match { MatchType::Prefix } else { MatchType::TypeMismatch(Box::new(MatchType::Prefix)) },
                     if types_match { 0.9 } else { 0.6 },
                 ));
             }
@@ -597,7 +597,7 @@ pub fn compute_hierarchical_field_matches(
                     source_field.path.clone(),
                     MatchInfo::single(
                         target_field.path.clone(),
-                        if types_match { MatchType::Exact } else { MatchType::TypeMismatch },
+                        if types_match { MatchType::Exact } else { MatchType::TypeMismatch(Box::new(MatchType::Exact)) },
                         if types_match { 1.0 } else { 0.7 },
                     ),
                 );
@@ -614,7 +614,7 @@ pub fn compute_hierarchical_field_matches(
                         let types_match = source_field.field_type == target_field.field_type;
                         valid_transformed.push((
                             target_field.path.clone(),
-                            if types_match { MatchType::Prefix } else { MatchType::TypeMismatch },
+                            if types_match { MatchType::Prefix } else { MatchType::TypeMismatch(Box::new(MatchType::Prefix)) },
                             if types_match { 0.9 } else { 0.6 },
                         ));
                     }

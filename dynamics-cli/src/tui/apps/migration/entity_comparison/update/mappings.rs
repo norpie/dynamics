@@ -214,12 +214,9 @@ pub fn handle_delete_manual_mapping(state: &mut State) -> Command<Msg> {
                 return true;
             }
             // Check if it's a TypeMismatch that came from prefix transformation
-            // (as opposed to exact name match with type mismatch)
-            if match_info.match_types.values().any(|mt| matches!(mt, MatchType::TypeMismatch)) {
-                // If the target name is different from source name, it must be from prefix transformation
-                return match_info.target_fields.iter().any(|target| target != &source_key);
-            }
-            false
+            match_info.match_types.values().any(|mt| {
+                matches!(mt, MatchType::TypeMismatch(inner) if matches!(**inner, MatchType::Prefix))
+            })
         });
 
         // Check if this field has a manual mapping

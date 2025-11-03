@@ -316,11 +316,11 @@ impl MatchInfo {
 }
 
 /// Type of field match/mapping
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MatchType {
     Exact,        // Exact name match, types match
     Prefix,       // Prefix name match, types match
-    TypeMismatch, // Name match but types differ
+    TypeMismatch(Box<MatchType>), // Name match but types differ - wraps underlying match type
     Manual,       // User-created mapping (overrides type checking)
     ExampleValue, // Value-based match from example data
     Import,       // Imported from C# mapping file
@@ -328,14 +328,19 @@ pub enum MatchType {
 
 impl MatchType {
     /// Get display label for match type
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> String {
         match self {
-            MatchType::Exact => "[Exact]",
-            MatchType::Prefix => "[Prefix]",
-            MatchType::TypeMismatch => "[Type Mismatch]",
-            MatchType::Manual => "[Manual]",
-            MatchType::ExampleValue => "[Example]",
-            MatchType::Import => "[Import]",
+            MatchType::Exact => "[Exact]".to_string(),
+            MatchType::Prefix => "[Prefix]".to_string(),
+            MatchType::TypeMismatch(inner) => {
+                // Display as "[Prefix - Type Mismatch]" or "[Exact - Type Mismatch]"
+                let inner_label_full = inner.label();
+                let inner_label = inner_label_full.trim_matches(|c| c == '[' || c == ']');
+                format!("[{} - Type Mismatch]", inner_label)
+            },
+            MatchType::Manual => "[Manual]".to_string(),
+            MatchType::ExampleValue => "[Example]".to_string(),
+            MatchType::Import => "[Import]".to_string(),
         }
     }
 }

@@ -107,7 +107,7 @@ pub fn create_source_entity_sheet(workbook: &mut Workbook, state: &State) -> Res
                         .and_then(|m| {
                             m.primary_target().and_then(|primary| m.match_types.get(primary))
                         })
-                        .map(|mt| mt == &MatchType::TypeMismatch)
+                        .map(|mt| matches!(mt, MatchType::TypeMismatch(_)))
                         .unwrap_or(false)
                 })
                 .collect();
@@ -292,7 +292,7 @@ pub fn create_target_entity_sheet(workbook: &mut Workbook, state: &State) -> Res
         for (source_field, match_info) in &state.field_matches {
             // For each target in this match_info, add a reverse mapping
             for target_field in &match_info.target_fields {
-                let match_type = match_info.match_types.get(target_field).copied().unwrap_or(MatchType::Manual);
+                let match_type = match_info.match_types.get(target_field).cloned().unwrap_or(MatchType::Manual);
                 let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
                 let single_match = MatchInfo::single(source_field.clone(), match_type, confidence);
 
@@ -347,7 +347,7 @@ pub fn create_target_entity_sheet(workbook: &mut Workbook, state: &State) -> Res
                     .and_then(|(_, m)| {
                         m.primary_target().and_then(|primary| m.match_types.get(primary))
                     })
-                    .map(|mt| mt == &MatchType::TypeMismatch)
+                    .map(|mt| matches!(mt, MatchType::TypeMismatch(_)))
                     .unwrap_or(false)
             }).collect();
 

@@ -222,7 +222,7 @@ impl TreeItem for FieldNode {
             // Get match type of primary target
             let primary_match_type = match_info.primary_target()
                 .and_then(|primary| match_info.match_types.get(primary))
-                .copied();
+                .cloned();
 
             match primary_match_type {
                 Some(MatchType::Exact) => theme.accent_success,        // Exact name + type match
@@ -230,7 +230,7 @@ impl TreeItem for FieldNode {
                 Some(MatchType::Manual) => theme.accent_success,       // User override
                 Some(MatchType::Import) => theme.accent_success,       // Imported from C# file
                 Some(MatchType::ExampleValue) => theme.palette_4,   // Example value match
-                Some(MatchType::TypeMismatch) => theme.accent_warning, // Name match but type differs
+                Some(MatchType::TypeMismatch(_)) => theme.accent_warning, // Name match but type differs
                 None => theme.accent_error,  // No match
             }
         } else {
@@ -366,7 +366,7 @@ impl TreeItem for RelationshipNode {
             // Get match type of primary target
             let primary_match_type = match_info.primary_target()
                 .and_then(|primary| match_info.match_types.get(primary))
-                .copied();
+                .cloned();
 
             match primary_match_type {
                 Some(MatchType::Exact) => theme.accent_success,        // Exact name + type match
@@ -374,7 +374,7 @@ impl TreeItem for RelationshipNode {
                 Some(MatchType::Manual) => theme.accent_success,       // User override
                 Some(MatchType::Import) => theme.accent_success,       // Imported from C# file
                 Some(MatchType::ExampleValue) => theme.palette_4,   // Example value match
-                Some(MatchType::TypeMismatch) => theme.accent_warning, // Name match but type differs
+                Some(MatchType::TypeMismatch(_)) => theme.accent_warning, // Name match but type differs
                 None => theme.accent_error,  // No match
             }
         } else {
@@ -625,7 +625,7 @@ impl TreeItem for EntityNode {
             // Get match type of primary target
             let primary_match_type = match_info.primary_target()
                 .and_then(|primary| match_info.match_types.get(primary))
-                .copied();
+                .cloned();
 
             match primary_match_type {
                 Some(MatchType::Exact) => theme.accent_success,        // Exact name match
@@ -633,7 +633,7 @@ impl TreeItem for EntityNode {
                 Some(MatchType::Manual) => theme.accent_success,       // User override
                 Some(MatchType::Import) => theme.accent_success,       // Imported from C# file
                 Some(MatchType::ExampleValue) => theme.palette_4,   // Example value match
-                Some(MatchType::TypeMismatch) => theme.accent_warning, // Should not happen for entities
+                Some(MatchType::TypeMismatch(_)) => theme.accent_warning, // Should not happen for entities
                 None => theme.accent_error,  // No match
             }
         } else {

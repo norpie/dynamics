@@ -55,16 +55,16 @@ pub fn create_source_entities_sheet(workbook: &mut Workbook, state: &State) -> R
                     // Get primary target's match type
                     let primary_match_type = match_info.primary_target()
                         .and_then(|primary| match_info.match_types.get(primary))
-                        .copied()
+                        .cloned()
                         .unwrap_or(MatchType::Manual);
 
-                    let (mapping_type, format) = match primary_match_type {
+                    let (mapping_type, format) = match &primary_match_type {
                         MatchType::Exact => ("Exact", &exact_match_format),
                         MatchType::Manual => ("Manual", &manual_mapping_format),
                         MatchType::Import => ("Import", &manual_mapping_format),
                         MatchType::Prefix => ("Prefix", &prefix_match_format),
                         MatchType::ExampleValue => ("Example", &example_value_format),
-                        MatchType::TypeMismatch => ("Type Mismatch", &unmapped_format),
+                        MatchType::TypeMismatch(_) => ("Type Mismatch", &unmapped_format),
                     };
 
                     let target_fields_str = match_info.target_fields.join(", ");
@@ -155,16 +155,16 @@ pub fn create_target_entities_sheet(workbook: &mut Workbook, state: &State) -> R
                     // Get primary target's match type
                     let primary_match_type = match_info.primary_target()
                         .and_then(|primary| match_info.match_types.get(primary))
-                        .copied()
+                        .cloned()
                         .unwrap_or(MatchType::Manual);
 
-                    let (mapping_type, format) = match primary_match_type {
+                    let (mapping_type, format) = match &primary_match_type {
                         MatchType::Exact => ("Exact", &exact_match_format),
                         MatchType::Manual => ("Manual", &manual_mapping_format),
                         MatchType::Import => ("Import", &manual_mapping_format),
                         MatchType::Prefix => ("Prefix", &prefix_match_format),
                         MatchType::ExampleValue => ("Example", &example_value_format),
-                        MatchType::TypeMismatch => ("Type Mismatch", &unmapped_format),
+                        MatchType::TypeMismatch(_) => ("Type Mismatch", &unmapped_format),
                     };
 
                     sheet.write_string_with_format(row, 0, &format!("    {}", entity_name), &indent_format)?;

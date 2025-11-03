@@ -93,8 +93,9 @@ pub fn handle_add_negative_match_from_tree(state: &mut State) -> Command<Msg> {
 
             // Also check if it's a TypeMismatch from prefix transformation
             let is_prefix_type_mismatch = if !is_prefix_match {
-                match_info.match_types.values().any(|mt| matches!(mt, MatchType::TypeMismatch))
-                    && match_info.target_fields.iter().any(|target| target != &source_field)
+                match_info.match_types.values().any(|mt| {
+                    matches!(mt, MatchType::TypeMismatch(inner) if matches!(**inner, MatchType::Prefix))
+                })
             } else {
                 false
             };

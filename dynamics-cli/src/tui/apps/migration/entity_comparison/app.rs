@@ -409,7 +409,7 @@ impl State {
         let reverse_field_matches: HashMap<String, MatchInfo> = self.field_matches.iter()
             .flat_map(|(source_field, match_info)| {
                 match_info.target_fields.iter().map(move |target_field| {
-                    let match_type = match_info.match_types.get(target_field).copied().unwrap_or(super::models::MatchType::Manual);
+                    let match_type = match_info.match_types.get(target_field).cloned().unwrap_or(super::models::MatchType::Manual);
                     let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
                     (target_field.clone(), MatchInfo::single(source_field.clone(), match_type, confidence))
                 })
@@ -419,7 +419,7 @@ impl State {
         let reverse_relationship_matches: HashMap<String, MatchInfo> = self.relationship_matches.iter()
             .flat_map(|(source_rel, match_info)| {
                 match_info.target_fields.iter().map(move |target_field| {
-                    let match_type = match_info.match_types.get(target_field).copied().unwrap_or(super::models::MatchType::Manual);
+                    let match_type = match_info.match_types.get(target_field).cloned().unwrap_or(super::models::MatchType::Manual);
                     let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
                     (target_field.clone(), MatchInfo::single(source_rel.clone(), match_type, confidence))
                 })
@@ -429,7 +429,7 @@ impl State {
         let reverse_entity_matches: HashMap<String, MatchInfo> = self.entity_matches.iter()
             .flat_map(|(source_entity, match_info)| {
                 match_info.target_fields.iter().map(move |target_field| {
-                    let match_type = match_info.match_types.get(target_field).copied().unwrap_or(super::models::MatchType::Manual);
+                    let match_type = match_info.match_types.get(target_field).cloned().unwrap_or(super::models::MatchType::Manual);
                     let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
                     (target_field.clone(), MatchInfo::single(source_entity.clone(), match_type, confidence))
                 })
