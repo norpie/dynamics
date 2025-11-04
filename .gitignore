@@ -11,6 +11,7 @@ dynamics-cli.log
 continue.md
 AGENTS.md
 *.xlsx
+*.csv
 config-bak.toml
 claude.*.md
 dynamics-cli/src/tui/apps/cleanup/todo.md
