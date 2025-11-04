@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use crate::api::metadata::FieldMetadata;
 use crate::tui::Resource;
 use super::super::super::app::State;
-use super::super::super::models::{MatchInfo, MatchType};
+use super::super::super::{MatchInfo, MatchType};
 use super::super::formatting::*;
 use super::super::helpers::write_field_row;
 

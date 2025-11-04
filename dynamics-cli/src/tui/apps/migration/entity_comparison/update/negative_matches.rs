@@ -2,7 +2,7 @@ use crate::tui::command::Command;
 use crate::tui::Resource;
 use super::super::Msg;
 use super::super::app::State;
-use super::super::matching::recompute_all_matches;
+use super::super::matching_adapter::recompute_all_matches;
 
 pub fn handle_open_modal(state: &mut State) -> Command<Msg> {
     state.show_negative_matches_modal = true;
@@ -86,7 +86,7 @@ pub fn handle_add_negative_match_from_tree(state: &mut State) -> Command<Msg> {
 
         // Verify this field has a prefix match before adding negative match
         if let Some(match_info) = state.field_matches.get(&source_field) {
-            use super::super::models::MatchType;
+            use super::super::MatchType;
 
             // Check if it's a prefix match (including type mismatch from prefix)
             let is_prefix_match = match_info.match_types.values().any(|mt| matches!(mt, MatchType::Prefix));

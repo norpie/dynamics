@@ -4,7 +4,7 @@ use crate::api::EntityMetadata;
 use crate::api::metadata::FieldType;
 use super::tree_items::{ComparisonTreeItem, FieldNode, RelationshipNode, ViewNode, FormNode, ContainerNode, ContainerMatchType, EntityNode};
 use super::ActiveTab;
-use super::models::MatchInfo;
+use super::MatchInfo;
 use std::collections::HashMap;
 
 /// Build tree items for the active tab from metadata with match information

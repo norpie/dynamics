@@ -18,7 +18,7 @@ use ratatui::{
 };
 use std::collections::{HashMap, HashSet};
 use super::{Msg, Side, ExamplesState, ExamplePair, ActiveTab, FetchType, fetch_with_cache, extract_relationships, extract_entities, MatchInfo};
-use super::matching::recompute_all_matches;
+use super::matching_adapter::recompute_all_matches;
 use super::tree_sync::{update_mirrored_selection, mirror_container_toggle};
 use super::view::{render_main_layout, render_back_confirmation_modal, render_examples_modal};
 use super::tree_items::ComparisonTreeItem;
@@ -421,13 +421,13 @@ impl State {
 
         // Build reverse matches for target side (supports N-to-1 by aggregating multiple sources per target)
         let reverse_field_matches: HashMap<String, MatchInfo> = {
-            let mut temp: HashMap<String, Vec<(String, super::models::MatchType, f64)>> = HashMap::new();
+            let mut temp: HashMap<String, Vec<(String, super::MatchType, f64)>> = HashMap::new();
 
             // Group all sources by their target
             for (source_field, match_info) in &self.field_matches {
                 for target_field in &match_info.target_fields {
                     let match_type = match_info.match_types.get(target_field).cloned()
-                        .unwrap_or(super::models::MatchType::Manual);
+                        .unwrap_or(super::MatchType::Manual);
                     let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
 
                     temp.entry(target_field.clone())
@@ -454,13 +454,13 @@ impl State {
         };
 
         let reverse_relationship_matches: HashMap<String, MatchInfo> = {
-            let mut temp: HashMap<String, Vec<(String, super::models::MatchType, f64)>> = HashMap::new();
+            let mut temp: HashMap<String, Vec<(String, super::MatchType, f64)>> = HashMap::new();
 
             // Group all sources by their target
             for (source_rel, match_info) in &self.relationship_matches {
                 for target_field in &match_info.target_fields {
                     let match_type = match_info.match_types.get(target_field).cloned()
-                        .unwrap_or(super::models::MatchType::Manual);
+                        .unwrap_or(super::MatchType::Manual);
                     let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
 
                     temp.entry(target_field.clone())
@@ -487,13 +487,13 @@ impl State {
         };
 
         let reverse_entity_matches: HashMap<String, MatchInfo> = {
-            let mut temp: HashMap<String, Vec<(String, super::models::MatchType, f64)>> = HashMap::new();
+            let mut temp: HashMap<String, Vec<(String, super::MatchType, f64)>> = HashMap::new();
 
             // Group all sources by their target
             for (source_entity, match_info) in &self.entity_matches {
                 for target_field in &match_info.target_fields {
                     let match_type = match_info.match_types.get(target_field).cloned()
-                        .unwrap_or(super::models::MatchType::Manual);
+                        .unwrap_or(super::MatchType::Manual);
                     let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
 
                     temp.entry(target_field.clone())

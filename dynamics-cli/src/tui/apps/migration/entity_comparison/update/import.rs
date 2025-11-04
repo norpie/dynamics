@@ -249,7 +249,7 @@ pub fn handle_csv_loaded(state: &mut State, csv_data: crate::csv_parser::CsvImpo
         &state.target_metadata,
     ) {
         let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
-            super::super::matching::recompute_all_matches(
+            super::super::matching_adapter::recompute_all_matches(
                 source_metadata,
                 target_metadata,
                 &state.field_mappings,
@@ -376,7 +376,7 @@ pub fn handle_mappings_loaded(state: &mut State, mappings: HashMap<String, Strin
         &state.target_metadata,
     ) {
         let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
-            super::super::matching::recompute_all_matches(
+            super::super::matching_adapter::recompute_all_matches(
                 source_metadata,
                 target_metadata,
                 &state.field_mappings,
@@ -432,7 +432,7 @@ pub fn handle_clear_imported(state: &mut State) -> Command<Msg> {
         &state.target_metadata,
     ) {
         let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
-            super::super::matching::recompute_all_matches(
+            super::super::matching_adapter::recompute_all_matches(
                 source_metadata,
                 target_metadata,
                 &state.field_mappings,

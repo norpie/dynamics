@@ -13,7 +13,7 @@ use super::app::State;
 use super::tree_builder::build_tree_items;
 use super::tree_items::ComparisonTreeItem;
 use std::collections::HashMap;
-use super::models::{MatchInfo, MatchType};
+use super::{MatchInfo, MatchType};
 
 /// Render the main side-by-side layout with source and target trees
 pub fn render_main_layout(state: &mut State) -> Element<Msg> {
@@ -411,7 +411,7 @@ pub fn render_negative_matches_modal(state: &State) -> Element<Msg> {
 /// Exception: ExampleValue matches are treated as unmatched (shown)
 pub fn filter_matched_items(items: Vec<super::tree_items::ComparisonTreeItem>) -> Vec<super::tree_items::ComparisonTreeItem> {
     use super::tree_items::ComparisonTreeItem;
-    use super::models::MatchType;
+    use super::MatchType;
 
     items.into_iter().filter_map(|item| {
         match item {
@@ -538,7 +538,7 @@ pub fn filter_ignored_items(items: Vec<super::tree_items::ComparisonTreeItem>) -
 /// Filter out both matched (except examples) AND ignored items
 pub fn filter_matched_and_ignored_items(items: Vec<super::tree_items::ComparisonTreeItem>) -> Vec<super::tree_items::ComparisonTreeItem> {
     use super::tree_items::ComparisonTreeItem;
-    use super::models::MatchType;
+    use super::MatchType;
 
     items.into_iter().filter_map(|item| {
         match item {
@@ -679,7 +679,7 @@ pub fn filter_all_items(items: Vec<super::tree_items::ComparisonTreeItem>) -> Ve
 /// Filter out example matches (hide example matches, show everything else)
 pub fn filter_example_matches(items: Vec<super::tree_items::ComparisonTreeItem>) -> Vec<super::tree_items::ComparisonTreeItem> {
     use super::tree_items::ComparisonTreeItem;
-    use super::models::MatchType;
+    use super::MatchType;
 
     items.into_iter().filter_map(|item| {
         match item {

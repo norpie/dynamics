@@ -2,7 +2,7 @@ use crate::tui::command::Command;
 use crate::tui::Resource;
 use super::super::{Msg, ActiveTab};
 use super::super::app::State;
-use super::super::matching::recompute_all_matches;
+use super::super::matching_adapter::recompute_all_matches;
 
 pub fn handle_create_manual_mapping(state: &mut State) -> Command<Msg> {
     // Get all selected items from source tree (multi-selection support)
@@ -208,7 +208,7 @@ pub fn handle_delete_manual_mapping(state: &mut State) -> Command<Msg> {
         // CONTEXT-AWARE 'd' KEY LOGIC:
         // Check if this field currently has a prefix match visible (including type mismatch from prefix)
         let has_prefix_match = state.field_matches.get(&source_key).map_or(false, |match_info| {
-            use super::super::models::MatchType;
+            use super::super::MatchType;
             // Check if it's explicitly a Prefix match
             if match_info.match_types.values().any(|mt| matches!(mt, MatchType::Prefix)) {
                 return true;

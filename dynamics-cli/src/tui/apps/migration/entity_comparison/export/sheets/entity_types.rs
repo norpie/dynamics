@@ -4,7 +4,7 @@ use anyhow::Result;
 use rust_xlsxwriter::*;
 
 use super::super::super::app::State;
-use super::super::super::models::{MatchInfo, MatchType};
+use super::super::super::{MatchInfo, MatchType};
 use super::super::formatting::*;
 
 pub fn create_source_entities_sheet(workbook: &mut Workbook, state: &State) -> Result<()> {

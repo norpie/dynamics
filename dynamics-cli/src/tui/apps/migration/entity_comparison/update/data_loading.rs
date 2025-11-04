@@ -3,7 +3,7 @@ use crate::tui::Resource;
 use std::collections::HashMap;
 use super::super::{Msg, FetchType, FetchedData, ExamplePair, fetch_with_cache, extract_relationships};
 use super::super::app::State;
-use super::super::matching::recompute_all_matches;
+use super::super::matching_adapter::recompute_all_matches;
 
 /// Collect unique field types from a list of fields, sorted for consistent cycling
 fn collect_field_types(fields: &[crate::api::metadata::FieldMetadata]) -> Vec<crate::api::metadata::models::FieldType> {

@@ -3,7 +3,7 @@
 use crate::tui::{Element, Theme, widgets::TreeItem};
 use crate::api::{FieldMetadata, RelationshipMetadata, ViewMetadata, FormMetadata};
 use ratatui::{style::Style, text::{Line, Span}, prelude::Stylize};
-use super::models::{MatchInfo, MatchType};
+use super::{MatchInfo, MatchType};
 
 /// Unified tree item that can represent any metadata type
 #[derive(Clone)]

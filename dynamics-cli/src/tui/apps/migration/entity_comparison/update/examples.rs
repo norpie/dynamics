@@ -151,7 +151,7 @@ pub fn handle_example_data_fetched(
 
 pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
     use crate::tui::Resource;
-    use super::super::matching::recompute_all_matches;
+    use super::super::matching_adapter::recompute_all_matches;
 
     // Cycle through pairs, or toggle off if at end
     if state.examples.pairs.is_empty() {

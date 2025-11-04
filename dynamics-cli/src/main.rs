@@ -16,6 +16,7 @@ mod cs_parser;
 mod csv_parser;
 // mod dynamics; // Disabled during config rewrite
 mod fql;
+mod services;
 mod tui;
 mod ui;
 mod update;

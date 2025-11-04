@@ -3,7 +3,7 @@ mod models;
 mod tree_items;
 mod fetch;
 mod tree_builder;
-mod matching;
+mod matching_adapter; // Adapter using service (Phase 1: excludes example support)
 mod view;
 mod tree_sync;
 mod update;
@@ -12,6 +12,8 @@ mod export;
 pub use app::{EntityComparisonApp, EntityComparisonParams, State as EntityComparisonState};
 pub use models::*;
 pub use fetch::{FetchType, fetch_with_cache, extract_relationships, extract_entities, fetch_example_pair_data};
+// Re-export matching types from service via adapter
+pub use matching_adapter::{MatchInfo, MatchType};
 
 // Internal message type for the app
 #[derive(Clone)]

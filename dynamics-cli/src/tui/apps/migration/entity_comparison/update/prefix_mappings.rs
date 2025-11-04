@@ -2,7 +2,7 @@ use crate::tui::command::Command;
 use crate::tui::Resource;
 use super::super::Msg;
 use super::super::app::State;
-use super::super::matching::recompute_all_matches;
+use super::super::matching_adapter::recompute_all_matches;
 
 pub fn handle_open_modal(state: &mut State) -> Command<Msg> {
     state.show_prefix_mappings_modal = true;
