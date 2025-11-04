@@ -419,36 +419,105 @@ impl State {
             vec![]
         };
 
-        // Build reverse matches for target side
-        let reverse_field_matches: HashMap<String, MatchInfo> = self.field_matches.iter()
-            .flat_map(|(source_field, match_info)| {
-                match_info.target_fields.iter().map(move |target_field| {
-                    let match_type = match_info.match_types.get(target_field).cloned().unwrap_or(super::models::MatchType::Manual);
-                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
-                    (target_field.clone(), MatchInfo::single(source_field.clone(), match_type, confidence))
-                })
-            })
-            .collect();
+        // Build reverse matches for target side (supports N-to-1 by aggregating multiple sources per target)
+        let reverse_field_matches: HashMap<String, MatchInfo> = {
+            let mut temp: HashMap<String, Vec<(String, super::models::MatchType, f64)>> = HashMap::new();
 
-        let reverse_relationship_matches: HashMap<String, MatchInfo> = self.relationship_matches.iter()
-            .flat_map(|(source_rel, match_info)| {
-                match_info.target_fields.iter().map(move |target_field| {
-                    let match_type = match_info.match_types.get(target_field).cloned().unwrap_or(super::models::MatchType::Manual);
+            // Group all sources by their target
+            for (source_field, match_info) in &self.field_matches {
+                for target_field in &match_info.target_fields {
+                    let match_type = match_info.match_types.get(target_field).cloned()
+                        .unwrap_or(super::models::MatchType::Manual);
                     let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
-                    (target_field.clone(), MatchInfo::single(source_rel.clone(), match_type, confidence))
-                })
-            })
-            .collect();
 
-        let reverse_entity_matches: HashMap<String, MatchInfo> = self.entity_matches.iter()
-            .flat_map(|(source_entity, match_info)| {
-                match_info.target_fields.iter().map(move |target_field| {
-                    let match_type = match_info.match_types.get(target_field).cloned().unwrap_or(super::models::MatchType::Manual);
-                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
-                    (target_field.clone(), MatchInfo::single(source_entity.clone(), match_type, confidence))
+                    temp.entry(target_field.clone())
+                        .or_insert_with(Vec::new)
+                        .push((source_field.clone(), match_type, confidence));
+                }
+            }
+
+            // Convert grouped data to MatchInfo with multiple sources
+            temp.into_iter()
+                .map(|(target, sources)| {
+                    let mut match_info = MatchInfo {
+                        target_fields: sources.iter().map(|(s, _, _)| s.clone()).collect(),
+                        match_types: HashMap::new(),
+                        confidences: HashMap::new(),
+                    };
+                    for (source, match_type, confidence) in sources {
+                        match_info.match_types.insert(source.clone(), match_type);
+                        match_info.confidences.insert(source, confidence);
+                    }
+                    (target, match_info)
                 })
-            })
-            .collect();
+                .collect()
+        };
+
+        let reverse_relationship_matches: HashMap<String, MatchInfo> = {
+            let mut temp: HashMap<String, Vec<(String, super::models::MatchType, f64)>> = HashMap::new();
+
+            // Group all sources by their target
+            for (source_rel, match_info) in &self.relationship_matches {
+                for target_field in &match_info.target_fields {
+                    let match_type = match_info.match_types.get(target_field).cloned()
+                        .unwrap_or(super::models::MatchType::Manual);
+                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
+
+                    temp.entry(target_field.clone())
+                        .or_insert_with(Vec::new)
+                        .push((source_rel.clone(), match_type, confidence));
+                }
+            }
+
+            // Convert grouped data to MatchInfo with multiple sources
+            temp.into_iter()
+                .map(|(target, sources)| {
+                    let mut match_info = MatchInfo {
+                        target_fields: sources.iter().map(|(s, _, _)| s.clone()).collect(),
+                        match_types: HashMap::new(),
+                        confidences: HashMap::new(),
+                    };
+                    for (source, match_type, confidence) in sources {
+                        match_info.match_types.insert(source.clone(), match_type);
+                        match_info.confidences.insert(source, confidence);
+                    }
+                    (target, match_info)
+                })
+                .collect()
+        };
+
+        let reverse_entity_matches: HashMap<String, MatchInfo> = {
+            let mut temp: HashMap<String, Vec<(String, super::models::MatchType, f64)>> = HashMap::new();
+
+            // Group all sources by their target
+            for (source_entity, match_info) in &self.entity_matches {
+                for target_field in &match_info.target_fields {
+                    let match_type = match_info.match_types.get(target_field).cloned()
+                        .unwrap_or(super::models::MatchType::Manual);
+                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
+
+                    temp.entry(target_field.clone())
+                        .or_insert_with(Vec::new)
+                        .push((source_entity.clone(), match_type, confidence));
+                }
+            }
+
+            // Convert grouped data to MatchInfo with multiple sources
+            temp.into_iter()
+                .map(|(target, sources)| {
+                    let mut match_info = MatchInfo {
+                        target_fields: sources.iter().map(|(s, _, _)| s.clone()).collect(),
+                        match_types: HashMap::new(),
+                        confidences: HashMap::new(),
+                    };
+                    for (source, match_type, confidence) in sources {
+                        match_info.match_types.insert(source.clone(), match_type);
+                        match_info.confidences.insert(source, confidence);
+                    }
+                    (target, match_info)
+                })
+                .collect()
+        };
 
         // Build target tree
         let target_items = if let Resource::Success(ref metadata) = self.target_metadata {
