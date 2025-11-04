@@ -104,6 +104,10 @@ pub struct State {
     import_browser: FileBrowserState,
     import_form: ImportComparisonForm,
     import_file_path: Option<PathBuf>,
+    // Batch export state
+    show_batch_export_modal: bool,
+    batch_export_browser: FileBrowserState,
+    batch_export_filename: TextInputField,
 }
 
 impl Default for State {
@@ -136,9 +140,12 @@ impl Default for State {
             export_comparison_name: None,
             show_import_browser: false,
             show_import_config: false,
-            import_browser: FileBrowserState::new(home_dir),
+            import_browser: FileBrowserState::new(home_dir.clone()),
             import_form: ImportComparisonForm::default(),
             import_file_path: None,
+            show_batch_export_modal: false,
+            batch_export_browser: FileBrowserState::new(home_dir.clone()),
+            batch_export_filename: TextInputField::default(),
         }
     }
 }
@@ -196,6 +203,14 @@ pub enum Msg {
     ImportFormSubmit,
     ImportFormCancel,
     ImportComplete(Result<i64, String>),
+    // Batch export messages
+    RequestBatchExport,
+    BatchExportBrowseNavigate(KeyCode),
+    BatchExportDirectoryEntered(PathBuf),
+    BatchExportFilenameEvent(TextInputEvent),
+    BatchExportConfirm,
+    BatchExportCancel,
+    BatchExportComplete(Result<(), String>),
     Back,
 }
 
@@ -327,6 +342,32 @@ impl State {
         self.show_import_config = false;
         self.import_file_path = None;
         self.import_form = ImportComparisonForm::default();
+    }
+
+    fn open_batch_export_modal(&mut self) {
+        // Initialize file browser to home directory
+        let home_dir = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+        self.batch_export_browser = FileBrowserState::new(home_dir);
+
+        // Set filter to show only directories
+        self.batch_export_browser.set_filter(|entry| entry.is_dir);
+
+        // Set default filename with timestamp
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let migration_name = self.migration_name.as_deref().unwrap_or("migration");
+        let default_filename = format!("{}_{}_mappings.xlsx", migration_name, timestamp);
+        self.batch_export_filename.set_value(default_filename);
+
+        self.show_batch_export_modal = true;
+    }
+
+    fn close_batch_export_modal(&mut self) {
+        self.show_batch_export_modal = false;
+        self.batch_export_filename = TextInputField::default();
     }
 }
 
@@ -976,6 +1017,88 @@ impl App for MigrationComparisonSelectApp {
                     }
                 }
             }
+            // Batch export handlers
+            Msg::RequestBatchExport => {
+                log::info!("📦 Batch export requested");
+                state.open_batch_export_modal();
+                Command::set_focus(FocusId::new("batch-export-file-browser"))
+            }
+            Msg::BatchExportBrowseNavigate(key) => {
+                match key {
+                    KeyCode::Enter => {
+                        if let Some(action) = state.batch_export_browser.handle_event(FileBrowserEvent::Activate) {
+                            match action {
+                                FileBrowserAction::DirectoryEntered(path) => {
+                                    let _ = state.batch_export_browser.set_path(path);
+                                }
+                                _ => {}
+                            }
+                        }
+                        Command::None
+                    }
+                    _ => {
+                        state.batch_export_browser.handle_navigation_key(key);
+                        Command::None
+                    }
+                }
+            }
+            Msg::BatchExportDirectoryEntered(_path) => {
+                // No longer used since we handle Enter in Navigate
+                Command::None
+            }
+            Msg::BatchExportFilenameEvent(event) => {
+                state.batch_export_filename.handle_event(event, Some(255));
+                Command::None
+            }
+            Msg::BatchExportConfirm => {
+                let directory = state.batch_export_browser.current_path().to_path_buf();
+                let filename = state.batch_export_filename.value().trim().to_string();
+
+                log::info!("📦 Batch export confirm - directory: {:?}, filename: {}", directory, filename);
+
+                if filename.is_empty() {
+                    log::warn!("Batch export cancelled: empty filename");
+                    return Command::None;
+                }
+
+                let file_path = directory.join(&filename);
+                let comparisons = state.comparisons.clone();
+
+                log::info!("📦 Starting batch export of {} comparisons to {:?}", comparisons.len(), file_path);
+
+                // Close modal immediately
+                state.close_batch_export_modal();
+
+                // Perform batch export asynchronously
+                Command::perform(
+                    async move {
+                        log::info!("📦 Batch export async task started");
+                        let config = crate::global_config();
+                        let result = super::batch_export::export_all_comparisons_to_excel(&config.pool, &comparisons, file_path).await
+                            .map_err(|e| e.to_string());
+                        log::info!("📦 Batch export async task completed: {:?}", result.is_ok());
+                        result
+                    },
+                    Msg::BatchExportComplete
+                )
+            }
+            Msg::BatchExportCancel => {
+                state.close_batch_export_modal();
+                Command::None
+            }
+            Msg::BatchExportComplete(result) => {
+                match result {
+                    Ok(()) => {
+                        log::info!("✅ Batch export completed successfully");
+                        // TODO: Show success message to user
+                    }
+                    Err(e) => {
+                        log::error!("❌ Failed to batch export: {}", e);
+                        // TODO: Show error modal
+                    }
+                }
+                Command::None
+            }
             Msg::Back => Command::batch(vec![
                 Command::navigate_to(AppId::MigrationEnvironment),
                 Command::quit_self(),
@@ -1336,6 +1459,74 @@ impl App for MigrationComparisonSelectApp {
             .build();
 
             LayeredView::new(main_ui).with_app_modal(modal_content, crate::tui::Alignment::Center)
+        } else if state.show_batch_export_modal {
+            // Batch export modal with file browser and filename input
+            let current_path_str = state.batch_export_browser.current_path()
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+
+            let path_display = Element::panel(
+                Element::text(current_path_str)
+            )
+            .title("Current Directory")
+            .build();
+
+            let file_browser = Element::panel(
+                Element::file_browser(
+                    "batch-export-file-browser",
+                    &state.batch_export_browser,
+                    theme
+                )
+                .on_navigate(Msg::BatchExportBrowseNavigate)
+                .build()
+            )
+            .title("Select Directory")
+            .build();
+
+            let filename_input = Element::panel(
+                Element::text_input(
+                    "batch-export-filename-input",
+                    state.batch_export_filename.value(),
+                    &state.batch_export_filename.state
+                )
+                .placeholder("filename.xlsx")
+                .on_event(Msg::BatchExportFilenameEvent)
+                .build()
+            )
+            .title("Filename")
+            .build();
+
+            let buttons = button_row![
+                ("batch-export-cancel", "Cancel", Msg::BatchExportCancel),
+                ("batch-export-confirm", "Export All", Msg::BatchExportConfirm),
+            ];
+
+            let modal_content = Element::panel(
+                Element::container(
+                    col![
+                        path_display => Length(3),
+                        spacer!() => Length(1),
+                        file_browser => Fill(1),
+                        spacer!() => Length(1),
+                        filename_input => Length(3),
+                        spacer!() => Length(1),
+                        Element::text(format!("Will export mappings from {} comparison(s)",
+                            state.comparisons.len())) => Length(1),
+                        Element::text("(Comparisons without mappings will be skipped)") => Length(1),
+                        spacer!() => Length(1),
+                        buttons => Length(3),
+                    ]
+                )
+                .padding(2)
+                .build()
+            )
+            .title("Batch Export All Mappings")
+            .width(100)
+            .height(38)
+            .build();
+
+            LayeredView::new(main_ui).with_app_modal(modal_content, crate::tui::Alignment::Center)
         } else {
             LayeredView::new(main_ui)
         }
@@ -1345,7 +1536,8 @@ impl App for MigrationComparisonSelectApp {
         let mut subs = vec![];
 
         if !state.show_create_modal && !state.show_delete_confirm && !state.show_rename_modal
-            && !state.show_export_modal && !state.show_import_browser && !state.show_import_config {
+            && !state.show_export_modal && !state.show_import_browser && !state.show_import_config
+            && !state.show_batch_export_modal {
             let config = crate::global_runtime_config();
 
             subs.push(Subscription::keyboard(KeyCode::Esc, "Back to migration list", Msg::Back));
@@ -1371,11 +1563,16 @@ impl App for MigrationComparisonSelectApp {
             let preload_kb = config.get_keybind("migration_comparison.preload");
             subs.push(Subscription::keyboard(preload_kb, "Preload all comparisons", Msg::PreloadAllComparisons));
 
-            // Export/Import hotkeys (only when comparison is selected)
+            // Export/Import hotkeys
             if state.list_state.selected().is_some() {
                 subs.push(Subscription::keyboard(KeyCode::Char('e'), "Export comparison", Msg::RequestExport));
             }
             subs.push(Subscription::keyboard(KeyCode::Char('i'), "Import comparison", Msg::RequestImport));
+
+            // Batch export hotkey (always available if comparisons exist)
+            if !state.comparisons.is_empty() {
+                subs.push(Subscription::keyboard(KeyCode::Char('E'), "Batch export all", Msg::RequestBatchExport));
+            }
         } else if state.show_create_modal {
             subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CreateFormCancel));
         } else if state.show_delete_confirm {
@@ -1388,6 +1585,8 @@ impl App for MigrationComparisonSelectApp {
             subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel import", Msg::ImportFormCancel));
         } else if state.show_import_config {
             subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel import", Msg::ImportFormCancel));
+        } else if state.show_batch_export_modal {
+            subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel batch export", Msg::BatchExportCancel));
         }
 
         subs

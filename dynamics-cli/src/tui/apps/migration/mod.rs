@@ -4,6 +4,7 @@
 pub mod migration_environment_app;
 pub mod migration_comparison_select_app;
 pub mod entity_comparison;
+pub mod batch_export;
 
 pub use migration_environment_app::{MigrationEnvironmentApp, State as MigrationEnvironmentState};
 pub use migration_comparison_select_app::{MigrationComparisonSelectApp, State as MigrationComparisonSelectState, MigrationSelectParams};
