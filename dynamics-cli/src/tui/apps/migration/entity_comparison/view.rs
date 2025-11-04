@@ -135,14 +135,12 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
     // This ensures filtered children are visible even if containers were collapsed
     if source_search_active || source_type_filter_active {
         auto_expand_containers_with_children(&source_items, source_tree_state);
-        // CRITICAL: Reset scroll offset when search or type filter is active
-        source_tree_state.reset_scroll();
+        // Note: Scroll reset moved to update handlers (only when filter changes)
     }
 
     if target_search_active || target_type_filter_active {
         auto_expand_containers_with_children(&target_items, target_tree_state);
-        // CRITICAL: Reset scroll offset when search or type filter is active
-        target_tree_state.reset_scroll();
+        // Note: Scroll reset moved to update handlers (only when filter changes)
     }
 
     // Invalidate tree cache when search, type filter, or hide mode filtering is active
