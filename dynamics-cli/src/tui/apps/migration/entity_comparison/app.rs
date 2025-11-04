@@ -789,6 +789,7 @@ impl App for EntityComparisonApp {
 
             // Export
             Subscription::keyboard(config.get_keybind("entity_comparison.export"), "Export to Excel", Msg::ExportToExcel),
+            Subscription::ctrl_key(KeyCode::Char('e'), "Export unmapped fields to CSV", Msg::ExportUnmappedToCsv),
         ];
 
         // Type filter cycling (conditional based on mode)

@@ -112,6 +112,7 @@ pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
 
         // Export
         Msg::ExportToExcel => mappings::handle_export_to_excel(state),
+        Msg::ExportUnmappedToCsv => mappings::handle_export_unmapped_to_csv(state),
 
         // Import from C# file or CSV
         Msg::OpenImportModal => import::handle_open_modal(state),

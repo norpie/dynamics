@@ -347,3 +347,38 @@ pub fn handle_export_to_excel(state: &mut State) -> Command<Msg> {
 
     Command::None
 }
+
+pub fn handle_export_unmapped_to_csv(state: &mut State) -> Command<Msg> {
+    // Check if source metadata is loaded
+    if !matches!(state.source_metadata, Resource::Success(_)) {
+        log::warn!("Cannot export: source metadata not loaded");
+        return Command::None;
+    }
+
+    // Generate filename with timestamp
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let filename = format!(
+        "{}_{}_unmapped_{}.csv",
+        state.migration_name,
+        state.source_entity,
+        timestamp
+    );
+
+    // Get output directory from config or use current directory
+    let output_path = std::path::PathBuf::from(&filename);
+
+    // Perform export in background (no auto-open for CSV)
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        match super::super::export::csv_exporter::export_unmapped_fields_to_csv(&state_clone, output_path.to_str().unwrap()) {
+            Ok(_) => {
+                log::info!("Successfully exported unmapped fields to {}", filename);
+            }
+            Err(e) => {
+                log::error!("Failed to export to CSV: {}", e);
+            }
+        }
+    });
+
+    Command::None
+}

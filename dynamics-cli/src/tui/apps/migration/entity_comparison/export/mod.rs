@@ -3,6 +3,7 @@
 mod formatting;
 mod helpers;
 pub mod sheets;
+pub mod csv_exporter;
 
 use anyhow::{Context, Result};
 use rust_xlsxwriter::*;

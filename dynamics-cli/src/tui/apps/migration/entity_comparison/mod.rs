@@ -100,6 +100,7 @@ pub enum Msg {
 
     // Export
     ExportToExcel,
+    ExportUnmappedToCsv,
 
     // Import from C# file
     OpenImportModal,
