@@ -62,6 +62,8 @@ Declarative UI construction:
 Managing app state and async operations:
 - [Resource Pattern & Error Handling](03-state-management/resource-pattern.md) - Async state, progress tracking, error recovery
 - [Routing](03-state-management/routing.md) - Multi-view apps
+- [Caching](03-state-management/caching.md) - Unified cache system
+- [Background Work](03-state-management/background-work.md) - Background task patterns
 
 ### 04. User Interaction
 Input handling and navigation:
@@ -87,7 +89,6 @@ Framework-provided features:
 ### 07. Advanced Topics
 Advanced patterns and systems:
 - [Events & Queues](07-advanced/events-and-queues.md) - Event broadcast, work queues
-- [Background Work](07-advanced/background-work.md) - Background tasks, invalidation
 - [Navigable State](07-advanced/navigable-state.md) - Unified 2D navigation
 
 ### 08. Reference
