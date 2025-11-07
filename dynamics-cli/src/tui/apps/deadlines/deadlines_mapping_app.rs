@@ -225,8 +225,13 @@ async fn fetch_entity_data(
     let plural_name = crate::api::pluralization::pluralize_entity_name(entity_name);
     log::debug!("Fetching {} (plural: {})", entity_name, plural_name);
 
-    // Fetch all records for this entity using query builder
-    let query = crate::api::QueryBuilder::new(&plural_name).build();
+    // Fetch records for this entity using query builder
+    // Filter for active records except for systemuser (which has different state semantics)
+    let mut builder = crate::api::QueryBuilder::new(&plural_name);
+    if entity_name != "systemuser" {
+        builder = builder.active_only();
+    }
+    let query = builder.build();
     log::debug!("Executing query for {}: {:?}", plural_name, query);
 
     let result = client
