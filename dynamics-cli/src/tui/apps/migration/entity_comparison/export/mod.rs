@@ -27,20 +27,12 @@ impl MigrationExporter {
     pub fn export_to_excel(state: &State, file_path: &str) -> Result<()> {
         let mut workbook = Workbook::new();
 
-        // Create all worksheets
-        create_source_entity_sheet(&mut workbook, state)?;
-        create_target_entity_sheet(&mut workbook, state)?;
-        create_source_relationships_sheet(&mut workbook, state)?;
-        create_target_relationships_sheet(&mut workbook, state)?;
-        create_source_views_sheet(&mut workbook, state)?;
-        create_target_views_sheet(&mut workbook, state)?;
-        create_source_forms_sheet(&mut workbook, state)?;
-        create_target_forms_sheet(&mut workbook, state)?;
-        create_source_entities_sheet(&mut workbook, state)?;
-        create_target_entities_sheet(&mut workbook, state)?;
-        create_examples_sheet(&mut workbook, state)?;
-        create_source_examples_sheet(&mut workbook, state)?;
-        create_target_examples_sheet(&mut workbook, state)?;
+        // Create field mapping worksheets
+        create_source_fields_sheet(&mut workbook, state)?;
+        create_target_fields_sheet(&mut workbook, state)?;
+
+        // Create statistics overview last
+        create_stats_sheet(&mut workbook, state)?;
 
         workbook
             .save(file_path)
