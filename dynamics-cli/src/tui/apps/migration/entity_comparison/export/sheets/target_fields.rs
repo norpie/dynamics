@@ -45,12 +45,15 @@ pub fn create_target_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
     let title_format = create_title_format();
 
     // Title
-    // TODO: Support multi-entity mode - for now use first entity
-    let first_target_entity = state.target_entities.first().map(|s| s.as_str()).unwrap_or("");
+    let target_entities_str = if state.target_entities.len() > 1 {
+        format!("{} entities: {} (showing first only)", state.target_entities.len(), state.target_entities.join(", "))
+    } else {
+        state.target_entities.first().map(|s| s.as_str()).unwrap_or("").to_string()
+    };
     sheet.write_string_with_format(
         0,
         0,
-        &format!("Target Fields - {} ({})", first_target_entity, state.target_env),
+        &format!("Target Fields - {} ({})", target_entities_str, state.target_env),
         &title_format,
     )?;
 

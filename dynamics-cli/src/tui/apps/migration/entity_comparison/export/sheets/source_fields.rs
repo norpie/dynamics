@@ -44,12 +44,15 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
     let title_format = create_title_format();
 
     // Title
-    // TODO: Support multi-entity mode - for now use first entity
-    let first_source_entity = state.source_entities.first().map(|s| s.as_str()).unwrap_or("");
+    let source_entities_str = if state.source_entities.len() > 1 {
+        format!("{} entities: {} (showing first only)", state.source_entities.len(), state.source_entities.join(", "))
+    } else {
+        state.source_entities.first().map(|s| s.as_str()).unwrap_or("").to_string()
+    };
     sheet.write_string_with_format(
         0,
         0,
-        &format!("Source Fields - {} ({})", first_source_entity, state.source_env),
+        &format!("Source Fields - {} ({})", source_entities_str, state.source_env),
         &title_format,
     )?;
 

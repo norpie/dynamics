@@ -7,6 +7,7 @@ use crate::tui::widgets::{FileBrowserEvent, FileBrowserAction};
 use std::path::PathBuf;
 use std::collections::HashMap;
 use crossterm::event::KeyCode;
+use super::super::matching_adapter::{recompute_all_matches, recompute_all_matches_multi};
 
 /// Open the import modal with file browser
 pub fn handle_open_modal(state: &mut State) -> Command<Msg> {
@@ -244,37 +245,82 @@ pub fn handle_csv_loaded(state: &mut State, csv_data: crate::csv_parser::CsvImpo
     state.show_import_modal = false;
 
     // Recompute all matches with updated mappings
-    // TODO: Support multi-entity mode - for now use first entity
-    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
-    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+    let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
 
-    if let (Some(Resource::Success(source_metadata)), Some(Resource::Success(target_metadata))) = (
-        state.source_metadata.get(&first_source_entity),
-        state.target_metadata.get(&first_target_entity),
-    ) {
+    if is_multi_entity {
+        // Multi-entity mode: use recompute_all_matches_multi()
+        let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.source_metadata.iter()
+            .filter_map(|(name, resource)| {
+                if let Resource::Success(metadata) = resource {
+                    Some((name.clone(), metadata.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.target_metadata.iter()
+            .filter_map(|(name, resource)| {
+                if let Resource::Success(metadata) = resource {
+                    Some((name.clone(), metadata.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-            super::super::matching_adapter::recompute_all_matches(
-                source_metadata,
-                target_metadata,
+            recompute_all_matches_multi(
+                &source_metadata_map,
+                &target_metadata_map,
+                &state.source_entities,
+                &state.target_entities,
                 &state.field_mappings,
                 &state.imported_mappings,
                 &state.prefix_mappings,
                 &state.examples,
-                &first_source_entity,
-                &first_target_entity,
                 &state.negative_matches,
             );
-
         state.field_matches = field_matches;
         state.relationship_matches = relationship_matches;
         state.entity_matches = entity_matches;
         state.source_related_entities = source_related_entities;
         state.target_related_entities = target_related_entities;
+    } else {
+        // Single-entity mode: backwards compatible
+        let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+        let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+        if let (Some(Resource::Success(source_metadata)), Some(Resource::Success(target_metadata))) = (
+            state.source_metadata.get(&first_source_entity),
+            state.target_metadata.get(&first_target_entity),
+        ) {
+            let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                recompute_all_matches(
+                    source_metadata,
+                    target_metadata,
+                    &state.field_mappings,
+                    &state.imported_mappings,
+                    &state.prefix_mappings,
+                    &state.examples,
+                    &first_source_entity,
+                    &first_target_entity,
+                    &state.negative_matches,
+                );
+
+            state.field_matches = field_matches;
+            state.relationship_matches = relationship_matches;
+            state.entity_matches = entity_matches;
+            state.source_related_entities = source_related_entities;
+            state.target_related_entities = target_related_entities;
+        }
     }
 
     // Persist all mapping types to config (async, don't wait)
-    let source_entity = first_source_entity;
-    let target_entity = first_target_entity;
+    // Note: In multi-entity mode, mappings are already qualified (e.g., "contact.fullname")
+    // In single-entity mode, use first entity for backwards compat
+    let source_entities = state.source_entities.clone();
+    let target_entities = state.target_entities.clone();
     let field_mappings = state.field_mappings.clone();
     let prefix_mappings = state.prefix_mappings.clone();
     let imported_mappings = state.imported_mappings.clone();
@@ -285,34 +331,103 @@ pub fn handle_csv_loaded(state: &mut State, csv_data: crate::csv_parser::CsvImpo
         async move {
             let config = crate::global_config();
 
-            // Save field mappings (loop through source->targets pairs, save each target individually)
+            // Helper to parse qualified names
+            fn parse_qualified_name<'a>(name: &'a str, default_entity: &'a str) -> (&'a str, &'a str) {
+                if let Some((entity, field)) = name.split_once('.') {
+                    (entity, field)
+                } else {
+                    (default_entity, name)
+                }
+            }
+
+            let default_source = source_entities.first().map(|s| s.as_str()).unwrap_or("");
+            let default_target = target_entities.first().map(|s| s.as_str()).unwrap_or("");
+
+            // Save field mappings (parse qualified names and save to correct entity pairs)
             for (src, tgts) in field_mappings {
+                let (src_entity, src_field) = parse_qualified_name(&src, default_source);
                 for tgt in tgts {
-                    if let Err(e) = config.set_field_mapping(&source_entity, &target_entity, &src, &tgt).await {
+                    let (tgt_entity, tgt_field) = parse_qualified_name(&tgt, default_target);
+                    if let Err(e) = config.set_field_mapping(src_entity, tgt_entity, src_field, tgt_field).await {
                         log::error!("Failed to save field mapping {} -> {}: {}", src, tgt, e);
                     }
                 }
             }
 
-            // Save prefix mappings (loop through source->targets pairs, save each target individually)
+            // Save prefix mappings (global across all entity pairs)
             for (src, tgts) in prefix_mappings {
                 for tgt in tgts {
-                    if let Err(e) = config.set_prefix_mapping(&source_entity, &target_entity, &src, &tgt).await {
-                        log::error!("Failed to save prefix mapping {} -> {}: {}", src, tgt, e);
+                    for source_entity in &source_entities {
+                        for target_entity in &target_entities {
+                            if let Err(e) = config.set_prefix_mapping(source_entity, target_entity, &src, &tgt).await {
+                                log::error!("Failed to save prefix mapping {}/{} {} -> {}: {}", source_entity, target_entity, src, tgt, e);
+                            }
+                        }
                     }
                 }
             }
 
-            // Save imported mappings (use existing batch method)
+            // Save imported mappings - group by entity pair and use batch method
             if let Some(file) = import_file {
-                if let Err(e) = config.set_imported_mappings(&source_entity, &target_entity, &imported_mappings, &file).await {
-                    log::error!("Failed to save imported mappings: {}", e);
+                // Group mappings by entity pair
+                let mut mappings_by_pair: std::collections::HashMap<(String, String), std::collections::HashMap<String, Vec<String>>> = std::collections::HashMap::new();
+
+                for (src, tgts) in imported_mappings {
+                    let (src_entity, src_field) = parse_qualified_name(&src, default_source);
+                    for tgt in &tgts {
+                        let (tgt_entity, tgt_field) = parse_qualified_name(tgt, default_target);
+                        let pair_key = (src_entity.to_string(), tgt_entity.to_string());
+
+                        mappings_by_pair
+                            .entry(pair_key)
+                            .or_insert_with(std::collections::HashMap::new)
+                            .entry(src_field.to_string())
+                            .or_insert_with(Vec::new)
+                            .push(tgt_field.to_string());
+                    }
+                }
+
+                // Save each entity pair's mappings
+                for ((src_entity, tgt_entity), mappings) in mappings_by_pair {
+                    if let Err(e) = config.set_imported_mappings(&src_entity, &tgt_entity, &mappings, &file).await {
+                        log::error!("Failed to save imported mappings for {}/{}: {}", src_entity, tgt_entity, e);
+                    }
                 }
             }
 
-            // Save ignored items (use existing batch method)
-            if let Err(e) = config.set_ignored_items(&source_entity, &target_entity, &ignored_items).await {
-                log::error!("Failed to save ignored items: {}", e);
+            // Save ignored items - group by entity pair and use batch method
+            let mut ignored_by_pair: std::collections::HashMap<(String, String), std::collections::HashSet<String>> = std::collections::HashMap::new();
+
+            for item in ignored_items {
+                // Ignored items format: "fields:source:field_name" or "fields:source:entity.field_name"
+                if let Some(field_part) = item.strip_prefix("fields:source:") {
+                    let (item_entity, item_field) = parse_qualified_name(field_part, default_source);
+                    let ignore_id = format!("fields:source:{}", item_field);
+                    for target_entity in &target_entities {
+                        let pair_key = (item_entity.to_string(), target_entity.clone());
+                        ignored_by_pair
+                            .entry(pair_key)
+                            .or_insert_with(std::collections::HashSet::new)
+                            .insert(ignore_id.clone());
+                    }
+                } else if let Some(field_part) = item.strip_prefix("fields:target:") {
+                    let (item_entity, item_field) = parse_qualified_name(field_part, default_target);
+                    let ignore_id = format!("fields:target:{}", item_field);
+                    for source_entity in &source_entities {
+                        let pair_key = (source_entity.clone(), item_entity.to_string());
+                        ignored_by_pair
+                            .entry(pair_key)
+                            .or_insert_with(std::collections::HashSet::new)
+                            .insert(ignore_id.clone());
+                    }
+                }
+            }
+
+            // Save each entity pair's ignored items
+            for ((src_entity, tgt_entity), items) in ignored_by_pair {
+                if let Err(e) = config.set_ignored_items(&src_entity, &tgt_entity, &items).await {
+                    log::error!("Failed to save ignored items for {}/{}: {}", src_entity, tgt_entity, e);
+                }
             }
         },
         |_| Msg::CloseImportModal  // Dummy message, modal already closed
@@ -375,38 +490,80 @@ pub fn handle_mappings_loaded(state: &mut State, mappings: HashMap<String, Strin
     state.show_import_modal = false;
 
     // Recompute all matches with imported mappings
-    // TODO: Support multi-entity mode - for now use first entity
-    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
-    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+    let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
 
-    if let (Some(Resource::Success(source_metadata)), Some(Resource::Success(target_metadata))) = (
-        state.source_metadata.get(&first_source_entity),
-        state.target_metadata.get(&first_target_entity),
-    ) {
+    if is_multi_entity {
+        // Multi-entity mode: use recompute_all_matches_multi()
+        let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.source_metadata.iter()
+            .filter_map(|(name, resource)| {
+                if let Resource::Success(metadata) = resource {
+                    Some((name.clone(), metadata.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.target_metadata.iter()
+            .filter_map(|(name, resource)| {
+                if let Resource::Success(metadata) = resource {
+                    Some((name.clone(), metadata.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-            super::super::matching_adapter::recompute_all_matches(
-                source_metadata,
-                target_metadata,
+            recompute_all_matches_multi(
+                &source_metadata_map,
+                &target_metadata_map,
+                &state.source_entities,
+                &state.target_entities,
                 &state.field_mappings,
                 &state.imported_mappings,
                 &state.prefix_mappings,
                 &state.examples,
-                &first_source_entity,
-                &first_target_entity,
                 &state.negative_matches,
             );
-
         state.field_matches = field_matches;
         state.relationship_matches = relationship_matches;
         state.entity_matches = entity_matches;
         state.source_related_entities = source_related_entities;
         state.target_related_entities = target_related_entities;
+    } else {
+        // Single-entity mode: backwards compatible
+        let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+        let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
 
+        if let (Some(Resource::Success(source_metadata)), Some(Resource::Success(target_metadata))) = (
+            state.source_metadata.get(&first_source_entity),
+            state.target_metadata.get(&first_target_entity),
+        ) {
+            let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                recompute_all_matches(
+                    source_metadata,
+                    target_metadata,
+                    &state.field_mappings,
+                    &state.imported_mappings,
+                    &state.prefix_mappings,
+                    &state.examples,
+                    &first_source_entity,
+                    &first_target_entity,
+                    &state.negative_matches,
+                );
+
+            state.field_matches = field_matches;
+            state.relationship_matches = relationship_matches;
+            state.entity_matches = entity_matches;
+            state.source_related_entities = source_related_entities;
+            state.target_related_entities = target_related_entities;
+        }
     }
 
     // Persist to config (async, don't wait)
-    let source_entity = first_source_entity;
-    let target_entity = first_target_entity;
+    let source_entities = state.source_entities.clone();
+    let target_entities = state.target_entities.clone();
     let imported = state.imported_mappings.clone();
     let file = state.import_source_file.clone();
 
@@ -414,8 +571,42 @@ pub fn handle_mappings_loaded(state: &mut State, mappings: HashMap<String, Strin
         async move {
             let config = crate::global_config();
             if let Some(file) = file {
-                if let Err(e) = config.set_imported_mappings(&source_entity, &target_entity, &imported, &file).await {
-                    log::error!("Failed to save imported mappings: {}", e);
+                // Helper to parse qualified names
+                fn parse_qualified_name<'a>(name: &'a str, default_entity: &'a str) -> (&'a str, &'a str) {
+                    if let Some((entity, field)) = name.split_once('.') {
+                        (entity, field)
+                    } else {
+                        (default_entity, name)
+                    }
+                }
+
+                let default_source = source_entities.first().map(|s| s.as_str()).unwrap_or("");
+                let default_target = target_entities.first().map(|s| s.as_str()).unwrap_or("");
+
+                // Save imported mappings - group by entity pair and use batch method
+                // Group mappings by entity pair
+                let mut mappings_by_pair: std::collections::HashMap<(String, String), std::collections::HashMap<String, Vec<String>>> = std::collections::HashMap::new();
+
+                for (src, tgts) in imported {
+                    let (src_entity, src_field) = parse_qualified_name(&src, default_source);
+                    for tgt in &tgts {
+                        let (tgt_entity, tgt_field) = parse_qualified_name(tgt, default_target);
+                        let pair_key = (src_entity.to_string(), tgt_entity.to_string());
+
+                        mappings_by_pair
+                            .entry(pair_key)
+                            .or_insert_with(std::collections::HashMap::new)
+                            .entry(src_field.to_string())
+                            .or_insert_with(Vec::new)
+                            .push(tgt_field.to_string());
+                    }
+                }
+
+                // Save each entity pair's mappings
+                for ((src_entity, tgt_entity), mappings) in mappings_by_pair {
+                    if let Err(e) = config.set_imported_mappings(&src_entity, &tgt_entity, &mappings, &file).await {
+                        log::error!("Failed to save imported mappings for {}/{}: {}", src_entity, tgt_entity, e);
+                    }
                 }
             }
         },
@@ -435,44 +626,90 @@ pub fn handle_clear_imported(state: &mut State) -> Command<Msg> {
     state.import_results = None;
 
     // Recompute matches without imported mappings
-    // TODO: Support multi-entity mode - for now use first entity
-    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
-    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+    let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
 
-    if let (Some(Resource::Success(source_metadata)), Some(Resource::Success(target_metadata))) = (
-        state.source_metadata.get(&first_source_entity),
-        state.target_metadata.get(&first_target_entity),
-    ) {
+    if is_multi_entity {
+        // Multi-entity mode: use recompute_all_matches_multi()
+        let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.source_metadata.iter()
+            .filter_map(|(name, resource)| {
+                if let Resource::Success(metadata) = resource {
+                    Some((name.clone(), metadata.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.target_metadata.iter()
+            .filter_map(|(name, resource)| {
+                if let Resource::Success(metadata) = resource {
+                    Some((name.clone(), metadata.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-            super::super::matching_adapter::recompute_all_matches(
-                source_metadata,
-                target_metadata,
+            recompute_all_matches_multi(
+                &source_metadata_map,
+                &target_metadata_map,
+                &state.source_entities,
+                &state.target_entities,
                 &state.field_mappings,
                 &state.imported_mappings, // Now empty
                 &state.prefix_mappings,
                 &state.examples,
-                &first_source_entity,
-                &first_target_entity,
                 &state.negative_matches,
             );
-
         state.field_matches = field_matches;
         state.relationship_matches = relationship_matches;
         state.entity_matches = entity_matches;
         state.source_related_entities = source_related_entities;
         state.target_related_entities = target_related_entities;
+    } else {
+        // Single-entity mode: backwards compatible
+        let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+        let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
 
+        if let (Some(Resource::Success(source_metadata)), Some(Resource::Success(target_metadata))) = (
+            state.source_metadata.get(&first_source_entity),
+            state.target_metadata.get(&first_target_entity),
+        ) {
+            let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                recompute_all_matches(
+                    source_metadata,
+                    target_metadata,
+                    &state.field_mappings,
+                    &state.imported_mappings, // Now empty
+                    &state.prefix_mappings,
+                    &state.examples,
+                    &first_source_entity,
+                    &first_target_entity,
+                    &state.negative_matches,
+                );
+
+            state.field_matches = field_matches;
+            state.relationship_matches = relationship_matches;
+            state.entity_matches = entity_matches;
+            state.source_related_entities = source_related_entities;
+            state.target_related_entities = target_related_entities;
+        }
     }
 
-    // Persist cleared state to config
-    let source_entity = first_source_entity;
-    let target_entity = first_target_entity;
+    // Persist cleared state to config for all entity pairs
+    let source_entities = state.source_entities.clone();
+    let target_entities = state.target_entities.clone();
 
     Command::perform(
         async move {
             let config = crate::global_config();
-            if let Err(e) = config.clear_imported_mappings(&source_entity, &target_entity).await {
-                log::error!("Failed to clear imported mappings in config: {}", e);
+            for source_entity in &source_entities {
+                for target_entity in &target_entities {
+                    if let Err(e) = config.clear_imported_mappings(source_entity, target_entity).await {
+                        log::error!("Failed to clear imported mappings for {}/{}: {}", source_entity, target_entity, e);
+                    }
+                }
             }
         },
         |_| Msg::CloseImportModal

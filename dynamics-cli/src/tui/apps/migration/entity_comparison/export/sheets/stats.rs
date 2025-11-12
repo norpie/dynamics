@@ -19,13 +19,27 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
     let percent_format = Format::new().set_num_format("0.0%");
 
     // Title
-    // TODO: Support multi-entity mode - for now use first entity
-    let first_source_entity = state.source_entities.first().map(|s| s.as_str()).unwrap_or("");
-    let first_target_entity = state.target_entities.first().map(|s| s.as_str()).unwrap_or("");
+    let source_entities_str = if state.source_entities.len() > 1 {
+        format!("{} entities: {}", state.source_entities.len(), state.source_entities.join(", "))
+    } else {
+        state.source_entities.first().map(|s| s.as_str()).unwrap_or("").to_string()
+    };
+    let target_entities_str = if state.target_entities.len() > 1 {
+        format!("{} entities: {}", state.target_entities.len(), state.target_entities.join(", "))
+    } else {
+        state.target_entities.first().map(|s| s.as_str()).unwrap_or("").to_string()
+    };
+
+    let title_note = if state.source_entities.len() > 1 || state.target_entities.len() > 1 {
+        " (showing first entity only)"
+    } else {
+        ""
+    };
+
     sheet.write_string_with_format(
         0,
         0,
-        &format!("Mapping Statistics - {} → {}", first_source_entity, first_target_entity),
+        &format!("Mapping Statistics - {} → {}{}", source_entities_str, target_entities_str, title_note),
         &title_format,
     )?;
 

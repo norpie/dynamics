@@ -153,7 +153,8 @@ pub fn handle_example_data_fetched(
 
 pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
     use crate::tui::Resource;
-    use super::super::matching_adapter::recompute_all_matches;
+    use super::super::matching_adapter::{recompute_all_matches, recompute_all_matches_multi};
+    use std::collections::HashMap;
 
     // Cycle through pairs, or toggle off if at end
     if state.examples.pairs.is_empty() {
@@ -190,23 +191,40 @@ pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
     }
 
     // Recompute matches since the active example pair changed
-    // TODO: Support multi-entity mode - for now use first entity
-    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
-    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+    let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
 
-    if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
-        (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
-    {
+    if is_multi_entity {
+        // Multi-entity mode: use recompute_all_matches_multi()
+        let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.source_metadata.iter()
+            .filter_map(|(name, resource)| {
+                if let Resource::Success(metadata) = resource {
+                    Some((name.clone(), metadata.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.target_metadata.iter()
+            .filter_map(|(name, resource)| {
+                if let Resource::Success(metadata) = resource {
+                    Some((name.clone(), metadata.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-            recompute_all_matches(
-                source,
-                target,
+            recompute_all_matches_multi(
+                &source_metadata_map,
+                &target_metadata_map,
+                &state.source_entities,
+                &state.target_entities,
                 &state.field_mappings,
                 &state.imported_mappings,
                 &state.prefix_mappings,
                 &state.examples,
-                &first_source_entity,
-                &first_target_entity,
                 &state.negative_matches,
             );
         state.field_matches = field_matches;
@@ -214,6 +232,32 @@ pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
         state.entity_matches = entity_matches;
         state.source_related_entities = source_related_entities;
         state.target_related_entities = target_related_entities;
+    } else {
+        // Single-entity mode: backwards compatible
+        let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+        let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+        if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
+            (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
+        {
+            let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                recompute_all_matches(
+                    source,
+                    target,
+                    &state.field_mappings,
+                    &state.imported_mappings,
+                    &state.prefix_mappings,
+                    &state.examples,
+                    &first_source_entity,
+                    &first_target_entity,
+                    &state.negative_matches,
+                );
+            state.field_matches = field_matches;
+            state.relationship_matches = relationship_matches;
+            state.entity_matches = entity_matches;
+            state.source_related_entities = source_related_entities;
+            state.target_related_entities = target_related_entities;
+        }
     }
 
     Command::None

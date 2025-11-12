@@ -788,42 +788,143 @@ impl App for EntityComparisonApp {
                         HashMap::new()
                     });
 
-                // TODO: Implement multi-entity prefix/imported/example mappings
-                // For now, use first entity pair for backwards compat
-                let (first_source, first_target) = (
-                    source_entities.first().cloned().unwrap_or_default(),
-                    target_entities.first().cloned().unwrap_or_default()
-                );
+                // Multi-entity support for prefix/imported/example mappings
+                let is_multi_entity = source_entities.len() > 1 || target_entities.len() > 1;
 
-                let prefix_mappings = config.get_prefix_mappings(&first_source, &first_target).await
-                    .unwrap_or_else(|e| {
-                        log::error!("Failed to load prefix mappings: {}", e);
-                        HashMap::new()
-                    });
-                let (imported_mappings, import_source_file) = config.get_imported_mappings(&first_source, &first_target).await
-                    .unwrap_or_else(|e| {
-                        log::error!("Failed to load imported mappings: {}", e);
-                        (HashMap::new(), None)
-                    });
-                let example_pairs_raw = config.get_example_pairs(&first_source, &first_target).await
-                    .unwrap_or_else(|e| {
-                        log::error!("Failed to load example pairs: {}", e);
-                        Vec::new()
-                    });
+                let (prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches) = if is_multi_entity {
+                    // Multi-entity mode: load and merge all entity pairs
 
-                // Deduplicate example pairs to prevent issues
-                let example_pairs = deduplicate_example_pairs(example_pairs_raw);
+                    // Prefix mappings are global (saved to all pairs), so load from first
+                    let first_source = source_entities.first().cloned().unwrap_or_default();
+                    let first_target = target_entities.first().cloned().unwrap_or_default();
+                    let prefix_mappings = config.get_prefix_mappings(&first_source, &first_target).await
+                        .unwrap_or_else(|e| {
+                            log::error!("Failed to load prefix mappings: {}", e);
+                            HashMap::new()
+                        });
 
-                let ignored_items = config.get_ignored_items(&first_source, &first_target).await
-                    .unwrap_or_else(|e| {
-                        log::error!("Failed to load ignored items: {}", e);
-                        std::collections::HashSet::new()
-                    });
-                let negative_matches = config.get_negative_matches(&first_source, &first_target).await
-                    .unwrap_or_else(|e| {
-                        log::error!("Failed to load negative matches: {}", e);
-                        std::collections::HashSet::new()
-                    });
+                    // Load imported mappings for all entity pairs and merge with qualified names
+                    let mut all_imported_mappings = HashMap::new();
+                    let mut combined_import_source_file = None;
+                    for source_entity in &source_entities {
+                        for target_entity in &target_entities {
+                            let (entity_imported, entity_import_file) = config.get_imported_mappings(source_entity, target_entity).await
+                                .unwrap_or_else(|e| {
+                                    log::error!("Failed to load imported mappings for {}/{}: {}", source_entity, target_entity, e);
+                                    (HashMap::new(), None)
+                                });
+
+                            // Qualify and merge
+                            for (source_field, target_fields) in entity_imported {
+                                let qualified_source = format!("{}.{}", source_entity, source_field);
+                                let qualified_targets: Vec<String> = target_fields.iter()
+                                    .map(|t| format!("{}.{}", target_entity, t))
+                                    .collect();
+                                all_imported_mappings.insert(qualified_source, qualified_targets);
+                            }
+
+                            if entity_import_file.is_some() {
+                                combined_import_source_file = entity_import_file;
+                            }
+                        }
+                    }
+
+                    // Load example pairs for all entity pairs and merge
+                    let mut all_example_pairs = Vec::new();
+                    for source_entity in &source_entities {
+                        for target_entity in &target_entities {
+                            let entity_pairs = config.get_example_pairs(source_entity, target_entity).await
+                                .unwrap_or_else(|e| {
+                                    log::error!("Failed to load example pairs for {}/{}: {}", source_entity, target_entity, e);
+                                    Vec::new()
+                                });
+                            all_example_pairs.extend(entity_pairs);
+                        }
+                    }
+                    let example_pairs = deduplicate_example_pairs(all_example_pairs);
+
+                    // Load ignored items for all entity pairs and merge with qualified names
+                    let mut all_ignored_items = std::collections::HashSet::new();
+                    for source_entity in &source_entities {
+                        for target_entity in &target_entities {
+                            let entity_ignored = config.get_ignored_items(source_entity, target_entity).await
+                                .unwrap_or_else(|e| {
+                                    log::error!("Failed to load ignored items for {}/{}: {}", source_entity, target_entity, e);
+                                    std::collections::HashSet::new()
+                                });
+
+                            // Qualify and merge
+                            for item in entity_ignored {
+                                let qualified_item = if item.contains('.') {
+                                    item // Already qualified
+                                } else {
+                                    format!("{}.{}", source_entity, item)
+                                };
+                                all_ignored_items.insert(qualified_item);
+                            }
+                        }
+                    }
+
+                    // Load negative matches for all entity pairs and merge with qualified names
+                    let mut all_negative_matches = std::collections::HashSet::new();
+                    for source_entity in &source_entities {
+                        for target_entity in &target_entities {
+                            let entity_negative = config.get_negative_matches(source_entity, target_entity).await
+                                .unwrap_or_else(|e| {
+                                    log::error!("Failed to load negative matches for {}/{}: {}", source_entity, target_entity, e);
+                                    std::collections::HashSet::new()
+                                });
+
+                            // Qualify and merge
+                            for field in entity_negative {
+                                let qualified_field = if field.contains('.') {
+                                    field // Already qualified
+                                } else {
+                                    format!("{}.{}", source_entity, field)
+                                };
+                                all_negative_matches.insert(qualified_field);
+                            }
+                        }
+                    }
+
+                    (prefix_mappings, all_imported_mappings, combined_import_source_file, example_pairs, all_ignored_items, all_negative_matches)
+                } else {
+                    // Single-entity mode: backwards compatible
+                    let (first_source, first_target) = (
+                        source_entities.first().cloned().unwrap_or_default(),
+                        target_entities.first().cloned().unwrap_or_default()
+                    );
+
+                    let prefix_mappings = config.get_prefix_mappings(&first_source, &first_target).await
+                        .unwrap_or_else(|e| {
+                            log::error!("Failed to load prefix mappings: {}", e);
+                            HashMap::new()
+                        });
+                    let (imported_mappings, import_source_file) = config.get_imported_mappings(&first_source, &first_target).await
+                        .unwrap_or_else(|e| {
+                            log::error!("Failed to load imported mappings: {}", e);
+                            (HashMap::new(), None)
+                        });
+                    let example_pairs_raw = config.get_example_pairs(&first_source, &first_target).await
+                        .unwrap_or_else(|e| {
+                            log::error!("Failed to load example pairs: {}", e);
+                            Vec::new()
+                        });
+                    let example_pairs = deduplicate_example_pairs(example_pairs_raw);
+
+                    let ignored_items = config.get_ignored_items(&first_source, &first_target).await
+                        .unwrap_or_else(|e| {
+                            log::error!("Failed to load ignored items: {}", e);
+                            std::collections::HashSet::new()
+                        });
+                    let negative_matches = config.get_negative_matches(&first_source, &first_target).await
+                        .unwrap_or_else(|e| {
+                            log::error!("Failed to load negative matches: {}", e);
+                            std::collections::HashSet::new()
+                        });
+
+                    (prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches)
+                };
                 (field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches)
             }
         }, |(field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches)| {

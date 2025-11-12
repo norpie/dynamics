@@ -2,7 +2,8 @@ use crate::tui::command::Command;
 use crate::tui::Resource;
 use super::super::Msg;
 use super::super::app::State;
-use super::super::matching_adapter::recompute_all_matches;
+use super::super::matching_adapter::{recompute_all_matches, recompute_all_matches_multi};
+use std::collections::HashMap;
 
 pub fn handle_open_modal(state: &mut State) -> Command<Msg> {
     state.show_prefix_mappings_modal = true;
@@ -58,23 +59,40 @@ pub fn handle_add_prefix_mapping(state: &mut State) -> Command<Msg> {
     state.prefix_mappings.insert(source_prefix.clone(), vec![target_prefix.clone()]);
 
     // Recompute matches
-    // TODO: Support multi-entity mode - for now use first entity
-    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
-    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+    let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
 
-    if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
-        (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
-    {
+    if is_multi_entity {
+        // Multi-entity mode: use recompute_all_matches_multi()
+        let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.source_metadata.iter()
+            .filter_map(|(name, resource)| {
+                if let Resource::Success(metadata) = resource {
+                    Some((name.clone(), metadata.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.target_metadata.iter()
+            .filter_map(|(name, resource)| {
+                if let Resource::Success(metadata) = resource {
+                    Some((name.clone(), metadata.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-            recompute_all_matches(
-                source,
-                target,
+            recompute_all_matches_multi(
+                &source_metadata_map,
+                &target_metadata_map,
+                &state.source_entities,
+                &state.target_entities,
                 &state.field_mappings,
                 &state.imported_mappings,
                 &state.prefix_mappings,
                 &state.examples,
-                &first_source_entity,
-                &first_target_entity,
                 &state.negative_matches,
             );
         state.field_matches = field_matches;
@@ -82,15 +100,45 @@ pub fn handle_add_prefix_mapping(state: &mut State) -> Command<Msg> {
         state.entity_matches = entity_matches;
         state.source_related_entities = source_related_entities;
         state.target_related_entities = target_related_entities;
+    } else {
+        // Single-entity mode: use first entity (backwards compatible)
+        let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+        let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+        if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
+            (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
+        {
+            let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                recompute_all_matches(
+                    source,
+                    target,
+                    &state.field_mappings,
+                    &state.imported_mappings,
+                    &state.prefix_mappings,
+                    &state.examples,
+                    &first_source_entity,
+                    &first_target_entity,
+                    &state.negative_matches,
+                );
+            state.field_matches = field_matches;
+            state.relationship_matches = relationship_matches;
+            state.entity_matches = entity_matches;
+            state.source_related_entities = source_related_entities;
+            state.target_related_entities = target_related_entities;
+        }
     }
 
-    // Save to database
-    let source_entity = first_source_entity;
-    let target_entity = first_target_entity;
+    // Save to database for ALL entity pairs
+    let source_entities = state.source_entities.clone();
+    let target_entities = state.target_entities.clone();
     tokio::spawn(async move {
         let config = crate::global_config();
-        if let Err(e) = config.set_prefix_mapping(&source_entity, &target_entity, &source_prefix, &target_prefix).await {
-            log::error!("Failed to save prefix mapping: {}", e);
+        for source_entity in &source_entities {
+            for target_entity in &target_entities {
+                if let Err(e) = config.set_prefix_mapping(source_entity, target_entity, &source_prefix, &target_prefix).await {
+                    log::error!("Failed to save prefix mapping for {}/{}: {}", source_entity, target_entity, e);
+                }
+            }
         }
     });
 
@@ -113,23 +161,40 @@ pub fn handle_delete_prefix_mapping(state: &mut State) -> Command<Msg> {
             state.prefix_mappings.remove(&source_prefix);
 
             // Recompute matches
-            // TODO: Support multi-entity mode - for now use first entity
-            let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
-            let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+            let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
 
-            if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
-                (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
-            {
+            if is_multi_entity {
+                // Multi-entity mode: use recompute_all_matches_multi()
+                let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.source_metadata.iter()
+                    .filter_map(|(name, resource)| {
+                        if let Resource::Success(metadata) = resource {
+                            Some((name.clone(), metadata.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.target_metadata.iter()
+                    .filter_map(|(name, resource)| {
+                        if let Resource::Success(metadata) = resource {
+                            Some((name.clone(), metadata.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
                 let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-                    recompute_all_matches(
-                        source,
-                        target,
+                    recompute_all_matches_multi(
+                        &source_metadata_map,
+                        &target_metadata_map,
+                        &state.source_entities,
+                        &state.target_entities,
                         &state.field_mappings,
                         &state.imported_mappings,
                         &state.prefix_mappings,
                         &state.examples,
-                        &first_source_entity,
-                        &first_target_entity,
                         &state.negative_matches,
                     );
                 state.field_matches = field_matches;
@@ -137,15 +202,45 @@ pub fn handle_delete_prefix_mapping(state: &mut State) -> Command<Msg> {
                 state.entity_matches = entity_matches;
                 state.source_related_entities = source_related_entities;
                 state.target_related_entities = target_related_entities;
+            } else {
+                // Single-entity mode: use first entity (backwards compatible)
+                let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+                let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+                if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
+                    (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
+                {
+                    let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                        recompute_all_matches(
+                            source,
+                            target,
+                            &state.field_mappings,
+                            &state.imported_mappings,
+                            &state.prefix_mappings,
+                            &state.examples,
+                            &first_source_entity,
+                            &first_target_entity,
+                            &state.negative_matches,
+                        );
+                    state.field_matches = field_matches;
+                    state.relationship_matches = relationship_matches;
+                    state.entity_matches = entity_matches;
+                    state.source_related_entities = source_related_entities;
+                    state.target_related_entities = target_related_entities;
+                }
             }
 
-            // Delete from database
-            let source_entity = first_source_entity;
-            let target_entity = first_target_entity;
+            // Delete from database for ALL entity pairs
+            let source_entities = state.source_entities.clone();
+            let target_entities = state.target_entities.clone();
             tokio::spawn(async move {
                 let config = crate::global_config();
-                if let Err(e) = config.delete_prefix_mapping(&source_entity, &target_entity, &source_prefix).await {
-                    log::error!("Failed to delete prefix mapping: {}", e);
+                for source_entity in &source_entities {
+                    for target_entity in &target_entities {
+                        if let Err(e) = config.delete_prefix_mapping(source_entity, target_entity, &source_prefix).await {
+                            log::error!("Failed to delete prefix mapping for {}/{}: {}", source_entity, target_entity, e);
+                        }
+                    }
                 }
             });
         }

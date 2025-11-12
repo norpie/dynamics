@@ -2,7 +2,20 @@ use crate::tui::command::Command;
 use crate::tui::Resource;
 use super::super::Msg;
 use super::super::app::State;
-use super::super::matching_adapter::recompute_all_matches;
+use super::super::matching_adapter::{recompute_all_matches, recompute_all_matches_multi};
+use std::collections::HashMap;
+
+/// Parse a potentially qualified field name into (entity, field)
+/// Examples:
+/// - "contact.fullname" -> ("contact", "fullname")
+/// - "fullname" -> (default_entity, "fullname")
+fn parse_qualified_name<'a>(name: &'a str, default_entity: &'a str) -> (&'a str, &'a str) {
+    if let Some((entity, field)) = name.split_once('.') {
+        (entity, field)
+    } else {
+        (default_entity, name)
+    }
+}
 
 pub fn handle_open_modal(state: &mut State) -> Command<Msg> {
     state.show_negative_matches_modal = true;
@@ -38,24 +51,48 @@ pub fn handle_delete_negative_match(state: &mut State) -> Command<Msg> {
             // Remove from state
             state.negative_matches.remove(&source_field);
 
-            // Recompute matches
-            // TODO: Support multi-entity mode - for now use first entity
-            let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
-            let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+            // Parse qualified name to get entity and field
+            let default_source_entity = state.source_entities.first().map(|s| s.as_str()).unwrap_or("");
+            let default_target_entity = state.target_entities.first().map(|s| s.as_str()).unwrap_or("");
+            let (source_entity_str, source_field_name) = parse_qualified_name(&source_field, default_source_entity);
+            let source_entity = source_entity_str.to_string();
+            let source_field_name = source_field_name.to_string();
 
-            if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
-                (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
-            {
+            // Recompute matches
+            let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
+
+            if is_multi_entity {
+                // Multi-entity mode: use recompute_all_matches_multi()
+                let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.source_metadata.iter()
+                    .filter_map(|(name, resource)| {
+                        if let Resource::Success(metadata) = resource {
+                            Some((name.clone(), metadata.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.target_metadata.iter()
+                    .filter_map(|(name, resource)| {
+                        if let Resource::Success(metadata) = resource {
+                            Some((name.clone(), metadata.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
                 let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-                    recompute_all_matches(
-                        source,
-                        target,
+                    recompute_all_matches_multi(
+                        &source_metadata_map,
+                        &target_metadata_map,
+                        &state.source_entities,
+                        &state.target_entities,
                         &state.field_mappings,
                         &state.imported_mappings,
                         &state.prefix_mappings,
                         &state.examples,
-                        &first_source_entity,
-                        &first_target_entity,
                         &state.negative_matches,
                     );
                 state.field_matches = field_matches;
@@ -63,15 +100,42 @@ pub fn handle_delete_negative_match(state: &mut State) -> Command<Msg> {
                 state.entity_matches = entity_matches;
                 state.source_related_entities = source_related_entities;
                 state.target_related_entities = target_related_entities;
+            } else {
+                // Single-entity mode: use first entity (backwards compatible)
+                let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+                let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+                if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
+                    (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
+                {
+                    let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                        recompute_all_matches(
+                            source,
+                            target,
+                            &state.field_mappings,
+                            &state.imported_mappings,
+                            &state.prefix_mappings,
+                            &state.examples,
+                            &first_source_entity,
+                            &first_target_entity,
+                            &state.negative_matches,
+                        );
+                    state.field_matches = field_matches;
+                    state.relationship_matches = relationship_matches;
+                    state.entity_matches = entity_matches;
+                    state.source_related_entities = source_related_entities;
+                    state.target_related_entities = target_related_entities;
+                }
             }
 
-            // Delete from database
-            let source_entity = first_source_entity;
-            let target_entity = first_target_entity;
+            // Delete from database for all target entities that might have had this negative match
+            let target_entities = state.target_entities.clone();
             tokio::spawn(async move {
                 let config = crate::global_config();
-                if let Err(e) = config.delete_negative_match(&source_entity, &target_entity, &source_field).await {
-                    log::error!("Failed to delete negative match: {}", e);
+                for target_entity in &target_entities {
+                    if let Err(e) = config.delete_negative_match(&source_entity, target_entity, &source_field_name).await {
+                        log::error!("Failed to delete negative match for {}/{}: {}", source_entity, target_entity, e);
+                    }
                 }
             });
         }
@@ -86,10 +150,11 @@ pub fn handle_add_negative_match_from_tree(state: &mut State) -> Command<Msg> {
     if let Some(selected_node) = source_tree.selected() {
         // Get the field name from the selected node
         // The node_id format varies by tab (fields, forms, views, relationships, entities)
-        let source_field = selected_node.to_string();
+        // In multi-entity mode, this will be qualified (e.g., "contact.fullname")
+        let source_key = selected_node.to_string();
 
         // Verify this field has a prefix match before adding negative match
-        if let Some(match_info) = state.field_matches.get(&source_field) {
+        if let Some(match_info) = state.field_matches.get(&source_key) {
             use super::super::MatchType;
 
             // Check if it's a prefix match (including type mismatch from prefix)
@@ -105,31 +170,54 @@ pub fn handle_add_negative_match_from_tree(state: &mut State) -> Command<Msg> {
             };
 
             if !is_prefix_match && !is_prefix_type_mismatch {
-                log::warn!("Cannot add negative match: field '{}' is not prefix-matched", source_field);
+                log::warn!("Cannot add negative match: field '{}' is not prefix-matched", source_key);
                 return Command::None;
             }
 
-            // Add to state
-            state.negative_matches.insert(source_field.clone());
+            // Parse qualified name to get entity and field
+            let default_source_entity = state.source_entities.first().map(|s| s.as_str()).unwrap_or("");
+            let (source_entity_str, source_field) = parse_qualified_name(&source_key, default_source_entity);
+            let source_entity = source_entity_str.to_string();
+            let source_field = source_field.to_string();
+
+            // Add to state (keep qualified name in state for tree matching)
+            state.negative_matches.insert(source_key.clone());
 
             // Recompute matches (this will now exclude the negative match)
-            // TODO: Support multi-entity mode - for now use first entity
-            let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
-            let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+            let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
 
-            if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
-                (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
-            {
+            if is_multi_entity {
+                // Multi-entity mode: use recompute_all_matches_multi()
+                let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.source_metadata.iter()
+                    .filter_map(|(name, resource)| {
+                        if let Resource::Success(metadata) = resource {
+                            Some((name.clone(), metadata.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.target_metadata.iter()
+                    .filter_map(|(name, resource)| {
+                        if let Resource::Success(metadata) = resource {
+                            Some((name.clone(), metadata.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
                 let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-                    recompute_all_matches(
-                        source,
-                        target,
+                    recompute_all_matches_multi(
+                        &source_metadata_map,
+                        &target_metadata_map,
+                        &state.source_entities,
+                        &state.target_entities,
                         &state.field_mappings,
                         &state.imported_mappings,
                         &state.prefix_mappings,
                         &state.examples,
-                        &first_source_entity,
-                        &first_target_entity,
                         &state.negative_matches,
                     );
                 state.field_matches = field_matches;
@@ -137,22 +225,48 @@ pub fn handle_add_negative_match_from_tree(state: &mut State) -> Command<Msg> {
                 state.entity_matches = entity_matches;
                 state.source_related_entities = source_related_entities;
                 state.target_related_entities = target_related_entities;
+            } else {
+                // Single-entity mode: use first entity (backwards compatible)
+                let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+                let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+                if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
+                    (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
+                {
+                    let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                        recompute_all_matches(
+                            source,
+                            target,
+                            &state.field_mappings,
+                            &state.imported_mappings,
+                            &state.prefix_mappings,
+                            &state.examples,
+                            &first_source_entity,
+                            &first_target_entity,
+                            &state.negative_matches,
+                        );
+                    state.field_matches = field_matches;
+                    state.relationship_matches = relationship_matches;
+                    state.entity_matches = entity_matches;
+                    state.source_related_entities = source_related_entities;
+                    state.target_related_entities = target_related_entities;
+                }
             }
 
-            // Save to database
-            let source_entity = first_source_entity;
-            let target_entity = first_target_entity;
-            let source_field_clone = source_field.clone();
+            // Save to database for all target entities
+            let target_entities = state.target_entities.clone();
             tokio::spawn(async move {
                 let config = crate::global_config();
-                if let Err(e) = config.add_negative_match(&source_entity, &target_entity, &source_field_clone).await {
-                    log::error!("Failed to add negative match: {}", e);
+                for target_entity in &target_entities {
+                    if let Err(e) = config.add_negative_match(&source_entity, target_entity, &source_field).await {
+                        log::error!("Failed to add negative match for {}/{}: {}", source_entity, target_entity, e);
+                    }
                 }
             });
 
-            log::info!("Added negative match for field: {}", source_field);
+            log::info!("Added negative match for field: {}", source_key);
         } else {
-            log::warn!("Cannot add negative match: field '{}' has no match", source_field);
+            log::warn!("Cannot add negative match: field '{}' has no match", source_key);
         }
     } else {
         log::warn!("Cannot add negative match: no source field selected");
