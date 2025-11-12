@@ -19,32 +19,47 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
     let percent_format = Format::new().set_num_format("0.0%");
 
     // Title
+    // TODO: Support multi-entity mode - for now use first entity
+    let first_source_entity = state.source_entities.first().map(|s| s.as_str()).unwrap_or("");
+    let first_target_entity = state.target_entities.first().map(|s| s.as_str()).unwrap_or("");
     sheet.write_string_with_format(
         0,
         0,
-        &format!("Mapping Statistics - {} → {}", state.source_entity, state.target_entity),
+        &format!("Mapping Statistics - {} → {}", first_source_entity, first_target_entity),
         &title_format,
     )?;
 
     let mut row = 2u32;
 
     // Get field counts
-    let source_fields = match &state.source_metadata {
-        Resource::Success(metadata) => &metadata.fields,
-        _ => {
-            sheet.write_string(row, 0, "No metadata loaded")?;
-            sheet.autofit();
-            return Ok(());
+    let source_fields = if let Some(first_entity) = state.source_entities.first() {
+        match state.source_metadata.get(first_entity) {
+            Some(Resource::Success(metadata)) => &metadata.fields,
+            _ => {
+                sheet.write_string(row, 0, "No metadata loaded")?;
+                sheet.autofit();
+                return Ok(());
+            }
         }
+    } else {
+        sheet.write_string(row, 0, "No source entities")?;
+        sheet.autofit();
+        return Ok(());
     };
 
-    let target_fields = match &state.target_metadata {
-        Resource::Success(metadata) => &metadata.fields,
-        _ => {
-            sheet.write_string(row, 0, "No target metadata loaded")?;
-            sheet.autofit();
-            return Ok(());
+    let target_fields = if let Some(first_entity) = state.target_entities.first() {
+        match state.target_metadata.get(first_entity) {
+            Some(Resource::Success(metadata)) => &metadata.fields,
+            _ => {
+                sheet.write_string(row, 0, "No target metadata loaded")?;
+                sheet.autofit();
+                return Ok(());
+            }
         }
+    } else {
+        sheet.write_string(row, 0, "No target entities")?;
+        sheet.autofit();
+        return Ok(());
     };
 
     // ===== SOURCE STATISTICS =====

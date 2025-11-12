@@ -1764,24 +1764,40 @@ fn calculate_completion_percentages(state: &State, active_tab: ActiveTab) -> (us
             (source_pct, target_pct)
         }
         ActiveTab::Relationships => {
-            // Get total counts and relationship name sets from metadata
-            let (source_total, source_rel_names) = if let Resource::Success(ref metadata) = state.source_metadata {
-                let rels: std::collections::HashSet<_> = metadata.relationships.iter()
-                    .map(|r| r.name.as_str())
-                    .collect();
-                (metadata.relationships.len(), rels)
-            } else {
-                (0, std::collections::HashSet::new())
-            };
+            // Get total counts and relationship name sets from metadata - sum across all entities
+            let source_total: usize = state.source_metadata.values()
+                .filter_map(|r| match r {
+                    Resource::Success(metadata) => Some(metadata.relationships.len()),
+                    _ => None,
+                })
+                .sum();
 
-            let (target_total, target_rel_names) = if let Resource::Success(ref metadata) = state.target_metadata {
-                let rels: std::collections::HashSet<_> = metadata.relationships.iter()
-                    .map(|r| r.name.as_str())
-                    .collect();
-                (metadata.relationships.len(), rels)
-            } else {
-                (0, std::collections::HashSet::new())
-            };
+            let source_rel_names: std::collections::HashSet<String> = state.source_metadata.values()
+                .filter_map(|r| match r {
+                    Resource::Success(metadata) => Some(metadata.relationships.iter()
+                        .map(|r| r.name.clone())
+                        .collect::<Vec<_>>()),
+                    _ => None,
+                })
+                .flatten()
+                .collect();
+
+            let target_total: usize = state.target_metadata.values()
+                .filter_map(|r| match r {
+                    Resource::Success(metadata) => Some(metadata.relationships.len()),
+                    _ => None,
+                })
+                .sum();
+
+            let target_rel_names: std::collections::HashSet<String> = state.target_metadata.values()
+                .filter_map(|r| match r {
+                    Resource::Success(metadata) => Some(metadata.relationships.iter()
+                        .map(|r| r.name.clone())
+                        .collect::<Vec<_>>()),
+                    _ => None,
+                })
+                .flatten()
+                .collect();
 
             // Count source items that are either mapped OR ignored (only if they exist in metadata)
             let mut source_handled = std::collections::HashSet::new();
@@ -1847,14 +1863,14 @@ fn calculate_completion_percentages(state: &State, active_tab: ActiveTab) -> (us
             (source_pct, target_pct)
         }
         ActiveTab::Entities => {
-            // Get total counts and entity name sets from entity lists
-            let source_total = state.source_entities.len();
-            let target_total = state.target_entities.len();
+            // Get total counts and entity name sets from related entity lists (Entities tab shows related entities)
+            let source_total = state.source_related_entities.len();
+            let target_total = state.target_related_entities.len();
 
-            let source_entity_names: std::collections::HashSet<_> = state.source_entities.iter()
+            let source_entity_names: std::collections::HashSet<_> = state.source_related_entities.iter()
                 .map(|(name, _)| name.as_str())
                 .collect();
-            let target_entity_names: std::collections::HashSet<_> = state.target_entities.iter()
+            let target_entity_names: std::collections::HashSet<_> = state.target_related_entities.iter()
                 .map(|(name, _)| name.as_str())
                 .collect();
 

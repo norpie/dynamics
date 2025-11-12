@@ -41,9 +41,10 @@ pub fn handle_parallel_data_loaded(
                         rels
                     } else {
                         // From cache - load relationships from cache
+                        // TODO: Support multi-entity mode - for now use first entity
                         let config = crate::global_config();
                         let source_env = state.source_env.clone();
-                        let source_entity = state.source_entity.clone();
+                        let source_entity = state.source_entities.first().cloned().unwrap_or_default();
                         tokio::task::block_in_place(|| {
                             tokio::runtime::Handle::current().block_on(async {
                                 config.get_entity_metadata_cache(&source_env, &source_entity, 12)
@@ -56,35 +57,41 @@ pub fn handle_parallel_data_loaded(
                         })
                     };
 
-                    if let Resource::Success(ref mut meta) = state.source_metadata {
+                    // TODO: Support multi-entity mode - for now use first entity
+                    let first_entity = state.source_entities.first().cloned().unwrap_or_default();
+                    if let Some(Resource::Success(meta)) = state.source_metadata.get_mut(&first_entity) {
                         meta.fields = fields;
                         meta.relationships = relationships;
                     } else {
-                        state.source_metadata = Resource::Success(crate::api::EntityMetadata {
+                        state.source_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
                             fields,
                             relationships,
                             ..Default::default()
-                        });
+                        }));
                     }
                 }
                 FetchedData::SourceForms(forms) => {
-                    if let Resource::Success(ref mut meta) = state.source_metadata {
+                    // TODO: Support multi-entity mode - for now use first entity
+                    let first_entity = state.source_entities.first().cloned().unwrap_or_default();
+                    if let Some(Resource::Success(meta)) = state.source_metadata.get_mut(&first_entity) {
                         meta.forms = forms;
                     } else {
-                        state.source_metadata = Resource::Success(crate::api::EntityMetadata {
+                        state.source_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
                             forms,
                             ..Default::default()
-                        });
+                        }));
                     }
                 }
                 FetchedData::SourceViews(views) => {
-                    if let Resource::Success(ref mut meta) = state.source_metadata {
+                    // TODO: Support multi-entity mode - for now use first entity
+                    let first_entity = state.source_entities.first().cloned().unwrap_or_default();
+                    if let Some(Resource::Success(meta)) = state.source_metadata.get_mut(&first_entity) {
                         meta.views = views;
                     } else {
-                        state.source_metadata = Resource::Success(crate::api::EntityMetadata {
+                        state.source_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
                             views,
                             ..Default::default()
-                        });
+                        }));
                     }
                 }
                 FetchedData::TargetFields(mut fields) => {
@@ -101,9 +108,10 @@ pub fn handle_parallel_data_loaded(
                         rels
                     } else {
                         // From cache - load relationships from cache
+                        // TODO: Support multi-entity mode - for now use first entity
                         let config = crate::global_config();
                         let target_env = state.target_env.clone();
-                        let target_entity = state.target_entity.clone();
+                        let target_entity = state.target_entities.first().cloned().unwrap_or_default();
                         tokio::task::block_in_place(|| {
                             tokio::runtime::Handle::current().block_on(async {
                                 config.get_entity_metadata_cache(&target_env, &target_entity, 12)
@@ -116,35 +124,41 @@ pub fn handle_parallel_data_loaded(
                         })
                     };
 
-                    if let Resource::Success(ref mut meta) = state.target_metadata {
+                    // TODO: Support multi-entity mode - for now use first entity
+                    let first_entity = state.target_entities.first().cloned().unwrap_or_default();
+                    if let Some(Resource::Success(meta)) = state.target_metadata.get_mut(&first_entity) {
                         meta.fields = fields;
                         meta.relationships = relationships;
                     } else {
-                        state.target_metadata = Resource::Success(crate::api::EntityMetadata {
+                        state.target_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
                             fields,
                             relationships,
                             ..Default::default()
-                        });
+                        }));
                     }
                 }
                 FetchedData::TargetForms(forms) => {
-                    if let Resource::Success(ref mut meta) = state.target_metadata {
+                    // TODO: Support multi-entity mode - for now use first entity
+                    let first_entity = state.target_entities.first().cloned().unwrap_or_default();
+                    if let Some(Resource::Success(meta)) = state.target_metadata.get_mut(&first_entity) {
                         meta.forms = forms;
                     } else {
-                        state.target_metadata = Resource::Success(crate::api::EntityMetadata {
+                        state.target_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
                             forms,
                             ..Default::default()
-                        });
+                        }));
                     }
                 }
                 FetchedData::TargetViews(views) => {
-                    if let Resource::Success(ref mut meta) = state.target_metadata {
+                    // TODO: Support multi-entity mode - for now use first entity
+                    let first_entity = state.target_entities.first().cloned().unwrap_or_default();
+                    if let Some(Resource::Success(meta)) = state.target_metadata.get_mut(&first_entity) {
                         meta.views = views;
                     } else {
-                        state.target_metadata = Resource::Success(crate::api::EntityMetadata {
+                        state.target_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
                             views,
                             ..Default::default()
-                        });
+                        }));
                     }
                 }
                 FetchedData::ExampleData(pair_id, source_data, target_data) => {
@@ -166,8 +180,11 @@ pub fn handle_parallel_data_loaded(
                         }
 
                         // Use composite keys: entity:record_id
-                        let source_key = format!("{}:{}", state.source_entity, pair.source_record_id);
-                        let target_key = format!("{}:{}", state.target_entity, pair.target_record_id);
+                        // TODO: Support multi-entity mode - for now use first entity
+                        let first_source_entity = state.source_entities.first().map(|s| s.as_str()).unwrap_or("");
+                        let first_target_entity = state.target_entities.first().map(|s| s.as_str()).unwrap_or("");
+                        let source_key = format!("{}:{}", first_source_entity, pair.source_record_id);
+                        let target_key = format!("{}:{}", first_target_entity, pair.target_record_id);
 
                         log::debug!("Storing with keys: source='{}', target='{}'", source_key, target_key);
 
@@ -182,15 +199,19 @@ pub fn handle_parallel_data_loaded(
             }
 
             // Write complete metadata to cache and focus tree when both fully loaded
-            if let (Resource::Success(source), Resource::Success(target)) =
-                (&state.source_metadata, &state.target_metadata)
+            // TODO: Support multi-entity mode - for now use first entity
+            let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+            let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+            if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
+                (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
             {
                 if !source.fields.is_empty() && !target.fields.is_empty()
                     && !source.forms.is_empty() && !target.forms.is_empty()
                     && !source.views.is_empty() && !target.views.is_empty() {
 
                     // Compute all matches using the extracted function
-                    let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
+                    let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
                         recompute_all_matches(
                             source,
                             target,
@@ -198,16 +219,16 @@ pub fn handle_parallel_data_loaded(
                             &state.imported_mappings,
                             &state.prefix_mappings,
                             &state.examples,
-                            &state.source_entity,
-                            &state.target_entity,
-                &state.negative_matches,
+                            &first_source_entity,
+                            &first_target_entity,
+                            &state.negative_matches,
                         );
 
                     state.field_matches = field_matches;
                     state.relationship_matches = relationship_matches;
                     state.entity_matches = entity_matches;
-                    state.source_entities = source_entities;
-                    state.target_entities = target_entities;
+                    state.source_related_entities = source_related_entities;
+                    state.target_related_entities = target_related_entities;
 
                     // Collect available field types for type filtering
                     state.available_source_types = collect_field_types(&source.fields);
@@ -215,7 +236,7 @@ pub fn handle_parallel_data_loaded(
 
                     // Cache both metadata objects asynchronously
                     let source_env = state.source_env.clone();
-                    let source_entity = state.source_entity.clone();
+                    let source_entity = first_source_entity.clone();
                     let source_meta = source.clone();
                     tokio::spawn(async move {
                         let config = crate::global_config();
@@ -227,7 +248,7 @@ pub fn handle_parallel_data_loaded(
                     });
 
                     let target_env = state.target_env.clone();
-                    let target_entity = state.target_entity.clone();
+                    let target_entity = first_target_entity.clone();
                     let target_meta = target.clone();
                     tokio::spawn(async move {
                         let config = crate::global_config();
@@ -282,34 +303,38 @@ pub fn handle_mappings_loaded(
         state.examples.active_pair_id = Some(state.examples.pairs[0].id.clone());
     }
 
+    // TODO: Support multi-entity mode - for now use first entity
+    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
     // Now load metadata + example data in one parallel batch
     let mut builder = Command::perform_parallel()
         // Source entity fetches
         .add_task(
-            format!("Loading {} fields ({})", state.source_entity, state.source_env),
+            format!("Loading {} fields ({})", first_source_entity, state.source_env),
             {
                 let env = state.source_env.clone();
-                let entity = state.source_entity.clone();
+                let entity = first_source_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::SourceFields, true).await
                 }
             }
         )
         .add_task(
-            format!("Loading {} forms ({})", state.source_entity, state.source_env),
+            format!("Loading {} forms ({})", first_source_entity, state.source_env),
             {
                 let env = state.source_env.clone();
-                let entity = state.source_entity.clone();
+                let entity = first_source_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::SourceForms, true).await
                 }
             }
         )
         .add_task(
-            format!("Loading {} views ({})", state.source_entity, state.source_env),
+            format!("Loading {} views ({})", first_source_entity, state.source_env),
             {
                 let env = state.source_env.clone();
-                let entity = state.source_entity.clone();
+                let entity = first_source_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::SourceViews, true).await
                 }
@@ -317,30 +342,30 @@ pub fn handle_mappings_loaded(
         )
         // Target entity fetches
         .add_task(
-            format!("Loading {} fields ({})", state.target_entity, state.target_env),
+            format!("Loading {} fields ({})", first_target_entity, state.target_env),
             {
                 let env = state.target_env.clone();
-                let entity = state.target_entity.clone();
+                let entity = first_target_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::TargetFields, true).await
                 }
             }
         )
         .add_task(
-            format!("Loading {} forms ({})", state.target_entity, state.target_env),
+            format!("Loading {} forms ({})", first_target_entity, state.target_env),
             {
                 let env = state.target_env.clone();
-                let entity = state.target_entity.clone();
+                let entity = first_target_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::TargetForms, true).await
                 }
             }
         )
         .add_task(
-            format!("Loading {} views ({})", state.target_entity, state.target_env),
+            format!("Loading {} views ({})", first_target_entity, state.target_env),
             {
                 let env = state.target_env.clone();
-                let entity = state.target_entity.clone();
+                let entity = first_target_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::TargetViews, true).await
                 }
@@ -351,10 +376,10 @@ pub fn handle_mappings_loaded(
     for pair in example_pairs {
         let pair_id = pair.id.clone();
         let source_env = state.source_env.clone();
-        let source_entity = state.source_entity.clone();
+        let source_entity = first_source_entity.clone();
         let source_record_id = pair.source_record_id.clone();
         let target_env = state.target_env.clone();
-        let target_entity = state.target_entity.clone();
+        let target_entity = first_target_entity.clone();
         let target_record_id = pair.target_record_id.clone();
 
         builder = builder.add_task(
@@ -386,9 +411,13 @@ pub fn handle_mappings_loaded(
 }
 
 pub fn handle_refresh(state: &mut State) -> Command<Msg> {
+    // TODO: Support multi-entity mode - for now use first entity
+    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
     // Re-fetch metadata for both entities
-    state.source_metadata = Resource::Loading;
-    state.target_metadata = Resource::Loading;
+    state.source_metadata.insert(first_source_entity.clone(), Resource::Loading);
+    state.target_metadata.insert(first_target_entity.clone(), Resource::Loading);
 
     // Clear example cache to force re-fetch
     state.examples.cache.clear();
@@ -396,30 +425,30 @@ pub fn handle_refresh(state: &mut State) -> Command<Msg> {
     let mut builder = Command::perform_parallel()
         // Source entity fetches - bypass cache for manual refresh
         .add_task(
-            format!("Refreshing {} fields ({})", state.source_entity, state.source_env),
+            format!("Refreshing {} fields ({})", first_source_entity, state.source_env),
             {
                 let env = state.source_env.clone();
-                let entity = state.source_entity.clone();
+                let entity = first_source_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::SourceFields, false).await
                 }
             }
         )
         .add_task(
-            format!("Refreshing {} forms ({})", state.source_entity, state.source_env),
+            format!("Refreshing {} forms ({})", first_source_entity, state.source_env),
             {
                 let env = state.source_env.clone();
-                let entity = state.source_entity.clone();
+                let entity = first_source_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::SourceForms, false).await
                 }
             }
         )
         .add_task(
-            format!("Refreshing {} views ({})", state.source_entity, state.source_env),
+            format!("Refreshing {} views ({})", first_source_entity, state.source_env),
             {
                 let env = state.source_env.clone();
-                let entity = state.source_entity.clone();
+                let entity = first_source_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::SourceViews, false).await
                 }
@@ -427,30 +456,30 @@ pub fn handle_refresh(state: &mut State) -> Command<Msg> {
         )
         // Target entity fetches - bypass cache for manual refresh
         .add_task(
-            format!("Refreshing {} fields ({})", state.target_entity, state.target_env),
+            format!("Refreshing {} fields ({})", first_target_entity, state.target_env),
             {
                 let env = state.target_env.clone();
-                let entity = state.target_entity.clone();
+                let entity = first_target_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::TargetFields, false).await
                 }
             }
         )
         .add_task(
-            format!("Refreshing {} forms ({})", state.target_entity, state.target_env),
+            format!("Refreshing {} forms ({})", first_target_entity, state.target_env),
             {
                 let env = state.target_env.clone();
-                let entity = state.target_entity.clone();
+                let entity = first_target_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::TargetForms, false).await
                 }
             }
         )
         .add_task(
-            format!("Refreshing {} views ({})", state.target_entity, state.target_env),
+            format!("Refreshing {} views ({})", first_target_entity, state.target_env),
             {
                 let env = state.target_env.clone();
-                let entity = state.target_entity.clone();
+                let entity = first_target_entity.clone();
                 async move {
                     fetch_with_cache(&env, &entity, FetchType::TargetViews, false).await
                 }
@@ -461,10 +490,10 @@ pub fn handle_refresh(state: &mut State) -> Command<Msg> {
     for pair in &state.examples.pairs {
         let pair_id = pair.id.clone();
         let source_env = state.source_env.clone();
-        let source_entity = state.source_entity.clone();
+        let source_entity = first_source_entity.clone();
         let source_record_id = pair.source_record_id.clone();
         let target_env = state.target_env.clone();
-        let target_entity = state.target_entity.clone();
+        let target_entity = first_target_entity.clone();
         let target_record_id = pair.target_record_id.clone();
 
         builder = builder.add_task(

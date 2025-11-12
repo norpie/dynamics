@@ -9,11 +9,16 @@ use crate::tui::resource::Resource;
 /// Export unmapped source field names to a single-column CSV file
 pub fn export_unmapped_fields_to_csv(state: &State, file_path: &str) -> Result<()> {
     // Get source fields from metadata
-    let source_fields = match &state.source_metadata {
-        Resource::Success(metadata) => &metadata.fields,
-        _ => {
-            return Err(anyhow::anyhow!("Source metadata not loaded"));
+    // TODO: Support multi-entity mode - for now use first entity
+    let source_fields = if let Some(first_entity) = state.source_entities.first() {
+        match state.source_metadata.get(first_entity) {
+            Some(Resource::Success(metadata)) => &metadata.fields,
+            _ => {
+                return Err(anyhow::anyhow!("Source metadata not loaded"));
+            }
         }
+    } else {
+        return Err(anyhow::anyhow!("No source entities"));
     };
 
     // Filter to get unmapped fields (excluding ignored items)

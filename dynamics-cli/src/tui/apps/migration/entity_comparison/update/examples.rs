@@ -64,8 +64,9 @@ pub fn handle_add_example_pair(state: &mut State) -> Command<Msg> {
         state.examples_label_input.set_value(String::new());
 
         // Persist to database
-        let source_entity = state.source_entity.clone();
-        let target_entity = state.target_entity.clone();
+        // TODO: Support multi-entity mode - for now use first entity
+        let source_entity = state.source_entities.first().cloned().unwrap_or_default();
+        let target_entity = state.target_entities.first().cloned().unwrap_or_default();
         tokio::spawn(async move {
             let config = crate::global_config();
             if let Err(e) = config.save_example_pair(&source_entity, &target_entity, &pair).await {
@@ -75,9 +76,10 @@ pub fn handle_add_example_pair(state: &mut State) -> Command<Msg> {
 
         // Auto-fetch data for new pair
         let source_env = state.source_env.clone();
-        let source_entity = state.source_entity.clone();
+        // TODO: Support multi-entity mode - for now use first entity
+        let source_entity = state.source_entities.first().cloned().unwrap_or_default();
         let target_env = state.target_env.clone();
-        let target_entity = state.target_entity.clone();
+        let target_entity = state.target_entities.first().cloned().unwrap_or_default();
 
         return Command::perform(
             async move {
@@ -188,10 +190,14 @@ pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
     }
 
     // Recompute matches since the active example pair changed
-    if let (Resource::Success(source), Resource::Success(target)) =
-        (&state.source_metadata, &state.target_metadata)
+    // TODO: Support multi-entity mode - for now use first entity
+    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+    if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
+        (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
     {
-        let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
+        let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
             recompute_all_matches(
                 source,
                 target,
@@ -199,15 +205,15 @@ pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
                 &state.imported_mappings,
                 &state.prefix_mappings,
                 &state.examples,
-                &state.source_entity,
-                &state.target_entity,
+                &first_source_entity,
+                &first_target_entity,
                 &state.negative_matches,
             );
         state.field_matches = field_matches;
         state.relationship_matches = relationship_matches;
         state.entity_matches = entity_matches;
-        state.source_entities = source_entities;
-        state.target_entities = target_entities;
+        state.source_related_entities = source_related_entities;
+        state.target_related_entities = target_related_entities;
     }
 
     Command::None

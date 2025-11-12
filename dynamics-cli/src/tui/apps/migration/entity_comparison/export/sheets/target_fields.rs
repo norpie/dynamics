@@ -45,10 +45,12 @@ pub fn create_target_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
     let title_format = create_title_format();
 
     // Title
+    // TODO: Support multi-entity mode - for now use first entity
+    let first_target_entity = state.target_entities.first().map(|s| s.as_str()).unwrap_or("");
     sheet.write_string_with_format(
         0,
         0,
-        &format!("Target Fields - {} ({})", state.target_entity, state.target_env),
+        &format!("Target Fields - {} ({})", first_target_entity, state.target_env),
         &title_format,
     )?;
 
@@ -68,23 +70,36 @@ pub fn create_target_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
     let indent_format = Format::new().set_indent(1);
 
     // Get target fields
-    let target_fields = match &state.target_metadata {
-        Resource::Success(metadata) => &metadata.fields,
-        _ => {
-            sheet.write_string(row, 0, "No metadata loaded")?;
-            sheet.autofit();
-            return Ok(());
+    // TODO: Support multi-entity mode - for now use first entity
+    let target_fields = if let Some(first_entity) = state.target_entities.first() {
+        match state.target_metadata.get(first_entity) {
+            Some(Resource::Success(metadata)) => &metadata.fields,
+            _ => {
+                sheet.write_string(row, 0, "No metadata loaded")?;
+                sheet.autofit();
+                return Ok(());
+            }
         }
+    } else {
+        sheet.write_string(row, 0, "No target entities")?;
+        sheet.autofit();
+        return Ok(());
     };
 
     // Get source fields for type lookup
-    let source_fields = match &state.source_metadata {
-        Resource::Success(metadata) => &metadata.fields,
-        _ => {
-            sheet.write_string(row, 0, "No source metadata loaded")?;
-            sheet.autofit();
-            return Ok(());
+    let source_fields = if let Some(first_entity) = state.source_entities.first() {
+        match state.source_metadata.get(first_entity) {
+            Some(Resource::Success(metadata)) => &metadata.fields,
+            _ => {
+                sheet.write_string(row, 0, "No source metadata loaded")?;
+                sheet.autofit();
+                return Ok(());
+            }
         }
+    } else {
+        sheet.write_string(row, 0, "No source entities")?;
+        sheet.autofit();
+        return Ok(());
     };
 
     // Create a lookup map for source field types

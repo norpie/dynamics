@@ -83,8 +83,9 @@ pub fn handle_create_manual_mapping(state: &mut State) -> Command<Msg> {
 
             // Save to database: delete old mappings first, then insert new ones
             // This ensures we replace (not append to) existing mappings
-            let source_entity = state.source_entity.clone();
-            let target_entity = state.target_entity.clone();
+            // TODO: Support multi-entity mode - for now use first entity
+            let source_entity = state.source_entities.first().cloned().unwrap_or_default();
+            let target_entity = state.target_entities.first().cloned().unwrap_or_default();
             tokio::spawn(async move {
                 let config = crate::global_config();
 
@@ -134,8 +135,9 @@ pub fn handle_create_manual_mapping(state: &mut State) -> Command<Msg> {
                 state.field_mappings.insert(source_key.clone(), vec![target_key.clone()]);
 
                 // Save to database: delete old mappings first, then insert new one
-                let source_entity = state.source_entity.clone();
-                let target_entity = state.target_entity.clone();
+                // TODO: Support multi-entity mode - for now use first entity
+                let source_entity = state.source_entities.first().cloned().unwrap_or_default();
+                let target_entity = state.target_entities.first().cloned().unwrap_or_default();
                 let source_key_clone = source_key.clone();
                 let target_key_clone = target_key.clone();
                 tokio::spawn(async move {
@@ -155,10 +157,14 @@ pub fn handle_create_manual_mapping(state: &mut State) -> Command<Msg> {
         }
 
         // Recompute matches once after all mappings are added
-        if let (Resource::Success(source), Resource::Success(target)) =
-            (&state.source_metadata, &state.target_metadata)
+        // TODO: Support multi-entity mode - for now use first entity
+        let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+        let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+        if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
+            (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
         {
-            let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
+            let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
                 recompute_all_matches(
                     source,
                     target,
@@ -166,15 +172,15 @@ pub fn handle_create_manual_mapping(state: &mut State) -> Command<Msg> {
                     &state.imported_mappings,
                     &state.prefix_mappings,
                     &state.examples,
-                    &state.source_entity,
-                    &state.target_entity,
+                    &first_source_entity,
+                    &first_target_entity,
                 &state.negative_matches,
                 );
             state.field_matches = field_matches;
             state.relationship_matches = relationship_matches;
             state.entity_matches = entity_matches;
-            state.source_entities = source_entities;
-            state.target_entities = target_entities;
+            state.source_related_entities = source_related_entities;
+            state.target_related_entities = target_related_entities;
         }
 
         // Log success message
@@ -243,10 +249,14 @@ pub fn handle_delete_manual_mapping(state: &mut State) -> Command<Msg> {
                 }
 
                 // Recompute matches
-                if let (Resource::Success(source), Resource::Success(target)) =
-                    (&state.source_metadata, &state.target_metadata)
+                // TODO: Support multi-entity mode - for now use first entity
+                let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+                let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+                if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
+                    (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
                 {
-                    let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
+                    let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
                         recompute_all_matches(
                             source,
                             target,
@@ -254,20 +264,21 @@ pub fn handle_delete_manual_mapping(state: &mut State) -> Command<Msg> {
                             &state.imported_mappings,
                             &state.prefix_mappings,
                             &state.examples,
-                            &state.source_entity,
-                            &state.target_entity,
+                            &first_source_entity,
+                            &first_target_entity,
                             &state.negative_matches,
                         );
                     state.field_matches = field_matches;
                     state.relationship_matches = relationship_matches;
                     state.entity_matches = entity_matches;
-                    state.source_entities = source_entities;
-                    state.target_entities = target_entities;
+                    state.source_related_entities = source_related_entities;
+                    state.target_related_entities = target_related_entities;
                 }
 
                 // Delete from database (deletes all targets for this source)
-                let source_entity = state.source_entity.clone();
-                let target_entity = state.target_entity.clone();
+                // TODO: Support multi-entity mode - for now use first entity
+                let source_entity = state.source_entities.first().cloned().unwrap_or_default();
+                let target_entity = state.target_entities.first().cloned().unwrap_or_default();
                 let source_key_for_db = source_key.clone();
                 tokio::spawn(async move {
                     let config = crate::global_config();
@@ -313,19 +324,21 @@ pub fn handle_toggle_mirror_mode(state: &mut State) -> Command<Msg> {
 
 pub fn handle_export_to_excel(state: &mut State) -> Command<Msg> {
     // Check if metadata is loaded
-    if !matches!(state.source_metadata, Resource::Success(_)) ||
-       !matches!(state.target_metadata, Resource::Success(_)) {
+    if !state.all_metadata_loaded() {
         log::warn!("Cannot export: metadata not fully loaded");
         return Command::None;
     }
 
     // Generate filename with timestamp
+    // TODO: Support multi-entity mode - for now use first entity
+    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let filename = format!(
         "{}_{}_to_{}_{}.xlsx",
         state.migration_name,
-        state.source_entity,
-        state.target_entity,
+        first_source_entity,
+        first_target_entity,
         timestamp
     );
 
@@ -350,17 +363,19 @@ pub fn handle_export_to_excel(state: &mut State) -> Command<Msg> {
 
 pub fn handle_export_unmapped_to_csv(state: &mut State) -> Command<Msg> {
     // Check if source metadata is loaded
-    if !matches!(state.source_metadata, Resource::Success(_)) {
+    if !state.all_source_metadata_loaded() {
         log::warn!("Cannot export: source metadata not loaded");
         return Command::None;
     }
 
     // Generate filename with timestamp
+    // TODO: Support multi-entity mode - for now use first entity
+    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
     let filename = format!(
         "{}_{}_unmapped_{}.csv",
         state.migration_name,
-        state.source_entity,
+        first_source_entity,
         timestamp
     );
 

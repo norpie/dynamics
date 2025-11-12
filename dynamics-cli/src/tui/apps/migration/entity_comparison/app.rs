@@ -463,7 +463,7 @@ impl State {
         // Build source tree - TODO: Support multi-entity properly (Phase 4)
         // For now, use first entity's metadata for backwards compat
         let source_items = if let Some(first_entity) = self.source_entities.first() {
-            if let Some(Resource::Success(ref metadata)) = self.source_metadata.get(first_entity) {
+            if let Some(Resource::Success(metadata)) = self.source_metadata.get(first_entity) {
                 super::tree_builder::build_tree_items(
                     metadata,
                     self.active_tab,
@@ -589,7 +589,7 @@ impl State {
         // Build target tree - TODO: Support multi-entity properly (Phase 4)
         // For now, use first entity's metadata for backwards compat
         let target_items = if let Some(first_entity) = self.target_entities.first() {
-            if let Some(Resource::Success(ref metadata)) = self.target_metadata.get(first_entity) {
+            if let Some(Resource::Success(metadata)) = self.target_metadata.get(first_entity) {
                 super::tree_builder::build_tree_items(
                     metadata,
                     self.active_tab,

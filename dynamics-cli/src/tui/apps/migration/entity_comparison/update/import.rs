@@ -244,11 +244,15 @@ pub fn handle_csv_loaded(state: &mut State, csv_data: crate::csv_parser::CsvImpo
     state.show_import_modal = false;
 
     // Recompute all matches with updated mappings
-    if let (Resource::Success(source_metadata), Resource::Success(target_metadata)) = (
-        &state.source_metadata,
-        &state.target_metadata,
+    // TODO: Support multi-entity mode - for now use first entity
+    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+    if let (Some(Resource::Success(source_metadata)), Some(Resource::Success(target_metadata))) = (
+        state.source_metadata.get(&first_source_entity),
+        state.target_metadata.get(&first_target_entity),
     ) {
-        let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
+        let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
             super::super::matching_adapter::recompute_all_matches(
                 source_metadata,
                 target_metadata,
@@ -256,21 +260,21 @@ pub fn handle_csv_loaded(state: &mut State, csv_data: crate::csv_parser::CsvImpo
                 &state.imported_mappings,
                 &state.prefix_mappings,
                 &state.examples,
-                &state.source_entity,
-                &state.target_entity,
+                &first_source_entity,
+                &first_target_entity,
                 &state.negative_matches,
             );
 
         state.field_matches = field_matches;
         state.relationship_matches = relationship_matches;
         state.entity_matches = entity_matches;
-        state.source_entities = source_entities;
-        state.target_entities = target_entities;
+        state.source_related_entities = source_related_entities;
+        state.target_related_entities = target_related_entities;
     }
 
     // Persist all mapping types to config (async, don't wait)
-    let source_entity = state.source_entity.clone();
-    let target_entity = state.target_entity.clone();
+    let source_entity = first_source_entity;
+    let target_entity = first_target_entity;
     let field_mappings = state.field_mappings.clone();
     let prefix_mappings = state.prefix_mappings.clone();
     let imported_mappings = state.imported_mappings.clone();
@@ -371,11 +375,15 @@ pub fn handle_mappings_loaded(state: &mut State, mappings: HashMap<String, Strin
     state.show_import_modal = false;
 
     // Recompute all matches with imported mappings
-    if let (Resource::Success(source_metadata), Resource::Success(target_metadata)) = (
-        &state.source_metadata,
-        &state.target_metadata,
+    // TODO: Support multi-entity mode - for now use first entity
+    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+    if let (Some(Resource::Success(source_metadata)), Some(Resource::Success(target_metadata))) = (
+        state.source_metadata.get(&first_source_entity),
+        state.target_metadata.get(&first_target_entity),
     ) {
-        let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
+        let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
             super::super::matching_adapter::recompute_all_matches(
                 source_metadata,
                 target_metadata,
@@ -383,22 +391,22 @@ pub fn handle_mappings_loaded(state: &mut State, mappings: HashMap<String, Strin
                 &state.imported_mappings,
                 &state.prefix_mappings,
                 &state.examples,
-                &state.source_entity,
-                &state.target_entity,
+                &first_source_entity,
+                &first_target_entity,
                 &state.negative_matches,
             );
 
         state.field_matches = field_matches;
         state.relationship_matches = relationship_matches;
         state.entity_matches = entity_matches;
-        state.source_entities = source_entities;
-        state.target_entities = target_entities;
+        state.source_related_entities = source_related_entities;
+        state.target_related_entities = target_related_entities;
 
     }
 
     // Persist to config (async, don't wait)
-    let source_entity = state.source_entity.clone();
-    let target_entity = state.target_entity.clone();
+    let source_entity = first_source_entity;
+    let target_entity = first_target_entity;
     let imported = state.imported_mappings.clone();
     let file = state.import_source_file.clone();
 
@@ -427,11 +435,15 @@ pub fn handle_clear_imported(state: &mut State) -> Command<Msg> {
     state.import_results = None;
 
     // Recompute matches without imported mappings
-    if let (Resource::Success(source_metadata), Resource::Success(target_metadata)) = (
-        &state.source_metadata,
-        &state.target_metadata,
+    // TODO: Support multi-entity mode - for now use first entity
+    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+    if let (Some(Resource::Success(source_metadata)), Some(Resource::Success(target_metadata))) = (
+        state.source_metadata.get(&first_source_entity),
+        state.target_metadata.get(&first_target_entity),
     ) {
-        let (field_matches, relationship_matches, entity_matches, source_entities, target_entities) =
+        let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
             super::super::matching_adapter::recompute_all_matches(
                 source_metadata,
                 target_metadata,
@@ -439,22 +451,22 @@ pub fn handle_clear_imported(state: &mut State) -> Command<Msg> {
                 &state.imported_mappings, // Now empty
                 &state.prefix_mappings,
                 &state.examples,
-                &state.source_entity,
-                &state.target_entity,
+                &first_source_entity,
+                &first_target_entity,
                 &state.negative_matches,
             );
 
         state.field_matches = field_matches;
         state.relationship_matches = relationship_matches;
         state.entity_matches = entity_matches;
-        state.source_entities = source_entities;
-        state.target_entities = target_entities;
+        state.source_related_entities = source_related_entities;
+        state.target_related_entities = target_related_entities;
 
     }
 
     // Persist cleared state to config
-    let source_entity = state.source_entity.clone();
-    let target_entity = state.target_entity.clone();
+    let source_entity = first_source_entity;
+    let target_entity = first_target_entity;
 
     Command::perform(
         async move {

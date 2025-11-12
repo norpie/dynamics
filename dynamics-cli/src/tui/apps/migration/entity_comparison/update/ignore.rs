@@ -48,8 +48,9 @@ pub fn handle_ignore_item(state: &mut State) -> Command<Msg> {
         }
 
         // Persist to config (async, don't wait)
-        let source_entity = state.source_entity.clone();
-        let target_entity = state.target_entity.clone();
+        // TODO: Support multi-entity mode - for now use first entity
+        let source_entity = state.source_entities.first().cloned().unwrap_or_default();
+        let target_entity = state.target_entities.first().cloned().unwrap_or_default();
         let ignored = state.ignored_items.clone();
 
         Command::perform(
@@ -130,8 +131,9 @@ pub fn handle_delete_item(state: &mut State) -> Command<Msg> {
             );
 
             // Persist to config
-            let source_entity = state.source_entity.clone();
-            let target_entity = state.target_entity.clone();
+            // TODO: Support multi-entity mode - for now use first entity
+            let source_entity = state.source_entities.first().cloned().unwrap_or_default();
+            let target_entity = state.target_entities.first().cloned().unwrap_or_default();
             let ignored = state.ignored_items.clone();
 
             return Command::perform(
@@ -155,8 +157,9 @@ pub fn handle_clear_all(state: &mut State) -> Command<Msg> {
     state.ignore_list_state.select_and_scroll(None, 0);
 
     // Persist cleared state to config
-    let source_entity = state.source_entity.clone();
-    let target_entity = state.target_entity.clone();
+    // TODO: Support multi-entity mode - for now use first entity
+    let source_entity = state.source_entities.first().cloned().unwrap_or_default();
+    let target_entity = state.target_entities.first().cloned().unwrap_or_default();
 
     Command::perform(
         async move {
