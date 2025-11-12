@@ -521,14 +521,14 @@ impl App for MigrationComparisonSelectApp {
                     state.comparisons.len(), state.list_state.selected());
                 if let Some(selected_idx) = state.list_state.selected() {
                     if let Some(comparison) = state.comparisons.get(selected_idx) {
-                        log::info!("Opening comparison: {} -> {}",
-                            comparison.source_entity, comparison.target_entity);
+                        log::info!("Opening comparison: {:?} -> {:?}",
+                            comparison.source_entities, comparison.target_entities);
                         let params = super::entity_comparison::EntityComparisonParams {
                             migration_name: state.migration_name.clone().unwrap_or_default(),
                             source_env: state.source_env.clone().unwrap_or_default(),
                             target_env: state.target_env.clone().unwrap_or_default(),
-                            source_entity: comparison.source_entity.clone(),
-                            target_entity: comparison.target_entity.clone(),
+                            source_entities: comparison.source_entities.clone(),
+                            target_entities: comparison.target_entities.clone(),
                         };
                         return Command::batch(vec![
                             Command::start_app(AppId::EntityComparison, params),

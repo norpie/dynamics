@@ -140,17 +140,19 @@ pub struct State {
     pub(super) migration_name: String,
     pub(super) source_env: String,
     pub(super) target_env: String,
-    pub(super) source_entity: String,
-    pub(super) target_entity: String,
+
+    // Entities being compared (N:M support)
+    pub(super) source_entities: Vec<String>,  // Changed from source_entity: String
+    pub(super) target_entities: Vec<String>,  // Changed from target_entity: String
 
     // Active tab
     pub(super) active_tab: ActiveTab,
 
-    // Metadata (from API)
-    pub(super) source_metadata: Resource<EntityMetadata>,
-    pub(super) target_metadata: Resource<EntityMetadata>,
+    // Metadata (from API) - now per entity
+    pub(super) source_metadata: HashMap<String, Resource<EntityMetadata>>,  // entity_name -> metadata
+    pub(super) target_metadata: HashMap<String, Resource<EntityMetadata>>,  // entity_name -> metadata
 
-    // Mapping state
+    // Mapping state (now uses qualified names: entity.field)
     pub(super) field_mappings: HashMap<String, Vec<String>>,  // source -> targets (manual, 1-to-N support)
     pub(super) prefix_mappings: HashMap<String, Vec<String>>, // source_prefix -> target_prefixes (1-to-N support)
     pub(super) imported_mappings: HashMap<String, Vec<String>>, // source -> targets (from C# file, 1-to-N support)
@@ -161,14 +163,14 @@ pub struct State {
     pub(super) mirror_mode: super::models::MirrorMode,
     pub(super) show_technical_names: bool, // true = logical names, false = display names
 
-    // Computed matches (cached)
+    // Computed matches (cached) - uses qualified names in multi-entity mode
     pub(super) field_matches: HashMap<String, MatchInfo>,        // source_field -> match_info
     pub(super) relationship_matches: HashMap<String, MatchInfo>, // source_relationship -> match_info
     pub(super) entity_matches: HashMap<String, MatchInfo>,       // source_entity -> match_info
 
-    // Entity lists (extracted from relationships)
-    pub(super) source_entities: Vec<(String, usize)>,  // (entity_name, usage_count)
-    pub(super) target_entities: Vec<(String, usize)>,
+    // Entity lists (extracted from relationships for Entities tab)
+    pub(super) source_related_entities: Vec<(String, usize)>,  // (entity_name, usage_count) - renamed from source_entities
+    pub(super) target_related_entities: Vec<(String, usize)>,  // renamed from target_entities
 
     // Tree UI state - one tree state per tab per side
     pub(super) source_fields_tree: TreeState,
@@ -247,8 +249,8 @@ pub struct EntityComparisonParams {
     pub migration_name: String,
     pub source_env: String,
     pub target_env: String,
-    pub source_entity: String,
-    pub target_entity: String,
+    pub source_entities: Vec<String>,  // Changed from source_entity: String
+    pub target_entities: Vec<String>,  // Changed from target_entity: String
 }
 
 impl Default for EntityComparisonParams {
@@ -257,8 +259,8 @@ impl Default for EntityComparisonParams {
             migration_name: String::new(),
             source_env: String::new(),
             target_env: String::new(),
-            source_entity: String::new(),
-            target_entity: String::new(),
+            source_entities: Vec::new(),
+            target_entities: Vec::new(),
         }
     }
 }
@@ -271,11 +273,11 @@ impl Default for State {
             migration_name: String::new(),
             source_env: String::new(),
             target_env: String::new(),
-            source_entity: String::new(),
-            target_entity: String::new(),
+            source_entities: Vec::new(),  // Changed from source_entity
+            target_entities: Vec::new(),  // Changed from target_entity
             active_tab: ActiveTab::default(),
-            source_metadata: Resource::NotAsked,
-            target_metadata: Resource::NotAsked,
+            source_metadata: HashMap::new(),  // Changed from Resource::NotAsked
+            target_metadata: HashMap::new(),  // Changed from Resource::NotAsked
             field_mappings: HashMap::new(),
             prefix_mappings: HashMap::new(),
             imported_mappings: HashMap::new(),
@@ -288,8 +290,8 @@ impl Default for State {
             field_matches: HashMap::new(),
             relationship_matches: HashMap::new(),
             entity_matches: HashMap::new(),
-            source_entities: Vec::new(),
-            target_entities: Vec::new(),
+            source_related_entities: Vec::new(),  // Changed from source_entities
+            target_related_entities: Vec::new(),  // Changed from target_entities
             source_fields_tree: TreeState::with_selection(),
             source_relationships_tree: TreeState::with_selection(),
             source_views_tree: TreeState::with_selection(),
@@ -345,6 +347,60 @@ impl Default for State {
 }
 
 impl State {
+    // ============================================================================
+    // Multi-Entity Accessors (N:M Support)
+    // ============================================================================
+
+    /// Get all source entity names
+    pub(super) fn source_entity_names(&self) -> &[String] {
+        &self.source_entities
+    }
+
+    /// Get all target entity names
+    pub(super) fn target_entity_names(&self) -> &[String] {
+        &self.target_entities
+    }
+
+    /// Get metadata for a specific source entity
+    pub(super) fn get_source_metadata(&self, entity_name: &str) -> Option<&EntityMetadata> {
+        self.source_metadata.get(entity_name)
+            .and_then(|r| r.as_success())
+    }
+
+    /// Get metadata for a specific target entity
+    pub(super) fn get_target_metadata(&self, entity_name: &str) -> Option<&EntityMetadata> {
+        self.target_metadata.get(entity_name)
+            .and_then(|r| r.as_success())
+    }
+
+    /// Check if all source metadata has loaded successfully
+    pub(super) fn all_source_metadata_loaded(&self) -> bool {
+        !self.source_entities.is_empty() && self.source_entities.iter().all(|e| {
+            matches!(self.source_metadata.get(e), Some(Resource::Success(_)))
+        })
+    }
+
+    /// Check if all target metadata has loaded successfully
+    pub(super) fn all_target_metadata_loaded(&self) -> bool {
+        !self.target_entities.is_empty() && self.target_entities.iter().all(|e| {
+            matches!(self.target_metadata.get(e), Some(Resource::Success(_)))
+        })
+    }
+
+    /// Check if all metadata (both source and target) has loaded successfully
+    pub(super) fn all_metadata_loaded(&self) -> bool {
+        self.all_source_metadata_loaded() && self.all_target_metadata_loaded()
+    }
+
+    /// Check if this is a single-entity comparison (1:1 mode) for backwards compatibility
+    pub(super) fn is_single_entity_mode(&self) -> bool {
+        self.source_entities.len() == 1 && self.target_entities.len() == 1
+    }
+
+    // ============================================================================
+    // Tree State Accessors
+    // ============================================================================
+
     /// Get the appropriate source tree state for the active tab
     pub(super) fn source_tree_for_tab(&mut self) -> &mut TreeState {
         match self.active_tab {
@@ -560,15 +616,26 @@ impl App for EntityComparisonApp {
     type InitParams = EntityComparisonParams;
 
     fn init(params: EntityComparisonParams) -> (State, Command<Msg>) {
+        // Initialize metadata HashMap with Loading state for each entity
+        let mut source_metadata = HashMap::new();
+        for entity in &params.source_entities {
+            source_metadata.insert(entity.clone(), Resource::Loading);
+        }
+
+        let mut target_metadata = HashMap::new();
+        for entity in &params.target_entities {
+            target_metadata.insert(entity.clone(), Resource::Loading);
+        }
+
         let mut state = State {
             migration_name: params.migration_name.clone(),
             source_env: params.source_env.clone(),
             target_env: params.target_env.clone(),
-            source_entity: params.source_entity.clone(),
-            target_entity: params.target_entity.clone(),
+            source_entities: params.source_entities.clone(),
+            target_entities: params.target_entities.clone(),
             active_tab: ActiveTab::default(),
-            source_metadata: Resource::Loading,
-            target_metadata: Resource::Loading,
+            source_metadata,
+            target_metadata,
             field_mappings: HashMap::new(),
             prefix_mappings: HashMap::new(),
             imported_mappings: HashMap::new(),
@@ -581,8 +648,8 @@ impl App for EntityComparisonApp {
             field_matches: HashMap::new(),
             relationship_matches: HashMap::new(),
             entity_matches: HashMap::new(),
-            source_entities: Vec::new(),
-            target_entities: Vec::new(),
+            source_related_entities: Vec::new(),
+            target_related_entities: Vec::new(),
             source_fields_tree: TreeState::with_selection(),
             source_relationships_tree: TreeState::with_selection(),
             source_views_tree: TreeState::with_selection(),
@@ -637,26 +704,36 @@ impl App for EntityComparisonApp {
 
         // First, load mappings to know which example pairs to fetch
         let init_cmd = Command::perform({
-            let source_entity = params.source_entity.clone();
-            let target_entity = params.target_entity.clone();
+            let source_entities = params.source_entities.clone();
+            let target_entities = params.target_entities.clone();
             async move {
                 let config = crate::global_config();
-                let field_mappings = config.get_field_mappings(&source_entity, &target_entity).await
+
+                // Use multi-entity API (handles backwards compat automatically)
+                let field_mappings = config.get_field_mappings_multi(&source_entities, &target_entities).await
                     .unwrap_or_else(|e| {
                         log::error!("Failed to load field mappings: {}", e);
                         HashMap::new()
                     });
-                let prefix_mappings = config.get_prefix_mappings(&source_entity, &target_entity).await
+
+                // TODO: Implement multi-entity prefix/imported/example mappings
+                // For now, use first entity pair for backwards compat
+                let (first_source, first_target) = (
+                    source_entities.first().cloned().unwrap_or_default(),
+                    target_entities.first().cloned().unwrap_or_default()
+                );
+
+                let prefix_mappings = config.get_prefix_mappings(&first_source, &first_target).await
                     .unwrap_or_else(|e| {
                         log::error!("Failed to load prefix mappings: {}", e);
                         HashMap::new()
                     });
-                let (imported_mappings, import_source_file) = config.get_imported_mappings(&source_entity, &target_entity).await
+                let (imported_mappings, import_source_file) = config.get_imported_mappings(&first_source, &first_target).await
                     .unwrap_or_else(|e| {
                         log::error!("Failed to load imported mappings: {}", e);
                         (HashMap::new(), None)
                     });
-                let example_pairs_raw = config.get_example_pairs(&source_entity, &target_entity).await
+                let example_pairs_raw = config.get_example_pairs(&first_source, &first_target).await
                     .unwrap_or_else(|e| {
                         log::error!("Failed to load example pairs: {}", e);
                         Vec::new()
@@ -665,12 +742,12 @@ impl App for EntityComparisonApp {
                 // Deduplicate example pairs to prevent issues
                 let example_pairs = deduplicate_example_pairs(example_pairs_raw);
 
-                let ignored_items = config.get_ignored_items(&source_entity, &target_entity).await
+                let ignored_items = config.get_ignored_items(&first_source, &first_target).await
                     .unwrap_or_else(|e| {
                         log::error!("Failed to load ignored items: {}", e);
                         std::collections::HashSet::new()
                     });
-                let negative_matches = config.get_negative_matches(&source_entity, &target_entity).await
+                let negative_matches = config.get_negative_matches(&first_source, &first_target).await
                     .unwrap_or_else(|e| {
                         log::error!("Failed to load negative matches: {}", e);
                         std::collections::HashSet::new()

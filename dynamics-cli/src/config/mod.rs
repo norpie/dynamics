@@ -352,6 +352,10 @@ impl Config {
         repository::mappings::get_field_mappings(&self.pool, source_entity, target_entity).await
     }
 
+    pub async fn get_field_mappings_multi(&self, source_entities: &[String], target_entities: &[String]) -> Result<std::collections::HashMap<String, Vec<String>>> {
+        repository::mappings::get_field_mappings_multi(&self.pool, source_entities, target_entities).await
+    }
+
     pub async fn set_field_mapping(&self, source_entity: &str, target_entity: &str, source_field: &str, target_field: &str) -> Result<()> {
         repository::mappings::set_field_mapping(&self.pool, source_entity, target_entity, source_field, target_field).await
     }
