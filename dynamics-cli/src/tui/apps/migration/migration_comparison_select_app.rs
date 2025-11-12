@@ -595,8 +595,10 @@ impl App for MigrationComparisonSelectApp {
                                     id: 0, // Will be assigned by database
                                     name,
                                     migration_name,
-                                    source_entity,
-                                    target_entity,
+                                    source_entity: source_entity.clone(),
+                                    target_entity: target_entity.clone(),
+                                    source_entities: vec![source_entity],  // Single entity for now
+                                    target_entities: vec![target_entity],  // Single entity for now
                                     entity_comparison: None,
                                     created_at: chrono::Utc::now(),
                                     last_used: chrono::Utc::now(),
@@ -1743,6 +1745,8 @@ async fn import_comparison(
         migration_name,
         source_entity: source_entity.clone(),
         target_entity: target_entity.clone(),
+        source_entities: vec![source_entity.clone()],  // Single entity for now
+        target_entities: vec![target_entity.clone()],  // Single entity for now
         entity_comparison: Some(entity_comparison_json),
         created_at: chrono::Utc::now(),
         last_used: chrono::Utc::now(),

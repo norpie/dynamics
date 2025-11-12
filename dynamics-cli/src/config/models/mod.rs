@@ -81,8 +81,10 @@ pub struct DbComparison {
     pub id: i64,
     pub migration_name: String,
     pub name: String,
-    pub source_entity: String,
-    pub target_entity: String,
+    pub source_entity: String,      // Legacy: first source entity
+    pub target_entity: String,      // Legacy: first target entity
+    pub source_entities: Option<String>, // JSON array: ["contact", "account"]
+    pub target_entities: Option<String>, // JSON array: ["lead", "customer"]
     pub entity_comparison: Option<String>, // JSON
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_used: chrono::DateTime<chrono::Utc>,

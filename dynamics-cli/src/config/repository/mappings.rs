@@ -437,3 +437,106 @@ pub async fn delete_negative_match(
 
     Ok(())
 }
+
+// ============================================================================
+// Multi-Entity Support (N:M Comparisons)
+// ============================================================================
+
+/// Helper function to parse qualified field names like "entity.field"
+/// Returns (entity_name, field_name) or error if invalid format
+fn parse_qualified(qualified: &str) -> Result<(String, String)> {
+    let parts: Vec<&str> = qualified.splitn(2, '.').collect();
+    if parts.len() == 2 {
+        Ok((parts[0].to_string(), parts[1].to_string()))
+    } else {
+        anyhow::bail!("Invalid qualified field name: '{}'. Expected format: 'entity.field'", qualified)
+    }
+}
+
+/// Get all field mappings for multiple source and target entities
+/// Returns qualified names (entity.field) for multi-entity mode, unqualified for single-entity mode
+/// This provides backwards compatibility with existing 1:1 comparisons
+pub async fn get_field_mappings_multi(
+    pool: &SqlitePool,
+    source_entities: &[String],
+    target_entities: &[String],
+) -> Result<HashMap<String, Vec<String>>> {
+    // Single-entity mode: return unqualified names (backwards compat)
+    if source_entities.len() == 1 && target_entities.len() == 1 {
+        return get_field_mappings(pool, &source_entities[0], &target_entities[0]).await;
+    }
+
+    // Multi-entity mode: load all entity pairs and qualify names
+    let mut all_mappings = HashMap::new();
+
+    for source_entity in source_entities {
+        for target_entity in target_entities {
+            let rows: Vec<(String, String)> = sqlx::query_as(
+                "SELECT source_field, target_field FROM field_mappings
+                 WHERE source_entity = ? AND target_entity = ?",
+            )
+            .bind(source_entity)
+            .bind(target_entity)
+            .fetch_all(pool)
+            .await
+            .context("Failed to get field mappings for multi-entity comparison")?;
+
+            for (source_field, target_field) in rows {
+                // Qualify with entity name for multi-entity mode
+                let qualified_source = format!("{}.{}", source_entity, source_field);
+                let qualified_target = format!("{}.{}", target_entity, target_field);
+
+                all_mappings.entry(qualified_source)
+                    .or_insert_with(Vec::new)
+                    .push(qualified_target);
+            }
+        }
+    }
+
+    Ok(all_mappings)
+}
+
+/// Set a field mapping using qualified names (entity.field format)
+/// Parses the qualified names and delegates to the existing set_field_mapping function
+pub async fn set_field_mapping_qualified(
+    pool: &SqlitePool,
+    qualified_source: &str,  // e.g. "contact.fullname"
+    qualified_target: &str,  // e.g. "lead.firstname"
+) -> Result<()> {
+    let (source_entity, source_field) = parse_qualified(qualified_source)
+        .with_context(|| format!("Failed to parse source field: {}", qualified_source))?;
+    let (target_entity, target_field) = parse_qualified(qualified_target)
+        .with_context(|| format!("Failed to parse target field: {}", qualified_target))?;
+
+    set_field_mapping(pool, &source_entity, &target_entity, &source_field, &target_field).await
+}
+
+/// Delete a field mapping using qualified names (entity.field format)
+/// Parses the qualified names and delegates to the existing delete_field_mapping function
+pub async fn delete_field_mapping_qualified(
+    pool: &SqlitePool,
+    qualified_source: &str,  // e.g. "contact.fullname"
+) -> Result<()> {
+    let (source_entity, source_field) = parse_qualified(qualified_source)
+        .with_context(|| format!("Failed to parse source field: {}", qualified_source))?;
+
+    // For now, we need a target entity to delete. In multi-entity mode, we'd need to know which
+    // target entity to delete from. This may need refinement based on actual usage.
+    // For now, let's assume we want to delete all mappings for this source field across all targets.
+    // This is a simplification - in practice, we might need additional context.
+    anyhow::bail!("delete_field_mapping_qualified requires target entity context. Use delete_specific_field_mapping_qualified instead.");
+}
+
+/// Delete a specific field mapping using qualified names
+pub async fn delete_specific_field_mapping_qualified(
+    pool: &SqlitePool,
+    qualified_source: &str,  // e.g. "contact.fullname"
+    qualified_target: &str,  // e.g. "lead.firstname"
+) -> Result<()> {
+    let (source_entity, source_field) = parse_qualified(qualified_source)
+        .with_context(|| format!("Failed to parse source field: {}", qualified_source))?;
+    let (target_entity, target_field) = parse_qualified(qualified_target)
+        .with_context(|| format!("Failed to parse target field: {}", qualified_target))?;
+
+    delete_specific_field_mapping(pool, &source_entity, &target_entity, &source_field, &target_field).await
+}
