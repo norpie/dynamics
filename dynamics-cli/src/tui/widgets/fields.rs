@@ -1,6 +1,6 @@
 use crate::tui::command::Command;
-use super::{AutocompleteState, TextInputState, SelectState};
-use super::events::{AutocompleteEvent, TextInputEvent, SelectEvent};
+use super::{AutocompleteState, TextInputState, SelectState, MultiSelectState};
+use super::events::{AutocompleteEvent, TextInputEvent, SelectEvent, MultiSelectEvent};
 
 /// Field that combines value + state for Autocomplete widget
 #[derive(Clone, Default)]
@@ -206,5 +206,84 @@ impl SelectField {
     /// Check if dropdown is open
     pub fn is_open(&self) -> bool {
         self.state.is_open()
+    }
+}
+
+/// Field that combines selected items + state for MultiSelect widget
+#[derive(Clone, Default)]
+pub struct MultiSelectField {
+    pub selected_items: Vec<String>,
+    pub search_input: String,  // Current search text
+    pub state: MultiSelectState,
+}
+
+impl MultiSelectField {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Handle multi-select event and return command (usually None)
+    /// Pass in the available options for filtering
+    pub fn handle_event<Msg>(&mut self, event: MultiSelectEvent, options: &[String]) -> Command<Msg> {
+        match event {
+            MultiSelectEvent::Input(key) => {
+                // Handle input key and update search text
+                if let Some(new_value) = self.state.input_state_mut().handle_key(key, &self.search_input, None) {
+                    self.search_input = new_value.clone();
+                    // Update filtered options
+                    self.state.update_filtered_options(&new_value, options);
+                }
+            }
+            MultiSelectEvent::Navigate(key) => {
+                self.state.handle_navigate_key(key);
+                // Sync selected_items with state
+                self.selected_items = self.state.selected_items().to_vec();
+                // Clear search input after selection
+                if matches!(key, crossterm::event::KeyCode::Enter) {
+                    self.search_input.clear();
+                }
+            }
+            MultiSelectEvent::Toggle(item) => {
+                self.state.toggle_item(&item);
+                self.selected_items = self.state.selected_items().to_vec();
+            }
+            MultiSelectEvent::Remove(item) => {
+                self.state.remove_item(&item);
+                self.selected_items = self.state.selected_items().to_vec();
+            }
+            MultiSelectEvent::Clear => {
+                self.state.clear_all();
+                self.selected_items.clear();
+            }
+            MultiSelectEvent::Select(item) => {
+                self.state.toggle_item(&item);
+                self.selected_items = self.state.selected_items().to_vec();
+                // Clear input after selection
+                self.search_input.clear();
+                self.state.clear_input();
+            }
+        }
+        Command::None
+    }
+
+    /// Get selected items
+    pub fn selected_items(&self) -> &[String] {
+        &self.selected_items
+    }
+
+    /// Set selected items (useful for initialization)
+    pub fn set_selected_items(&mut self, items: Vec<String>) {
+        self.selected_items = items.clone();
+        self.state.set_selected_items(items);
+    }
+
+    /// Check if dropdown is open
+    pub fn is_open(&self) -> bool {
+        self.state.is_open()
+    }
+
+    /// Check if any items are selected
+    pub fn has_selection(&self) -> bool {
+        !self.selected_items.is_empty()
     }
 }

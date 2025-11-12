@@ -80,3 +80,20 @@ pub enum ColorPickerEvent {
     /// Color confirmed (Enter key)
     Submitted(ratatui::style::Color),
 }
+
+/// Event type for MultiSelect widget
+#[derive(Clone, Debug)]
+pub enum MultiSelectEvent {
+    /// Input character typed (includes backspace, char input, etc.)
+    Input(KeyCode),
+    /// Navigation in dropdown (Up/Down/Enter/Esc)
+    Navigate(KeyCode),
+    /// Toggle item (add or remove from selection)
+    Toggle(String),
+    /// Remove specific item from selection
+    Remove(String),
+    /// Clear all selected items
+    Clear,
+    /// Item clicked in dropdown
+    Select(String),
+}

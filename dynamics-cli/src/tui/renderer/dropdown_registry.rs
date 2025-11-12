@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use crate::tui::widgets::{AutocompleteEvent, SelectEvent};
+use crate::tui::widgets::{AutocompleteEvent, MultiSelectEvent, SelectEvent};
 
 /// Type of dropdown callback
 pub enum DropdownCallback<Msg> {
@@ -7,6 +7,7 @@ pub enum DropdownCallback<Msg> {
     SelectEvent(Option<fn(SelectEvent) -> Msg>), // Select with unified event pattern
     Autocomplete(Option<fn(String) -> Msg>), // Select by string value
     AutocompleteEvent(Option<fn(AutocompleteEvent) -> Msg>), // Autocomplete with unified event pattern
+    MultiSelectEvent(Option<fn(MultiSelectEvent) -> Msg>), // MultiSelect with unified event pattern
 }
 
 /// Information about a dropdown that needs to be rendered as an overlay

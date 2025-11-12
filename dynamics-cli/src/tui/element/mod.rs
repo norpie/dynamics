@@ -244,6 +244,21 @@ pub enum Element<Msg> {
         on_blur: Option<Msg>,
     },
 
+    /// Multi-select input with fuzzy-matched dropdown and chips for selected items
+    MultiSelect {
+        id: FocusId,
+        all_options: Vec<String>,           // Full list to filter against
+        selected_items: Vec<String>,        // Currently selected items
+        search_input: String,               // Current search text
+        placeholder: Option<String>,        // Placeholder text when empty
+        is_open: bool,                      // Dropdown open?
+        filtered_options: Vec<String>,      // Filtered options (top 15)
+        highlight: usize,                   // Highlighted index in dropdown
+        on_event: Option<fn(crate::tui::widgets::MultiSelectEvent) -> Msg>,  // Unified event handler
+        on_focus: Option<Msg>,
+        on_blur: Option<Msg>,
+    },
+
     /// File browser widget
     FileBrowser {
         id: FocusId,
@@ -478,6 +493,7 @@ impl<Msg> Element<Msg> {
             Element::Scrollable { .. } => LayoutConstraint::Fill(1),
             Element::Select { .. } => LayoutConstraint::Length(1),  // Borderless like TextInput
             Element::Autocomplete { .. } => LayoutConstraint::Length(1),  // Borderless like TextInput
+            Element::MultiSelect { .. } => LayoutConstraint::Length(3),  // Chips + input + dropdown preview
             Element::FileBrowser { .. } => LayoutConstraint::Fill(1),  // Fill available space like List
             Element::ColorPicker { .. } => LayoutConstraint::Length(9),  // 3 sliders + hex + labels
             Element::ProgressBar { .. } => LayoutConstraint::Length(1),  // Single line
