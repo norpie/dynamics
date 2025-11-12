@@ -41,6 +41,119 @@ pub fn build_tree_items(
     }
 }
 
+/// Build tree items for N:M entity comparison (multiple entities merged into one view)
+/// field_matches should have qualified keys (e.g., "contact.fullname")
+pub fn build_multi_entity_tree_items(
+    metadata_map: &HashMap<String, EntityMetadata>,
+    selected_entities: &[String],
+    active_tab: ActiveTab,
+    field_matches: &HashMap<String, MatchInfo>,
+    relationship_matches: &HashMap<String, MatchInfo>,
+    entity_matches: &HashMap<String, MatchInfo>,
+    entities: &[(String, usize)],
+    examples: &super::models::ExamplesState,
+    is_source: bool,
+    show_technical_names: bool,
+    sort_mode: super::models::SortMode,
+    sort_direction: super::models::SortDirection,
+    ignored_items: &std::collections::HashSet<String>,
+) -> Vec<ComparisonTreeItem> {
+    let mut all_items = Vec::new();
+
+    // For Entities tab, we don't merge - just use normal build
+    if active_tab == ActiveTab::Entities {
+        let tab_prefix = "entities";
+        let side_prefix = if is_source { "source" } else { "target" };
+        return build_entities_tree(entities, entity_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix);
+    }
+
+    // For each selected entity, build items and qualify them
+    for entity_name in selected_entities {
+        let metadata = match metadata_map.get(entity_name) {
+            Some(meta) => meta,
+            None => continue,
+        };
+
+        // Filter field_matches to this entity only
+        let entity_prefix = format!("{}.", entity_name);
+        let filtered_field_matches: HashMap<String, MatchInfo> = field_matches.iter()
+            .filter_map(|(k, v)| {
+                k.strip_prefix(&entity_prefix).map(|field| (field.to_string(), v.clone()))
+            })
+            .collect();
+
+        // Filter relationship_matches to this entity only
+        let filtered_relationship_matches: HashMap<String, MatchInfo> = relationship_matches.iter()
+            .filter_map(|(k, v)| {
+                k.strip_prefix(&entity_prefix).map(|rel| (rel.to_string(), v.clone()))
+            })
+            .collect();
+
+        // Build items for this entity using single-entity logic
+        let entity_items = build_tree_items(
+            metadata,
+            active_tab,
+            &filtered_field_matches,
+            &filtered_relationship_matches,
+            entity_matches,
+            entities,
+            examples,
+            is_source,
+            entity_name,
+            show_technical_names,
+            sort_mode,
+            sort_direction,
+            ignored_items,
+        );
+
+        // Qualify the items with entity prefix and merge
+        for item in entity_items {
+            all_items.push(qualify_tree_item(item, entity_name));
+        }
+    }
+
+    // Sort the merged items
+    sort_items(&mut all_items, sort_mode, sort_direction);
+
+    all_items
+}
+
+/// Qualify a tree item with entity prefix
+/// Modifies field/relationship logical_names to include entity prefix: "contact.fullname"
+/// Also updates display names to show entity in brackets: "[contact] fullname"
+fn qualify_tree_item(item: ComparisonTreeItem, entity_name: &str) -> ComparisonTreeItem {
+    match item {
+        ComparisonTreeItem::Field(mut node) => {
+            // Qualify logical_name
+            node.metadata.logical_name = format!("{}.{}", entity_name, node.metadata.logical_name);
+
+            // Update display_name to show entity prefix
+            node.display_name = format!("[{}] {}", entity_name, node.display_name);
+
+            ComparisonTreeItem::Field(node)
+        }
+        ComparisonTreeItem::Relationship(mut node) => {
+            // Qualify name
+            node.metadata.name = format!("{}.{}", entity_name, node.metadata.name);
+
+            ComparisonTreeItem::Relationship(node)
+        }
+        ComparisonTreeItem::Container(mut node) => {
+            // Qualify container ID
+            node.id = format!("{}.{}", entity_name, node.id);
+
+            // Qualify children recursively
+            node.children = node.children.into_iter()
+                .map(|child| qualify_tree_item(child, entity_name))
+                .collect();
+
+            ComparisonTreeItem::Container(node)
+        }
+        // Entity and other types don't need qualification
+        other => other,
+    }
+}
+
 /// Build tree items for the Fields tab
 /// Note: Relationship fields are already filtered out in data_loading.rs
 fn build_fields_tree(

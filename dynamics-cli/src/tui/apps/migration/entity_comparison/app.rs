@@ -460,9 +460,37 @@ impl State {
 
         log::debug!("Rebuilding tree cache for tab {:?}", self.active_tab);
 
-        // Build source tree - TODO: Support multi-entity properly (Phase 4)
-        // For now, use first entity's metadata for backwards compat
-        let source_items = if let Some(first_entity) = self.source_entities.first() {
+        // Build source tree - multi-entity or single-entity mode
+        let source_items = if self.source_entities.len() > 1 {
+            // Multi-entity mode: use qualified field names
+            // Extract successful metadata for tree building
+            let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = self.source_metadata.iter()
+                .filter_map(|(name, resource)| {
+                    if let Resource::Success(metadata) = resource {
+                        Some((name.clone(), metadata.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            super::tree_builder::build_multi_entity_tree_items(
+                &source_metadata_map,
+                &self.source_entities,
+                self.active_tab,
+                &self.field_matches,
+                &self.relationship_matches,
+                &self.entity_matches,
+                &self.source_related_entities,
+                &self.examples,
+                true, // is_source
+                self.show_technical_names,
+                self.sort_mode,
+                self.sort_direction,
+                &self.ignored_items,
+            )
+        } else if let Some(first_entity) = self.source_entities.first() {
+            // Single-entity mode: backwards compatible
             if let Some(Resource::Success(metadata)) = self.source_metadata.get(first_entity) {
                 super::tree_builder::build_tree_items(
                     metadata,
@@ -586,9 +614,37 @@ impl State {
                 .collect()
         };
 
-        // Build target tree - TODO: Support multi-entity properly (Phase 4)
-        // For now, use first entity's metadata for backwards compat
-        let target_items = if let Some(first_entity) = self.target_entities.first() {
+        // Build target tree - multi-entity or single-entity mode
+        let target_items = if self.target_entities.len() > 1 {
+            // Multi-entity mode: use qualified field names
+            // Extract successful metadata for tree building
+            let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = self.target_metadata.iter()
+                .filter_map(|(name, resource)| {
+                    if let Resource::Success(metadata) = resource {
+                        Some((name.clone(), metadata.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            super::tree_builder::build_multi_entity_tree_items(
+                &target_metadata_map,
+                &self.target_entities,
+                self.active_tab,
+                &reverse_field_matches,
+                &reverse_relationship_matches,
+                &reverse_entity_matches,
+                &self.target_related_entities,
+                &self.examples,
+                false, // is_source
+                self.show_technical_names,
+                self.sort_mode,
+                self.sort_direction,
+                &self.ignored_items,
+            )
+        } else if let Some(first_entity) = self.target_entities.first() {
+            // Single-entity mode: backwards compatible
             if let Some(Resource::Success(metadata)) = self.target_metadata.get(first_entity) {
                 super::tree_builder::build_tree_items(
                     metadata,

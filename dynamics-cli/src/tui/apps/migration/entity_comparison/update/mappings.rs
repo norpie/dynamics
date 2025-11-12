@@ -2,7 +2,18 @@ use crate::tui::command::Command;
 use crate::tui::Resource;
 use super::super::{Msg, ActiveTab};
 use super::super::app::State;
-use super::super::matching_adapter::recompute_all_matches;
+use super::super::matching_adapter::{recompute_all_matches, recompute_all_matches_multi};
+
+/// Parse a qualified field name into (entity, field) parts
+/// Returns (entity, field) if qualified (e.g., "contact.fullname" -> ("contact", "fullname"))
+/// Returns (default_entity, name) if unqualified
+fn parse_qualified_name<'a>(name: &'a str, default_entity: &'a str) -> (&'a str, &'a str) {
+    if let Some((entity, field)) = name.split_once('.') {
+        (entity, field)
+    } else {
+        (default_entity, name)
+    }
+}
 
 pub fn handle_create_manual_mapping(state: &mut State) -> Command<Msg> {
     // Get all selected items from source tree (multi-selection support)
@@ -81,24 +92,37 @@ pub fn handle_create_manual_mapping(state: &mut State) -> Command<Msg> {
             // Add all targets to state mappings (1-to-N support)
             state.field_mappings.insert(source_key.clone(), target_keys.clone());
 
-            // Save to database: delete old mappings first, then insert new ones
-            // This ensures we replace (not append to) existing mappings
-            // TODO: Support multi-entity mode - for now use first entity
-            let source_entity = state.source_entities.first().cloned().unwrap_or_default();
-            let target_entity = state.target_entities.first().cloned().unwrap_or_default();
+            // Save to database: parse qualified names to extract entities
+            let default_source_entity = state.source_entities.first().map(|s| s.as_str()).unwrap_or("");
+            let default_target_entity = state.target_entities.first().map(|s| s.as_str()).unwrap_or("");
+
+            // Parse source entity and field
+            let (source_entity_str, source_field) = parse_qualified_name(&source_key, default_source_entity);
+            let source_entity = source_entity_str.to_string();
+            let source_field = source_field.to_string();
+
+            // Parse each target and save
+            let mut target_saves = Vec::new();
+            for target_key in &target_keys {
+                let (target_entity_str, target_field) = parse_qualified_name(target_key, default_target_entity);
+                target_saves.push((target_entity_str.to_string(), target_field.to_string()));
+            }
+
             tokio::spawn(async move {
                 let config = crate::global_config();
 
-                // First delete all existing targets for this source
-                if let Err(e) = config.delete_field_mapping(&source_entity, &target_entity, &source_key).await {
-                    log::error!("Failed to delete old field mappings for {}: {}", source_key, e);
-                    return;
+                // Delete all existing mappings for this source field across all targets
+                // (This handles the case where we're changing the mapping)
+                for (target_entity, _) in &target_saves {
+                    if let Err(e) = config.delete_field_mapping(&source_entity, target_entity, &source_field).await {
+                        log::warn!("Failed to delete old field mappings for {}:{}: {}", source_entity, source_field, e);
+                    }
                 }
 
                 // Then add new targets
-                for target_key in target_keys {
-                    if let Err(e) = config.set_field_mapping(&source_entity, &target_entity, &source_key, &target_key).await {
-                        log::error!("Failed to save field mapping {} -> {}: {}", source_key, target_key, e);
+                for (target_entity, target_field) in target_saves {
+                    if let Err(e) = config.set_field_mapping(&source_entity, &target_entity, &source_field, &target_field).await {
+                        log::error!("Failed to save field mapping {}:{} -> {}:{}: {}", source_entity, source_field, target_entity, target_field, e);
                     }
                 }
             });
@@ -134,53 +158,107 @@ pub fn handle_create_manual_mapping(state: &mut State) -> Command<Msg> {
                 // Add to state mappings (wrap single target in Vec)
                 state.field_mappings.insert(source_key.clone(), vec![target_key.clone()]);
 
-                // Save to database: delete old mappings first, then insert new one
-                // TODO: Support multi-entity mode - for now use first entity
-                let source_entity = state.source_entities.first().cloned().unwrap_or_default();
-                let target_entity = state.target_entities.first().cloned().unwrap_or_default();
-                let source_key_clone = source_key.clone();
-                let target_key_clone = target_key.clone();
+                // Save to database: parse qualified names to extract entities
+                let default_source_entity = state.source_entities.first().map(|s| s.as_str()).unwrap_or("");
+                let default_target_entity = state.target_entities.first().map(|s| s.as_str()).unwrap_or("");
+
+                // Parse source and target entities/fields
+                let (source_entity_str, source_field) = parse_qualified_name(&source_key, default_source_entity);
+                let (target_entity_str, target_field) = parse_qualified_name(&target_key, default_target_entity);
+
+                let source_entity = source_entity_str.to_string();
+                let source_field = source_field.to_string();
+                let target_entity = target_entity_str.to_string();
+                let target_field = target_field.to_string();
+
                 tokio::spawn(async move {
                     let config = crate::global_config();
 
                     // First delete all existing targets for this source
-                    if let Err(e) = config.delete_field_mapping(&source_entity, &target_entity, &source_key_clone).await {
-                        log::warn!("Failed to delete old field mappings for {}: {}", source_key_clone, e);
+                    if let Err(e) = config.delete_field_mapping(&source_entity, &target_entity, &source_field).await {
+                        log::warn!("Failed to delete old field mappings for {}:{}: {}", source_entity, source_field, e);
                     }
 
                     // Then add new target
-                    if let Err(e) = config.set_field_mapping(&source_entity, &target_entity, &source_key_clone, &target_key_clone).await {
-                        log::error!("Failed to save field mapping: {}", e);
+                    if let Err(e) = config.set_field_mapping(&source_entity, &target_entity, &source_field, &target_field).await {
+                        log::error!("Failed to save field mapping {}:{} -> {}:{}: {}", source_entity, source_field, target_entity, target_field, e);
                     }
                 });
             }
         }
 
-        // Recompute matches once after all mappings are added
-        // TODO: Support multi-entity mode - for now use first entity
-        let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
-        let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+        // Recompute matches after all mappings are added
+        // Support both single-entity and multi-entity modes
+        let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
 
-        if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
-            (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
-        {
+        if is_multi_entity {
+            // Multi-entity mode: recompute across all entity pairs
+            let source_metadata_map: std::collections::HashMap<String, crate::api::EntityMetadata> =
+                state.source_metadata.iter()
+                    .filter_map(|(name, resource)| {
+                        if let Resource::Success(metadata) = resource {
+                            Some((name.clone(), metadata.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+            let target_metadata_map: std::collections::HashMap<String, crate::api::EntityMetadata> =
+                state.target_metadata.iter()
+                    .filter_map(|(name, resource)| {
+                        if let Resource::Success(metadata) = resource {
+                            Some((name.clone(), metadata.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
             let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-                recompute_all_matches(
-                    source,
-                    target,
+                recompute_all_matches_multi(
+                    &source_metadata_map,
+                    &target_metadata_map,
+                    &state.source_entities,
+                    &state.target_entities,
                     &state.field_mappings,
                     &state.imported_mappings,
                     &state.prefix_mappings,
                     &state.examples,
-                    &first_source_entity,
-                    &first_target_entity,
-                &state.negative_matches,
+                    &state.negative_matches,
                 );
+
             state.field_matches = field_matches;
             state.relationship_matches = relationship_matches;
             state.entity_matches = entity_matches;
             state.source_related_entities = source_related_entities;
             state.target_related_entities = target_related_entities;
+        } else {
+            // Single-entity mode: backwards compatible
+            let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+            let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+            if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
+                (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
+            {
+                let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                    recompute_all_matches(
+                        source,
+                        target,
+                        &state.field_mappings,
+                        &state.imported_mappings,
+                        &state.prefix_mappings,
+                        &state.examples,
+                        &first_source_entity,
+                        &first_target_entity,
+                        &state.negative_matches,
+                    );
+                state.field_matches = field_matches;
+                state.relationship_matches = relationship_matches;
+                state.entity_matches = entity_matches;
+                state.source_related_entities = source_related_entities;
+                state.target_related_entities = target_related_entities;
+            }
         }
 
         // Log success message
@@ -248,42 +326,102 @@ pub fn handle_delete_manual_mapping(state: &mut State) -> Command<Msg> {
                     log::info!("Deleting mapping: {} → {}", source_key, deleted_targets.join(", "));
                 }
 
-                // Recompute matches
-                // TODO: Support multi-entity mode - for now use first entity
-                let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
-                let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+                // Recompute matches - support both single-entity and multi-entity modes
+                let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
 
-                if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
-                    (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
-                {
+                if is_multi_entity {
+                    // Multi-entity mode: recompute across all entity pairs
+                    let source_metadata_map: std::collections::HashMap<String, crate::api::EntityMetadata> =
+                        state.source_metadata.iter()
+                            .filter_map(|(name, resource)| {
+                                if let Resource::Success(metadata) = resource {
+                                    Some((name.clone(), metadata.clone()))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+
+                    let target_metadata_map: std::collections::HashMap<String, crate::api::EntityMetadata> =
+                        state.target_metadata.iter()
+                            .filter_map(|(name, resource)| {
+                                if let Resource::Success(metadata) = resource {
+                                    Some((name.clone(), metadata.clone()))
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+
                     let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-                        recompute_all_matches(
-                            source,
-                            target,
+                        recompute_all_matches_multi(
+                            &source_metadata_map,
+                            &target_metadata_map,
+                            &state.source_entities,
+                            &state.target_entities,
                             &state.field_mappings,
                             &state.imported_mappings,
                             &state.prefix_mappings,
                             &state.examples,
-                            &first_source_entity,
-                            &first_target_entity,
                             &state.negative_matches,
                         );
+
                     state.field_matches = field_matches;
                     state.relationship_matches = relationship_matches;
                     state.entity_matches = entity_matches;
                     state.source_related_entities = source_related_entities;
                     state.target_related_entities = target_related_entities;
+                } else {
+                    // Single-entity mode: backwards compatible
+                    let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+                    let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+                    if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
+                        (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
+                    {
+                        let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                            recompute_all_matches(
+                                source,
+                                target,
+                                &state.field_mappings,
+                                &state.imported_mappings,
+                                &state.prefix_mappings,
+                                &state.examples,
+                                &first_source_entity,
+                                &first_target_entity,
+                                &state.negative_matches,
+                            );
+                        state.field_matches = field_matches;
+                        state.relationship_matches = relationship_matches;
+                        state.entity_matches = entity_matches;
+                        state.source_related_entities = source_related_entities;
+                        state.target_related_entities = target_related_entities;
+                    }
                 }
 
-                // Delete from database (deletes all targets for this source)
-                // TODO: Support multi-entity mode - for now use first entity
-                let source_entity = state.source_entities.first().cloned().unwrap_or_default();
-                let target_entity = state.target_entities.first().cloned().unwrap_or_default();
-                let source_key_for_db = source_key.clone();
+                // Delete from database: parse qualified names to get correct entities
+                let default_source_entity = state.source_entities.first().map(|s| s.as_str()).unwrap_or("");
+                let default_target_entity = state.target_entities.first().map(|s| s.as_str()).unwrap_or("");
+
+                let (source_entity_str, source_field) = parse_qualified_name(&source_key, default_source_entity);
+                let source_entity = source_entity_str.to_string();
+                let source_field = source_field.to_string();
+
+                // Need to delete from all target entities that had mappings
+                let mut target_entities_to_delete = Vec::new();
+                for target_key in &deleted_targets {
+                    let (target_entity_str, _) = parse_qualified_name(target_key, default_target_entity);
+                    if !target_entities_to_delete.contains(&target_entity_str.to_string()) {
+                        target_entities_to_delete.push(target_entity_str.to_string());
+                    }
+                }
+
                 tokio::spawn(async move {
                     let config = crate::global_config();
-                    if let Err(e) = config.delete_field_mapping(&source_entity, &target_entity, &source_key_for_db).await {
-                        log::error!("Failed to delete field mapping: {}", e);
+                    for target_entity in target_entities_to_delete {
+                        if let Err(e) = config.delete_field_mapping(&source_entity, &target_entity, &source_field).await {
+                            log::error!("Failed to delete field mapping {}:{}: {}", source_entity, source_field, e);
+                        }
                     }
                 });
             }
