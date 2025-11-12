@@ -1317,8 +1317,8 @@ impl MultiAppRuntime {
         // Handle start_app first (it includes params)
         if let Some((target, params)) = start_app_request {
             log::info!("⚡ Processing start_app navigation: {:?} -> {:?} (from {:?})", self.active_app, target, nav_source_app);
-            // Handle current app based on quit and suspend policies
-            if let Some(current_runtime) = self.runtimes.get(&self.active_app) {
+            // Handle current app based on quit and suspend policies (skip if navigating to self - it will be recreated)
+            if target != self.active_app && let Some(current_runtime) = self.runtimes.get(&self.active_app) {
                 let quit_policy = self.factories.get(&self.active_app)
                     .map(|f| f.quit_policy())
                     .unwrap_or(crate::tui::QuitPolicy::Sleep);
