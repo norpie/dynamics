@@ -9,8 +9,8 @@ pub fn element_contains_focused_non_button<Msg>(element: &Element<Msg>, focused_
     match element {
         // Check all focusable widgets EXCEPT buttons
         Element::TextInput { id, .. } | Element::Select { id, .. } | Element::Autocomplete { id, .. }
-        | Element::List { id, .. } | Element::Tree { id, .. } | Element::TableTree { id, .. }
-        | Element::Scrollable { id, .. } | Element::FileBrowser { id, .. } => id == focused_id,
+        | Element::MultiSelect { id, .. } | Element::List { id, .. } | Element::Tree { id, .. }
+        | Element::TableTree { id, .. } | Element::Scrollable { id, .. } | Element::FileBrowser { id, .. } => id == focused_id,
         // Recurse through containers
         Element::Column { items, .. } | Element::Row { items, .. } => {
             items.iter().any(|(_, child)| element_contains_focused_non_button(child, focused_id))

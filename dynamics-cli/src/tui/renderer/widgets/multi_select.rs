@@ -70,81 +70,36 @@ pub fn render_multi_select<Msg: Clone + Send + 'static>(
         });
     }
 
-    // Build display content
-    let mut lines = Vec::new();
-
-    // Line 1: Selected items as chips
-    if selected_items.is_empty() {
-        lines.push(Line::from(vec![
-            Span::styled("  No items selected", Style::default().fg(theme.text_tertiary)),
-        ]));
-    } else {
-        let mut chips = Vec::new();
-        chips.push(Span::raw("  "));
-        for (i, item) in selected_items.iter().enumerate() {
-            if i > 0 {
-                chips.push(Span::raw(" "));
-            }
-            chips.push(Span::styled(
-                format!("[{}]", item),
-                Style::default().fg(theme.accent_primary),
-            ));
-        }
-        lines.push(Line::from(chips));
-    }
-
-    // Line 2: Search input
-    let input_text = if search_input.is_empty() {
-        if let Some(ph) = placeholder {
-            Span::styled(format!("  {}", ph), Style::default().fg(theme.text_tertiary))
-        } else {
-            Span::raw("  ")
-        }
-    } else {
-        Span::styled(format!("  {}", search_input), Style::default())
-    };
-
-    let input_style = if is_focused {
-        Style::default().fg(theme.accent_primary)
-    } else {
-        Style::default()
-    };
-
-    lines.push(Line::from(vec![input_text.style(input_style)]));
-
-    // Line 3+: Dropdown options (if open)
-    if is_open && !filtered_options.is_empty() {
-        let visible_count = (area.height.saturating_sub(2) as usize).min(5);
-        for (i, option) in filtered_options.iter().take(visible_count).enumerate() {
-            let is_highlighted = i == highlight;
-            let style = if is_highlighted {
-                Style::default().bg(theme.bg_surface)
+    // Build display content (single line like autocomplete)
+    let display_text = if search_input.is_empty() && !is_focused {
+        // Show placeholder or selected count
+        if selected_items.is_empty() {
+            if let Some(ph) = placeholder {
+                format!(" {}", ph)
             } else {
-                Style::default()
-            };
-            lines.push(Line::from(vec![
-                Span::styled(format!("    {}", option), style)
-            ]));
-
-            // Register click handler for each option
-            if let Some(on_event_fn) = on_event {
-                let option_area = Rect {
-                    x: area.x,
-                    y: area.y + 2 + i as u16,
-                    width: area.width,
-                    height: 1,
-                };
-                let option_clone = option.clone();
-                registry.register_click(option_area, on_event_fn(MultiSelectEvent::Select(option_clone)));
+                String::from(" ")
             }
+        } else {
+            format!(" ({} selected)", selected_items.len())
         }
-    }
+    } else if is_focused {
+        // Show cursor when focused
+        format!(" {}│", search_input)
+    } else {
+        format!(" {}", search_input)
+    };
 
-    // Render paragraph
-    let paragraph = Paragraph::new(lines);
-    frame.render_widget(paragraph, area);
+    let text_style = if search_input.is_empty() && !is_focused {
+        Style::default().fg(theme.border_primary).italic()
+    } else {
+        Style::default().fg(theme.text_primary)
+    };
 
-    // Register dropdown if open
+    // Render text (single line)
+    let text_widget = Paragraph::new(display_text).style(text_style);
+    frame.render_widget(text_widget, area);
+
+    // Register dropdown overlay (rendered by dropdown_registry)
     if is_open && !filtered_options.is_empty() && on_event.is_some() {
         let on_event_fn = on_event.unwrap();
         dropdown_registry.register(DropdownInfo {

@@ -230,6 +230,7 @@ impl MultiSelectField {
                 // Handle input key and update search text
                 if let Some(new_value) = self.state.input_state_mut().handle_key(key, &self.search_input, None) {
                     self.search_input = new_value.clone();
+                    self.state.set_value(new_value.clone());
                     // Update filtered options
                     self.state.update_filtered_options(&new_value, options);
                 }
@@ -241,6 +242,8 @@ impl MultiSelectField {
                 // Clear search input after selection
                 if matches!(key, crossterm::event::KeyCode::Enter) {
                     self.search_input.clear();
+                    self.state.clear_input();
+                    self.state.update_filtered_options("", options);
                 }
             }
             MultiSelectEvent::Toggle(item) => {
@@ -261,6 +264,7 @@ impl MultiSelectField {
                 // Clear input after selection
                 self.search_input.clear();
                 self.state.clear_input();
+                self.state.update_filtered_options("", options);
             }
         }
         Command::None

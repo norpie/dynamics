@@ -5,7 +5,7 @@ use crate::tui::{
     subscription::Subscription,
     state::theme::Theme,
     widgets::list::{ListItem, ListState},
-    widgets::{AutocompleteField, AutocompleteEvent, TextInputField, TextInputEvent, FileBrowserEvent},
+    widgets::{AutocompleteField, AutocompleteEvent, TextInputField, TextInputEvent, FileBrowserEvent, MultiSelectEvent, MultiSelectField},
     widgets::file_browser::{FileBrowserState, FileBrowserAction},
     renderer::LayeredView,
     Resource,
@@ -25,18 +25,23 @@ use crate::{col, row, spacer, button_row, use_constraints, error_display};
 
 pub struct MigrationComparisonSelectApp;
 
-#[derive(Clone, Default, Validate)]
+#[derive(Clone)]
 pub struct CreateComparisonForm {
-    #[validate(not_empty, message = "Comparison name is required")]
     name: TextInputField,
-
-    #[validate(not_empty, message = "Source entity is required")]
-    source_entity: AutocompleteField,
-
-    #[validate(not_empty, message = "Target entity is required")]
-    target_entity: AutocompleteField,
-
+    source_entities: MultiSelectField,
+    target_entities: MultiSelectField,
     validation_error: Option<String>,
+}
+
+impl Default for CreateComparisonForm {
+    fn default() -> Self {
+        Self {
+            name: TextInputField::default(),
+            source_entities: MultiSelectField::new(),
+            target_entities: MultiSelectField::new(),
+            validation_error: None,
+        }
+    }
 }
 
 #[derive(Clone, Default, Validate)]
@@ -171,8 +176,8 @@ pub enum Msg {
     SelectComparison,
     CreateComparison,
     CreateFormNameEvent(TextInputEvent),
-    CreateFormSourceEvent(AutocompleteEvent),
-    CreateFormTargetEvent(AutocompleteEvent),
+    CreateFormSourceEvent(MultiSelectEvent),
+    CreateFormTargetEvent(MultiSelectEvent),
     CreateFormSubmit,
     CreateFormCancel,
     ComparisonCreated(Result<i64, String>),
@@ -553,67 +558,80 @@ impl App for MigrationComparisonSelectApp {
             }
             Msg::CreateFormSourceEvent(event) => {
                 let options = state.source_entities.as_ref().ok().cloned().unwrap_or_default();
-                state.create_form.source_entity.handle_event::<Msg>(event, &options);
-                Command::None
+                state.create_form.source_entities.handle_event(event, &options)
             }
             Msg::CreateFormTargetEvent(event) => {
                 let options = state.target_entities.as_ref().ok().cloned().unwrap_or_default();
-                state.create_form.target_entity.handle_event::<Msg>(event, &options);
-                Command::None
+                state.create_form.target_entities.handle_event(event, &options)
             }
             Msg::CreateFormSubmit => {
-                // Validate using generated macro method
-                match state.create_form.validate() {
-                    Ok(_) => {
-                        let name = state.create_form.name.value().trim().to_string();
-                        let source_entity = state.create_form.source_entity.value().trim().to_string();
-                        let target_entity = state.create_form.target_entity.value().trim().to_string();
+                let name = state.create_form.name.value().trim().to_string();
+                let source_entities: Vec<String> = state.create_form.source_entities.selected_items().to_vec();
+                let target_entities: Vec<String> = state.create_form.target_entities.selected_items().to_vec();
 
-                        // Additional validation: check entities exist in lists
-                        if let Resource::Success(source_list) = &state.source_entities {
-                            if !source_list.contains(&source_entity) {
-                                state.create_form.validation_error = Some(format!("Source entity '{}' not found", source_entity));
-                                return Command::None;
-                            }
+                // Validation
+                if name.is_empty() {
+                    state.create_form.validation_error = Some("Comparison name is required".to_string());
+                    return Command::None;
+                }
+
+                if source_entities.is_empty() {
+                    state.create_form.validation_error = Some("At least one source entity is required".to_string());
+                    return Command::None;
+                }
+
+                if target_entities.is_empty() {
+                    state.create_form.validation_error = Some("At least one target entity is required".to_string());
+                    return Command::None;
+                }
+
+                // Additional validation: check entities exist in lists
+                if let Resource::Success(source_list) = &state.source_entities {
+                    for entity in &source_entities {
+                        if !source_list.contains(entity) {
+                            state.create_form.validation_error = Some(format!("Source entity '{}' not found", entity));
+                            return Command::None;
                         }
-
-                        if let Resource::Success(target_list) = &state.target_entities {
-                            if !target_list.contains(&target_entity) {
-                                state.create_form.validation_error = Some(format!("Target entity '{}' not found", target_entity));
-                                return Command::None;
-                            }
-                        }
-
-                        let migration_name = state.migration_name.clone().unwrap_or_default();
-                        state.show_create_modal = false;
-                        state.create_form.validation_error = None;
-
-                        Command::perform(
-                            async move {
-                                let config = crate::global_config();
-                                let comparison = SavedComparison {
-                                    id: 0, // Will be assigned by database
-                                    name,
-                                    migration_name,
-                                    source_entity: source_entity.clone(),
-                                    target_entity: target_entity.clone(),
-                                    source_entities: vec![source_entity],  // Single entity for now
-                                    target_entities: vec![target_entity],  // Single entity for now
-                                    entity_comparison: None,
-                                    created_at: chrono::Utc::now(),
-                                    last_used: chrono::Utc::now(),
-                                };
-                                config.add_comparison(comparison).await
-                                    .map_err(|e| e.to_string())
-                            },
-                            Msg::ComparisonCreated
-                        )
-                    }
-                    Err(validation_error) => {
-                        state.create_form.validation_error = Some(validation_error);
-                        Command::None
                     }
                 }
+
+                if let Resource::Success(target_list) = &state.target_entities {
+                    for entity in &target_entities {
+                        if !target_list.contains(entity) {
+                            state.create_form.validation_error = Some(format!("Target entity '{}' not found", entity));
+                            return Command::None;
+                        }
+                    }
+                }
+
+                let migration_name = state.migration_name.clone().unwrap_or_default();
+                state.show_create_modal = false;
+                state.create_form.validation_error = None;
+
+                // Use first entities for backwards compatibility with source_entity/target_entity fields
+                let first_source = source_entities.first().cloned().unwrap_or_default();
+                let first_target = target_entities.first().cloned().unwrap_or_default();
+
+                Command::perform(
+                    async move {
+                        let config = crate::global_config();
+                        let comparison = SavedComparison {
+                            id: 0, // Will be assigned by database
+                            name,
+                            migration_name,
+                            source_entity: first_source.clone(),
+                            target_entity: first_target.clone(),
+                            source_entities,
+                            target_entities,
+                            entity_comparison: None,
+                            created_at: chrono::Utc::now(),
+                            last_used: chrono::Utc::now(),
+                        };
+                        config.add_comparison(comparison).await
+                            .map_err(|e| e.to_string())
+                    },
+                    Msg::ComparisonCreated
+                )
             }
             Msg::CreateFormCancel => {
                 state.close_create_modal();
@@ -1226,34 +1244,32 @@ impl App for MigrationComparisonSelectApp {
             .title("Name")
             .build();
 
-            // Source entity autocomplete with panel
-            let source_autocomplete = Element::panel(
-                Element::autocomplete(
-                    "create-source-autocomplete",
+            // Source entities multi-select with panel
+            let source_multi_select = Element::panel(
+                Element::multi_select(
+                    "create-source-multi-select",
                     state.source_entities.as_ref().ok().cloned().unwrap_or_default(),
-                    state.create_form.source_entity.value().to_string(),
-                    &mut state.create_form.source_entity.state,
+                    &mut state.create_form.source_entities.state,
                 )
-                .placeholder("Type source entity name...")
+                .placeholder("Select source entities...")
                 .on_event(Msg::CreateFormSourceEvent)
                 .build()
             )
-            .title("Source Entity")
+            .title("Source Entities")
             .build();
 
-            // Target entity autocomplete with panel
-            let target_autocomplete = Element::panel(
-                Element::autocomplete(
-                    "create-target-autocomplete",
+            // Target entities multi-select with panel
+            let target_multi_select = Element::panel(
+                Element::multi_select(
+                    "create-target-multi-select",
                     state.target_entities.as_ref().ok().cloned().unwrap_or_default(),
-                    state.create_form.target_entity.value().to_string(),
-                    &mut state.create_form.target_entity.state,
+                    &mut state.create_form.target_entities.state,
                 )
-                .placeholder("Type target entity name...")
+                .placeholder("Select target entities...")
                 .on_event(Msg::CreateFormTargetEvent)
                 .build()
             )
-            .title("Target Entity")
+            .title("Target Entities")
             .build();
 
             // Buttons
@@ -1267,9 +1283,9 @@ impl App for MigrationComparisonSelectApp {
                 col![
                     name_input => Length(3),
                     spacer!() => Length(1),
-                    source_autocomplete => Length(3),
+                    source_multi_select => Length(3),
                     spacer!() => Length(1),
-                    target_autocomplete => Length(3),
+                    target_multi_select => Length(3),
                     spacer!() => Length(1),
                     error_display!(state.create_form.validation_error, theme) => Length(2),
                     buttons => Length(3),
@@ -1278,9 +1294,9 @@ impl App for MigrationComparisonSelectApp {
                 col![
                     name_input => Length(3),
                     spacer!() => Length(1),
-                    source_autocomplete => Length(3),
+                    source_multi_select => Length(3),
                     spacer!() => Length(1),
-                    target_autocomplete => Length(3),
+                    target_multi_select => Length(3),
                     spacer!() => Length(1),
                     buttons => Length(3),
                 ]

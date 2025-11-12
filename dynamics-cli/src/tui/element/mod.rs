@@ -747,6 +747,26 @@ impl<Msg> Element<Msg> {
             on_blur: None,
         }
     }
+
+    pub fn multi_select(
+        id: impl Into<FocusId>,
+        all_options: Vec<String>,
+        state: &mut crate::tui::widgets::MultiSelectState,
+    ) -> MultiSelectBuilder<Msg> {
+        MultiSelectBuilder {
+            id: id.into(),
+            all_options,
+            selected_items: state.selected_items().to_vec(),
+            search_input: state.value().to_string(),
+            placeholder: None,
+            is_open: state.is_open(),
+            filtered_options: state.filtered_options(),
+            highlight: state.highlighted(),
+            on_event: None,
+            on_focus: None,
+            on_blur: None,
+        }
+    }
 }
 
 impl<Msg> Default for Element<Msg> {

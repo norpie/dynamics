@@ -5,6 +5,9 @@ use crate::tui::widgets::TextInputState;
 /// Combines text input for filtering with a list of selected items and dropdown suggestions
 #[derive(Debug, Clone)]
 pub struct MultiSelectState {
+    /// Current input text value
+    value: String,
+
     /// Text input state for search/filter (cursor, scroll)
     input_state: TextInputState,
 
@@ -34,6 +37,7 @@ impl MultiSelectState {
     /// Create a new MultiSelectState
     pub fn new() -> Self {
         Self {
+            value: String::new(),
             input_state: TextInputState::new(),
             selected_items: Vec::new(),
             is_open: false,
@@ -41,6 +45,17 @@ impl MultiSelectState {
             filtered_options: Vec::new(),
             total_option_count: 0,
         }
+    }
+
+    /// Get current input value
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+
+    /// Set input value and update cursor
+    pub fn set_value(&mut self, value: String) {
+        self.value = value;
+        self.input_state.set_cursor_to_end(&self.value);
     }
 
     /// Get reference to text input state
@@ -75,6 +90,7 @@ impl MultiSelectState {
 
     /// Clear search input
     pub fn clear_input(&mut self) {
+        self.value = String::new();
         self.input_state = TextInputState::new();
     }
 
