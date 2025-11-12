@@ -59,6 +59,48 @@ fn deduplicate_example_pairs(pairs: Vec<ExamplePair>) -> Vec<ExamplePair> {
     deduplicated
 }
 
+/// Filter example pairs to only include those matching the current entity sets
+fn filter_example_pairs_by_entities(
+    pairs: Vec<ExamplePair>,
+    source_entities: &[String],
+    target_entities: &[String],
+) -> Vec<ExamplePair> {
+    let mut filtered = Vec::new();
+    let mut filtered_out = 0;
+
+    for pair in pairs {
+        // Parse entity names from pair ID (format: "entity1:id1:entity2:id2")
+        let parts: Vec<&str> = pair.id.split(':').collect();
+        if parts.len() >= 4 {
+            let pair_source_entity = parts[0];
+            let pair_target_entity = parts[2];
+
+            // Only include if both entities match the current comparison
+            if source_entities.contains(&pair_source_entity.to_string())
+                && target_entities.contains(&pair_target_entity.to_string()) {
+                filtered.push(pair);
+            } else {
+                filtered_out += 1;
+                log::debug!(
+                    "Filtering out example pair {}:{} -> {}:{} (not in current comparison)",
+                    pair_source_entity, parts[1], pair_target_entity, parts[3]
+                );
+            }
+        } else {
+            // Can't parse entity names - skip this pair
+            filtered_out += 1;
+            log::warn!("Skipping example pair with invalid ID format: {}", pair.id);
+        }
+    }
+
+    if filtered_out > 0 {
+        log::info!("Filtered {} example pairs (kept {} matching current entities)",
+            filtered_out, filtered.len());
+    }
+
+    filtered
+}
+
 pub struct EntityComparisonApp;
 
 /// Cache key for detecting when trees need rebuilding
@@ -841,7 +883,11 @@ impl App for EntityComparisonApp {
                             all_example_pairs.extend(entity_pairs);
                         }
                     }
-                    let example_pairs = deduplicate_example_pairs(all_example_pairs);
+                    let example_pairs = filter_example_pairs_by_entities(
+                        deduplicate_example_pairs(all_example_pairs),
+                        &source_entities,
+                        &target_entities,
+                    );
 
                     // Load ignored items for all entity pairs and merge with qualified names
                     let mut all_ignored_items = std::collections::HashSet::new();
@@ -910,7 +956,11 @@ impl App for EntityComparisonApp {
                             log::error!("Failed to load example pairs: {}", e);
                             Vec::new()
                         });
-                    let example_pairs = deduplicate_example_pairs(example_pairs_raw);
+                    let example_pairs = filter_example_pairs_by_entities(
+                        deduplicate_example_pairs(example_pairs_raw),
+                        &source_entities,
+                        &target_entities,
+                    );
 
                     let ignored_items = config.get_ignored_items(&first_source, &first_target).await
                         .unwrap_or_else(|e| {
