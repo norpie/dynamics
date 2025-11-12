@@ -109,8 +109,8 @@ impl TreeCacheKey {
             relationship_mappings_count: state.relationship_matches.len(),
             entity_mappings_count: state.entity_matches.len(),
             ignored_items_count: state.ignored_items.len(),
-            source_metadata_loaded: matches!(state.source_metadata, Resource::Success(_)),
-            target_metadata_loaded: matches!(state.target_metadata, Resource::Success(_)),
+            source_metadata_loaded: state.all_source_metadata_loaded(),
+            target_metadata_loaded: state.all_target_metadata_loaded(),
         }
     }
 }
@@ -364,13 +364,19 @@ impl State {
     /// Get metadata for a specific source entity
     pub(super) fn get_source_metadata(&self, entity_name: &str) -> Option<&EntityMetadata> {
         self.source_metadata.get(entity_name)
-            .and_then(|r| r.as_success())
+            .and_then(|r| match r {
+                Resource::Success(metadata) => Some(metadata),
+                _ => None,
+            })
     }
 
     /// Get metadata for a specific target entity
     pub(super) fn get_target_metadata(&self, entity_name: &str) -> Option<&EntityMetadata> {
         self.target_metadata.get(entity_name)
-            .and_then(|r| r.as_success())
+            .and_then(|r| match r {
+                Resource::Success(metadata) => Some(metadata),
+                _ => None,
+            })
     }
 
     /// Check if all source metadata has loaded successfully
@@ -454,23 +460,28 @@ impl State {
 
         log::debug!("Rebuilding tree cache for tab {:?}", self.active_tab);
 
-        // Build source tree
-        let source_items = if let Resource::Success(ref metadata) = self.source_metadata {
-            super::tree_builder::build_tree_items(
-                metadata,
-                self.active_tab,
-                &self.field_matches,
-                &self.relationship_matches,
-                &self.entity_matches,
-                &self.source_entities,
-                &self.examples,
-                true, // is_source
-                &self.source_entity,
-                self.show_technical_names,
-                self.sort_mode,
-                self.sort_direction,
-                &self.ignored_items,
-            )
+        // Build source tree - TODO: Support multi-entity properly (Phase 4)
+        // For now, use first entity's metadata for backwards compat
+        let source_items = if let Some(first_entity) = self.source_entities.first() {
+            if let Some(Resource::Success(ref metadata)) = self.source_metadata.get(first_entity) {
+                super::tree_builder::build_tree_items(
+                    metadata,
+                    self.active_tab,
+                    &self.field_matches,
+                    &self.relationship_matches,
+                    &self.entity_matches,
+                    &self.source_related_entities,
+                    &self.examples,
+                    true, // is_source
+                    first_entity,
+                    self.show_technical_names,
+                    self.sort_mode,
+                    self.sort_direction,
+                    &self.ignored_items,
+                )
+            } else {
+                vec![]
+            }
         } else {
             vec![]
         };
@@ -575,23 +586,28 @@ impl State {
                 .collect()
         };
 
-        // Build target tree
-        let target_items = if let Resource::Success(ref metadata) = self.target_metadata {
-            super::tree_builder::build_tree_items(
-                metadata,
-                self.active_tab,
-                &reverse_field_matches,
-                &reverse_relationship_matches,
-                &reverse_entity_matches,
-                &self.target_entities,
-                &self.examples,
-                false, // is_source
-                &self.target_entity,
-                self.show_technical_names,
-                self.sort_mode,
-                self.sort_direction,
-                &self.ignored_items,
-            )
+        // Build target tree - TODO: Support multi-entity properly (Phase 4)
+        // For now, use first entity's metadata for backwards compat
+        let target_items = if let Some(first_entity) = self.target_entities.first() {
+            if let Some(Resource::Success(ref metadata)) = self.target_metadata.get(first_entity) {
+                super::tree_builder::build_tree_items(
+                    metadata,
+                    self.active_tab,
+                    &reverse_field_matches,
+                    &reverse_relationship_matches,
+                    &reverse_entity_matches,
+                    &self.target_related_entities,
+                    &self.examples,
+                    false, // is_source
+                    first_entity,
+                    self.show_technical_names,
+                    self.sort_mode,
+                    self.sort_direction,
+                    &self.ignored_items,
+                )
+            } else {
+                vec![]
+            }
         } else {
             vec![]
         };
