@@ -1449,6 +1449,9 @@ impl CompletionStats {
 /// Calculate detailed completion statistics for source and target sides
 /// Returns (source_stats, target_stats)
 fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> (CompletionStats, CompletionStats) {
+    // Determine if we're in multi-entity mode (qualified names like "entity.field")
+    let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
+
     match active_tab {
         ActiveTab::Fields => {
             // Get total counts from metadata - sum across all entities
@@ -1478,14 +1481,28 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
                 .collect();
 
             let source_mapped = state.field_matches.keys()
-                .filter(|field| all_source_field_names.contains(*field))
+                .filter(|field| {
+                    // In multi-entity mode, strip entity prefix before comparing
+                    let field_name = if is_multi_entity {
+                        field.split('.').last().unwrap_or(field)
+                    } else {
+                        field.as_str()
+                    };
+                    all_source_field_names.contains(field_name)
+                })
                 .count();
 
             // Count source ignored fields
             let source_ignored = state.ignored_items.iter()
                 .filter(|id| {
                     if let Some(field_name) = id.strip_prefix("fields:source:") {
-                        all_source_field_names.contains(field_name)
+                        // In multi-entity mode, strip entity prefix before comparing
+                        let stripped_name = if is_multi_entity {
+                            field_name.split('.').last().unwrap_or(field_name)
+                        } else {
+                            field_name
+                        };
+                        all_source_field_names.contains(stripped_name)
                     } else {
                         false
                     }
@@ -1505,7 +1522,15 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
 
             let target_mapped = state.field_matches.values()
                 .flat_map(|m| m.target_fields.iter())
-                .filter(|field| all_target_field_names.contains(*field))
+                .filter(|field| {
+                    // In multi-entity mode, strip entity prefix before comparing
+                    let field_name = if is_multi_entity {
+                        field.split('.').last().unwrap_or(field)
+                    } else {
+                        field.as_str()
+                    };
+                    all_target_field_names.contains(field_name)
+                })
                 .collect::<std::collections::HashSet<_>>()
                 .len();
 
@@ -1513,7 +1538,13 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
             let target_ignored = state.ignored_items.iter()
                 .filter(|id| {
                     if let Some(field_name) = id.strip_prefix("fields:target:") {
-                        all_target_field_names.contains(field_name)
+                        // In multi-entity mode, strip entity prefix before comparing
+                        let stripped_name = if is_multi_entity {
+                            field_name.split('.').last().unwrap_or(field_name)
+                        } else {
+                            field_name
+                        };
+                        all_target_field_names.contains(stripped_name)
                     } else {
                         false
                     }
@@ -1553,14 +1584,28 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
                 .collect();
 
             let source_mapped = state.relationship_matches.keys()
-                .filter(|rel| all_source_rel_names.contains(*rel))
+                .filter(|rel| {
+                    // In multi-entity mode, strip entity prefix before comparing
+                    let rel_name = if is_multi_entity {
+                        rel.split('.').last().unwrap_or(rel)
+                    } else {
+                        rel.as_str()
+                    };
+                    all_source_rel_names.contains(rel_name)
+                })
                 .count();
 
             // Count source ignored relationships
             let source_ignored = state.ignored_items.iter()
                 .filter(|id| {
                     if let Some(rel_name) = id.strip_prefix("relationships:source:") {
-                        all_source_rel_names.contains(rel_name)
+                        // In multi-entity mode, strip entity prefix before comparing
+                        let stripped_name = if is_multi_entity {
+                            rel_name.split('.').last().unwrap_or(rel_name)
+                        } else {
+                            rel_name
+                        };
+                        all_source_rel_names.contains(stripped_name)
                     } else {
                         false
                     }
@@ -1580,7 +1625,15 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
 
             let target_mapped = state.relationship_matches.values()
                 .flat_map(|m| m.target_fields.iter())
-                .filter(|rel| all_target_rel_names.contains(*rel))
+                .filter(|rel| {
+                    // In multi-entity mode, strip entity prefix before comparing
+                    let rel_name = if is_multi_entity {
+                        rel.split('.').last().unwrap_or(rel)
+                    } else {
+                        rel.as_str()
+                    };
+                    all_target_rel_names.contains(rel_name)
+                })
                 .collect::<std::collections::HashSet<_>>()
                 .len();
 
@@ -1588,7 +1641,13 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
             let target_ignored = state.ignored_items.iter()
                 .filter(|id| {
                     if let Some(rel_name) = id.strip_prefix("relationships:target:") {
-                        all_target_rel_names.contains(rel_name)
+                        // In multi-entity mode, strip entity prefix before comparing
+                        let stripped_name = if is_multi_entity {
+                            rel_name.split('.').last().unwrap_or(rel_name)
+                        } else {
+                            rel_name
+                        };
+                        all_target_rel_names.contains(stripped_name)
                     } else {
                         false
                     }
@@ -1656,290 +1715,6 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
         ActiveTab::Views | ActiveTab::Forms => {
             // Views and Forms don't have mappings/matches
             (CompletionStats::new(0, 0, 0), CompletionStats::new(0, 0, 0))
-        }
-    }
-}
-
-/// Calculate mapping completion percentages for source and target sides
-/// Returns (source_completion_percent, target_completion_percent)
-fn calculate_completion_percentages(state: &State, active_tab: ActiveTab) -> (usize, usize) {
-    match active_tab {
-        ActiveTab::Fields => {
-            // Get total counts and field name sets from metadata - sum across all entities
-            let source_total: usize = state.source_metadata.values()
-                .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.fields.len()),
-                    _ => None,
-                })
-                .sum();
-
-            let source_field_names: std::collections::HashSet<String> = state.source_metadata.values()
-                .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.fields.iter()
-                        .map(|f| f.logical_name.clone())
-                        .collect::<Vec<_>>()),
-                    _ => None,
-                })
-                .flatten()
-                .collect();
-
-            let target_total: usize = state.target_metadata.values()
-                .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.fields.len()),
-                    _ => None,
-                })
-                .sum();
-
-            let target_field_names: std::collections::HashSet<String> = state.target_metadata.values()
-                .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.fields.iter()
-                        .map(|f| f.logical_name.clone())
-                        .collect::<Vec<_>>()),
-                    _ => None,
-                })
-                .flatten()
-                .collect();
-
-            // Count source items that are either mapped OR ignored (only if they exist in metadata)
-            let mut source_handled = std::collections::HashSet::new();
-
-            // Add all mapped source fields that exist in metadata
-            for field_name in state.field_matches.keys() {
-                if source_field_names.contains(field_name.as_str()) {
-                    source_handled.insert(field_name.clone());
-                }
-            }
-
-            // Add all ignored source fields that exist in metadata
-            for ignored_id in &state.ignored_items {
-                if ignored_id.starts_with("fields:source:") {
-                    if let Some(field_name) = ignored_id.strip_prefix("fields:source:") {
-                        if source_field_names.contains(field_name) {
-                            source_handled.insert(field_name.to_string());
-                        }
-                    }
-                }
-            }
-
-            let source_handled_count = source_handled.len();
-
-            // Count target items that are either mapped OR ignored (only if they exist in metadata)
-            let mut target_handled = std::collections::HashSet::new();
-
-            // Add all mapped target fields that exist in metadata (including 1-to-N mappings)
-            for match_info in state.field_matches.values() {
-                for target_field in &match_info.target_fields {
-                    if target_field_names.contains(target_field.as_str()) {
-                        target_handled.insert(target_field.clone());
-                    }
-                }
-            }
-
-            // Add all ignored target fields that exist in metadata
-            for ignored_id in &state.ignored_items {
-                if ignored_id.starts_with("fields:target:") {
-                    if let Some(field_name) = ignored_id.strip_prefix("fields:target:") {
-                        if target_field_names.contains(field_name) {
-                            target_handled.insert(field_name.to_string());
-                        }
-                    }
-                }
-            }
-
-            let target_handled_count = target_handled.len();
-
-            // Calculate percentages
-            let source_pct = if source_total > 0 {
-                (source_handled_count as f64 / source_total as f64 * 100.0) as usize
-            } else {
-                0
-            };
-
-            let target_pct = if target_total > 0 {
-                (target_handled_count as f64 / target_total as f64 * 100.0) as usize
-            } else {
-                0
-            };
-
-            (source_pct, target_pct)
-        }
-        ActiveTab::Relationships => {
-            // Get total counts and relationship name sets from metadata - sum across all entities
-            let source_total: usize = state.source_metadata.values()
-                .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.relationships.len()),
-                    _ => None,
-                })
-                .sum();
-
-            let source_rel_names: std::collections::HashSet<String> = state.source_metadata.values()
-                .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.relationships.iter()
-                        .map(|r| r.name.clone())
-                        .collect::<Vec<_>>()),
-                    _ => None,
-                })
-                .flatten()
-                .collect();
-
-            let target_total: usize = state.target_metadata.values()
-                .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.relationships.len()),
-                    _ => None,
-                })
-                .sum();
-
-            let target_rel_names: std::collections::HashSet<String> = state.target_metadata.values()
-                .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.relationships.iter()
-                        .map(|r| r.name.clone())
-                        .collect::<Vec<_>>()),
-                    _ => None,
-                })
-                .flatten()
-                .collect();
-
-            // Count source items that are either mapped OR ignored (only if they exist in metadata)
-            let mut source_handled = std::collections::HashSet::new();
-
-            // Add all mapped source relationships that exist in metadata
-            for relationship_name in state.relationship_matches.keys() {
-                if source_rel_names.contains(relationship_name.as_str()) {
-                    source_handled.insert(relationship_name.clone());
-                }
-            }
-
-            // Add all ignored source relationships that exist in metadata
-            for ignored_id in &state.ignored_items {
-                if ignored_id.starts_with("relationships:source:") {
-                    if let Some(relationship_name) = ignored_id.strip_prefix("relationships:source:") {
-                        if source_rel_names.contains(relationship_name) {
-                            source_handled.insert(relationship_name.to_string());
-                        }
-                    }
-                }
-            }
-
-            let source_handled_count = source_handled.len();
-
-            // Count target items that are either mapped OR ignored (only if they exist in metadata)
-            let mut target_handled = std::collections::HashSet::new();
-
-            // Add all mapped target relationships that exist in metadata (including 1-to-N mappings)
-            for match_info in state.relationship_matches.values() {
-                for target_field in &match_info.target_fields {
-                    if target_rel_names.contains(target_field.as_str()) {
-                        target_handled.insert(target_field.clone());
-                    }
-                }
-            }
-
-            // Add all ignored target relationships that exist in metadata
-            for ignored_id in &state.ignored_items {
-                if ignored_id.starts_with("relationships:target:") {
-                    if let Some(relationship_name) = ignored_id.strip_prefix("relationships:target:") {
-                        if target_rel_names.contains(relationship_name) {
-                            target_handled.insert(relationship_name.to_string());
-                        }
-                    }
-                }
-            }
-
-            let target_handled_count = target_handled.len();
-
-            // Calculate percentages
-            let source_pct = if source_total > 0 {
-                (source_handled_count as f64 / source_total as f64 * 100.0) as usize
-            } else {
-                0
-            };
-
-            let target_pct = if target_total > 0 {
-                (target_handled_count as f64 / target_total as f64 * 100.0) as usize
-            } else {
-                0
-            };
-
-            (source_pct, target_pct)
-        }
-        ActiveTab::Entities => {
-            // Get total counts and entity name sets from related entity lists (Entities tab shows related entities)
-            let source_total = state.source_related_entities.len();
-            let target_total = state.target_related_entities.len();
-
-            let source_entity_names: std::collections::HashSet<_> = state.source_related_entities.iter()
-                .map(|(name, _)| name.as_str())
-                .collect();
-            let target_entity_names: std::collections::HashSet<_> = state.target_related_entities.iter()
-                .map(|(name, _)| name.as_str())
-                .collect();
-
-            // Count source items that are either mapped OR ignored (only if they exist in entity list)
-            let mut source_handled = std::collections::HashSet::new();
-
-            // Add all mapped source entities that exist in entity list
-            for entity_name in state.entity_matches.keys() {
-                if source_entity_names.contains(entity_name.as_str()) {
-                    source_handled.insert(entity_name.clone());
-                }
-            }
-
-            // Add all ignored source entities that exist in entity list
-            for ignored_id in &state.ignored_items {
-                if ignored_id.starts_with("entities:source:") {
-                    if let Some(entity_name) = ignored_id.strip_prefix("entities:source:") {
-                        if source_entity_names.contains(entity_name) {
-                            source_handled.insert(entity_name.to_string());
-                        }
-                    }
-                }
-            }
-
-            let source_handled_count = source_handled.len();
-
-            // Count target items that are either mapped OR ignored (only if they exist in entity list)
-            let mut target_handled = std::collections::HashSet::new();
-
-            // Add all mapped target entities that exist in entity list (including 1-to-N mappings)
-            for match_info in state.entity_matches.values() {
-                for target_field in &match_info.target_fields {
-                    if target_entity_names.contains(target_field.as_str()) {
-                        target_handled.insert(target_field.clone());
-                    }
-                }
-            }
-
-            // Add all ignored target entities that exist in entity list
-            for ignored_id in &state.ignored_items {
-                if ignored_id.starts_with("entities:target:") {
-                    if let Some(entity_name) = ignored_id.strip_prefix("entities:target:") {
-                        if target_entity_names.contains(entity_name) {
-                            target_handled.insert(entity_name.to_string());
-                        }
-                    }
-                }
-            }
-
-            let target_handled_count = target_handled.len();
-
-            // Calculate percentages
-            let source_pct = if source_total > 0 {
-                (source_handled_count as f64 / source_total as f64 * 100.0) as usize
-            } else {
-                0
-            };
-
-            let target_pct = if target_total > 0 {
-                (target_handled_count as f64 / target_total as f64 * 100.0) as usize
-            } else {
-                0
-            };
-
-            (source_pct, target_pct)
-        }
-        ActiveTab::Views | ActiveTab::Forms => {
-            // Views and Forms don't have mappings/matches
-            (0, 0)
         }
     }
 }

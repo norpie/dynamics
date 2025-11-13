@@ -502,8 +502,12 @@ impl State {
 
         log::debug!("Rebuilding tree cache for tab {:?}", self.active_tab);
 
+        // Determine if we need multi-entity mode (qualified names)
+        // Use multi-entity mode if EITHER side has more than one entity to avoid name mismatches
+        let is_multi_entity = self.source_entities.len() > 1 || self.target_entities.len() > 1;
+
         // Build source tree - multi-entity or single-entity mode
-        let source_items = if self.source_entities.len() > 1 {
+        let source_items = if is_multi_entity {
             // Multi-entity mode: use qualified field names
             // Extract successful metadata for tree building
             let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = self.source_metadata.iter()
@@ -656,8 +660,8 @@ impl State {
                 .collect()
         };
 
-        // Build target tree - multi-entity or single-entity mode
-        let target_items = if self.target_entities.len() > 1 {
+        // Build target tree - use same mode as source for consistency
+        let target_items = if is_multi_entity {
             // Multi-entity mode: use qualified field names
             // Extract successful metadata for tree building
             let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = self.target_metadata.iter()
