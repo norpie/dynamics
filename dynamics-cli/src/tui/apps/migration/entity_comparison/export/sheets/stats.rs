@@ -45,8 +45,21 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
 
     let mut row = 2u32;
 
+    // Determine if we're in multi-entity mode
+    let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
+
+    // Helper closure to compute field key (qualified in multi-entity mode)
+    let make_field_key = |entity_name: &str, field_name: &str| -> String {
+        if is_multi_entity {
+            format!("{}.{}", entity_name, field_name)
+        } else {
+            field_name.to_string()
+        }
+    };
+
     // Get field counts
-    let source_fields = if let Some(first_entity) = state.source_entities.first() {
+    let first_source_entity = state.source_entities.first();
+    let source_fields = if let Some(first_entity) = first_source_entity {
         match state.source_metadata.get(first_entity) {
             Some(Resource::Success(metadata)) => &metadata.fields,
             _ => {
@@ -93,12 +106,19 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
     let mut example_count = 0;
     let mut import_count = 0;
 
-    for field in source_fields {
-        let ignore_id = format!("fields:source:{}", field.logical_name);
+    let source_entity_name = first_source_entity.unwrap();
 
-        if state.ignored_items.contains(&ignore_id) {
+    for field in source_fields {
+        // Construct field key: qualified in multi-entity mode, simple otherwise
+        let field_key = make_field_key(source_entity_name, &field.logical_name);
+
+        // Check ignore status - try both qualified and unqualified ignore IDs
+        let ignore_id_simple = format!("fields:source:{}", field.logical_name);
+        let ignore_id_qualified = format!("fields:source:{}", field_key);
+
+        if state.ignored_items.contains(&ignore_id_simple) || state.ignored_items.contains(&ignore_id_qualified) {
             source_ignored += 1;
-        } else if let Some(match_info) = state.field_matches.get(&field.logical_name) {
+        } else if let Some(match_info) = state.field_matches.get(&field_key) {
             source_mapped += 1;
 
             // Count by match type (using primary target)
@@ -202,6 +222,9 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
     let mut target_unmapped = 0;
     let mut target_ignored = 0;
 
+    let first_target_entity = state.target_entities.first();
+    let target_entity_name = first_target_entity.unwrap();
+
     // Build reverse matches for target
     let mut reverse_matches = std::collections::HashSet::new();
     for (source_field, match_info) in &state.field_matches {
@@ -211,11 +234,16 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
     }
 
     for field in target_fields {
-        let ignore_id = format!("fields:target:{}", field.logical_name);
+        // Construct field key: qualified in multi-entity mode, simple otherwise
+        let field_key = make_field_key(target_entity_name, &field.logical_name);
 
-        if state.ignored_items.contains(&ignore_id) {
+        // Check ignore status - try both qualified and unqualified ignore IDs
+        let ignore_id_simple = format!("fields:target:{}", field.logical_name);
+        let ignore_id_qualified = format!("fields:target:{}", field_key);
+
+        if state.ignored_items.contains(&ignore_id_simple) || state.ignored_items.contains(&ignore_id_qualified) {
             target_ignored += 1;
-        } else if reverse_matches.contains(&field.logical_name) {
+        } else if reverse_matches.contains(&field_key) {
             target_mapped += 1;
         } else {
             target_unmapped += 1;
