@@ -435,6 +435,159 @@ pub fn handle_delete_manual_mapping(state: &mut State) -> Command<Msg> {
     Command::None
 }
 
+/// Delete imported mapping from selected field (triggered by 'd' key)
+pub fn handle_delete_imported_mapping(state: &mut State) -> Command<Msg> {
+    // Get selected item from source tree
+    let source_id = state.source_tree_for_tab().selected().map(|s| s.to_string());
+
+    if let Some(source_id) = source_id {
+        // Extract the key based on tab type
+        let source_key = match state.active_tab {
+            ActiveTab::Fields => source_id.clone(),
+            ActiveTab::Relationships => {
+                source_id.strip_prefix("rel_").unwrap_or(&source_id).to_string()
+            }
+            ActiveTab::Entities => {
+                source_id.strip_prefix("entity_").unwrap_or(&source_id).to_string()
+            }
+            ActiveTab::Forms | ActiveTab::Views => source_id.clone(),
+        };
+
+        // Check if this field has an imported mapping
+        if let Some(deleted_targets) = state.imported_mappings.remove(&source_key) {
+            let target_count = deleted_targets.len();
+
+            // Log what's being deleted
+            if target_count > 1 {
+                log::info!(
+                    "Deleting imported mapping: {} → {} ({} targets)",
+                    source_key,
+                    deleted_targets.join(", "),
+                    target_count
+                );
+            } else {
+                log::info!("Deleting imported mapping: {} → {}", source_key, deleted_targets.join(", "));
+            }
+
+            // Recompute matches - support both single-entity and multi-entity modes
+            let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
+
+            if is_multi_entity {
+                // Multi-entity mode: recompute across all entity pairs
+                let source_metadata_map: std::collections::HashMap<String, crate::api::EntityMetadata> =
+                    state.source_metadata.iter()
+                        .filter_map(|(name, resource)| {
+                            if let Resource::Success(metadata) = resource {
+                                Some((name.clone(), metadata.clone()))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                let target_metadata_map: std::collections::HashMap<String, crate::api::EntityMetadata> =
+                    state.target_metadata.iter()
+                        .filter_map(|(name, resource)| {
+                            if let Resource::Success(metadata) = resource {
+                                Some((name.clone(), metadata.clone()))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                    super::super::matching_adapter::recompute_all_matches_multi(
+                        &source_metadata_map,
+                        &target_metadata_map,
+                        &state.source_entities,
+                        &state.target_entities,
+                        &state.field_mappings,
+                        &state.imported_mappings,
+                        &state.prefix_mappings,
+                        &state.examples,
+                        &state.negative_matches,
+                    );
+
+                state.field_matches = field_matches;
+                state.relationship_matches = relationship_matches;
+                state.entity_matches = entity_matches;
+                state.source_related_entities = source_related_entities;
+                state.target_related_entities = target_related_entities;
+            } else {
+                // Single-entity mode: backwards compatible
+                let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
+                let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
+
+                if let (Some(Resource::Success(source_metadata)), Some(Resource::Success(target_metadata))) = (
+                    state.source_metadata.get(&first_source_entity),
+                    state.target_metadata.get(&first_target_entity),
+                ) {
+                    let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
+                        super::super::matching_adapter::recompute_all_matches(
+                            source_metadata,
+                            target_metadata,
+                            &state.field_mappings,
+                            &state.imported_mappings,
+                            &state.prefix_mappings,
+                            &state.examples,
+                            &first_source_entity,
+                            &first_target_entity,
+                            &state.negative_matches,
+                        );
+
+                    state.field_matches = field_matches;
+                    state.relationship_matches = relationship_matches;
+                    state.entity_matches = entity_matches;
+                    state.source_related_entities = source_related_entities;
+                    state.target_related_entities = target_related_entities;
+                }
+            }
+
+            // Persist to config - delete imported mapping for all entity pairs
+            // Parse qualified name to extract entity and field
+            let source_entities = state.source_entities.clone();
+            let target_entities = state.target_entities.clone();
+            let source_key_for_async = source_key.clone();
+
+            return Command::perform(
+                async move {
+                    let config = crate::global_config();
+
+                    // Helper to parse qualified names
+                    fn parse_qualified_name<'a>(name: &'a str, default_entity: &'a str) -> (&'a str, &'a str) {
+                        if let Some((entity, field)) = name.split_once('.') {
+                            (entity, field)
+                        } else {
+                            (default_entity, name)
+                        }
+                    }
+
+                    let default_source = source_entities.first().map(|s| s.as_str()).unwrap_or("");
+                    let (source_entity, source_field) = parse_qualified_name(&source_key_for_async, default_source);
+
+                    // Clear imported mappings for all target entity combinations
+                    for target_entity in &target_entities {
+                        // Note: We don't have a delete_single_imported_mapping method, so we need to
+                        // reload all imported mappings, remove this one, and save back
+                        if let Ok(mut all_mappings) = config.get_imported_mappings(source_entity, target_entity).await {
+                            all_mappings.0.remove(source_field);
+                            let source_file = all_mappings.1.as_deref().unwrap_or("");
+                            if let Err(e) = config.set_imported_mappings(source_entity, target_entity, &all_mappings.0, source_file).await {
+                                log::error!("Failed to update imported mappings for {}/{}: {}", source_entity, target_entity, e);
+                            }
+                        }
+                    }
+                },
+                |_| Msg::Refresh // Dummy message
+            );
+        } else {
+            log::warn!("Cannot delete imported mapping: field '{}' has no imported mapping", source_key);
+        }
+    }
+    Command::None
+}
+
 pub fn handle_cycle_hide_mode(state: &mut State) -> Command<Msg> {
     state.hide_mode = state.hide_mode.toggle();
     Command::None

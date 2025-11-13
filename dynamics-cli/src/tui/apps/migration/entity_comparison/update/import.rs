@@ -515,30 +515,35 @@ pub fn handle_mappings_loaded(state: &mut State, mappings: HashMap<String, Strin
         }
     }
 
-    // Find removed mappings (sources that existed but are now gone)
-    for (src, old_tgts) in old_mappings {
-        if !mappings_vec.contains_key(src) {
-            // All targets for this source were removed
-            for old_tgt in old_tgts {
-                removed.push((src.clone(), old_tgt.clone()));
-            }
-        }
-    }
+    // Don't track removed mappings - we're merging, not replacing
+    // (Removed section commented out as we want to keep existing mappings)
 
-    log::info!("Import results: {} added, {} updated, {} removed", added.len(), updated.len(), removed.len());
+    log::info!("Import results: {} added, {} updated, 0 removed (merging mode)", added.len(), updated.len());
 
     // Store results
     state.import_results = Some(super::super::app::ImportResults {
         filename: filename.clone(),
         added,
         updated,
-        removed,
+        removed, // Empty vec - no removals in merge mode
         unparsed: vec![],  // TODO: capture unparsed lines from parser
     });
     state.show_import_results_modal = true;
 
-    state.imported_mappings = mappings_vec;
-    state.import_source_file = Some(filename.clone());
+    // MERGE imported mappings instead of replacing
+    for (src, tgts) in mappings_vec {
+        state.imported_mappings
+            .entry(src)
+            .or_insert_with(Vec::new)
+            .extend(tgts);
+    }
+
+    // Update import source file (append if exists)
+    if let Some(existing_file) = &state.import_source_file {
+        state.import_source_file = Some(format!("{}, {}", existing_file, filename));
+    } else {
+        state.import_source_file = Some(filename.clone());
+    }
     state.show_import_modal = false;
 
     // Recompute all matches with imported mappings

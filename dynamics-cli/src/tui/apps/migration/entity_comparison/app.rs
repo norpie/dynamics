@@ -1096,6 +1096,37 @@ impl App for EntityComparisonApp {
             Subscription::ctrl_key(KeyCode::Char('e'), "Export unmapped fields to CSV", Msg::ExportUnmappedToCsv),
         ];
 
+        // Conditional 'd' key: Delete imported mapping if selected field has an imported match
+        let source_tree = match state.active_tab {
+            ActiveTab::Fields => &state.source_fields_tree,
+            ActiveTab::Relationships => &state.source_relationships_tree,
+            ActiveTab::Entities => &state.source_entities_tree,
+            ActiveTab::Forms => &state.source_forms_tree,
+            ActiveTab::Views => &state.source_views_tree,
+        };
+
+        if let Some(source_id) = source_tree.selected() {
+            let source_key = match state.active_tab {
+                ActiveTab::Fields => source_id.to_string(),
+                ActiveTab::Relationships => {
+                    source_id.strip_prefix("rel_").unwrap_or(source_id).to_string()
+                }
+                ActiveTab::Entities => {
+                    source_id.strip_prefix("entity_").unwrap_or(source_id).to_string()
+                }
+                ActiveTab::Forms | ActiveTab::Views => source_id.to_string(),
+            };
+
+            // Check if this field has an imported mapping
+            if state.imported_mappings.contains_key(&source_key) {
+                subs.push(Subscription::keyboard(
+                    KeyCode::Char('d'),
+                    "Delete imported mapping",
+                    Msg::DeleteImportedMapping
+                ));
+            }
+        }
+
         // Type filter cycling (conditional based on mode)
         match state.type_filter_mode {
             super::models::TypeFilterMode::Unified => {

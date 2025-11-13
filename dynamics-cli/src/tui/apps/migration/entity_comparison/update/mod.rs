@@ -47,6 +47,7 @@ pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         // Mappings
         Msg::CreateManualMapping => mappings::handle_create_manual_mapping(state),
         Msg::DeleteManualMapping => mappings::handle_delete_manual_mapping(state),
+        Msg::DeleteImportedMapping => mappings::handle_delete_imported_mapping(state),
         Msg::CycleHideMode => mappings::handle_cycle_hide_mode(state),
         Msg::ToggleSortMode => mappings::handle_toggle_sort_mode(state),
         Msg::ToggleSortDirection => mappings::handle_toggle_sort_direction(state),

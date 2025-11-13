@@ -34,6 +34,7 @@ pub enum Msg {
     TargetTreeFocused,   // Target tree gained focus
     CreateManualMapping,  // Create mapping from selected source to selected target
     DeleteManualMapping,  // Delete mapping from selected field
+    DeleteImportedMapping, // Delete imported mapping from selected field
     CycleHideMode,        // Cycle through hide modes (Off -> HideMatched -> HideIgnored -> HideBoth)
     ToggleSortMode,       // Toggle between Alphabetical and MatchesFirst sorting
     ToggleSortDirection,  // Toggle sort direction (Ascending <-> Descending)
