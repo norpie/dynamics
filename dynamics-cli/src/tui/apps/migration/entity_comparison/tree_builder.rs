@@ -23,6 +23,26 @@ pub fn build_tree_items(
     sort_direction: super::models::SortDirection,
     ignored_items: &std::collections::HashSet<String>,
 ) -> Vec<ComparisonTreeItem> {
+    build_tree_items_internal(metadata, active_tab, field_matches, relationship_matches, entity_matches, entities, examples, is_source, entity_name, show_technical_names, sort_mode, sort_direction, ignored_items, None)
+}
+
+/// Internal version that accepts optional entity name for multi-entity qualified ignore IDs
+fn build_tree_items_internal(
+    metadata: &EntityMetadata,
+    active_tab: ActiveTab,
+    field_matches: &HashMap<String, MatchInfo>,
+    relationship_matches: &HashMap<String, MatchInfo>,
+    entity_matches: &HashMap<String, MatchInfo>,
+    entities: &[(String, usize)],
+    examples: &super::models::ExamplesState,
+    is_source: bool,
+    entity_name: &str,
+    show_technical_names: bool,
+    sort_mode: super::models::SortMode,
+    sort_direction: super::models::SortDirection,
+    ignored_items: &std::collections::HashSet<String>,
+    qualify_entity_name: Option<&str>, // For multi-entity mode: entity to qualify IDs with
+) -> Vec<ComparisonTreeItem> {
     let tab_prefix = match active_tab {
         ActiveTab::Fields => "fields",
         ActiveTab::Relationships => "relationships",
@@ -33,11 +53,11 @@ pub fn build_tree_items(
     let side_prefix = if is_source { "source" } else { "target" };
 
     match active_tab {
-        ActiveTab::Fields => build_fields_tree(&metadata.fields, field_matches, examples, is_source, entity_name, show_technical_names, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix),
-        ActiveTab::Relationships => build_relationships_tree(&metadata.relationships, relationship_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix),
+        ActiveTab::Fields => build_fields_tree(&metadata.fields, field_matches, examples, is_source, entity_name, show_technical_names, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix, qualify_entity_name),
+        ActiveTab::Relationships => build_relationships_tree(&metadata.relationships, relationship_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix, qualify_entity_name),
         ActiveTab::Views => build_views_tree(&metadata.views, field_matches, &metadata.fields, examples, is_source, entity_name, show_technical_names, ignored_items, tab_prefix, side_prefix),
         ActiveTab::Forms => build_forms_tree(&metadata.forms, field_matches, &metadata.fields, examples, is_source, entity_name, show_technical_names, ignored_items, tab_prefix, side_prefix),
-        ActiveTab::Entities => build_entities_tree(entities, entity_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix),
+        ActiveTab::Entities => build_entities_tree(entities, entity_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix, qualify_entity_name),
     }
 }
 
@@ -64,7 +84,7 @@ pub fn build_multi_entity_tree_items(
     if active_tab == ActiveTab::Entities {
         let tab_prefix = "entities";
         let side_prefix = if is_source { "source" } else { "target" };
-        return build_entities_tree(entities, entity_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix);
+        return build_entities_tree(entities, entity_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix, None);
     }
 
     // For each selected entity, build items and qualify them
@@ -94,7 +114,8 @@ pub fn build_multi_entity_tree_items(
             .collect();
 
         // Build items for this entity using single-entity logic
-        let entity_items = build_tree_items(
+        // Pass entity_name for qualified ignore ID checks
+        let entity_items = build_tree_items_internal(
             metadata,
             active_tab,
             &filtered_field_matches,
@@ -108,6 +129,7 @@ pub fn build_multi_entity_tree_items(
             sort_mode,
             sort_direction,
             ignored_items,
+            Some(entity_name), // Pass entity name for qualified ignore ID checks
         );
 
         // Qualify the items with entity prefix and merge
@@ -178,6 +200,7 @@ fn build_fields_tree(
     ignored_items: &std::collections::HashSet<String>,
     tab_prefix: &str,
     side_prefix: &str,
+    qualify_entity_name: Option<&str>, // For multi-entity mode: entity to qualify IDs with
 ) -> Vec<ComparisonTreeItem> {
     let mut items: Vec<ComparisonTreeItem> = fields
         .iter()
@@ -189,13 +212,23 @@ fn build_fields_tree(
                 f.display_name.clone().unwrap_or_else(|| f.logical_name.clone())
             };
 
-            let item_id = format!("{}:{}:{}", tab_prefix, side_prefix, f.logical_name);
+            // Check ignore status - in multi-entity mode, check both simple and qualified IDs
+            let is_ignored = if let Some(qual_entity) = qualify_entity_name {
+                // Multi-entity mode: check qualified ID (e.g., "fields:source:cgk_film.version")
+                let qualified_id = format!("{}:{}:{}.{}", tab_prefix, side_prefix, qual_entity, f.logical_name);
+                ignored_items.contains(&qualified_id)
+            } else {
+                // Single-entity mode: check simple ID (e.g., "fields:source:version")
+                let simple_id = format!("{}:{}:{}", tab_prefix, side_prefix, f.logical_name);
+                ignored_items.contains(&simple_id)
+            };
+
             ComparisonTreeItem::Field(FieldNode {
                 metadata: f.clone(),
                 match_info: field_matches.get(&f.logical_name).cloned(),
                 example_value: examples.get_field_value(&f.logical_name, is_source, entity_name),
                 display_name,
-                is_ignored: ignored_items.contains(&item_id),
+                is_ignored,
             })
         })
         .collect();
@@ -213,16 +246,27 @@ fn build_relationships_tree(
     ignored_items: &std::collections::HashSet<String>,
     tab_prefix: &str,
     side_prefix: &str,
+    qualify_entity_name: Option<&str>, // For multi-entity mode: entity to qualify IDs with
 ) -> Vec<ComparisonTreeItem> {
     let mut items: Vec<ComparisonTreeItem> = relationships
         .iter()
         .map(|r| {
             // IMPORTANT: Must use "rel_{name}" to match RelationshipNode::id() in tree_items.rs
-            let item_id = format!("{}:{}:rel_{}", tab_prefix, side_prefix, r.name);
+            // Check ignore status - in multi-entity mode, check qualified ID
+            let is_ignored = if let Some(qual_entity) = qualify_entity_name {
+                // Multi-entity mode: check qualified ID (e.g., "relationships:source:rel_cgk_film.new_account")
+                let qualified_id = format!("{}:{}:rel_{}.{}", tab_prefix, side_prefix, qual_entity, r.name);
+                ignored_items.contains(&qualified_id)
+            } else {
+                // Single-entity mode: check simple ID (e.g., "relationships:source:rel_new_account")
+                let simple_id = format!("{}:{}:rel_{}", tab_prefix, side_prefix, r.name);
+                ignored_items.contains(&simple_id)
+            };
+
             ComparisonTreeItem::Relationship(RelationshipNode {
                 metadata: r.clone(),
                 match_info: relationship_matches.get(&r.name).cloned(),
-                is_ignored: ignored_items.contains(&item_id),
+                is_ignored,
             })
         })
         .collect();
@@ -630,11 +674,13 @@ fn build_entities_tree(
     ignored_items: &std::collections::HashSet<String>,
     tab_prefix: &str,
     side_prefix: &str,
+    _qualify_entity_name: Option<&str>, // Unused for entities (they're already unique)
 ) -> Vec<ComparisonTreeItem> {
     let mut items: Vec<ComparisonTreeItem> = entities
         .iter()
         .map(|(name, usage_count)| {
             // IMPORTANT: Must use "entity_{name}" to match EntityNode::id() in tree_items.rs
+            // Entities are already unique, no qualification needed
             let item_id = format!("{}:{}:entity_{}", tab_prefix, side_prefix, name);
             ComparisonTreeItem::Entity(EntityNode {
                 name: name.clone(),
