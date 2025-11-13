@@ -57,43 +57,43 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
         }
     };
 
-    // Get field counts
-    let first_source_entity = state.source_entities.first();
-    let source_fields = if let Some(first_entity) = first_source_entity {
-        match state.source_metadata.get(first_entity) {
-            Some(Resource::Success(metadata)) => &metadata.fields,
-            _ => {
-                sheet.write_string(row, 0, "No metadata loaded")?;
-                sheet.autofit();
-                return Ok(());
+    // Collect fields from ALL source entities
+    let mut all_source_fields: Vec<(String, &crate::api::metadata::FieldMetadata)> = Vec::new();
+    for source_entity in &state.source_entities {
+        if let Some(Resource::Success(metadata)) = state.source_metadata.get(source_entity) {
+            for field in &metadata.fields {
+                all_source_fields.push((source_entity.clone(), field));
             }
         }
-    } else {
-        sheet.write_string(row, 0, "No source entities")?;
-        sheet.autofit();
-        return Ok(());
-    };
+    }
 
-    let target_fields = if let Some(first_entity) = state.target_entities.first() {
-        match state.target_metadata.get(first_entity) {
-            Some(Resource::Success(metadata)) => &metadata.fields,
-            _ => {
-                sheet.write_string(row, 0, "No target metadata loaded")?;
-                sheet.autofit();
-                return Ok(());
-            }
-        }
-    } else {
-        sheet.write_string(row, 0, "No target entities")?;
+    if all_source_fields.is_empty() {
+        sheet.write_string(row, 0, "No source fields loaded")?;
         sheet.autofit();
         return Ok(());
-    };
+    }
+
+    // Collect fields from ALL target entities
+    let mut all_target_fields: Vec<(String, &crate::api::metadata::FieldMetadata)> = Vec::new();
+    for target_entity in &state.target_entities {
+        if let Some(Resource::Success(metadata)) = state.target_metadata.get(target_entity) {
+            for field in &metadata.fields {
+                all_target_fields.push((target_entity.clone(), field));
+            }
+        }
+    }
+
+    if all_target_fields.is_empty() {
+        sheet.write_string(row, 0, "No target fields loaded")?;
+        sheet.autofit();
+        return Ok(());
+    }
 
     // ===== SOURCE STATISTICS =====
     sheet.write_string_with_format(row, 0, "SOURCE FIELDS", &header_format)?;
     row += 1;
 
-    let source_total = source_fields.len();
+    let source_total = all_source_fields.len();
     let mut source_mapped = 0;
     let mut source_unmapped = 0;
     let mut source_ignored = 0;
@@ -106,11 +106,9 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
     let mut example_count = 0;
     let mut import_count = 0;
 
-    let source_entity_name = first_source_entity.unwrap();
-
-    for field in source_fields {
+    for (entity_name, field) in &all_source_fields {
         // Construct field key: qualified in multi-entity mode, simple otherwise
-        let field_key = make_field_key(source_entity_name, &field.logical_name);
+        let field_key = make_field_key(entity_name, &field.logical_name);
 
         // Check ignore status - try both qualified and unqualified ignore IDs
         let ignore_id_simple = format!("fields:source:{}", field.logical_name);
@@ -217,15 +215,12 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
     sheet.write_string_with_format(row, 0, "TARGET FIELDS", &header_format)?;
     row += 1;
 
-    let target_total = target_fields.len();
+    let target_total = all_target_fields.len();
     let mut target_mapped = 0;
     let mut target_unmapped = 0;
     let mut target_ignored = 0;
 
-    let first_target_entity = state.target_entities.first();
-    let target_entity_name = first_target_entity.unwrap();
-
-    // Build reverse matches for target
+    // Build reverse matches for target (all qualified field keys)
     let mut reverse_matches = std::collections::HashSet::new();
     for (source_field, match_info) in &state.field_matches {
         for target_field in &match_info.target_fields {
@@ -233,9 +228,9 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
         }
     }
 
-    for field in target_fields {
+    for (entity_name, field) in &all_target_fields {
         // Construct field key: qualified in multi-entity mode, simple otherwise
-        let field_key = make_field_key(target_entity_name, &field.logical_name);
+        let field_key = make_field_key(entity_name, &field.logical_name);
 
         // Check ignore status - try both qualified and unqualified ignore IDs
         let ignore_id_simple = format!("fields:target:{}", field.logical_name);

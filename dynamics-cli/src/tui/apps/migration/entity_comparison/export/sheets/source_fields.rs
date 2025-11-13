@@ -13,6 +13,7 @@ use super::super::formatting::*;
 fn write_field_row(
     sheet: &mut Worksheet,
     row: u32,
+    field_display_name: &str,
     field: &FieldMetadata,
     mapped_to: &str,
     mapped_type: &str,
@@ -21,7 +22,7 @@ fn write_field_row(
     indent_format: &Format,
 ) -> Result<()> {
     // Columns: Field Name | Field Type | Match Type | Related Entity | Mapped To | Mapped Type
-    sheet.write_string_with_format(row, 0, &format!("    {}", field.logical_name), indent_format)?;
+    sheet.write_string_with_format(row, 0, &format!("    {}", field_display_name), indent_format)?;
     sheet.write_string_with_format(row, 1, &format!("{:?}", field.field_type), row_format)?;
     sheet.write_string_with_format(row, 2, match_type, row_format)?;
 
@@ -83,67 +84,61 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
         }
     };
 
-    // Get source fields
-    // In multi-entity mode, we still export the first entity but use qualified names for lookups
-    let first_source_entity = state.source_entities.first();
-    let source_fields = if let Some(entity_name) = first_source_entity {
-        match state.source_metadata.get(entity_name) {
-            Some(Resource::Success(metadata)) => &metadata.fields,
-            _ => {
-                sheet.write_string(row, 0, "No metadata loaded")?;
-                sheet.autofit();
-                return Ok(());
+    // Collect fields from ALL source entities (not just first)
+    // Each field is paired with its entity name for qualified key generation
+    let mut all_source_fields: Vec<(String, &FieldMetadata)> = Vec::new();
+    for source_entity in &state.source_entities {
+        if let Some(Resource::Success(metadata)) = state.source_metadata.get(source_entity) {
+            for field in &metadata.fields {
+                all_source_fields.push((source_entity.clone(), field));
             }
         }
-    } else {
-        sheet.write_string(row, 0, "No source entities")?;
+    }
+
+    if all_source_fields.is_empty() {
+        sheet.write_string(row, 0, "No source fields loaded")?;
         sheet.autofit();
         return Ok(());
-    };
+    }
 
-    // Get target fields for type lookup
-    let target_fields = if let Some(first_entity) = state.target_entities.first() {
-        match state.target_metadata.get(first_entity) {
-            Some(Resource::Success(metadata)) => &metadata.fields,
-            _ => {
-                sheet.write_string(row, 0, "No target metadata loaded")?;
-                sheet.autofit();
-                return Ok(());
+    // Collect ALL target fields for type lookup
+    let mut target_field_types: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for target_entity in &state.target_entities {
+        if let Some(Resource::Success(metadata)) = state.target_metadata.get(target_entity) {
+            for field in &metadata.fields {
+                // In multi-entity mode, use qualified names as keys
+                let key = make_field_key(target_entity, &field.logical_name);
+                target_field_types.insert(key, format!("{:?}", field.field_type));
             }
         }
-    } else {
-        sheet.write_string(row, 0, "No target entities")?;
+    }
+
+    if target_field_types.is_empty() {
+        sheet.write_string(row, 0, "No target metadata loaded")?;
         sheet.autofit();
         return Ok(());
-    };
-
-    // Create a lookup map for target field types
-    let target_field_types: std::collections::HashMap<_, _> = target_fields
-        .iter()
-        .map(|f| (f.logical_name.as_str(), format!("{:?}", f.field_type)))
-        .collect();
+    }
 
     // Partition fields into mapped, unmapped, and ignored
+    // Each field is stored as (entity_name, field_metadata)
     let mut mapped_fields = Vec::new();
     let mut unmapped_fields = Vec::new();
     let mut ignored_fields = Vec::new();
 
-    let source_entity_name = first_source_entity.unwrap();
-
-    for field in source_fields {
+    for (entity_name, field) in &all_source_fields {
         // Construct field key: qualified in multi-entity mode, simple otherwise
-        let field_key = make_field_key(source_entity_name, &field.logical_name);
+        let field_key = make_field_key(entity_name, &field.logical_name);
 
         // Check ignore status - try both qualified and unqualified ignore IDs
         let ignore_id_simple = format!("fields:source:{}", field.logical_name);
         let ignore_id_qualified = format!("fields:source:{}", field_key);
 
         if state.ignored_items.contains(&ignore_id_simple) || state.ignored_items.contains(&ignore_id_qualified) {
-            ignored_fields.push(field);
+            ignored_fields.push((entity_name.clone(), *field));
         } else if state.field_matches.contains_key(&field_key) {
-            mapped_fields.push(field);
+            mapped_fields.push((entity_name.clone(), *field));
         } else {
-            unmapped_fields.push(field);
+            unmapped_fields.push((entity_name.clone(), *field));
         }
     }
 
@@ -153,10 +148,11 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
         row += 1;
 
         // Group by match type (using primary target's match type)
+        // Each item is (entity_name, field)
         let exact_matches: Vec<_> = mapped_fields
             .iter()
-            .filter(|f| {
-                let field_key = make_field_key(source_entity_name, &f.logical_name);
+            .filter(|(entity_name, f)| {
+                let field_key = make_field_key(entity_name, &f.logical_name);
                 state.field_matches.get(&field_key)
                     .and_then(|m| {
                         m.primary_target().and_then(|primary| m.match_types.get(primary))
@@ -168,8 +164,8 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
 
         let manual_mappings: Vec<_> = mapped_fields
             .iter()
-            .filter(|f| {
-                let field_key = make_field_key(source_entity_name, &f.logical_name);
+            .filter(|(entity_name, f)| {
+                let field_key = make_field_key(entity_name, &f.logical_name);
                 state.field_matches.get(&field_key)
                     .and_then(|m| {
                         m.primary_target().and_then(|primary| m.match_types.get(primary))
@@ -181,8 +177,8 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
 
         let prefix_matches: Vec<_> = mapped_fields
             .iter()
-            .filter(|f| {
-                let field_key = make_field_key(source_entity_name, &f.logical_name);
+            .filter(|(entity_name, f)| {
+                let field_key = make_field_key(entity_name, &f.logical_name);
                 state.field_matches.get(&field_key)
                     .and_then(|m| {
                         m.primary_target().and_then(|primary| m.match_types.get(primary))
@@ -194,8 +190,8 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
 
         let type_mismatches: Vec<_> = mapped_fields
             .iter()
-            .filter(|f| {
-                let field_key = make_field_key(source_entity_name, &f.logical_name);
+            .filter(|(entity_name, f)| {
+                let field_key = make_field_key(entity_name, &f.logical_name);
                 state.field_matches.get(&field_key)
                     .and_then(|m| {
                         m.primary_target().and_then(|primary| m.match_types.get(primary))
@@ -207,8 +203,8 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
 
         let example_matches: Vec<_> = mapped_fields
             .iter()
-            .filter(|f| {
-                let field_key = make_field_key(source_entity_name, &f.logical_name);
+            .filter(|(entity_name, f)| {
+                let field_key = make_field_key(entity_name, &f.logical_name);
                 state.field_matches.get(&field_key)
                     .and_then(|m| {
                         m.primary_target().and_then(|primary| m.match_types.get(primary))
@@ -220,8 +216,8 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
 
         let import_matches: Vec<_> = mapped_fields
             .iter()
-            .filter(|f| {
-                let field_key = make_field_key(source_entity_name, &f.logical_name);
+            .filter(|(entity_name, f)| {
+                let field_key = make_field_key(entity_name, &f.logical_name);
                 state.field_matches.get(&field_key)
                     .and_then(|m| {
                         m.primary_target().and_then(|primary| m.match_types.get(primary))
@@ -236,8 +232,9 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
             sheet.write_string_with_format(row, 0, "  Exact Name + Type Matches", &Format::new().set_bold())?;
             row += 1;
 
-            for field in exact_matches {
-                let field_key = make_field_key(source_entity_name, &field.logical_name);
+            for (entity_name, field) in exact_matches {
+                let field_key = make_field_key(entity_name, &field.logical_name);
+                let field_display_name = make_field_key(entity_name, &field.logical_name);
                 if let Some(match_info) = state.field_matches.get(&field_key) {
                     let target_fields_str = match_info.target_fields.join(", ");
                     let target_types_str = match_info.target_fields
@@ -245,7 +242,7 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
                         .map(|tf| target_field_types.get(tf.as_str()).map(|s| s.as_str()).unwrap_or("Unknown"))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    write_field_row(sheet, row, field, &target_fields_str, &target_types_str, "Exact", &exact_match_format, &indent_format)?;
+                    write_field_row(sheet, row, &field_display_name, field, &target_fields_str, &target_types_str, "Exact", &exact_match_format, &indent_format)?;
                     row += 1;
                 }
             }
@@ -257,8 +254,9 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
             sheet.write_string_with_format(row, 0, "  Manual Mappings", &Format::new().set_bold())?;
             row += 1;
 
-            for field in manual_mappings {
-                let field_key = make_field_key(source_entity_name, &field.logical_name);
+            for (entity_name, field) in manual_mappings {
+                let field_key = make_field_key(entity_name, &field.logical_name);
+                let field_display_name = make_field_key(entity_name, &field.logical_name);
                 if let Some(match_info) = state.field_matches.get(&field_key) {
                     let target_fields_str = match_info.target_fields.join(", ");
                     let target_types_str = match_info.target_fields
@@ -266,7 +264,7 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
                         .map(|tf| target_field_types.get(tf.as_str()).map(|s| s.as_str()).unwrap_or("Unknown"))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    write_field_row(sheet, row, field, &target_fields_str, &target_types_str, "Manual", &manual_mapping_format, &indent_format)?;
+                    write_field_row(sheet, row, &field_display_name, field, &target_fields_str, &target_types_str, "Manual", &manual_mapping_format, &indent_format)?;
                     row += 1;
                 }
             }
@@ -278,8 +276,9 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
             sheet.write_string_with_format(row, 0, "  Prefix Matches", &Format::new().set_bold())?;
             row += 1;
 
-            for field in prefix_matches {
-                let field_key = make_field_key(source_entity_name, &field.logical_name);
+            for (entity_name, field) in prefix_matches {
+                let field_key = make_field_key(entity_name, &field.logical_name);
+                let field_display_name = make_field_key(entity_name, &field.logical_name);
                 if let Some(match_info) = state.field_matches.get(&field_key) {
                     let target_fields_str = match_info.target_fields.join(", ");
                     let target_types_str = match_info.target_fields
@@ -287,7 +286,7 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
                         .map(|tf| target_field_types.get(tf.as_str()).map(|s| s.as_str()).unwrap_or("Unknown"))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    write_field_row(sheet, row, field, &target_fields_str, &target_types_str, "Prefix", &prefix_match_format, &indent_format)?;
+                    write_field_row(sheet, row, &field_display_name, field, &target_fields_str, &target_types_str, "Prefix", &prefix_match_format, &indent_format)?;
                     row += 1;
                 }
             }
@@ -299,8 +298,9 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
             sheet.write_string_with_format(row, 0, "  Type Mismatches", &Format::new().set_bold().set_font_color(Color::RGB(0xFF8C00)))?;
             row += 1;
 
-            for field in type_mismatches {
-                let field_key = make_field_key(source_entity_name, &field.logical_name);
+            for (entity_name, field) in type_mismatches {
+                let field_key = make_field_key(entity_name, &field.logical_name);
+                let field_display_name = make_field_key(entity_name, &field.logical_name);
                 if let Some(match_info) = state.field_matches.get(&field_key) {
                     let target_fields_str = match_info.target_fields.join(", ");
                     let target_types_str = match_info.target_fields
@@ -308,7 +308,7 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
                         .map(|tf| target_field_types.get(tf.as_str()).map(|s| s.as_str()).unwrap_or("Unknown"))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    write_field_row(sheet, row, field, &target_fields_str, &target_types_str, "Type Mismatch", &type_mismatch_format, &indent_format)?;
+                    write_field_row(sheet, row, &field_display_name, field, &target_fields_str, &target_types_str, "Type Mismatch", &type_mismatch_format, &indent_format)?;
                     row += 1;
                 }
             }
@@ -320,8 +320,9 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
             sheet.write_string_with_format(row, 0, "  Example Value Matches", &Format::new().set_bold())?;
             row += 1;
 
-            for field in example_matches {
-                let field_key = make_field_key(source_entity_name, &field.logical_name);
+            for (entity_name, field) in example_matches {
+                let field_key = make_field_key(entity_name, &field.logical_name);
+                let field_display_name = make_field_key(entity_name, &field.logical_name);
                 if let Some(match_info) = state.field_matches.get(&field_key) {
                     let target_fields_str = match_info.target_fields.join(", ");
                     let target_types_str = match_info.target_fields
@@ -329,7 +330,7 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
                         .map(|tf| target_field_types.get(tf.as_str()).map(|s| s.as_str()).unwrap_or("Unknown"))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    write_field_row(sheet, row, field, &target_fields_str, &target_types_str, "Example", &example_value_format, &indent_format)?;
+                    write_field_row(sheet, row, &field_display_name, field, &target_fields_str, &target_types_str, "Example", &example_value_format, &indent_format)?;
                     row += 1;
                 }
             }
@@ -341,8 +342,9 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
             sheet.write_string_with_format(row, 0, "  Imported Mappings", &Format::new().set_bold())?;
             row += 1;
 
-            for field in import_matches {
-                let field_key = make_field_key(source_entity_name, &field.logical_name);
+            for (entity_name, field) in import_matches {
+                let field_key = make_field_key(entity_name, &field.logical_name);
+                let field_display_name = make_field_key(entity_name, &field.logical_name);
                 if let Some(match_info) = state.field_matches.get(&field_key) {
                     let target_fields_str = match_info.target_fields.join(", ");
                     let target_types_str = match_info.target_fields
@@ -350,7 +352,7 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
                         .map(|tf| target_field_types.get(tf.as_str()).map(|s| s.as_str()).unwrap_or("Unknown"))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    write_field_row(sheet, row, field, &target_fields_str, &target_types_str, "Import", &manual_mapping_format, &indent_format)?;
+                    write_field_row(sheet, row, &field_display_name, field, &target_fields_str, &target_types_str, "Import", &manual_mapping_format, &indent_format)?;
                     row += 1;
                 }
             }
@@ -363,8 +365,9 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
         sheet.write_string_with_format(row, 0, "⚠ UNMAPPED FIELDS", &header_format)?;
         row += 1;
 
-        for field in unmapped_fields {
-            write_field_row(sheet, row, field, "", "", "Unmapped", &unmapped_format, &indent_format)?;
+        for (entity_name, field) in unmapped_fields {
+            let field_display_name = make_field_key(&entity_name, &field.logical_name);
+            write_field_row(sheet, row, &field_display_name, field, "", "", "Unmapped", &unmapped_format, &indent_format)?;
             row += 1;
         }
         row += 1;
@@ -375,9 +378,10 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
         sheet.write_string_with_format(row, 0, "🚫 IGNORED FIELDS", &header_format)?;
         row += 1;
 
-        for field in ignored_fields {
+        for (entity_name, field) in ignored_fields {
             // Check if it has a mapping (ignored but mapped)
-            let field_key = make_field_key(source_entity_name, &field.logical_name);
+            let field_key = make_field_key(&entity_name, &field.logical_name);
+            let field_display_name = make_field_key(&entity_name, &field.logical_name);
             let (mapped_to, mapped_type, match_type) = if let Some(match_info) = state.field_matches.get(&field_key) {
                 let target_fields_str = match_info.target_fields.join(", ");
                 let target_types_str = match_info.target_fields
@@ -395,7 +399,7 @@ pub fn create_source_fields_sheet(workbook: &mut Workbook, state: &State) -> Res
                 (String::new(), String::new(), "Ignored".to_string())
             };
 
-            write_field_row(sheet, row, field, &mapped_to, &mapped_type, &match_type, &unmapped_format, &indent_format)?;
+            write_field_row(sheet, row, &field_display_name, field, &mapped_to, &mapped_type, &match_type, &unmapped_format, &indent_format)?;
             row += 1;
         }
     }
