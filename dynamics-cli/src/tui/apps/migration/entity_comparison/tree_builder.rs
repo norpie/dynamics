@@ -659,9 +659,7 @@ fn sort_items(
         super::models::SortMode::Alphabetical => {
             // Sort alphabetically by name
             items.sort_by(|a, b| {
-                let a_name = item_name(a);
-                let b_name = item_name(b);
-                let ordering = a_name.cmp(&b_name);
+                let ordering = compare_item_names(a, b);
                 // Apply direction
                 match sort_direction {
                     super::models::SortDirection::Ascending => ordering,
@@ -710,9 +708,7 @@ fn sort_items(
                 match tier_ordering {
                     std::cmp::Ordering::Equal => {
                         // Same tier - sort alphabetically
-                        let a_name = item_name(a);
-                        let b_name = item_name(b);
-                        let name_ordering = a_name.cmp(&b_name);
+                        let name_ordering = compare_item_names(a, b);
                         // Apply direction to name ordering too
                         match sort_direction {
                             super::models::SortDirection::Ascending => name_ordering,
@@ -723,6 +719,35 @@ fn sort_items(
                 }
             });
         }
+    }
+}
+
+/// Compare two items by name, handling multi-entity qualified names
+/// For qualified names (entity.field), sorts by field name first, then entity name
+/// Example: "cgk_film.accountid" < "cgk_folder.accountid" < "cgk_film.version"
+fn compare_item_names(a: &ComparisonTreeItem, b: &ComparisonTreeItem) -> std::cmp::Ordering {
+    let a_name = item_name(a);
+    let b_name = item_name(b);
+
+    // Check if names contain '.' (qualified names in multi-entity mode)
+    if let (Some(a_dot_pos), Some(b_dot_pos)) = (a_name.find('.'), b_name.find('.')) {
+        // Both have qualified names: "entity.field"
+        let (a_entity, a_field) = a_name.split_at(a_dot_pos);
+        let a_field = &a_field[1..]; // Skip the dot
+        let (b_entity, b_field) = b_name.split_at(b_dot_pos);
+        let b_field = &b_field[1..]; // Skip the dot
+
+        // Compare field names first
+        match a_field.cmp(b_field) {
+            std::cmp::Ordering::Equal => {
+                // If field names are equal, compare entity names
+                a_entity.cmp(b_entity)
+            }
+            other => other,
+        }
+    } else {
+        // At least one doesn't have a dot - simple comparison
+        a_name.cmp(b_name)
     }
 }
 
