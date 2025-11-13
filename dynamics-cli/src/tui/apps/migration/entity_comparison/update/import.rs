@@ -155,61 +155,85 @@ pub fn handle_file_selected(_state: &mut State, path: PathBuf) -> Command<Msg> {
 pub fn handle_csv_loaded(state: &mut State, csv_data: crate::csv_parser::CsvImportData, filename: String) -> Command<Msg> {
     log::info!("Loading CSV data from {}", filename);
 
+    // Determine if we're in multi-entity mode
+    let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
+
     // Track changes across all mapping types for import results
     let mut all_added = Vec::new();
     let mut all_updated = Vec::new();
     let mut all_removed = Vec::new(); // CSV import doesn't remove, but keep for consistency
 
-    // Process manual mappings (MERGE) - convert single values to Vec for 1-to-N support
-    for (src, tgt) in &csv_data.manual_mappings {
-        if let Some(old_tgts) = state.field_mappings.get(src) {
-            // Check if this target already exists in the vector
-            if !old_tgts.contains(tgt) {
-                all_updated.push((format!("[manual] {}", src), tgt.clone()));
+    // Helper to expand mappings in multi-entity mode
+    let expand_mappings = |mappings: &HashMap<String, String>| -> HashMap<String, Vec<String>> {
+        if is_multi_entity {
+            let mut expanded = HashMap::new();
+            for (simple_src, simple_tgt) in mappings {
+                // Expand to all source/target entity combinations
+                for source_entity in &state.source_entities {
+                    for target_entity in &state.target_entities {
+                        let qualified_src = format!("{}.{}", source_entity, simple_src);
+                        let qualified_tgt = format!("{}.{}", target_entity, simple_tgt);
+                        expanded.entry(qualified_src)
+                            .or_insert_with(Vec::new)
+                            .push(qualified_tgt);
+                    }
+                }
             }
+            expanded
         } else {
-            all_added.push((format!("[manual] {}", src), tgt.clone()));
+            mappings.iter()
+                .map(|(k, v)| (k.clone(), vec![v.clone()]))
+                .collect()
+        }
+    };
+
+    // Process manual mappings (MERGE) - convert single values to Vec for 1-to-N support
+    let converted_manual = expand_mappings(&csv_data.manual_mappings);
+    for (src, tgts) in &converted_manual {
+        for tgt in tgts {
+            if let Some(old_tgts) = state.field_mappings.get(src) {
+                // Check if this target already exists in the vector
+                if !old_tgts.contains(tgt) {
+                    all_updated.push((format!("[manual] {}", src), tgt.clone()));
+                }
+            } else {
+                all_added.push((format!("[manual] {}", src), tgt.clone()));
+            }
         }
     }
-    // Convert HashMap<String, String> to HashMap<String, Vec<String>> and merge
-    let converted: HashMap<String, Vec<String>> = csv_data.manual_mappings.iter()
-        .map(|(k, v)| (k.clone(), vec![v.clone()]))
-        .collect();
-    state.field_mappings.extend(converted);
+    state.field_mappings.extend(converted_manual);
 
     // Process prefix mappings (MERGE) - convert single values to Vec for 1-to-N support
-    for (src, tgt) in &csv_data.prefix_mappings {
-        if let Some(old_tgts) = state.prefix_mappings.get(src) {
-            // Check if this target already exists in the vector
-            if !old_tgts.contains(tgt) {
-                all_updated.push((format!("[prefix] {}", src), tgt.clone()));
+    let converted_prefix = expand_mappings(&csv_data.prefix_mappings);
+    for (src, tgts) in &converted_prefix {
+        for tgt in tgts {
+            if let Some(old_tgts) = state.prefix_mappings.get(src) {
+                // Check if this target already exists in the vector
+                if !old_tgts.contains(tgt) {
+                    all_updated.push((format!("[prefix] {}", src), tgt.clone()));
+                }
+            } else {
+                all_added.push((format!("[prefix] {}", src), tgt.clone()));
             }
-        } else {
-            all_added.push((format!("[prefix] {}", src), tgt.clone()));
         }
     }
-    // Convert HashMap<String, String> to HashMap<String, Vec<String>> and merge
-    let converted: HashMap<String, Vec<String>> = csv_data.prefix_mappings.iter()
-        .map(|(k, v)| (k.clone(), vec![v.clone()]))
-        .collect();
-    state.prefix_mappings.extend(converted);
+    state.prefix_mappings.extend(converted_prefix);
 
     // Process imported mappings (MERGE) - convert single values to Vec for 1-to-N support
-    for (src, tgt) in &csv_data.imported_mappings {
-        if let Some(old_tgts) = state.imported_mappings.get(src) {
-            // Check if this target already exists in the vector
-            if !old_tgts.contains(tgt) {
-                all_updated.push((format!("[import] {}", src), tgt.clone()));
+    let converted_imported = expand_mappings(&csv_data.imported_mappings);
+    for (src, tgts) in &converted_imported {
+        for tgt in tgts {
+            if let Some(old_tgts) = state.imported_mappings.get(src) {
+                // Check if this target already exists in the vector
+                if !old_tgts.contains(tgt) {
+                    all_updated.push((format!("[import] {}", src), tgt.clone()));
+                }
+            } else {
+                all_added.push((format!("[import] {}", src), tgt.clone()));
             }
-        } else {
-            all_added.push((format!("[import] {}", src), tgt.clone()));
         }
     }
-    // Convert HashMap<String, String> to HashMap<String, Vec<String>> and merge
-    let converted: HashMap<String, Vec<String>> = csv_data.imported_mappings.iter()
-        .map(|(k, v)| (k.clone(), vec![v.clone()]))
-        .collect();
-    state.imported_mappings.extend(converted);
+    state.imported_mappings.extend(converted_imported);
 
     // Update import source file (append if exists)
     if let Some(existing_file) = &state.import_source_file {
@@ -440,10 +464,36 @@ pub fn handle_mappings_loaded(state: &mut State, mappings: HashMap<String, Strin
     log::info!("Loading {} imported mappings from {}", mappings.len(), filename);
     log::debug!("Old mappings count: {}", state.imported_mappings.len());
 
+    // Determine if we're in multi-entity mode
+    let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
+
     // Convert HashMap<String, String> to HashMap<String, Vec<String>> for 1-to-N support
-    let mappings_vec: HashMap<String, Vec<String>> = mappings.iter()
-        .map(|(k, v)| (k.clone(), vec![v.clone()]))
-        .collect();
+    // In multi-entity mode, expand simple names to qualified names for all entity combinations
+    let mappings_vec: HashMap<String, Vec<String>> = if is_multi_entity {
+        log::info!("Multi-entity mode: expanding {} mappings to all entity combinations", mappings.len());
+        let mut expanded = HashMap::new();
+
+        for (simple_src, simple_tgt) in &mappings {
+            // Expand to all source/target entity combinations
+            for source_entity in &state.source_entities {
+                for target_entity in &state.target_entities {
+                    let qualified_src = format!("{}.{}", source_entity, simple_src);
+                    let qualified_tgt = format!("{}.{}", target_entity, simple_tgt);
+                    expanded.entry(qualified_src)
+                        .or_insert_with(Vec::new)
+                        .push(qualified_tgt);
+                }
+            }
+        }
+
+        log::info!("Expanded {} simple mappings to {} qualified mappings", mappings.len(), expanded.len());
+        expanded
+    } else {
+        // Single-entity mode: simple conversion
+        mappings.iter()
+            .map(|(k, v)| (k.clone(), vec![v.clone()]))
+            .collect()
+    };
 
     // Compute results by comparing old vs new mappings
     let old_mappings = &state.imported_mappings;
@@ -451,21 +501,23 @@ pub fn handle_mappings_loaded(state: &mut State, mappings: HashMap<String, Strin
     let mut updated = Vec::new();
     let mut removed = Vec::new();
 
-    // Find added and updated mappings (iterate over single-value imports)
-    for (src, tgt) in &mappings {
-        if let Some(old_tgts) = old_mappings.get(src) {
-            // Check if this specific target already exists
-            if !old_tgts.contains(tgt) {
-                updated.push((src.clone(), tgt.clone()));
+    // Find added and updated mappings (iterate over expanded mappings)
+    for (src, tgts) in &mappings_vec {
+        for tgt in tgts {
+            if let Some(old_tgts) = old_mappings.get(src) {
+                // Check if this specific target already exists
+                if !old_tgts.contains(tgt) {
+                    updated.push((src.clone(), tgt.clone()));
+                }
+            } else {
+                added.push((src.clone(), tgt.clone()));
             }
-        } else {
-            added.push((src.clone(), tgt.clone()));
         }
     }
 
     // Find removed mappings (sources that existed but are now gone)
     for (src, old_tgts) in old_mappings {
-        if !mappings.contains_key(src) {
+        if !mappings_vec.contains_key(src) {
             // All targets for this source were removed
             for old_tgt in old_tgts {
                 removed.push((src.clone(), old_tgt.clone()));
