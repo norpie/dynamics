@@ -41,15 +41,15 @@ pub async fn fetch_with_cache(
                     let fields = process_lookup_fields(cached.fields, &relationship_names);
 
                     match fetch_type {
-                        FetchType::SourceFields => Ok(FetchedData::SourceFields(fields)),
-                        FetchType::TargetFields => Ok(FetchedData::TargetFields(fields)),
+                        FetchType::SourceFields => Ok(FetchedData::SourceFields(entity_name.to_string(), fields)),
+                        FetchType::TargetFields => Ok(FetchedData::TargetFields(entity_name.to_string(), fields)),
                         _ => unreachable!()
                     }
                 }
-                FetchType::SourceForms => Ok(FetchedData::SourceForms(cached.forms)),
-                FetchType::SourceViews => Ok(FetchedData::SourceViews(cached.views)),
-                FetchType::TargetForms => Ok(FetchedData::TargetForms(cached.forms)),
-                FetchType::TargetViews => Ok(FetchedData::TargetViews(cached.views)),
+                FetchType::SourceForms => Ok(FetchedData::SourceForms(entity_name.to_string(), cached.forms)),
+                FetchType::SourceViews => Ok(FetchedData::SourceViews(entity_name.to_string(), cached.views)),
+                FetchType::TargetForms => Ok(FetchedData::TargetForms(entity_name.to_string(), cached.forms)),
+                FetchType::TargetViews => Ok(FetchedData::TargetViews(entity_name.to_string(), cached.views)),
             };
         }
     }
@@ -68,15 +68,15 @@ pub async fn fetch_with_cache(
                 .collect();
             // Filter virtual fields using relationship names
             let fields = process_lookup_fields(fields, &relationship_names);
-            Ok(FetchedData::SourceFields(fields))
+            Ok(FetchedData::SourceFields(entity_name.to_string(), fields))
         }
         FetchType::SourceForms => {
             let forms = client.fetch_entity_forms(entity_name).await.map_err(|e| e.to_string())?;
-            Ok(FetchedData::SourceForms(forms))
+            Ok(FetchedData::SourceForms(entity_name.to_string(), forms))
         }
         FetchType::SourceViews => {
             let views = client.fetch_entity_views(entity_name).await.map_err(|e| e.to_string())?;
-            Ok(FetchedData::SourceViews(views))
+            Ok(FetchedData::SourceViews(entity_name.to_string(), views))
         }
         FetchType::TargetFields => {
             let fields = client.fetch_entity_fields_combined(entity_name).await.map_err(|e| e.to_string())?;
@@ -87,15 +87,15 @@ pub async fn fetch_with_cache(
                 .collect();
             // Filter virtual fields using relationship names
             let fields = process_lookup_fields(fields, &relationship_names);
-            Ok(FetchedData::TargetFields(fields))
+            Ok(FetchedData::TargetFields(entity_name.to_string(), fields))
         }
         FetchType::TargetForms => {
             let forms = client.fetch_entity_forms(entity_name).await.map_err(|e| e.to_string())?;
-            Ok(FetchedData::TargetForms(forms))
+            Ok(FetchedData::TargetForms(entity_name.to_string(), forms))
         }
         FetchType::TargetViews => {
             let views = client.fetch_entity_views(entity_name).await.map_err(|e| e.to_string())?;
-            Ok(FetchedData::TargetViews(views))
+            Ok(FetchedData::TargetViews(entity_name.to_string(), views))
         }
     }
 }

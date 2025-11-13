@@ -71,7 +71,11 @@ pub fn build_multi_entity_tree_items(
     for entity_name in selected_entities {
         let metadata = match metadata_map.get(entity_name) {
             Some(meta) => meta,
-            None => continue,
+            None => {
+                log::warn!("Skipping entity '{}' - metadata not available in map (available: {:?})",
+                    entity_name, metadata_map.keys().collect::<Vec<_>>());
+                continue;
+            }
         };
 
         // Filter field_matches to this entity only
@@ -107,10 +111,16 @@ pub fn build_multi_entity_tree_items(
         );
 
         // Qualify the items with entity prefix and merge
+        let item_count = entity_items.len();
         for item in entity_items {
             all_items.push(qualify_tree_item(item, entity_name));
         }
+        log::debug!("Added {} items for entity '{}' (tab: {:?}, side: {})",
+            item_count, entity_name, active_tab, if is_source { "source" } else { "target" });
     }
+
+    log::info!("Built multi-entity tree with {} total items across {} entities (tab: {:?}, side: {})",
+        all_items.len(), selected_entities.len(), active_tab, if is_source { "source" } else { "target" });
 
     // Sort the merged items
     sort_items(&mut all_items, sort_mode, sort_direction);

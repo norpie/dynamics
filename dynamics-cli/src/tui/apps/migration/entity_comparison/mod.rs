@@ -130,11 +130,11 @@ pub enum Msg {
 
 #[derive(Clone)]
 pub enum FetchedData {
-    SourceFields(Vec<crate::api::metadata::FieldMetadata>),
-    SourceForms(Vec<crate::api::metadata::FormMetadata>),
-    SourceViews(Vec<crate::api::metadata::ViewMetadata>),
-    TargetFields(Vec<crate::api::metadata::FieldMetadata>),
-    TargetForms(Vec<crate::api::metadata::FormMetadata>),
-    TargetViews(Vec<crate::api::metadata::ViewMetadata>),
+    SourceFields(String, Vec<crate::api::metadata::FieldMetadata>), // entity_name, fields
+    SourceForms(String, Vec<crate::api::metadata::FormMetadata>), // entity_name, forms
+    SourceViews(String, Vec<crate::api::metadata::ViewMetadata>), // entity_name, views
+    TargetFields(String, Vec<crate::api::metadata::FieldMetadata>), // entity_name, fields
+    TargetForms(String, Vec<crate::api::metadata::FormMetadata>), // entity_name, forms
+    TargetViews(String, Vec<crate::api::metadata::ViewMetadata>), // entity_name, views
     ExampleData(String, serde_json::Value, serde_json::Value), // pair_id, source_data, target_data
 }

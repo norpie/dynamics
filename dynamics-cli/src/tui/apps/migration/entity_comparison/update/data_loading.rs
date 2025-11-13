@@ -27,7 +27,7 @@ pub fn handle_parallel_data_loaded(
         Ok(data) => {
             // Update the appropriate metadata based on the data variant
             match data {
-                FetchedData::SourceFields(mut fields) => {
+                FetchedData::SourceFields(entity_name, mut fields) => {
                     // Extract relationships if we have Lookup fields (fresh from API)
                     // If no Lookup fields, they came from cache and relationships need to be loaded separately
                     let has_lookup_fields = fields.iter().any(|f| matches!(&f.field_type, crate::api::metadata::FieldType::Lookup) || matches!(&f.field_type, crate::api::metadata::FieldType::Other(t) if t.starts_with("Relationship:")));
@@ -57,44 +57,38 @@ pub fn handle_parallel_data_loaded(
                         })
                     };
 
-                    // TODO: Support multi-entity mode - for now use first entity
-                    let first_entity = state.source_entities.first().cloned().unwrap_or_default();
-                    if let Some(Resource::Success(meta)) = state.source_metadata.get_mut(&first_entity) {
+                    if let Some(Resource::Success(meta)) = state.source_metadata.get_mut(&entity_name) {
                         meta.fields = fields;
                         meta.relationships = relationships;
                     } else {
-                        state.source_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
+                        state.source_metadata.insert(entity_name, Resource::Success(crate::api::EntityMetadata {
                             fields,
                             relationships,
                             ..Default::default()
                         }));
                     }
                 }
-                FetchedData::SourceForms(forms) => {
-                    // TODO: Support multi-entity mode - for now use first entity
-                    let first_entity = state.source_entities.first().cloned().unwrap_or_default();
-                    if let Some(Resource::Success(meta)) = state.source_metadata.get_mut(&first_entity) {
+                FetchedData::SourceForms(entity_name, forms) => {
+                    if let Some(Resource::Success(meta)) = state.source_metadata.get_mut(&entity_name) {
                         meta.forms = forms;
                     } else {
-                        state.source_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
+                        state.source_metadata.insert(entity_name, Resource::Success(crate::api::EntityMetadata {
                             forms,
                             ..Default::default()
                         }));
                     }
                 }
-                FetchedData::SourceViews(views) => {
-                    // TODO: Support multi-entity mode - for now use first entity
-                    let first_entity = state.source_entities.first().cloned().unwrap_or_default();
-                    if let Some(Resource::Success(meta)) = state.source_metadata.get_mut(&first_entity) {
+                FetchedData::SourceViews(entity_name, views) => {
+                    if let Some(Resource::Success(meta)) = state.source_metadata.get_mut(&entity_name) {
                         meta.views = views;
                     } else {
-                        state.source_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
+                        state.source_metadata.insert(entity_name, Resource::Success(crate::api::EntityMetadata {
                             views,
                             ..Default::default()
                         }));
                     }
                 }
-                FetchedData::TargetFields(mut fields) => {
+                FetchedData::TargetFields(entity_name, mut fields) => {
                     // Extract relationships if we have Lookup fields (fresh from API)
                     // If no Lookup fields, they came from cache and relationships need to be loaded separately
                     let has_lookup_fields = fields.iter().any(|f| matches!(&f.field_type, crate::api::metadata::FieldType::Lookup) || matches!(&f.field_type, crate::api::metadata::FieldType::Other(t) if t.starts_with("Relationship:")));
@@ -124,38 +118,32 @@ pub fn handle_parallel_data_loaded(
                         })
                     };
 
-                    // TODO: Support multi-entity mode - for now use first entity
-                    let first_entity = state.target_entities.first().cloned().unwrap_or_default();
-                    if let Some(Resource::Success(meta)) = state.target_metadata.get_mut(&first_entity) {
+                    if let Some(Resource::Success(meta)) = state.target_metadata.get_mut(&entity_name) {
                         meta.fields = fields;
                         meta.relationships = relationships;
                     } else {
-                        state.target_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
+                        state.target_metadata.insert(entity_name, Resource::Success(crate::api::EntityMetadata {
                             fields,
                             relationships,
                             ..Default::default()
                         }));
                     }
                 }
-                FetchedData::TargetForms(forms) => {
-                    // TODO: Support multi-entity mode - for now use first entity
-                    let first_entity = state.target_entities.first().cloned().unwrap_or_default();
-                    if let Some(Resource::Success(meta)) = state.target_metadata.get_mut(&first_entity) {
+                FetchedData::TargetForms(entity_name, forms) => {
+                    if let Some(Resource::Success(meta)) = state.target_metadata.get_mut(&entity_name) {
                         meta.forms = forms;
                     } else {
-                        state.target_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
+                        state.target_metadata.insert(entity_name, Resource::Success(crate::api::EntityMetadata {
                             forms,
                             ..Default::default()
                         }));
                     }
                 }
-                FetchedData::TargetViews(views) => {
-                    // TODO: Support multi-entity mode - for now use first entity
-                    let first_entity = state.target_entities.first().cloned().unwrap_or_default();
-                    if let Some(Resource::Success(meta)) = state.target_metadata.get_mut(&first_entity) {
+                FetchedData::TargetViews(entity_name, views) => {
+                    if let Some(Resource::Success(meta)) = state.target_metadata.get_mut(&entity_name) {
                         meta.views = views;
                     } else {
-                        state.target_metadata.insert(first_entity, Resource::Success(crate::api::EntityMetadata {
+                        state.target_metadata.insert(entity_name, Resource::Success(crate::api::EntityMetadata {
                             views,
                             ..Default::default()
                         }));
