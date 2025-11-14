@@ -713,6 +713,36 @@ fn process_row(
                             cell_value.clone()
                         );
                     }
+                    field_mappings::FieldType::Picklist { options } => {
+                        // Picklist field - validate and map label to integer value
+                        let trimmed_value = cell_value.trim();
+
+                        if let Some(&picklist_value) = options.get(trimmed_value) {
+                            // Valid picklist value - store it
+                            transformed.picklist_fields.insert(
+                                mapping.dynamics_field.clone(),
+                                picklist_value
+                            );
+                        } else {
+                            // Invalid or unknown picklist value
+                            // Check if it's the third invalid option (GUID label)
+                            if trimmed_value.len() == 36 && trimmed_value.contains('-') {
+                                transformed.warnings.push(format!(
+                                    "Invalid picklist value in '{}': '{}' (appears to be a GUID - not a valid option)",
+                                    mapping.excel_column, trimmed_value
+                                ));
+                            } else {
+                                // Generate a helpful warning with expected values
+                                let expected_values: Vec<String> = options.keys().cloned().collect();
+                                transformed.warnings.push(format!(
+                                    "Invalid value in '{}': '{}'. Expected one of: {}",
+                                    mapping.excel_column,
+                                    trimmed_value,
+                                    expected_values.join(", ")
+                                ));
+                            }
+                        }
+                    }
                     field_mappings::FieldType::Checkbox => {
                         // Checkboxes are handled separately below
                     }

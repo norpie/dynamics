@@ -58,6 +58,8 @@ pub enum FieldType {
     Time,
     /// Checkbox field - N:N relationship (dynamically discovered)
     Checkbox,
+    /// Picklist field - maps label to integer value
+    Picklist { options: HashMap<String, i32> },
 }
 
 /// Single field mapping from Excel column to Dynamics field
@@ -169,6 +171,21 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
+
+        // Support Type - picklist field
+        FieldMapping {
+            excel_column: "Support Type".to_string(),
+            dynamics_field: "vaf_support_type".to_string(),
+            field_type: FieldType::Picklist {
+                options: {
+                    let mut map = HashMap::new();
+                    map.insert("Automatische steun".to_string(), 806150000);
+                    map.insert("Selectieve steun".to_string(), 806150001);
+                    map
+                },
+            },
+            required: true,
+        },
     ]
 }
 
@@ -265,6 +282,21 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
+
+        // Support Type - picklist field
+        FieldMapping {
+            excel_column: "Support Type".to_string(),
+            dynamics_field: "vaf_support_type".to_string(),
+            field_type: FieldType::Picklist {
+                options: {
+                    let mut map = HashMap::new();
+                    map.insert("Automatische steun".to_string(), 806150000);
+                    map.insert("Selectieve steun".to_string(), 806150001);
+                    map
+                },
+            },
+            required: true,
+        },
     ]
 }
 
@@ -336,12 +368,12 @@ mod tests {
     #[test]
     fn test_cgk_mappings_count() {
         let mappings = get_cgk_mappings();
-        assert_eq!(mappings.len(), 11); // 11 non-checkbox fields (added Uur Commissie)
+        assert_eq!(mappings.len(), 12); // 12 non-checkbox fields (added Uur Commissie + Support Type)
     }
 
     #[test]
     fn test_nrq_mappings_count() {
         let mappings = get_nrq_mappings();
-        assert_eq!(mappings.len(), 10); // 10 non-checkbox fields (includes Domein* and Pillar fallback)
+        assert_eq!(mappings.len(), 11); // 11 non-checkbox fields (includes Domein* and Pillar fallback + Support Type)
     }
 }

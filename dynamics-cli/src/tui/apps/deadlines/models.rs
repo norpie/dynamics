@@ -31,6 +31,9 @@ pub struct TransformedDeadline {
     /// Value = Vec of GUIDs for checked items
     pub checkbox_relationships: std::collections::HashMap<String, Vec<String>>,
 
+    /// Picklist field values (field_name -> integer value)
+    pub picklist_fields: std::collections::HashMap<String, i32>,
+
     /// Parsed deadline date (cgk_date or nrq_date)
     pub deadline_date: Option<chrono::NaiveDate>,
 
@@ -57,6 +60,7 @@ impl TransformedDeadline {
             direct_fields: std::collections::HashMap::new(),
             lookup_fields: std::collections::HashMap::new(),
             checkbox_relationships: std::collections::HashMap::new(),
+            picklist_fields: std::collections::HashMap::new(),
             deadline_date: None,
             deadline_time: None,
             commission_date: None,

@@ -460,6 +460,28 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
         builder = builder.add(spacer!(), Length(1));
     }
 
+    // Picklist fields section
+    if !record.picklist_fields.is_empty() {
+        builder = builder.add(Element::styled_text(Line::from(vec![
+            Span::styled("🔢 Picklist Fields", Style::default().fg(theme.accent_secondary).bold())
+        ])).build(), Length(1));
+
+        for (key, value) in &record.picklist_fields {
+            // Map value back to label for display
+            let display_value = match *value {
+                806150000 => "Automatische steun (806150000)",
+                806150001 => "Selectieve steun (806150001)",
+                _ => "Unknown",
+            };
+
+            builder = builder.add(Element::styled_text(Line::from(vec![
+                Span::styled(format!("  {}: ", key), Style::default().fg(theme.text_tertiary)),
+                Span::styled(display_value, Style::default().fg(theme.accent_primary)),
+            ])).build(), Length(1));
+        }
+        builder = builder.add(spacer!(), Length(1));
+    }
+
     // Lookup fields section
     if !record.lookup_fields.is_empty() {
         builder = builder.add(Element::styled_text(Line::from(vec![
