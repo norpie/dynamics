@@ -765,10 +765,13 @@ fn sort_target_by_source_order(
     for source_item in source_items {
         // Get the target field name from the source item's match
         if let Some(target_name) = get_item_match_target(source_item) {
-            // Find and add the corresponding target item
-            if let Some(target_item) = target_by_name.get(target_name) {
-                result.push(target_item.clone());
-                used_targets.insert(target_name.clone());
+            // Only add if not already used (prevents duplicates when multiple sources map to same target)
+            if !used_targets.contains(target_name) {
+                // Find and add the corresponding target item
+                if let Some(target_item) = target_by_name.get(target_name) {
+                    result.push(target_item.clone());
+                    used_targets.insert(target_name.clone());
+                }
             }
         }
     }
