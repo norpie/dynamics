@@ -28,3 +28,43 @@ pub use state::State;
 pub use msg::Msg;
 pub use steps::*;
 pub use app::EntitySyncApp;
+
+use std::sync::RwLock;
+
+/// Global progress state for analysis (allows async task to update UI)
+static ANALYSIS_PROGRESS: RwLock<AnalysisProgressState> = RwLock::new(AnalysisProgressState::new());
+
+/// Progress state updated during analysis
+#[derive(Debug, Clone)]
+pub struct AnalysisProgressState {
+    pub message: String,
+    pub entity: Option<String>,
+    pub step: Option<String>,
+}
+
+impl AnalysisProgressState {
+    const fn new() -> Self {
+        Self {
+            message: String::new(),
+            entity: None,
+            step: None,
+        }
+    }
+}
+
+/// Update the global analysis progress (called from async task)
+pub fn set_analysis_progress(message: &str, entity: Option<&str>, step: Option<&str>) {
+    if let Ok(mut progress) = ANALYSIS_PROGRESS.write() {
+        progress.message = message.to_string();
+        progress.entity = entity.map(|s| s.to_string());
+        progress.step = step.map(|s| s.to_string());
+    }
+}
+
+/// Get the current analysis progress (called from UI render)
+pub fn get_analysis_progress() -> AnalysisProgressState {
+    ANALYSIS_PROGRESS
+        .read()
+        .map(|p| p.clone())
+        .unwrap_or_else(|_| AnalysisProgressState::new())
+}

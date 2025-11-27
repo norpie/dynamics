@@ -645,17 +645,23 @@ async fn run_analysis(
 ) -> Result<super::types::SyncPlan, String> {
     use super::logic::{compare_schemas, DependencyGraph};
     use super::types::*;
+    use super::set_analysis_progress;
     use crate::api::metadata::FieldType;
     use std::collections::HashSet;
+
+    let entity_count = selected_entities.len();
+    set_analysis_progress("Connecting to environments...", None, Some("Setup"));
 
     let manager = crate::client_manager();
 
     // Get clients for both environments
+    set_analysis_progress(&format!("Connecting to {}...", origin_env), None, Some("Setup"));
     let origin_client = manager
         .get_client(origin_env)
         .await
         .map_err(|e| format!("Failed to get origin client: {}", e))?;
 
+    set_analysis_progress(&format!("Connecting to {}...", target_env), None, Some("Setup"));
     let target_client = manager
         .get_client(target_env)
         .await
@@ -669,15 +675,26 @@ async fn run_analysis(
     let mut has_schema_changes = false;
 
     // Process each selected entity
-    for entity_name in selected_entities {
+    for (idx, entity_name) in selected_entities.iter().enumerate() {
+        let progress_prefix = format!("[{}/{}]", idx + 1, entity_count);
         log::info!("Analyzing entity: {}", entity_name);
 
         // Fetch field metadata from both environments
+        set_analysis_progress(
+            &format!("{} Fetching origin schema...", progress_prefix),
+            Some(entity_name),
+            Some("Schema"),
+        );
         let origin_fields = origin_client
             .fetch_entity_fields_combined(entity_name)
             .await
             .map_err(|e| format!("Failed to fetch origin fields for {}: {}", entity_name, e))?;
 
+        set_analysis_progress(
+            &format!("{} Fetching target schema...", progress_prefix),
+            Some(entity_name),
+            Some("Schema"),
+        );
         let target_fields = target_client
             .fetch_entity_fields_combined(entity_name)
             .await
@@ -694,8 +711,11 @@ async fn run_analysis(
         }
 
         // Fetch actual records from both environments
-        // Origin: all active records (statecode eq 0) with all field data
-        // Target: just record IDs (to delete)
+        set_analysis_progress(
+            &format!("{} Fetching origin records...", progress_prefix),
+            Some(entity_name),
+            Some("Records"),
+        );
         log::info!("Fetching records for {}", entity_name);
 
         let origin_records = match fetch_all_records(&origin_client, entity_name, true).await {
@@ -705,6 +725,12 @@ async fn run_analysis(
                 vec![]
             }
         };
+
+        set_analysis_progress(
+            &format!("{} Fetching target record IDs...", progress_prefix),
+            Some(entity_name),
+            Some("Records"),
+        );
         let target_record_ids = match fetch_record_ids(&target_client, entity_name).await {
             Ok(ids) => ids,
             Err(e) => {
@@ -733,6 +759,11 @@ async fn run_analysis(
             .collect();
 
         // Fetch primary name attribute from entity metadata
+        set_analysis_progress(
+            &format!("{} Fetching entity metadata...", progress_prefix),
+            Some(entity_name),
+            Some("Metadata"),
+        );
         let primary_name_attribute = fetch_primary_name_attribute(&origin_client, entity_name).await;
 
         // Build entity plan
@@ -769,9 +800,11 @@ async fn run_analysis(
     }
 
     // Build dependency graph
+    set_analysis_progress("Building dependency graph...", None, Some("Dependencies"));
     let dep_graph = DependencyGraph::build(entities_with_fields);
 
     // Get sorted order and update priorities
+    set_analysis_progress("Computing sync order...", None, Some("Dependencies"));
     if let Ok(sorted) = dep_graph.topological_sort() {
         for (insert_priority, name) in sorted.iter().enumerate() {
             if let Some(plan) = entity_plans.iter_mut().find(|p| &p.entity_info.logical_name == name) {
@@ -789,6 +822,8 @@ async fn run_analysis(
 
     // Sort by insert priority
     entity_plans.sort_by_key(|p| p.entity_info.insert_priority);
+
+    set_analysis_progress("Analysis complete!", None, Some("Complete"));
 
     Ok(SyncPlan {
         origin_env: origin_env.to_string(),

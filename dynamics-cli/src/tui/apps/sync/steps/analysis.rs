@@ -11,6 +11,7 @@ use crate::{col, spacer, use_constraints, button_row};
 
 use super::super::state::{State, AnalysisPhase};
 use super::super::msg::Msg;
+use super::super::get_analysis_progress;
 
 /// Render the analysis step (loading screen)
 pub fn render_analysis(state: &mut State, theme: &Theme) -> Element<Msg> {
@@ -47,52 +48,67 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
 
     let analysis = &state.analysis;
 
-    // Phase list with completion status
-    let phases = [
-        (AnalysisPhase::FetchingOriginSchema, "Fetching origin schema"),
-        (AnalysisPhase::FetchingTargetSchema, "Fetching target schema"),
-        (AnalysisPhase::FetchingRecordCounts, "Counting records"),
-        (AnalysisPhase::BuildingDependencyGraph, "Building dependency graph"),
-        (AnalysisPhase::DetectingJunctions, "Detecting junction entities"),
-        (AnalysisPhase::ComputingDiff, "Computing schema diff"),
-    ];
+    // Get real-time progress from global state
+    let progress = get_analysis_progress();
 
-    let current_phase = analysis.phase;
-    let phase_lines: Vec<Element<Msg>> = phases.iter().map(|(phase, label)| {
-        let (icon, _style) = get_phase_status(*phase, current_phase, theme);
-        let text = format!("{} {}", icon, label);
-        Element::text(text)
-    }).collect();
+    // Current status message (from global progress)
+    let status_line = if !progress.message.is_empty() {
+        Element::styled_text(Line::from(Span::styled(
+            progress.message.clone(),
+            Style::default().fg(theme.accent_info).bold()
+        ))).build()
+    } else {
+        Element::text("Starting analysis...")
+    };
 
     // Current entity being processed
-    let current_entity = match &analysis.current_entity {
+    let entity_line = match &progress.entity {
         Some(entity) => {
-            let text = format!("Processing: {}", entity);
+            let text = format!("Entity: {}", entity);
+            Element::styled_text(Line::from(Span::styled(
+                text,
+                Style::default().fg(theme.text_secondary)
+            ))).build()
+        }
+        None => Element::text(""),
+    };
+
+    // Current step/phase
+    let step_line = match &progress.step {
+        Some(step) => {
+            let text = format!("Phase: {}", step);
             Element::text(text)
         }
         None => Element::text(""),
     };
 
-    // Overall progress bar
-    let progress_bar = Element::progress_bar(analysis.progress as usize, 100)
-        .label(analysis.status_message.clone())
-        .build();
+    // Spinner animation (simple rotating chars)
+    let spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let spinner_idx = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() / 100) as usize % spinner_chars.len();
+    let spinner = if analysis.phase != AnalysisPhase::Complete {
+        spinner_chars[spinner_idx]
+    } else {
+        "✓"
+    };
+
+    let spinner_line = Element::styled_text(Line::from(Span::styled(
+        format!("{} Analyzing...", spinner),
+        Style::default().fg(theme.accent_primary)
+    ))).build();
 
     // Build content
-    let mut items = vec![];
-    for line in phase_lines {
-        items.push((crate::tui::LayoutConstraint::Length(1), line));
-    }
-    items.push((crate::tui::LayoutConstraint::Length(1), Element::text("")));
-    items.push((crate::tui::LayoutConstraint::Length(1), current_entity));
-    items.push((crate::tui::LayoutConstraint::Length(1), Element::text("")));
-    items.push((crate::tui::LayoutConstraint::Length(1), progress_bar));
-
-    let content = crate::tui::element::ColumnBuilder::from_items(items).build();
-
-    Element::panel(content)
-        .title("Progress")
-        .build()
+    col![
+        spacer!() => Fill(1),
+        spinner_line => Length(1),
+        spacer!() => Length(1),
+        status_line => Length(1),
+        entity_line => Length(1),
+        step_line => Length(1),
+        spacer!() => Fill(1),
+    ]
 }
 
 /// Get status icon and style for a phase
