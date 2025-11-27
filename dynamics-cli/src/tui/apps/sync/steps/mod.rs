@@ -7,8 +7,10 @@ pub mod environment_select;
 pub mod entity_select;
 pub mod analysis;
 pub mod diff_review;
+pub mod confirm;
 
 pub use environment_select::*;
 pub use entity_select::*;
 pub use analysis::*;
 pub use diff_review::*;
+pub use confirm::*;
