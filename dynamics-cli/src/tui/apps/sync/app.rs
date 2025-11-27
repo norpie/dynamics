@@ -687,12 +687,20 @@ async fn run_analysis(
         // Target: just record IDs (to delete)
         log::info!("Fetching records for {}", entity_name);
 
-        let origin_records = fetch_all_records(&origin_client, entity_name, true)
-            .await
-            .unwrap_or_default();
-        let target_record_ids = fetch_record_ids(&target_client, entity_name)
-            .await
-            .unwrap_or_default();
+        let origin_records = match fetch_all_records(&origin_client, entity_name, true).await {
+            Ok(records) => records,
+            Err(e) => {
+                log::error!("Failed to fetch origin records for {}: {}", entity_name, e);
+                vec![]
+            }
+        };
+        let target_record_ids = match fetch_record_ids(&target_client, entity_name).await {
+            Ok(ids) => ids,
+            Err(e) => {
+                log::error!("Failed to fetch target record IDs for {}: {}", entity_name, e);
+                vec![]
+            }
+        };
 
         let origin_count = origin_records.len();
         let target_count = target_record_ids.len();
@@ -833,7 +841,9 @@ async fn fetch_all_records(
 
     let mut all_records = Vec::new();
 
-    let mut builder = QueryBuilder::new(entity_name).top(5000);
+    // Entity set name is typically logical name + 's'
+    let entity_set = format!("{}s", entity_name);
+    let mut builder = QueryBuilder::new(&entity_set).top(5000);
     if active_only {
         builder = builder.active_only();
     }
@@ -868,7 +878,9 @@ async fn fetch_record_ids(
     let pk_field = format!("{}id", entity_name);
     let mut all_ids = Vec::new();
 
-    let query = QueryBuilder::new(entity_name)
+    // Entity set name is typically logical name + 's'
+    let entity_set = format!("{}s", entity_name);
+    let query = QueryBuilder::new(&entity_set)
         .select(&[&pk_field])
         .top(5000)
         .build();
