@@ -288,6 +288,14 @@ impl DiffTab {
             Self::Lookups => Self::Schema,
         }
     }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            Self::Schema => Self::Lookups,
+            Self::Data => Self::Schema,
+            Self::Lookups => Self::Data,
+        }
+    }
 }
 
 impl DiffReviewState {

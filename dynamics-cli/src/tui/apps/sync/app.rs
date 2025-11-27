@@ -327,8 +327,12 @@ impl App for EntitySyncApp {
                 state.diff_review.field_list.handle_key(key, count, 15);
                 Command::None
             }
-            Msg::DiffSwitchTab => {
+            Msg::DiffNextTab => {
                 state.diff_review.active_tab = state.diff_review.active_tab.next();
+                Command::None
+            }
+            Msg::DiffPrevTab => {
+                state.diff_review.active_tab = state.diff_review.active_tab.prev();
                 Command::None
             }
             Msg::DiffToggleSection(section) => {
@@ -491,9 +495,14 @@ impl App for EntitySyncApp {
             }
             SyncStep::DiffReview => {
                 subs.push(Subscription::keyboard(
-                    KeyCode::Tab,
-                    "Switch tab",
-                    Msg::DiffSwitchTab,
+                    KeyCode::Char(']'),
+                    "Next tab",
+                    Msg::DiffNextTab,
+                ));
+                subs.push(Subscription::keyboard(
+                    KeyCode::Char('['),
+                    "Prev tab",
+                    Msg::DiffPrevTab,
                 ));
                 subs.push(Subscription::keyboard(KeyCode::Enter, "Confirm", Msg::Next));
             }

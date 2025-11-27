@@ -408,7 +408,7 @@ fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
             .count();
 
         let text = format!(
-            "Tab Switch tabs | {} entities, {} with schema changes",
+            "[/] Switch tabs | {} entities, {} with schema changes",
             plan.entity_plans.len(),
             schema_changes
         );
