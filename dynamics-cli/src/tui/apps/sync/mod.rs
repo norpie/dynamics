@@ -19,11 +19,11 @@
 pub mod types;
 pub mod state;
 pub mod msg;
+pub mod logic;
 
-// Future modules (Phase 2+):
+// Future modules (Phase 3+):
 // pub mod app;           // Main app implementation
 // pub mod steps;         // Step views
-// pub mod logic;         // Business logic
 
 pub use types::*;
 pub use state::State;
