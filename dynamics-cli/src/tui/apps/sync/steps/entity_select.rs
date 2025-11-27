@@ -170,6 +170,7 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
         theme,
     )
     .on_select(Msg::EntityListToggle)
+    .on_activate(Msg::EntityListToggle)
     .on_navigate(Msg::EntityListNavigate)
     .build();
 
@@ -203,6 +204,7 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
             theme,
         )
         .on_select(Msg::JunctionListToggle)
+        .on_activate(Msg::JunctionListToggle)
         .on_navigate(Msg::JunctionListNavigate)
         .build();
 

@@ -146,6 +146,7 @@ fn render_env_lists(state: &mut State, envs: &[ApiEnvironment], theme: &Theme) -
         theme,
     )
     .on_select(Msg::OriginListSelect)
+    .on_activate(Msg::OriginListSelect)
     .on_navigate(Msg::OriginListNavigate)
     .build();
 
@@ -167,6 +168,7 @@ fn render_env_lists(state: &mut State, envs: &[ApiEnvironment], theme: &Theme) -
         theme,
     )
     .on_select(Msg::TargetListSelect)
+    .on_activate(Msg::TargetListSelect)
     .on_navigate(Msg::TargetListNavigate)
     .build();
 

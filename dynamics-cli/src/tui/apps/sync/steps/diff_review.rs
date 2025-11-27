@@ -187,6 +187,7 @@ fn render_diff_content(state: &mut State, theme: &Theme) -> Element<Msg> {
         theme,
     )
     .on_select(Msg::DiffEntityListSelect)
+    .on_activate(Msg::DiffEntityListSelect)
     .on_navigate(Msg::DiffEntityListNavigate)
     .build();
 
