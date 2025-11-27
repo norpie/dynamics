@@ -175,15 +175,9 @@ fn render_env_lists(state: &mut State, envs: &[ApiEnvironment], theme: &Theme) -
         .title(target_title)
         .build();
 
-    // Help text
-    let help = Element::text("Tab Switch lists | Enter Select | ↑↓ Navigate");
-
-    col![
-        row![
-            origin_panel => Fill(1),
-            target_panel => Fill(1),
-        ] => Fill(1),
-        help => Length(1),
+    row![
+        origin_panel => Fill(1),
+        target_panel => Fill(1),
     ]
 }
 
@@ -210,8 +204,8 @@ fn render_step_footer(state: &State, _theme: &Theme) -> Element<Msg> {
 
     // Navigation buttons
     let buttons = button_row![
-        ("env-back-btn", "Back (Esc)", Msg::Back),
-        ("env-next-btn", "Next (Enter)", Msg::Next),
+        ("env-back-btn", "Back", Msg::Back),
+        ("env-next-btn", "Next", Msg::Next),
     ];
 
     col![

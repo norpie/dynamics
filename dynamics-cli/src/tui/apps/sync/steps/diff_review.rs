@@ -408,7 +408,7 @@ fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
             .count();
 
         let text = format!(
-            "[/] Switch tabs | {} entities, {} with schema changes",
+            "{} entities, {} with schema changes",
             plan.entity_plans.len(),
             schema_changes
         );
@@ -418,8 +418,8 @@ fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
     };
 
     let buttons = button_row![
-        ("diff-back-btn", "Back (Esc)", Msg::Back),
-        ("diff-next-btn", "Confirm (Enter)", Msg::Next),
+        ("diff-back-btn", "Back", Msg::Back),
+        ("diff-next-btn", "Confirm", Msg::Next),
     ];
 
     col![

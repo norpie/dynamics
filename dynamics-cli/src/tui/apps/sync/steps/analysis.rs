@@ -126,19 +126,19 @@ fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
     use_constraints!();
 
     let status = if state.analysis.phase == AnalysisPhase::Complete {
-        Element::text("✓ Analysis complete")
+        Element::text("Analysis complete")
     } else {
-        Element::text("Press Esc to cancel")
+        Element::text("")
     };
 
     let buttons = if state.analysis.phase == AnalysisPhase::Complete {
         button_row![
-            ("analysis-back-btn", "Back (Esc)", Msg::Back),
-            ("analysis-next-btn", "Review Diff (Enter)", Msg::Next),
+            ("analysis-back-btn", "Back", Msg::Back),
+            ("analysis-next-btn", "Review Diff", Msg::Next),
         ]
     } else {
         button_row![
-            ("analysis-cancel-btn", "Cancel (Esc)", Msg::CancelAnalysis),
+            ("analysis-cancel-btn", "Cancel", Msg::CancelAnalysis),
         ]
     };
 

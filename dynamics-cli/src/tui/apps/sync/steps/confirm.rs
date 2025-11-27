@@ -371,14 +371,13 @@ fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
         };
 
         let buttons = button_row![
-            ("confirm-back-btn", "Back (Esc)", Msg::Back),
-            ("confirm-export-btn", "Export (e)", Msg::ExportReport),
-            ("confirm-exec-btn", "Execute (Enter)", Msg::Execute),
+            ("confirm-back-btn", "Back", Msg::Back),
+            ("confirm-export-btn", "Export", Msg::ExportReport),
+            ("confirm-exec-btn", "Execute", Msg::Execute),
         ];
 
         col![
             status => Length(1),
-            Element::text("Space Toggle confirmation | e Export report") => Length(1),
             spacer!() => Length(1),
             buttons => Length(3),
         ]

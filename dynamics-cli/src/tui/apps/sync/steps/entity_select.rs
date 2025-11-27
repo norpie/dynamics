@@ -178,9 +178,6 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
         .title(entity_title)
         .build();
 
-    // Entity list help
-    let entity_help = Element::text("Space Toggle | a All | n None | Tab Switch");
-
     // Build main content with optional junction panel
     if state.entity_select.show_junctions && !state.entity_select.junction_candidates.is_empty() {
         // Show junction panel
@@ -212,25 +209,17 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
             .title(junction_title)
             .build();
 
-        let junction_help = Element::text("Space Toggle | A Include all | j Hide panel");
-
         col![
             filter_panel => Length(3),
             row![
-                col![
-                    entity_panel => Fill(1),
-                    entity_help => Length(1),
-                ] => Fill(2),
-                col![
-                    junction_panel => Fill(1),
-                    junction_help => Length(1),
-                ] => Fill(1),
+                entity_panel => Fill(2),
+                junction_panel => Fill(1),
             ] => Fill(1),
         ]
     } else {
         // No junction panel
         let junction_hint = if !state.entity_select.junction_candidates.is_empty() {
-            let text = format!("j Show {} junction candidates", state.entity_select.junction_candidates.len());
+            let text = format!("{} junction candidates available", state.entity_select.junction_candidates.len());
             Element::text(text)
         } else {
             Element::text("")
@@ -239,7 +228,6 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
         col![
             filter_panel => Length(3),
             entity_panel => Fill(1),
-            entity_help => Length(1),
             junction_hint => Length(1),
         ]
     }
@@ -289,8 +277,8 @@ fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
     };
 
     let buttons = button_row![
-        ("entity-back-btn", "Back (Esc)", Msg::Back),
-        ("entity-next-btn", "Analyze (Enter)", Msg::Next),
+        ("entity-back-btn", "Back", Msg::Back),
+        ("entity-next-btn", "Analyze", Msg::Next),
     ];
 
     col![
