@@ -673,9 +673,13 @@ async fn run_analysis(
             has_schema_changes = true;
         }
 
-        // Get record counts (simplified - just set to 0 for now)
-        let origin_count = 0usize;
-        let target_count = 0usize;
+        // Get record counts from both environments
+        let origin_count = get_entity_count(&origin_client, entity_name)
+            .await
+            .unwrap_or(0);
+        let target_count = get_entity_count(&target_client, entity_name)
+            .await
+            .unwrap_or(0);
 
         total_delete_count += target_count;
         total_insert_count += origin_count;
@@ -793,7 +797,6 @@ async fn load_entities_for_env(env_name: &str) -> Result<Vec<super::state::Entit
 }
 
 /// Get record count for an entity
-#[allow(dead_code)]
 async fn get_entity_count(client: &crate::api::DynamicsClient, entity_name: &str) -> anyhow::Result<usize> {
     use crate::api::query::QueryBuilder;
 
