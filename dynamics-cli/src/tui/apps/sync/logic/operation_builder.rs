@@ -339,6 +339,7 @@ mod tests {
                     entity_info: SyncEntityInfo {
                         logical_name: "parent".to_string(),
                         display_name: Some("Parent".to_string()),
+                        primary_name_attribute: Some("name".to_string()),
                         category: DependencyCategory::Standalone,
                         lookups: vec![],
                         dependents: vec!["child".to_string()],
@@ -371,6 +372,7 @@ mod tests {
                     entity_info: SyncEntityInfo {
                         logical_name: "child".to_string(),
                         display_name: Some("Child".to_string()),
+                        primary_name_attribute: Some("name".to_string()),
                         category: DependencyCategory::Dependent,
                         lookups: vec![LookupInfo {
                             field_name: "parentid".to_string(),

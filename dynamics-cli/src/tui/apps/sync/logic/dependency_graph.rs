@@ -244,6 +244,7 @@ impl DependencyGraph {
             let info = SyncEntityInfo {
                 logical_name: entity_name.clone(),
                 display_name: entity.display_name.clone(),
+                primary_name_attribute: None, // Set by caller
                 category: self.categorize(entity_name),
                 lookups: entity.lookups.clone(),
                 dependents,

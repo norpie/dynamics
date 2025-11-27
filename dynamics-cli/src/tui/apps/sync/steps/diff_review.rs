@@ -300,63 +300,32 @@ fn render_schema_tab(state: &mut State, plan: &EntitySyncPlan, theme: &Theme) ->
 /// Record list item for the data tab
 #[derive(Clone)]
 struct RecordItem {
-    /// First few non-system field values
-    fields: Vec<(String, String)>,
+    /// Display name from primary name attribute
+    name: String,
+    /// Record ID
+    id: String,
 }
 
 impl RecordItem {
-    fn from_json(record: &serde_json::Value, entity_name: &str) -> Self {
-        use super::super::types::SYSTEM_FIELDS;
-
+    fn from_json(record: &serde_json::Value, entity_name: &str, primary_name_attr: Option<&str>) -> Self {
         let pk_field = format!("{}id", entity_name);
-        let mut fields = Vec::new();
 
-        // Priority fields to show first (common name fields)
-        let priority_fields = ["name", "fullname", "title", "subject", "description"];
+        // Get the record ID
+        let id = record
+            .get(&pk_field)
+            .and_then(|v| v.as_str())
+            .unwrap_or("(no id)")
+            .to_string();
 
-        // First add priority fields if they exist
-        for field_name in priority_fields {
-            if let Some(val) = record.get(field_name).and_then(|v| v.as_str()) {
-                if !val.is_empty() {
-                    fields.push((field_name.to_string(), val.to_string()));
-                }
-            }
-        }
+        // Get the name from the primary name attribute
+        let name = primary_name_attr
+            .and_then(|attr| record.get(attr))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("(no name)")
+            .to_string();
 
-        // Then add other non-system fields
-        if let Some(obj) = record.as_object() {
-            for (key, val) in obj {
-                // Skip system fields, already added fields, and metadata
-                if key.starts_with('@')
-                    || key.starts_with('_')
-                    || key == &pk_field
-                    || SYSTEM_FIELDS.contains(&key.as_str())
-                    || fields.iter().any(|(k, _)| k == key)
-                {
-                    continue;
-                }
-
-                // Get string value
-                let str_val = match val {
-                    serde_json::Value::String(s) => s.clone(),
-                    serde_json::Value::Number(n) => n.to_string(),
-                    serde_json::Value::Bool(b) => b.to_string(),
-                    serde_json::Value::Null => continue,
-                    _ => continue, // Skip objects/arrays
-                };
-
-                if !str_val.is_empty() && str_val != "null" {
-                    fields.push((key.clone(), str_val));
-                }
-
-                // Limit to 5 fields
-                if fields.len() >= 5 {
-                    break;
-                }
-            }
-        }
-
-        Self { fields }
+        Self { name, id }
     }
 }
 
@@ -366,14 +335,14 @@ impl ListItem for RecordItem {
     fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
-        // Format as "field1: val1 | field2: val2 | ..."
-        let text = self.fields.iter()
-            .map(|(k, v)| {
-                let truncated = if v.len() > 30 { format!("{}...", &v[..27]) } else { v.clone() };
-                format!("{}: {}", k, truncated)
-            })
-            .collect::<Vec<_>>()
-            .join(" | ");
+        // Truncate name if too long
+        let name = if self.name.len() > 50 {
+            format!("{}...", &self.name[..47])
+        } else {
+            self.name.clone()
+        };
+
+        let text = format!("{} | {}", name, self.id);
 
         let style = Style::default().fg(theme.text_primary);
         let bg_style = if is_focused {
@@ -401,8 +370,9 @@ fn render_data_tab(state: &mut State, plan: &EntitySyncPlan, theme: &Theme) -> E
     let target_text = format!("Target: {} records (to delete)", preview.target_count);
 
     // Build record items from origin data
+    let primary_name_attr = plan.entity_info.primary_name_attribute.as_deref();
     let record_items: Vec<RecordItem> = preview.origin_records.iter()
-        .map(|record| RecordItem::from_json(record, &plan.entity_info.logical_name))
+        .map(|record| RecordItem::from_json(record, &plan.entity_info.logical_name, primary_name_attr))
         .collect();
 
     let record_list = Element::list(

@@ -732,11 +732,15 @@ async fn run_analysis(
             })
             .collect();
 
+        // Fetch primary name attribute from entity metadata
+        let primary_name_attribute = fetch_primary_name_attribute(&origin_client, entity_name).await;
+
         // Build entity plan
         entity_plans.push(EntitySyncPlan {
             entity_info: SyncEntityInfo {
                 logical_name: entity_name.clone(),
                 display_name: None,
+                primary_name_attribute,
                 category: DependencyCategory::Standalone,
                 lookups: lookups.clone(),
                 dependents: vec![],
@@ -923,4 +927,37 @@ async fn fetch_record_ids(
 
     log::info!("Fetched {} record IDs from {}", all_ids.len(), entity_name);
     Ok(all_ids)
+}
+
+/// Fetch the primary name attribute for an entity from metadata
+async fn fetch_primary_name_attribute(
+    client: &crate::api::DynamicsClient,
+    entity_name: &str,
+) -> Option<String> {
+    use crate::api::query::{QueryBuilder, Filter};
+
+    // Query EntityDefinitions for this entity's PrimaryNameAttribute
+    let query = QueryBuilder::new("EntityDefinitions")
+        .filter(Filter::eq("LogicalName", entity_name))
+        .select(&["PrimaryNameAttribute"])
+        .build();
+
+    match client.execute_query(&query).await {
+        Ok(result) => {
+            if let Some(ref data) = result.data {
+                if let Some(record) = data.value.first() {
+                    if let Some(attr) = record.get("PrimaryNameAttribute").and_then(|v| v.as_str()) {
+                        log::debug!("Primary name attribute for {}: {}", entity_name, attr);
+                        return Some(attr.to_string());
+                    }
+                }
+            }
+            log::debug!("No primary name attribute found for {}", entity_name);
+            None
+        }
+        Err(e) => {
+            log::warn!("Failed to fetch primary name attribute for {}: {}", entity_name, e);
+            None
+        }
+    }
 }

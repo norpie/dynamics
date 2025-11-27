@@ -55,6 +55,8 @@ pub struct SyncEntityInfo {
     pub logical_name: String,
     /// Entity display name
     pub display_name: Option<String>,
+    /// Primary name attribute (field used for display name of records)
+    pub primary_name_attribute: Option<String>,
     /// Dependency category (standalone, dependent, junction)
     pub category: DependencyCategory,
     /// Lookup fields on this entity

@@ -334,6 +334,7 @@ mod tests {
                 entity_info: SyncEntityInfo {
                     logical_name: "account".to_string(),
                     display_name: Some("Account".to_string()),
+                    primary_name_attribute: Some("name".to_string()),
                     category: DependencyCategory::Standalone,
                     lookups: vec![],
                     dependents: vec![],
