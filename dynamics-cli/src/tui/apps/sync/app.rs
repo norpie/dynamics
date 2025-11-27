@@ -682,15 +682,20 @@ async fn run_analysis(
             has_schema_changes = true;
         }
 
-        // Get record counts from both environments
-        // Origin: active records only (statecode eq 0)
-        // Target: all records (will delete everything)
-        let origin_count = get_entity_count(&origin_client, entity_name, true)
+        // Fetch actual records from both environments
+        // Origin: all active records (statecode eq 0) with all field data
+        // Target: just record IDs (to delete)
+        log::info!("Fetching records for {}", entity_name);
+
+        let origin_records = fetch_all_records(&origin_client, entity_name, true)
             .await
-            .unwrap_or(0);
-        let target_count = get_entity_count(&target_client, entity_name, false)
+            .unwrap_or_default();
+        let target_record_ids = fetch_record_ids(&target_client, entity_name)
             .await
-            .unwrap_or(0);
+            .unwrap_or_default();
+
+        let origin_count = origin_records.len();
+        let target_count = target_record_ids.len();
 
         total_delete_count += target_count;
         total_insert_count += origin_count;
@@ -724,7 +729,8 @@ async fn run_analysis(
                 entity_name: entity_name.clone(),
                 origin_count,
                 target_count,
-                sample_ids: vec![],
+                origin_records,
+                target_record_ids,
             },
             nulled_lookups: lookups
                 .iter()
@@ -817,30 +823,81 @@ async fn load_entities_for_env(env_name: &str) -> Result<Vec<super::state::Entit
     Ok(entities)
 }
 
-/// Get record count for an entity
-async fn get_entity_count(client: &crate::api::DynamicsClient, entity_name: &str, active_records_only: bool) -> anyhow::Result<usize> {
+/// Fetch all records for an entity (with pagination)
+async fn fetch_all_records(
+    client: &crate::api::DynamicsClient,
+    entity_name: &str,
+    active_only: bool,
+) -> anyhow::Result<Vec<serde_json::Value>> {
     use crate::api::query::QueryBuilder;
 
-    // Use $count=true with minimal data fetch
-    let mut builder = QueryBuilder::new(entity_name)
-        .select(&["createdon"]) // Minimal field
-        .top(1) // Fetch 1 record to ensure response works
-        .count(); // Request $count=true
+    let mut all_records = Vec::new();
 
-    // For origin, only count active records
-    if active_records_only {
+    let mut builder = QueryBuilder::new(entity_name).top(5000);
+    if active_only {
         builder = builder.active_only();
     }
 
-    let query = builder.build();
-    let result = client.execute_query(&query).await?;
+    let mut result = client.execute_query(&builder.build()).await?;
+    if let Some(ref data) = result.data {
+        all_records.extend(data.value.clone());
+    }
 
-    // The count field in QueryResponse contains the total
-    if let Some(data) = &result.data {
-        if let Some(count) = data.count {
-            return Ok(count as usize);
+    while result.has_more() {
+        if let Some(next) = result.next_page(client).await? {
+            if let Some(ref data) = next.data {
+                all_records.extend(data.value.clone());
+            }
+            result = next;
+        } else {
+            break;
         }
     }
 
-    Ok(0)
+    log::info!("Fetched {} records from {}", all_records.len(), entity_name);
+    Ok(all_records)
+}
+
+/// Fetch record IDs for an entity (for deletion)
+async fn fetch_record_ids(
+    client: &crate::api::DynamicsClient,
+    entity_name: &str,
+) -> anyhow::Result<Vec<String>> {
+    use crate::api::query::QueryBuilder;
+
+    let pk_field = format!("{}id", entity_name);
+    let mut all_ids = Vec::new();
+
+    let query = QueryBuilder::new(entity_name)
+        .select(&[&pk_field])
+        .top(5000)
+        .build();
+
+    let mut result = client.execute_query(&query).await?;
+
+    if let Some(ref data) = result.data {
+        for record in &data.value {
+            if let Some(id) = record.get(&pk_field).and_then(|v| v.as_str()) {
+                all_ids.push(id.to_string());
+            }
+        }
+    }
+
+    while result.has_more() {
+        if let Some(next) = result.next_page(client).await? {
+            if let Some(ref data) = next.data {
+                for record in &data.value {
+                    if let Some(id) = record.get(&pk_field).and_then(|v| v.as_str()) {
+                        all_ids.push(id.to_string());
+                    }
+                }
+            }
+            result = next;
+        } else {
+            break;
+        }
+    }
+
+    log::info!("Fetched {} record IDs from {}", all_ids.len(), entity_name);
+    Ok(all_ids)
 }

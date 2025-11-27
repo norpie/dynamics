@@ -160,8 +160,10 @@ pub struct EntityDataPreview {
     pub origin_count: usize,
     /// Number of records in target (all states)
     pub target_count: usize,
-    /// Sample record IDs from origin (for preview)
-    pub sample_ids: Vec<String>,
+    /// Actual records from origin (active only) - to be inserted
+    pub origin_records: Vec<Value>,
+    /// Record IDs from target - to be deleted
+    pub target_record_ids: Vec<String>,
 }
 
 /// Information about an external lookup that will be nulled
