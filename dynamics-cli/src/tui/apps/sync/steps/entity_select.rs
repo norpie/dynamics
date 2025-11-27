@@ -1,0 +1,299 @@
+//! Step 2: Entity Selection View
+//!
+//! Multi-select entities with filtering and junction entity panel.
+
+use ratatui::style::{Style, Stylize};
+use ratatui::text::{Line, Span};
+
+use crate::tui::element::Element;
+use crate::tui::widgets::ListItem;
+use crate::tui::state::theme::Theme;
+use crate::tui::Resource;
+use crate::{col, row, spacer, use_constraints, button_row};
+
+use super::super::state::{State, EntityListItem, JunctionCandidate};
+use super::super::msg::Msg;
+
+/// Entity list item for rendering (with selection checkbox)
+#[derive(Clone)]
+struct SelectableEntity<'a> {
+    entity: &'a EntityListItem,
+    is_selected: bool,
+}
+
+impl<'a> ListItem for SelectableEntity<'a> {
+    type Msg = Msg;
+
+    fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
+        let theme = &crate::global_runtime_config().theme;
+
+        let checkbox = if self.is_selected { "[✓]" } else { "[ ]" };
+
+        let display_text = self.entity.display_text();
+        let count_text = self.entity.record_count
+            .map(|c| format!(" ({} records)", c))
+            .unwrap_or_default();
+
+        let text = format!("{} {}{}", checkbox, display_text, count_text);
+
+        let style = if self.is_selected {
+            Style::default().fg(theme.accent_success)
+        } else {
+            Style::default().fg(theme.text_primary)
+        };
+
+        let bg_style = if is_focused {
+            Style::default().bg(theme.bg_surface)
+        } else {
+            Style::default()
+        };
+
+        Element::styled_text(Line::from(Span::styled(text, style)))
+            .background(bg_style)
+            .build()
+    }
+}
+
+/// Junction candidate list item
+#[derive(Clone)]
+struct SelectableJunction<'a> {
+    junction: &'a JunctionCandidate,
+    is_included: bool,
+}
+
+impl<'a> ListItem for SelectableJunction<'a> {
+    type Msg = Msg;
+
+    fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
+        let theme = &crate::global_runtime_config().theme;
+
+        let checkbox = if self.is_included { "[✓]" } else { "[ ]" };
+        let text = format!("{} {}", checkbox, self.junction.display_text());
+
+        let style = if self.is_included {
+            Style::default().fg(theme.accent_info)
+        } else {
+            Style::default().fg(theme.text_secondary)
+        };
+
+        let bg_style = if is_focused {
+            Style::default().bg(theme.bg_surface)
+        } else {
+            Style::default()
+        };
+
+        Element::styled_text(Line::from(Span::styled(text, style)))
+            .background(bg_style)
+            .build()
+    }
+}
+
+/// Render the entity selection step
+pub fn render_entity_select(state: &mut State, theme: &Theme) -> Element<Msg> {
+    use_constraints!();
+
+    let content = match &state.entity_select.available_entities {
+        Resource::NotAsked | Resource::Loading => {
+            render_loading(theme)
+        }
+        Resource::Failure(err) => {
+            render_error(err, theme)
+        }
+        Resource::Success(_) => {
+            render_entity_lists(state, theme)
+        }
+    };
+
+    let header = render_step_header(state, theme);
+    let footer = render_step_footer(state, theme);
+
+    col![
+        header => Length(3),
+        content => Fill(1),
+        footer => Length(5),
+    ]
+}
+
+/// Render loading state
+fn render_loading(_theme: &Theme) -> Element<Msg> {
+    Element::panel(Element::text("Loading entities from origin..."))
+        .title("Entities")
+        .build()
+}
+
+/// Render error state
+fn render_error(err: &str, _theme: &Theme) -> Element<Msg> {
+    let text = format!("Error: {}", err);
+    Element::panel(Element::text(text))
+        .title("Error")
+        .build()
+}
+
+/// Render entity and junction lists
+fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
+    use_constraints!();
+
+    // Filter input
+    let filter_panel = Element::panel(
+        Element::text_input(
+            crate::tui::FocusId::new("entity-filter"),
+            &state.entity_select.filter_text,
+            &state.entity_select.filter_input,
+        )
+        .placeholder("Type to filter entities...")
+        .on_event(Msg::FilterInputEvent)
+        .build()
+    )
+    .title("Filter")
+    .build();
+
+    // Get filtered entities
+    let filtered_entities = state.entity_select.filtered_entities();
+    let entity_items: Vec<SelectableEntity> = filtered_entities.iter().map(|e| {
+        SelectableEntity {
+            entity: *e,
+            is_selected: state.entity_select.selected_entities.contains(&e.logical_name),
+        }
+    }).collect();
+
+    // Entity list
+    let entity_title = format!(
+        "Entities ({} selected, {} shown)",
+        state.entity_select.selected_entities.len(),
+        entity_items.len()
+    );
+
+    let entity_list = Element::list(
+        "entity-list",
+        &entity_items,
+        &state.entity_select.entity_list,
+        theme,
+    )
+    .on_select(Msg::EntityListToggle)
+    .on_navigate(Msg::EntityListNavigate)
+    .build();
+
+    let entity_panel = Element::panel(entity_list)
+        .title(entity_title)
+        .build();
+
+    // Entity list help
+    let entity_help = Element::text("Space Toggle | a All | n None | Tab Switch");
+
+    // Build main content with optional junction panel
+    if state.entity_select.show_junctions && !state.entity_select.junction_candidates.is_empty() {
+        // Show junction panel
+        let junction_items: Vec<SelectableJunction> = state.entity_select.junction_candidates.iter().map(|j| {
+            SelectableJunction {
+                junction: j,
+                is_included: state.entity_select.included_junctions.contains(&j.logical_name),
+            }
+        }).collect();
+
+        let junction_title = format!(
+            "Junction Entities ({} found, {} included)",
+            junction_items.len(),
+            state.entity_select.included_junctions.len()
+        );
+
+        let junction_list = Element::list(
+            "junction-list",
+            &junction_items,
+            &state.entity_select.junction_list,
+            theme,
+        )
+        .on_select(Msg::JunctionListToggle)
+        .on_navigate(Msg::JunctionListNavigate)
+        .build();
+
+        let junction_panel = Element::panel(junction_list)
+            .title(junction_title)
+            .build();
+
+        let junction_help = Element::text("Space Toggle | A Include all | j Hide panel");
+
+        col![
+            filter_panel => Length(3),
+            row![
+                col![
+                    entity_panel => Fill(1),
+                    entity_help => Length(1),
+                ] => Fill(2),
+                col![
+                    junction_panel => Fill(1),
+                    junction_help => Length(1),
+                ] => Fill(1),
+            ] => Fill(1),
+        ]
+    } else {
+        // No junction panel
+        let junction_hint = if !state.entity_select.junction_candidates.is_empty() {
+            let text = format!("j Show {} junction candidates", state.entity_select.junction_candidates.len());
+            Element::text(text)
+        } else {
+            Element::text("")
+        };
+
+        col![
+            filter_panel => Length(3),
+            entity_panel => Fill(1),
+            entity_help => Length(1),
+            junction_hint => Length(1),
+        ]
+    }
+}
+
+/// Render step header with origin/target info
+fn render_step_header(state: &State, theme: &Theme) -> Element<Msg> {
+    use_constraints!();
+
+    let origin = state.env_select.origin_env.as_deref().unwrap_or("?");
+    let target = state.env_select.target_env.as_deref().unwrap_or("?");
+
+    let header_text = "Step 2: Select Entities to Sync".to_string();
+    let env_text = format!("From: {} → To: {}", origin, target);
+
+    col![
+        Element::styled_text(Line::from(Span::styled(
+            header_text,
+            Style::default().fg(theme.accent_primary).bold()
+        ))).build() => Length(1),
+        Element::styled_text(Line::from(Span::styled(
+            env_text,
+            Style::default().fg(theme.text_secondary)
+        ))).build() => Length(1),
+        spacer!() => Length(1),
+    ]
+}
+
+/// Render step footer with navigation
+fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
+    use_constraints!();
+
+    // Validation/status message
+    let status = if state.entity_select.selected_entities.is_empty() {
+        let text = "⚠ Select at least one entity".to_string();
+        Element::styled_text(Line::from(Span::styled(
+            text,
+            Style::default().fg(theme.accent_warning)
+        ))).build()
+    } else {
+        let total = state.entity_select.entities_to_sync().len();
+        let text = format!("✓ {} entities will be synced", total);
+        Element::styled_text(Line::from(Span::styled(
+            text,
+            Style::default().fg(theme.accent_success)
+        ))).build()
+    };
+
+    let buttons = button_row![
+        ("entity-back-btn", "Back (Esc)", Msg::Back),
+        ("entity-next-btn", "Analyze (Enter)", Msg::Next),
+    ];
+
+    col![
+        status => Length(1),
+        spacer!() => Length(1),
+        buttons => Length(3),
+    ]
+}

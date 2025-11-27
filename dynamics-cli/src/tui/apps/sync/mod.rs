@@ -20,14 +20,15 @@ pub mod types;
 pub mod state;
 pub mod msg;
 pub mod logic;
+pub mod steps;
 
-// Future modules (Phase 3+):
+// Future modules (Phase 4+):
 // pub mod app;           // Main app implementation
-// pub mod steps;         // Step views
 
 pub use types::*;
 pub use state::State;
 pub use msg::Msg;
+pub use steps::*;
 
 // Will be added when app.rs is implemented:
 // pub use app::EntitySyncApp;
