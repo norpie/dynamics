@@ -64,6 +64,43 @@ pub enum Operation {
         /// Target entity reference (e.g., "/cgk_supports(guid)")
         target_ref: String,
     },
+
+    // === Schema/Metadata Operations ===
+
+    /// Create a new attribute/column on an entity
+    /// POST /EntityDefinitions(LogicalName='{entity}')/Attributes
+    CreateAttribute {
+        /// Entity logical name (e.g., "nrq_fund")
+        entity: String,
+        /// Attribute metadata as JSON (type-specific payload)
+        attribute_data: Value,
+        /// Optional solution unique name to associate the attribute with
+        solution_name: Option<String>,
+    },
+
+    /// Update an existing attribute/column
+    /// PUT /EntityDefinitions(LogicalName='{entity}')/Attributes(LogicalName='{attribute}')
+    UpdateAttribute {
+        /// Entity logical name
+        entity: String,
+        /// Attribute logical name
+        attribute: String,
+        /// Updated attribute metadata as JSON
+        attribute_data: Value,
+    },
+
+    /// Delete an attribute/column from an entity
+    /// DELETE /EntityDefinitions(LogicalName='{entity}')/Attributes(LogicalName='{attribute}')
+    DeleteAttribute {
+        /// Entity logical name
+        entity: String,
+        /// Attribute logical name
+        attribute: String,
+    },
+
+    /// Publish all customizations to make schema changes active
+    /// POST /PublishAllXml
+    PublishAllXml,
 }
 
 /// Result of executing an Operation
@@ -124,6 +161,48 @@ impl Operation {
         }
     }
 
+    /// Create a new CreateAttribute operation (schema)
+    pub fn create_attribute(
+        entity: impl Into<String>,
+        attribute_data: Value,
+        solution_name: Option<String>,
+    ) -> Self {
+        Self::CreateAttribute {
+            entity: entity.into(),
+            attribute_data,
+            solution_name,
+        }
+    }
+
+    /// Create a new UpdateAttribute operation (schema)
+    pub fn update_attribute(
+        entity: impl Into<String>,
+        attribute: impl Into<String>,
+        attribute_data: Value,
+    ) -> Self {
+        Self::UpdateAttribute {
+            entity: entity.into(),
+            attribute: attribute.into(),
+            attribute_data,
+        }
+    }
+
+    /// Create a new DeleteAttribute operation (schema)
+    pub fn delete_attribute(
+        entity: impl Into<String>,
+        attribute: impl Into<String>,
+    ) -> Self {
+        Self::DeleteAttribute {
+            entity: entity.into(),
+            attribute: attribute.into(),
+        }
+    }
+
+    /// Create a new PublishAllXml operation (schema)
+    pub fn publish_all_xml() -> Self {
+        Self::PublishAllXml
+    }
+
     /// Get the entity name for this operation
     pub fn entity(&self) -> &str {
         match self {
@@ -133,6 +212,10 @@ impl Operation {
             Self::Delete { entity, .. } => entity,
             Self::Upsert { entity, .. } => entity,
             Self::AssociateRef { entity, .. } => entity,
+            Self::CreateAttribute { entity, .. } => entity,
+            Self::UpdateAttribute { entity, .. } => entity,
+            Self::DeleteAttribute { entity, .. } => entity,
+            Self::PublishAllXml => "EntityDefinitions",
         }
     }
 
@@ -145,6 +228,10 @@ impl Operation {
             Self::Delete { .. } => "DELETE",
             Self::Upsert { .. } => "PATCH", // Upsert uses PATCH with specific headers
             Self::AssociateRef { .. } => "POST",
+            Self::CreateAttribute { .. } => "POST",
+            Self::UpdateAttribute { .. } => "PUT", // Schema updates use PUT, not PATCH
+            Self::DeleteAttribute { .. } => "DELETE",
+            Self::PublishAllXml => "POST",
         }
     }
 
@@ -157,6 +244,10 @@ impl Operation {
             Self::Delete { .. } => "delete",
             Self::Upsert { .. } => "upsert",
             Self::AssociateRef { .. } => "associate_ref",
+            Self::CreateAttribute { .. } => "create_attribute",
+            Self::UpdateAttribute { .. } => "update_attribute",
+            Self::DeleteAttribute { .. } => "delete_attribute",
+            Self::PublishAllXml => "publish_all_xml",
         }
     }
 

@@ -140,6 +140,19 @@ fn build_operation_details(item: &super::models::QueueItem, child_idx: usize, th
         Operation::AssociateRef { entity, entity_ref, navigation_property, .. } => {
             format!("POST /{}({})/{}/$ref", entity, entity_ref, navigation_property)
         }
+        // Schema operations
+        Operation::CreateAttribute { entity, .. } => {
+            format!("POST /EntityDefinitions('{}')/Attributes", entity)
+        }
+        Operation::UpdateAttribute { entity, attribute, .. } => {
+            format!("PUT /EntityDefinitions('{}')/Attributes('{}')", entity, attribute)
+        }
+        Operation::DeleteAttribute { entity, attribute } => {
+            format!("DELETE /EntityDefinitions('{}')/Attributes('{}')", entity, attribute)
+        }
+        Operation::PublishAllXml => {
+            "POST /PublishAllXml".to_string()
+        }
     };
 
     lines.push(Element::styled_text(RataLine::from(vec![
@@ -193,6 +206,66 @@ fn build_operation_details(item: &super::models::QueueItem, child_idx: usize, th
             lines.push(Element::styled_text(RataLine::from(vec![
                 Span::styled("Target: ", Style::default().fg(theme.border_primary)),
                 Span::styled(target_ref.clone(), Style::default().fg(theme.text_primary)),
+            ])).build());
+        }
+        // Schema operations
+        Operation::CreateAttribute { attribute_data, solution_name, .. } => {
+            lines.push(Element::text(""));
+            lines.push(Element::styled_text(RataLine::from(vec![
+                Span::styled("Attribute Data:", Style::default().fg(theme.accent_muted).bold()),
+            ])).build());
+
+            if let Ok(json_str) = serde_json::to_string_pretty(attribute_data) {
+                for line in json_str.lines().take(20) {
+                    lines.push(Element::styled_text(RataLine::from(vec![
+                        Span::styled(format!("  {}", line), Style::default().fg(theme.text_primary)),
+                    ])).build());
+                }
+                if json_str.lines().count() > 20 {
+                    lines.push(Element::styled_text(RataLine::from(vec![
+                        Span::styled("  ... (truncated)", Style::default().fg(theme.border_primary).italic()),
+                    ])).build());
+                }
+            }
+
+            // Show solution name if present
+            if let Some(solution) = solution_name {
+                lines.push(Element::styled_text(RataLine::from(vec![
+                    Span::styled("Solution: ", Style::default().fg(theme.border_primary)),
+                    Span::styled(solution.clone(), Style::default().fg(theme.text_primary)),
+                ])).build());
+            }
+        }
+        Operation::UpdateAttribute { attribute_data, .. } => {
+            lines.push(Element::text(""));
+            lines.push(Element::styled_text(RataLine::from(vec![
+                Span::styled("Attribute Data:", Style::default().fg(theme.accent_muted).bold()),
+            ])).build());
+
+            if let Ok(json_str) = serde_json::to_string_pretty(attribute_data) {
+                for line in json_str.lines().take(20) {
+                    lines.push(Element::styled_text(RataLine::from(vec![
+                        Span::styled(format!("  {}", line), Style::default().fg(theme.text_primary)),
+                    ])).build());
+                }
+                if json_str.lines().count() > 20 {
+                    lines.push(Element::styled_text(RataLine::from(vec![
+                        Span::styled("  ... (truncated)", Style::default().fg(theme.border_primary).italic()),
+                    ])).build());
+                }
+            }
+        }
+        Operation::DeleteAttribute { attribute, .. } => {
+            lines.push(Element::text(""));
+            lines.push(Element::styled_text(RataLine::from(vec![
+                Span::styled("Attribute: ", Style::default().fg(theme.border_primary)),
+                Span::styled(attribute.clone(), Style::default().fg(theme.text_primary)),
+            ])).build());
+        }
+        Operation::PublishAllXml => {
+            lines.push(Element::text(""));
+            lines.push(Element::styled_text(RataLine::from(vec![
+                Span::styled("Publishes all pending customizations", Style::default().fg(theme.border_primary).italic()),
             ])).build());
         }
     }

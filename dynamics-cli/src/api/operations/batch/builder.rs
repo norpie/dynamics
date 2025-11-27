@@ -194,6 +194,67 @@ impl BatchRequestBuilder {
                     body: Some(body),
                 }
             }
+            // Schema operations - these typically shouldn't be in batch changesets,
+            // but we handle them for completeness
+            Operation::CreateAttribute { entity, attribute_data, solution_name } => {
+                let path = format!("{}/EntityDefinitions(LogicalName='{}')/Attributes", constants::api_path(), entity);
+                let body = serde_json::to_string(attribute_data).unwrap_or_default();
+
+                let mut op_headers = vec![
+                    ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
+                ];
+                if let Some(solution) = solution_name {
+                    op_headers.push(("MSCRM.SolutionUniqueName".to_string(), solution.clone()));
+                }
+
+                ChangeSetOperation {
+                    content_id,
+                    method: methods::POST.to_string(),
+                    path,
+                    headers: op_headers,
+                    body: Some(body),
+                }
+            }
+            Operation::UpdateAttribute { entity, attribute, attribute_data } => {
+                let path = format!("{}/EntityDefinitions(LogicalName='{}')/Attributes(LogicalName='{}')",
+                    constants::api_path(), entity, attribute);
+                let body = serde_json::to_string(attribute_data).unwrap_or_default();
+
+                ChangeSetOperation {
+                    content_id,
+                    method: "PUT".to_string(), // Schema updates use PUT
+                    path,
+                    headers: vec![
+                        ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
+                    ],
+                    body: Some(body),
+                }
+            }
+            Operation::DeleteAttribute { entity, attribute } => {
+                let path = format!("{}/EntityDefinitions(LogicalName='{}')/Attributes(LogicalName='{}')",
+                    constants::api_path(), entity, attribute);
+
+                ChangeSetOperation {
+                    content_id,
+                    method: methods::DELETE.to_string(),
+                    path,
+                    headers: vec![],
+                    body: None,
+                }
+            }
+            Operation::PublishAllXml => {
+                let path = format!("{}/PublishAllXml", constants::api_path());
+
+                ChangeSetOperation {
+                    content_id,
+                    method: methods::POST.to_string(),
+                    path,
+                    headers: vec![
+                        ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
+                    ],
+                    body: None,
+                }
+            }
         }
     }
 

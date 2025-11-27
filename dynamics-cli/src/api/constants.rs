@@ -74,3 +74,34 @@ pub fn upsert_endpoint(base_url: &str, entity: &str, key_field: &str, key_value:
 pub fn batch_endpoint(base_url: &str) -> String {
     format!("{}{}/{}", base_url, api_path(), BATCH_ENDPOINT)
 }
+
+// === Schema/Metadata Endpoints ===
+
+/// Build entity definition endpoint for creating attributes
+/// POST /EntityDefinitions(LogicalName='{entity}')/Attributes
+pub fn entity_attributes_endpoint(base_url: &str, entity: &str) -> String {
+    format!(
+        "{}{}/EntityDefinitions(LogicalName='{}')/Attributes",
+        base_url,
+        api_path(),
+        entity
+    )
+}
+
+/// Build specific attribute endpoint for update/delete
+/// PUT/DELETE /EntityDefinitions(LogicalName='{entity}')/Attributes(LogicalName='{attribute}')
+pub fn entity_attribute_endpoint(base_url: &str, entity: &str, attribute: &str) -> String {
+    format!(
+        "{}{}/EntityDefinitions(LogicalName='{}')/Attributes(LogicalName='{}')",
+        base_url,
+        api_path(),
+        entity,
+        attribute
+    )
+}
+
+/// Build PublishAllXml endpoint
+/// POST /PublishAllXml
+pub fn publish_all_xml_endpoint(base_url: &str) -> String {
+    format!("{}{}/PublishAllXml", base_url, api_path())
+}

@@ -108,6 +108,19 @@ impl DynamicsClient {
             Operation::AssociateRef { entity, entity_ref, navigation_property, target_ref } => {
                 self.associate_ref(entity, entity_ref, navigation_property, target_ref, resilience).await
             }
+            // Schema/Metadata operations
+            Operation::CreateAttribute { entity, attribute_data, solution_name } => {
+                self.create_attribute(entity, attribute_data, solution_name.as_deref(), resilience).await
+            }
+            Operation::UpdateAttribute { entity, attribute, attribute_data } => {
+                self.update_attribute(entity, attribute, attribute_data, resilience).await
+            }
+            Operation::DeleteAttribute { entity, attribute } => {
+                self.delete_attribute(entity, attribute, resilience).await
+            }
+            Operation::PublishAllXml => {
+                self.publish_all_xml(resilience).await
+            }
         }
     }
 
@@ -525,6 +538,116 @@ impl DynamicsClient {
             navigation_property: navigation_property.to_string(),
             target_ref: target_ref.to_string(),
         }, response).await
+    }
+
+    // === Schema/Metadata Operations ===
+
+    /// Create a new attribute/column on an entity
+    async fn create_attribute(&self, entity: &str, attribute_data: &Value, solution_name: Option<&str>, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+        let url = constants::entity_attributes_endpoint(&self.base_url, entity);
+        let correlation_id = uuid::Uuid::new_v4().to_string();
+
+        // Apply rate limiting before making the request
+        self.apply_rate_limiting().await?;
+
+        let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
+        let response = retry_policy.execute(|| async {
+            let mut request = self.http_client
+                .post(&url)
+                .bearer_auth(&self.access_token)
+                .header("Content-Type", headers::CONTENT_TYPE_JSON)
+                .header("OData-Version", headers::ODATA_VERSION)
+                .header(headers::X_CORRELATION_ID, &correlation_id);
+
+            // Add solution header if provided
+            if let Some(solution) = solution_name {
+                request = request.header("MSCRM.SolutionUniqueName", solution);
+            }
+
+            request.json(attribute_data).send().await
+        }).await?;
+
+        self.parse_response(Operation::CreateAttribute {
+            entity: entity.to_string(),
+            attribute_data: attribute_data.clone(),
+            solution_name: solution_name.map(|s| s.to_string()),
+        }, response).await
+    }
+
+    /// Update an existing attribute/column
+    async fn update_attribute(&self, entity: &str, attribute: &str, attribute_data: &Value, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+        let url = constants::entity_attribute_endpoint(&self.base_url, entity, attribute);
+        let correlation_id = uuid::Uuid::new_v4().to_string();
+
+        // Apply rate limiting before making the request
+        self.apply_rate_limiting().await?;
+
+        let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
+        let response = retry_policy.execute(|| async {
+            self.http_client
+                .put(&url)  // Schema updates use PUT, not PATCH
+                .bearer_auth(&self.access_token)
+                .header("Content-Type", headers::CONTENT_TYPE_JSON)
+                .header("OData-Version", headers::ODATA_VERSION)
+                .header(headers::X_CORRELATION_ID, &correlation_id)
+                .json(attribute_data)
+                .send()
+                .await
+        }).await?;
+
+        self.parse_response(Operation::UpdateAttribute {
+            entity: entity.to_string(),
+            attribute: attribute.to_string(),
+            attribute_data: attribute_data.clone(),
+        }, response).await
+    }
+
+    /// Delete an attribute/column from an entity
+    async fn delete_attribute(&self, entity: &str, attribute: &str, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+        let url = constants::entity_attribute_endpoint(&self.base_url, entity, attribute);
+        let correlation_id = uuid::Uuid::new_v4().to_string();
+
+        // Apply rate limiting before making the request
+        self.apply_rate_limiting().await?;
+
+        let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
+        let response = retry_policy.execute(|| async {
+            self.http_client
+                .delete(&url)
+                .bearer_auth(&self.access_token)
+                .header("OData-Version", headers::ODATA_VERSION)
+                .header(headers::X_CORRELATION_ID, &correlation_id)
+                .send()
+                .await
+        }).await?;
+
+        self.parse_response(Operation::DeleteAttribute {
+            entity: entity.to_string(),
+            attribute: attribute.to_string(),
+        }, response).await
+    }
+
+    /// Publish all customizations to make schema changes active
+    async fn publish_all_xml(&self, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+        let url = constants::publish_all_xml_endpoint(&self.base_url);
+        let correlation_id = uuid::Uuid::new_v4().to_string();
+
+        // Apply rate limiting before making the request
+        self.apply_rate_limiting().await?;
+
+        let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
+        let response = retry_policy.execute(|| async {
+            self.http_client
+                .post(&url)
+                .bearer_auth(&self.access_token)
+                .header("Content-Type", headers::CONTENT_TYPE_JSON)
+                .header("OData-Version", headers::ODATA_VERSION)
+                .header(headers::X_CORRELATION_ID, &correlation_id)
+                .send()
+                .await
+        }).await?;
+
+        self.parse_response(Operation::PublishAllXml, response).await
     }
 
     /// Execute operations using the $batch endpoint
