@@ -190,6 +190,65 @@ impl App for EntitySyncApp {
                 state.entity_select.selected_entities.clear();
                 Command::None
             }
+            Msg::PresetSelectEvent(event) => {
+                use crate::tui::apps::sync::steps::entity_select::PRESETS;
+                use crate::tui::widgets::SelectEvent;
+                use crossterm::event::KeyCode;
+
+                match event {
+                    SelectEvent::Navigate(KeyCode::Enter) | SelectEvent::Navigate(KeyCode::Char(' '))
+                        if !state.entity_select.preset_selector.is_open() =>
+                    {
+                        // Open dropdown when closed
+                        state.entity_select.preset_selector.open();
+                    }
+                    SelectEvent::Navigate(KeyCode::Enter) | SelectEvent::Navigate(KeyCode::Char(' '))
+                        if state.entity_select.preset_selector.is_open() =>
+                    {
+                        // Select highlighted item when open
+                        state.entity_select.preset_selector.select_highlighted();
+                        let selected_index = state.entity_select.preset_selector.selected();
+
+                        // Apply the preset
+                        if let Some(preset) = PRESETS.get(selected_index) {
+                            if !preset.entities.is_empty() {
+                                state.entity_select.selected_entities.clear();
+                                for entity_name in preset.entities {
+                                    state.entity_select.selected_entities.insert(entity_name.to_string());
+                                }
+                                log::info!("Applied preset '{}' with {} entities", preset.name, preset.entities.len());
+                            }
+                        }
+                    }
+                    SelectEvent::Navigate(KeyCode::Esc) => {
+                        // Close dropdown
+                        if state.entity_select.preset_selector.is_open() {
+                            state.entity_select.preset_selector.close();
+                        }
+                    }
+                    SelectEvent::Select(idx) => {
+                        // Handle click selection
+                        state.entity_select.preset_selector.select(idx);
+                        if let Some(preset) = PRESETS.get(idx) {
+                            if !preset.entities.is_empty() {
+                                state.entity_select.selected_entities.clear();
+                                for entity_name in preset.entities {
+                                    state.entity_select.selected_entities.insert(entity_name.to_string());
+                                }
+                                log::info!("Applied preset '{}' with {} entities", preset.name, preset.entities.len());
+                            }
+                        }
+                    }
+                    SelectEvent::Blur => {
+                        state.entity_select.preset_selector.close();
+                    }
+                    _ => {
+                        // Handle other navigation (Up/Down arrows)
+                        state.entity_select.preset_selector.handle_event(event);
+                    }
+                }
+                Command::None
+            }
             Msg::FilterInputEvent(event) => {
                 use crate::tui::widgets::TextInputEvent;
                 match event {

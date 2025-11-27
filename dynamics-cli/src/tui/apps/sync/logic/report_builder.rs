@@ -376,7 +376,8 @@ mod tests {
                     entity_name: "account".to_string(),
                     origin_count: 100,
                     target_count: 50,
-                    sample_ids: vec![],
+                    origin_records: vec![],
+                    target_record_ids: vec![],
                 },
                 nulled_lookups: vec![NulledLookupInfo {
                     entity_name: "account".to_string(),

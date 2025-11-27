@@ -71,6 +71,8 @@ pub enum Msg {
     IncludeAllJunctions,
     /// Exclude all junction candidates
     ExcludeAllJunctions,
+    /// Preset selector event (open/close/navigate/select)
+    PresetSelectEvent(crate::tui::widgets::SelectEvent),
 
     // === Step 3: Analysis ===
     /// Start the analysis process
@@ -157,6 +159,7 @@ impl std::fmt::Debug for Msg {
             Self::SwitchEntityFocus => write!(f, "SwitchEntityFocus"),
             Self::IncludeAllJunctions => write!(f, "IncludeAllJunctions"),
             Self::ExcludeAllJunctions => write!(f, "ExcludeAllJunctions"),
+            Self::PresetSelectEvent(e) => write!(f, "PresetSelectEvent({:?})", e),
             Self::StartAnalysis => write!(f, "StartAnalysis"),
             Self::AnalysisPhaseChanged(p) => write!(f, "AnalysisPhaseChanged({:?})", p),
             Self::AnalysisProgress(p, s) => write!(f, "AnalysisProgress({}, {})", p, s),

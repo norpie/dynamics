@@ -8,11 +8,51 @@ use ratatui::text::{Line, Span};
 use crate::tui::element::Element;
 use crate::tui::widgets::ListItem;
 use crate::tui::state::theme::Theme;
+use crate::tui::FocusId;
 use crate::tui::Resource;
 use crate::{col, row, spacer, use_constraints, button_row};
 
 use super::super::state::{State, EntityListItem, JunctionCandidate};
 use super::super::msg::Msg;
+
+/// Hardcoded presets for entity selection
+pub struct EntityPreset {
+    pub name: &'static str,
+    pub entities: &'static [&'static str],
+}
+
+/// Available presets - first one is "None" (no preset)
+pub const PRESETS: &[EntityPreset] = &[
+    EntityPreset {
+        name: "(No preset)",
+        entities: &[],
+    },
+    EntityPreset {
+        name: "VAF Settings",
+        entities: &[
+            "nrq_role",
+            "nrq_country",
+            "nrq_broadcaster",
+            "nrq_station",
+            "nrq_domain",
+            "nrq_fund",
+            "nrq_type",
+            "nrq_support",
+            "nrq_category",
+            "nrq_subcategory",
+            "nrq_flemishshare",
+            "nrq_betalingsschijf",
+            "nrq_betalingsschijflijn",
+            "nrq_grootboekrekening",
+            "nrq_kostenplaats",
+        ],
+    },
+];
+
+/// Get preset options as strings for the dropdown
+pub fn preset_options() -> Vec<String> {
+    PRESETS.iter().map(|p| p.name.to_string()).collect()
+}
 
 /// Entity list item for rendering (with selection checkbox)
 #[derive(Clone)]
@@ -133,19 +173,38 @@ fn render_error(err: &str, _theme: &Theme) -> Element<Msg> {
 fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
     use_constraints!();
 
-    // Filter input
-    let filter_panel = Element::panel(
-        Element::text_input(
-            crate::tui::FocusId::new("entity-filter"),
-            &state.entity_select.filter_text,
-            &state.entity_select.filter_input,
-        )
-        .placeholder("Type to filter entities...")
-        .on_event(Msg::FilterInputEvent)
-        .build()
+    // Preset dropdown
+    let preset_select = Element::select(
+        FocusId::new("preset-select"),
+        preset_options(),
+        &mut state.entity_select.preset_selector,
     )
-    .title("Filter")
+    .on_event(Msg::PresetSelectEvent)
     .build();
+
+    let preset_panel = Element::panel(preset_select)
+        .title("Preset")
+        .build();
+
+    // Filter input
+    let filter_input = Element::text_input(
+        FocusId::new("entity-filter"),
+        &state.entity_select.filter_text,
+        &state.entity_select.filter_input,
+    )
+    .placeholder("Type to filter entities...")
+    .on_event(Msg::FilterInputEvent)
+    .build();
+
+    let filter_panel = Element::panel(filter_input)
+        .title("Filter")
+        .build();
+
+    // Top row with preset and filter
+    let top_row = row![
+        preset_panel => Length(25),
+        filter_panel => Fill(1),
+    ];
 
     // Get filtered entities
     let filtered_entities = state.entity_select.filtered_entities();
@@ -210,7 +269,7 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
             .build();
 
         col![
-            filter_panel => Length(3),
+            top_row => Length(3),
             row![
                 entity_panel => Fill(2),
                 junction_panel => Fill(1),
@@ -226,7 +285,7 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
         };
 
         col![
-            filter_panel => Length(3),
+            top_row => Length(3),
             entity_panel => Fill(1),
             junction_hint => Length(1),
         ]

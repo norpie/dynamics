@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use crate::api::models::Environment as ApiEnvironment;
 use crate::tui::app::AppState;
 use crate::tui::resource::Resource;
-use crate::tui::widgets::{ListState, TextInputState};
+use crate::tui::widgets::{ListState, SelectState, TextInputState};
 
 use super::types::{SyncStep, SyncPlan, EntitySyncPlan};
 
@@ -125,6 +125,9 @@ pub struct EntitySelectState {
 
     /// Which panel is focused (true = entities, false = junctions)
     pub entities_focused: bool,
+
+    /// Preset selector state
+    pub preset_selector: SelectState,
 }
 
 impl EntitySelectState {
