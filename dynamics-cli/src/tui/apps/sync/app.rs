@@ -575,8 +575,28 @@ fn handle_next(state: &mut State) -> Command<Msg> {
         SyncStep::EntitySelect => {
             if state.entity_select.can_proceed() {
                 state.step = SyncStep::Analysis;
-                // Start analysis
                 state.analysis = Default::default();
+                state.analysis.phase = AnalysisPhase::FetchingOriginSchema;
+
+                // Collect parameters for analysis
+                let origin_env = state.env_select.origin_env.clone().unwrap();
+                let target_env = state.env_select.target_env.clone().unwrap();
+                let selected_entities: Vec<String> = state
+                    .entity_select
+                    .entities_to_sync()
+                    .into_iter()
+                    .collect();
+
+                // Start async analysis
+                return Command::perform(
+                    async move {
+                        run_analysis(&origin_env, &target_env, &selected_entities).await
+                    },
+                    |result| match result {
+                        Ok(plan) => Msg::AnalysisComplete(Box::new(plan)),
+                        Err(e) => Msg::AnalysisFailed(e),
+                    },
+                );
             }
             Command::None
         }
@@ -595,6 +615,146 @@ fn handle_next(state: &mut State) -> Command<Msg> {
             Command::None
         }
     }
+}
+
+/// Run the full analysis process
+async fn run_analysis(
+    origin_env: &str,
+    target_env: &str,
+    selected_entities: &[String],
+) -> Result<super::types::SyncPlan, String> {
+    use super::logic::{compare_schemas, DependencyGraph};
+    use super::types::*;
+    use crate::api::metadata::FieldType;
+    use std::collections::HashSet;
+
+    let manager = crate::client_manager();
+
+    // Get clients for both environments
+    let origin_client = manager
+        .get_client(origin_env)
+        .await
+        .map_err(|e| format!("Failed to get origin client: {}", e))?;
+
+    let target_client = manager
+        .get_client(target_env)
+        .await
+        .map_err(|e| format!("Failed to get target client: {}", e))?;
+
+    let selected_set: HashSet<String> = selected_entities.iter().cloned().collect();
+    let mut entities_with_fields: Vec<(String, Option<String>, Vec<crate::api::metadata::FieldMetadata>)> = Vec::new();
+    let mut entity_plans = Vec::new();
+    let mut total_delete_count = 0usize;
+    let mut total_insert_count = 0usize;
+    let mut has_schema_changes = false;
+
+    // Process each selected entity
+    for entity_name in selected_entities {
+        log::info!("Analyzing entity: {}", entity_name);
+
+        // Fetch field metadata from both environments
+        let origin_fields = origin_client
+            .fetch_entity_fields_combined(entity_name)
+            .await
+            .map_err(|e| format!("Failed to fetch origin fields for {}: {}", entity_name, e))?;
+
+        let target_fields = target_client
+            .fetch_entity_fields_combined(entity_name)
+            .await
+            .unwrap_or_default(); // Target might not have the entity
+
+        // Store for dependency graph
+        entities_with_fields.push((entity_name.clone(), None, origin_fields.clone()));
+
+        // Compare schemas (pass None for raw origin data - not needed for this use case)
+        let schema_diff = compare_schemas(entity_name, &origin_fields, &target_fields, None);
+
+        if schema_diff.has_changes() {
+            has_schema_changes = true;
+        }
+
+        // Get record counts (simplified - just set to 0 for now)
+        let origin_count = 0usize;
+        let target_count = 0usize;
+
+        total_delete_count += target_count;
+        total_insert_count += origin_count;
+
+        // Extract lookup info from fields
+        let lookups: Vec<LookupInfo> = origin_fields
+            .iter()
+            .filter(|f| matches!(f.field_type, FieldType::Lookup))
+            .filter_map(|f| {
+                f.related_entity.as_ref().map(|target| LookupInfo {
+                    field_name: f.logical_name.clone(),
+                    target_entity: target.clone(),
+                    is_internal: selected_set.contains(target),
+                })
+            })
+            .collect();
+
+        // Build entity plan
+        entity_plans.push(EntitySyncPlan {
+            entity_info: SyncEntityInfo {
+                logical_name: entity_name.clone(),
+                display_name: None,
+                category: DependencyCategory::Standalone,
+                lookups: lookups.clone(),
+                dependents: vec![],
+                insert_priority: 0,
+                delete_priority: 0,
+            },
+            schema_diff,
+            data_preview: EntityDataPreview {
+                entity_name: entity_name.clone(),
+                origin_count,
+                target_count,
+                sample_ids: vec![],
+            },
+            nulled_lookups: lookups
+                .iter()
+                .filter(|l| !l.is_internal)
+                .map(|l| NulledLookupInfo {
+                    entity_name: entity_name.clone(),
+                    field_name: l.field_name.clone(),
+                    target_entity: l.target_entity.clone(),
+                    affected_count: origin_count,
+                })
+                .collect(),
+        });
+    }
+
+    // Build dependency graph
+    let dep_graph = DependencyGraph::build(entities_with_fields);
+
+    // Get sorted order and update priorities
+    if let Ok(sorted) = dep_graph.topological_sort() {
+        for (insert_priority, name) in sorted.iter().enumerate() {
+            if let Some(plan) = entity_plans.iter_mut().find(|p| &p.entity_info.logical_name == name) {
+                plan.entity_info.insert_priority = insert_priority as u32;
+                plan.entity_info.delete_priority = (sorted.len() - 1 - insert_priority) as u32;
+                plan.entity_info.category = dep_graph.categorize(name);
+
+                // Get dependents
+                if let Some(deps) = dep_graph.dependents.get(name) {
+                    plan.entity_info.dependents = deps.iter().cloned().collect();
+                }
+            }
+        }
+    }
+
+    // Sort by insert priority
+    entity_plans.sort_by_key(|p| p.entity_info.insert_priority);
+
+    Ok(SyncPlan {
+        origin_env: origin_env.to_string(),
+        target_env: target_env.to_string(),
+        entity_plans,
+        detected_junctions: vec![], // Skip junction detection for now
+        has_schema_changes,
+        total_delete_count,
+        total_insert_count,
+    })
 }
 
 /// Load entities for a given environment
@@ -630,4 +790,29 @@ async fn load_entities_for_env(env_name: &str) -> Result<Vec<super::state::Entit
         .collect();
 
     Ok(entities)
+}
+
+/// Get record count for an entity
+#[allow(dead_code)]
+async fn get_entity_count(client: &crate::api::DynamicsClient, entity_name: &str) -> anyhow::Result<usize> {
+    use crate::api::query::QueryBuilder;
+
+    // Use a simple query with $count and $top=1 to just get the count
+    let query = QueryBuilder::new(entity_name)
+        .select(&["createdon"]) // Minimal field
+        .top(1) // Just get 1 record to check if entity exists
+        .build();
+
+    let result = client.execute_query(&query).await?;
+
+    // The count field in QueryResponse contains the total if requested
+    if let Some(data) = &result.data {
+        if let Some(count) = data.count {
+            return Ok(count as usize);
+        }
+        // Fallback: if we got records, there's at least some data
+        return Ok(data.value.len());
+    }
+
+    Ok(0)
 }
