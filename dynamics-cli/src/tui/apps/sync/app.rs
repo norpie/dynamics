@@ -200,6 +200,8 @@ impl App for EntitySyncApp {
                             None,
                         ) {
                             state.entity_select.filter_text = new_value;
+                            // Reset list state when filter changes to avoid out-of-bounds
+                            state.entity_select.entity_list = Default::default();
                         }
                     }
                     TextInputEvent::Submit => {}
@@ -208,6 +210,8 @@ impl App for EntitySyncApp {
             }
             Msg::ClearFilter => {
                 state.entity_select.filter_text.clear();
+                // Reset list state when filter clears
+                state.entity_select.entity_list = Default::default();
                 Command::None
             }
             Msg::JunctionCandidatesLoaded(candidates) => {
@@ -555,9 +559,16 @@ fn handle_next(state: &mut State) -> Command<Msg> {
         SyncStep::EnvironmentSelect => {
             if state.env_select.can_proceed() {
                 state.step = SyncStep::EntitySelect;
-                // Load entities for the selected origin environment
-                // In a real implementation, this would fetch from the API
                 state.entity_select.available_entities = crate::tui::Resource::Loading;
+
+                // Load entities from the origin environment
+                let origin_env = state.env_select.origin_env.clone().unwrap();
+                return Command::perform(
+                    async move {
+                        load_entities_for_env(&origin_env).await
+                    },
+                    Msg::EntitiesLoaded,
+                );
             }
             Command::None
         }
@@ -584,4 +595,39 @@ fn handle_next(state: &mut State) -> Command<Msg> {
             Command::None
         }
     }
+}
+
+/// Load entities for a given environment
+async fn load_entities_for_env(env_name: &str) -> Result<Vec<super::state::EntityListItem>, String> {
+    use super::state::EntityListItem;
+
+    let manager = crate::client_manager();
+
+    // Get client for the environment
+    let client = manager
+        .get_client(env_name)
+        .await
+        .map_err(|e| format!("Failed to get client for {}: {}", env_name, e))?;
+
+    // Fetch metadata XML
+    let metadata_xml = client
+        .fetch_metadata()
+        .await
+        .map_err(|e| format!("Failed to fetch metadata: {}", e))?;
+
+    // Parse entity names from metadata
+    let entity_names = crate::api::metadata::parse_entity_list(&metadata_xml)
+        .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+
+    // Convert to EntityListItem (without record counts for now)
+    let entities: Vec<EntityListItem> = entity_names
+        .into_iter()
+        .map(|name| EntityListItem {
+            logical_name: name,
+            display_name: None,
+            record_count: None,
+        })
+        .collect();
+
+    Ok(entities)
 }
