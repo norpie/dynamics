@@ -93,6 +93,8 @@ pub enum Msg {
     DiffEntityListSelect(usize),
     /// Navigate in field list
     DiffFieldListNavigate(KeyCode),
+    /// Navigate in data records list
+    DataListNavigate(KeyCode),
     /// Switch to next tab (Schema/Data/Lookups)
     DiffNextTab,
     /// Switch to previous tab
@@ -164,6 +166,7 @@ impl std::fmt::Debug for Msg {
             Self::DiffEntityListNavigate(k) => write!(f, "DiffEntityListNavigate({:?})", k),
             Self::DiffEntityListSelect(i) => write!(f, "DiffEntityListSelect({})", i),
             Self::DiffFieldListNavigate(k) => write!(f, "DiffFieldListNavigate({:?})", k),
+            Self::DataListNavigate(k) => write!(f, "DataListNavigate({:?})", k),
             Self::DiffNextTab => write!(f, "DiffNextTab"),
             Self::DiffPrevTab => write!(f, "DiffPrevTab"),
             Self::DiffToggleSection(s) => write!(f, "DiffToggleSection({})", s),

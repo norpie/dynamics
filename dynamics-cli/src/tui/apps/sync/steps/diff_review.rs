@@ -199,7 +199,7 @@ fn render_diff_content(state: &mut State, theme: &Theme) -> Element<Msg> {
     let detail_panel = if let Some(selected) = selected_plan {
         match state.diff_review.active_tab {
             DiffTab::Schema => render_schema_tab(state, &selected, theme),
-            DiffTab::Data => render_data_tab(&selected, theme),
+            DiffTab::Data => render_data_tab(state, &selected, theme),
             DiffTab::Lookups => render_lookups_tab(&selected, theme),
         }
     } else {
@@ -297,8 +297,99 @@ fn render_schema_tab(state: &mut State, plan: &EntitySyncPlan, theme: &Theme) ->
     ]
 }
 
+/// Record list item for the data tab
+#[derive(Clone)]
+struct RecordItem {
+    /// First few non-system field values
+    fields: Vec<(String, String)>,
+}
+
+impl RecordItem {
+    fn from_json(record: &serde_json::Value, entity_name: &str) -> Self {
+        use super::super::types::SYSTEM_FIELDS;
+
+        let pk_field = format!("{}id", entity_name);
+        let mut fields = Vec::new();
+
+        // Priority fields to show first (common name fields)
+        let priority_fields = ["name", "fullname", "title", "subject", "description"];
+
+        // First add priority fields if they exist
+        for field_name in priority_fields {
+            if let Some(val) = record.get(field_name).and_then(|v| v.as_str()) {
+                if !val.is_empty() {
+                    fields.push((field_name.to_string(), val.to_string()));
+                }
+            }
+        }
+
+        // Then add other non-system fields
+        if let Some(obj) = record.as_object() {
+            for (key, val) in obj {
+                // Skip system fields, already added fields, and metadata
+                if key.starts_with('@')
+                    || key.starts_with('_')
+                    || key == &pk_field
+                    || SYSTEM_FIELDS.contains(&key.as_str())
+                    || fields.iter().any(|(k, _)| k == key)
+                {
+                    continue;
+                }
+
+                // Get string value
+                let str_val = match val {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::Bool(b) => b.to_string(),
+                    serde_json::Value::Null => continue,
+                    _ => continue, // Skip objects/arrays
+                };
+
+                if !str_val.is_empty() && str_val != "null" {
+                    fields.push((key.clone(), str_val));
+                }
+
+                // Limit to 5 fields
+                if fields.len() >= 5 {
+                    break;
+                }
+            }
+        }
+
+        Self { fields }
+    }
+}
+
+impl ListItem for RecordItem {
+    type Msg = Msg;
+
+    fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
+        let theme = &crate::global_runtime_config().theme;
+
+        // Format as "field1: val1 | field2: val2 | ..."
+        let text = self.fields.iter()
+            .map(|(k, v)| {
+                let truncated = if v.len() > 30 { format!("{}...", &v[..27]) } else { v.clone() };
+                format!("{}: {}", k, truncated)
+            })
+            .collect::<Vec<_>>()
+            .join(" | ");
+
+        let style = Style::default().fg(theme.text_primary);
+        let bg_style = if is_focused {
+            Style::default().bg(theme.bg_surface)
+        } else {
+            Style::default()
+        };
+
+        Element::styled_text(Line::from(Span::styled(text, style)))
+            .background(bg_style)
+            .build()
+    }
+}
+
 /// Render the data tab content
-fn render_data_tab(plan: &EntitySyncPlan, theme: &Theme) -> Element<Msg> {
+fn render_data_tab(state: &mut State, plan: &EntitySyncPlan, theme: &Theme) -> Element<Msg> {
     use_constraints!();
 
     let preview = &plan.data_preview;
@@ -306,31 +397,29 @@ fn render_data_tab(plan: &EntitySyncPlan, theme: &Theme) -> Element<Msg> {
         .as_ref()
         .unwrap_or(&plan.entity_info.logical_name);
 
-    let origin_text = format!("Records in origin: {}", preview.origin_count);
-    let target_text = format!("Records in target: {}", preview.target_count);
-    let delete_text = format!("  1. Delete {} records from target", preview.target_count);
-    let copy_text = format!("  2. Copy {} records from origin (preserving GUIDs)", preview.origin_count);
+    let origin_text = format!("Origin: {} records (active)", preview.origin_count);
+    let target_text = format!("Target: {} records (to delete)", preview.target_count);
 
-    let empty_note = if preview.origin_count == 0 && preview.target_count == 0 {
-        Element::text("ℹ Both environments have no records for this entity")
-    } else {
-        Element::text("")
-    };
+    // Build record items from origin data
+    let record_items: Vec<RecordItem> = preview.origin_records.iter()
+        .map(|record| RecordItem::from_json(record, &plan.entity_info.logical_name))
+        .collect();
 
-    let content = Element::column(vec![
-        Element::text(origin_text),
-        Element::text(target_text),
-        spacer!(),
-        Element::text("Operation:"),
-        Element::text(delete_text),
-        Element::text(copy_text),
-        spacer!(),
-        empty_note,
-    ]).build();
+    let record_list = Element::list(
+        "data-record-list",
+        &record_items,
+        &state.diff_review.data_list,
+        theme,
+    )
+    .on_navigate(Msg::DataListNavigate)
+    .build();
 
-    Element::panel(content)
-        .title(format!("{} - Data Preview", name))
-        .build()
+    col![
+        Element::text(origin_text) => Length(1),
+        Element::text(target_text) => Length(1),
+        spacer!() => Length(1),
+        Element::panel(record_list).title(format!("Origin Records ({})", preview.origin_count)).build() => Fill(1),
+    ]
 }
 
 /// Render the lookups tab content
