@@ -20,29 +20,23 @@ use super::super::msg::Msg;
 struct EnvListItem {
     name: String,
     host: Option<String>,
-    is_origin_selected: bool,
-    is_target_selected: bool,
+    is_selected_for_this_list: bool,
 }
 
 impl ListItem for EnvListItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
-        // Determine styling based on selection state
-        let (icon, style) = if self.is_origin_selected && self.is_target_selected {
-            // Shouldn't happen, but handle it
-            ("⚠ ", Style::default().fg(theme.accent_warning))
-        } else if self.is_origin_selected {
+        // Show selection state for this specific list
+        let (icon, style) = if self.is_selected_for_this_list {
             ("◉ ", Style::default().fg(theme.accent_success).bold())
-        } else if self.is_target_selected {
-            ("◎ ", Style::default().fg(theme.accent_info).bold())
         } else {
             ("○ ", Style::default().fg(theme.text_secondary))
         };
 
-        let bg_style = if is_selected {
+        let bg_style = if is_focused {
             Style::default().bg(theme.bg_surface)
         } else {
             Style::default()
@@ -119,18 +113,23 @@ fn render_error(err: &str, _theme: &Theme) -> Element<Msg> {
 fn render_env_lists(state: &mut State, envs: &[ApiEnvironment], theme: &Theme) -> Element<Msg> {
     use_constraints!();
 
-    // Build list items for origin
+    // Build list items for origin (shows origin selection)
     let origin_items: Vec<EnvListItem> = envs.iter().map(|env| {
         EnvListItem {
             name: env.name.clone(),
             host: Some(env.host.clone()),
-            is_origin_selected: state.env_select.origin_env.as_ref() == Some(&env.name),
-            is_target_selected: state.env_select.target_env.as_ref() == Some(&env.name),
+            is_selected_for_this_list: state.env_select.origin_env.as_ref() == Some(&env.name),
         }
     }).collect();
 
-    // Build list items for target (same data, different selection highlight)
-    let target_items = origin_items.clone();
+    // Build list items for target (shows target selection)
+    let target_items: Vec<EnvListItem> = envs.iter().map(|env| {
+        EnvListItem {
+            name: env.name.clone(),
+            host: Some(env.host.clone()),
+            is_selected_for_this_list: state.env_select.target_env.as_ref() == Some(&env.name),
+        }
+    }).collect();
 
     // Origin list
     let origin_title = if let Some(ref env) = state.env_select.origin_env {
