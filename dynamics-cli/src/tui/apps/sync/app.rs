@@ -683,10 +683,12 @@ async fn run_analysis(
         }
 
         // Get record counts from both environments
-        let origin_count = get_entity_count(&origin_client, entity_name)
+        // Origin: active records only (statecode eq 0)
+        // Target: all records (will delete everything)
+        let origin_count = get_entity_count(&origin_client, entity_name, true)
             .await
             .unwrap_or(0);
-        let target_count = get_entity_count(&target_client, entity_name)
+        let target_count = get_entity_count(&target_client, entity_name, false)
             .await
             .unwrap_or(0);
 
@@ -806,24 +808,28 @@ async fn load_entities_for_env(env_name: &str) -> Result<Vec<super::state::Entit
 }
 
 /// Get record count for an entity
-async fn get_entity_count(client: &crate::api::DynamicsClient, entity_name: &str) -> anyhow::Result<usize> {
+async fn get_entity_count(client: &crate::api::DynamicsClient, entity_name: &str, active_records_only: bool) -> anyhow::Result<usize> {
     use crate::api::query::QueryBuilder;
 
-    // Use a simple query with $count and $top=1 to just get the count
-    let query = QueryBuilder::new(entity_name)
+    // Use $count=true with minimal data fetch
+    let mut builder = QueryBuilder::new(entity_name)
         .select(&["createdon"]) // Minimal field
-        .top(1) // Just get 1 record to check if entity exists
-        .build();
+        .top(1) // Fetch 1 record to ensure response works
+        .count(); // Request $count=true
 
+    // For origin, only count active records
+    if active_records_only {
+        builder = builder.active_only();
+    }
+
+    let query = builder.build();
     let result = client.execute_query(&query).await?;
 
-    // The count field in QueryResponse contains the total if requested
+    // The count field in QueryResponse contains the total
     if let Some(data) = &result.data {
         if let Some(count) = data.count {
             return Ok(count as usize);
         }
-        // Fallback: if we got records, there's at least some data
-        return Ok(data.value.len());
     }
 
     Ok(0)
