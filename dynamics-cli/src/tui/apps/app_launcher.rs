@@ -46,6 +46,11 @@ impl Default for State {
                     description: "Copy Dynamics 365 questionnaires with all related entities".to_string(),
                 },
                 AppInfo {
+                    id: AppId::EntitySync,
+                    name: "Entity Sync".to_string(),
+                    description: "Sync settings entities between Dynamics 365 environments".to_string(),
+                },
+                AppInfo {
                     id: AppId::OperationQueue,
                     name: "Operation Queue".to_string(),
                     description: "Manage and execute API operation batches".to_string(),
