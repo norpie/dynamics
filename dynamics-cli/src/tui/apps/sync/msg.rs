@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 use crossterm::event::KeyCode;
-use crate::config::models::DbEnvironment;
+use crate::api::models::Environment as ApiEnvironment;
 use crate::tui::widgets::TextInputEvent;
 
 use super::state::{EntityListItem, JunctionCandidate, AnalysisPhase};
@@ -26,7 +26,7 @@ pub enum Msg {
 
     // === Step 1: Environment Selection ===
     /// Environments loaded from database
-    EnvironmentsLoaded(Result<Vec<DbEnvironment>, String>),
+    EnvironmentsLoaded(Result<Vec<ApiEnvironment>, String>),
     /// Navigate in origin environment list
     OriginListNavigate(KeyCode),
     /// Navigate in target environment list

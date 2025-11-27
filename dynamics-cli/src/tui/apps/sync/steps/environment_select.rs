@@ -5,7 +5,7 @@
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 
-use crate::config::models::DbEnvironment;
+use crate::api::models::Environment as ApiEnvironment;
 use crate::tui::element::Element;
 use crate::tui::widgets::ListItem;
 use crate::tui::state::theme::Theme;
@@ -116,7 +116,7 @@ fn render_error(err: &str, _theme: &Theme) -> Element<Msg> {
 }
 
 /// Render the dual environment lists
-fn render_env_lists(state: &mut State, envs: &[DbEnvironment], theme: &Theme) -> Element<Msg> {
+fn render_env_lists(state: &mut State, envs: &[ApiEnvironment], theme: &Theme) -> Element<Msg> {
     use_constraints!();
 
     // Build list items for origin

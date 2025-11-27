@@ -4,7 +4,7 @@
 //! state types used throughout the sync wizard flow.
 
 use std::collections::HashSet;
-use crate::config::models::DbEnvironment;
+use crate::api::models::Environment as ApiEnvironment;
 use crate::tui::app::AppState;
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{ListState, TextInputState};
@@ -53,7 +53,7 @@ impl AppState for State {
 #[derive(Debug, Default)]
 pub struct EnvironmentSelectState {
     /// Available environments
-    pub environments: Resource<Vec<DbEnvironment>>,
+    pub environments: Resource<Vec<ApiEnvironment>>,
 
     /// Origin environment list state
     pub origin_list: ListState,

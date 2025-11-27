@@ -18,3 +18,4 @@ pub use environment_selector_app::EnvironmentSelectorApp;
 pub use deadlines::{DeadlinesFileSelectApp, DeadlinesMappingApp, DeadlinesInspectionApp};
 pub use queue::OperationQueueApp;
 pub use copy_questionnaires::{SelectQuestionnaireApp, CopyQuestionnaireApp};
+pub use sync::EntitySyncApp;
