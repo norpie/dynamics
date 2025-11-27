@@ -8,6 +8,7 @@ pub mod environment_selector_app;
 pub mod deadlines;
 pub mod queue;
 pub mod copy_questionnaires;
+pub mod sync;
 
 pub use app_launcher::AppLauncher;
 pub use screens::{LoadingScreen, ErrorScreen};

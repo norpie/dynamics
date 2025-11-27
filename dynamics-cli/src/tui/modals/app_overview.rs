@@ -77,6 +77,7 @@ impl<Msg: Clone> AppOverviewModal<Msg> {
             AppId::SelectQuestionnaire => "Select Questionnaire",
             AppId::CopyQuestionnaire => "Copy Questionnaire",
             AppId::PushQuestionnaire => "Push Questionnaire",
+            AppId::EntitySync => "Entity Sync",
         }
     }
 

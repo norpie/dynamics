@@ -117,6 +117,7 @@ pub enum AppId {
     SelectQuestionnaire,
     CopyQuestionnaire,
     PushQuestionnaire,
+    EntitySync,
 }
 
 impl<Msg> Command<Msg> {
