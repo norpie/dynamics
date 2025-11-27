@@ -888,11 +888,11 @@ async fn fetch_all_records(
     active_only: bool,
 ) -> anyhow::Result<Vec<serde_json::Value>> {
     use crate::api::query::QueryBuilder;
+    use crate::api::pluralization::pluralize_entity_name;
 
     let mut all_records = Vec::new();
 
-    // Entity set name is typically logical name + 's'
-    let entity_set = format!("{}s", entity_name);
+    let entity_set = pluralize_entity_name(entity_name);
     let mut builder = QueryBuilder::new(&entity_set).top(5000);
     if active_only {
         builder = builder.active_only();
@@ -924,12 +924,12 @@ async fn fetch_record_ids(
     entity_name: &str,
 ) -> anyhow::Result<Vec<String>> {
     use crate::api::query::QueryBuilder;
+    use crate::api::pluralization::pluralize_entity_name;
 
     let pk_field = format!("{}id", entity_name);
     let mut all_ids = Vec::new();
 
-    // Entity set name is typically logical name + 's'
-    let entity_set = format!("{}s", entity_name);
+    let entity_set = pluralize_entity_name(entity_name);
     let query = QueryBuilder::new(&entity_set)
         .select(&[&pk_field])
         .top(5000)
