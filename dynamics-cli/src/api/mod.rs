@@ -17,7 +17,7 @@ pub mod query;
 pub mod resilience;
 
 pub use auth::AuthManager;
-pub use client::{DynamicsClient, EntityMetadataInfo, IncomingReference};
+pub use client::{DynamicsClient, EntityMetadataInfo, IncomingReference, ManyToManyRelationship};
 pub use manager::ClientManager;
 pub use models::{Environment, CredentialSet, TokenInfo};
 pub use operations::{Operation, OperationResult, Operations};

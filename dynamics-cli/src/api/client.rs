@@ -33,6 +33,25 @@ pub struct IncomingReference {
     pub referencing_attribute: String,
 }
 
+/// ManyToMany relationship metadata from EntityDefinitions
+#[derive(Debug, Clone)]
+pub struct ManyToManyRelationship {
+    /// Junction/intersect entity name (e.g., "accountleads")
+    pub intersect_entity_name: String,
+    /// First entity in the relationship
+    pub entity1_logical_name: String,
+    /// Second entity in the relationship
+    pub entity2_logical_name: String,
+    /// FK field in junction for entity1 (e.g., "accountid")
+    pub entity1_intersect_attribute: String,
+    /// FK field in junction for entity2 (e.g., "leadid")
+    pub entity2_intersect_attribute: String,
+    /// Navigation property name on entity1
+    pub entity1_navigation_property: String,
+    /// Navigation property name on entity2
+    pub entity2_navigation_property: String,
+}
+
 impl DynamicsClient {
     /// Apply rate limiting using the client's global rate limiter
     async fn apply_rate_limiting(&self) -> anyhow::Result<()> {
@@ -1243,6 +1262,66 @@ impl DynamicsClient {
         } else {
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
             anyhow::bail!("Incoming references fetch failed with status {}: {}", status, error_text)
+        }
+    }
+
+    /// Fetch ManyToMany relationships for an entity
+    /// Used to get navigation property names for AssociateRef operations on junction entities
+    pub async fn fetch_many_to_many_relationships(&self, entity_name: &str) -> anyhow::Result<Vec<ManyToManyRelationship>> {
+        let url = format!(
+            "{}/{}/EntityDefinitions(LogicalName='{}')/ManyToManyRelationships",
+            self.base_url,
+            constants::api_path(),
+            entity_name
+        );
+
+        // Apply rate limiting before making the request
+        self.apply_rate_limiting().await?;
+
+        let response = self.retry_policy.execute(|| async {
+            self.http_client
+                .get(&url)
+                .bearer_auth(&self.access_token)
+                .header("Accept", headers::CONTENT_TYPE_JSON)
+                .header("OData-Version", headers::ODATA_VERSION)
+                .send()
+                .await
+        }).await?;
+
+        let status = response.status();
+        if status.is_success() {
+            let json: Value = response.json().await?;
+            let relationships = json["value"]
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("Expected 'value' array in response"))?;
+
+            let rels: Vec<ManyToManyRelationship> = relationships
+                .iter()
+                .filter_map(|rel| {
+                    let intersect_entity_name = rel["IntersectEntityName"].as_str()?;
+                    let entity1_logical_name = rel["Entity1LogicalName"].as_str()?;
+                    let entity2_logical_name = rel["Entity2LogicalName"].as_str()?;
+                    let entity1_intersect_attribute = rel["Entity1IntersectAttribute"].as_str()?;
+                    let entity2_intersect_attribute = rel["Entity2IntersectAttribute"].as_str()?;
+                    let entity1_navigation_property = rel["Entity1NavigationPropertyName"].as_str()?;
+                    let entity2_navigation_property = rel["Entity2NavigationPropertyName"].as_str()?;
+
+                    Some(ManyToManyRelationship {
+                        intersect_entity_name: intersect_entity_name.to_string(),
+                        entity1_logical_name: entity1_logical_name.to_string(),
+                        entity2_logical_name: entity2_logical_name.to_string(),
+                        entity1_intersect_attribute: entity1_intersect_attribute.to_string(),
+                        entity2_intersect_attribute: entity2_intersect_attribute.to_string(),
+                        entity1_navigation_property: entity1_navigation_property.to_string(),
+                        entity2_navigation_property: entity2_navigation_property.to_string(),
+                    })
+                })
+                .collect();
+
+            Ok(rels)
+        } else {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!("ManyToMany relationships fetch failed with status {}: {}", status, error_text)
         }
     }
 

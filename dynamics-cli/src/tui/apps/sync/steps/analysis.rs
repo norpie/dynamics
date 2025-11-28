@@ -81,7 +81,7 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
     // Header row
     entity_lines.push(Element::styled_text(Line::from(vec![
         Span::styled(
-            format!("{:<30} {:^10} {:^15} {:^12}", "Entity", "Schema", "Records", "Refs"),
+            format!("{:<30} {:^10} {:^15} {:^12} {:^8}", "Entity", "Schema", "Records", "Refs", "N:N"),
             Style::default().fg(theme.text_secondary).bold()
         ),
     ])).build());
@@ -99,6 +99,7 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
             let schema_style = status_style(&ep.schema_status, theme);
             let records_style = status_style(&ep.records_status, theme);
             let refs_style = status_style(&ep.refs_status, theme);
+            let nn_style = status_style(&ep.nn_status, theme);
 
             let records_text = match (&ep.records_status, ep.record_count) {
                 (FetchStatus::Done, Some(count)) => format!("{} ({})", ep.records_status.symbol(), count),
@@ -110,11 +111,18 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
                 _ => ep.refs_status.symbol().to_string(),
             };
 
+            // N:N status: show "—" for non-junction entities (Pending means not applicable)
+            let nn_text = match &ep.nn_status {
+                FetchStatus::Pending => "—".to_string(),
+                status => status.symbol().to_string(),
+            };
+
             entity_lines.push(Element::styled_text(Line::from(vec![
                 Span::styled(format!("{:<30} ", display_truncated), Style::default().fg(theme.text_primary)),
                 Span::styled(format!("{:^10} ", ep.schema_status.symbol()), schema_style),
                 Span::styled(format!("{:^15} ", records_text), records_style),
-                Span::styled(format!("{:^12}", refs_text), refs_style),
+                Span::styled(format!("{:^12} ", refs_text), refs_style),
+                Span::styled(format!("{:^8}", nn_text), nn_style),
             ])).build());
         }
     }

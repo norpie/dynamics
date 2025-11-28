@@ -59,6 +59,26 @@ pub struct IncomingReferenceInfo {
     pub is_internal: bool,
 }
 
+/// N:N relationship metadata for junction entities (is_intersect=true)
+/// Used to build AssociateRef operations during sync execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NNRelationshipInfo {
+    /// Navigation property name for AssociateRef (e.g., "accountleads_association")
+    pub navigation_property: String,
+    /// Parent entity logical name (Entity1 in the relationship)
+    pub parent_entity: String,
+    /// Parent entity set name for API URL (e.g., "accounts")
+    pub parent_entity_set: String,
+    /// FK field name in junction for parent (Entity1IntersectAttribute, e.g., "accountid")
+    pub parent_fk_field: String,
+    /// Target entity logical name (Entity2 in the relationship)
+    pub target_entity: String,
+    /// Target entity set name for API URL (e.g., "leads")
+    pub target_entity_set: String,
+    /// FK field name in junction for target (Entity2IntersectAttribute, e.g., "leadid")
+    pub target_fk_field: String,
+}
+
 /// Metadata about an entity in the sync context
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncEntityInfo {
@@ -66,6 +86,8 @@ pub struct SyncEntityInfo {
     pub logical_name: String,
     /// Entity display name
     pub display_name: Option<String>,
+    /// Entity set name for API URLs (e.g., "accounts" for "account")
+    pub entity_set_name: String,
     /// Primary name attribute (field used for display name of records)
     pub primary_name_attribute: Option<String>,
     /// Dependency category (standalone, dependent, junction)
@@ -80,6 +102,8 @@ pub struct SyncEntityInfo {
     pub insert_priority: u32,
     /// Priority in the topological sort for deletes (reverse of insert)
     pub delete_priority: u32,
+    /// N:N relationship info (only for junction entities with is_intersect=true)
+    pub nn_relationship: Option<NNRelationshipInfo>,
 }
 
 /// Represents the status of a field across two schemas

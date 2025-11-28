@@ -727,7 +727,8 @@ async fn run_analysis(
     use super::logic::{compare_schemas, DependencyGraph};
     use super::types::*;
     use super::{init_analysis_progress, set_analysis_phase, set_analysis_complete,
-                set_entity_schema_status, set_entity_records_status, set_entity_refs_status, FetchStatus};
+                set_entity_schema_status, set_entity_records_status, set_entity_refs_status,
+                set_entity_nn_status, FetchStatus};
     use crate::api::metadata::FieldType;
     use std::collections::HashSet;
     use std::sync::Arc;
@@ -1025,11 +1026,17 @@ async fn run_analysis(
             })
             .unwrap_or_default();
 
+        // Get entity_set_name from metadata
+        let entity_set_name = metadata
+            .map(|m| m.entity_set_name.clone())
+            .unwrap_or_else(|| format!("{}s", entity_name)); // Fallback pluralization
+
         // Build entity plan
         entity_plans.push(EntitySyncPlan {
             entity_info: SyncEntityInfo {
                 logical_name: entity_name.clone(),
                 display_name: None,
+                entity_set_name,
                 primary_name_attribute,
                 category,
                 lookups: lookups.clone(),
@@ -1037,6 +1044,7 @@ async fn run_analysis(
                 dependents: vec![],
                 insert_priority: 0,
                 delete_priority: 0,
+                nn_relationship: None, // Will be populated in Phase 4 for junction entities
             },
             schema_diff,
             data_preview: EntityDataPreview {
@@ -1109,6 +1117,100 @@ async fn run_analysis(
 
     // Sort by insert priority
     entity_plans.sort_by_key(|p| p.entity_info.insert_priority);
+
+    // Phase 4: Fetch N:N relationship metadata for junction entities
+    set_analysis_phase("Fetching N:N relationship metadata...");
+
+    // Collect junction entities that need N:N metadata
+    let junction_entities: Vec<String> = entity_plans
+        .iter()
+        .filter(|p| p.entity_info.category == DependencyCategory::Junction)
+        .map(|p| p.entity_info.logical_name.clone())
+        .collect();
+
+    if !junction_entities.is_empty() {
+        // For each junction entity, we need to find the N:N relationship metadata
+        // by querying one of the parent entities' ManyToManyRelationships
+        for junction_name in &junction_entities {
+            set_entity_nn_status(junction_name, FetchStatus::Fetching);
+
+            // Find the junction entity plan to get its lookups (which tell us the parent entities)
+            let junction_plan = entity_plans
+                .iter()
+                .find(|p| &p.entity_info.logical_name == junction_name);
+
+            if let Some(plan) = junction_plan {
+                // Get the first internal lookup target as the parent entity to query
+                let parent_entity = plan.entity_info.lookups
+                    .iter()
+                    .filter(|l| l.is_internal)
+                    .map(|l| l.target_entity.clone())
+                    .next();
+
+                if let Some(parent) = parent_entity {
+                    // Query ManyToManyRelationships from the parent entity
+                    match origin_client.fetch_many_to_many_relationships(&parent).await {
+                        Ok(relationships) => {
+                            // Find the relationship that matches this junction entity
+                            let matching_rel = relationships
+                                .iter()
+                                .find(|r| r.intersect_entity_name == *junction_name);
+
+                            if let Some(rel) = matching_rel {
+                                // Find the entity_set_names for parent and target
+                                let parent_entity_set = entity_plans
+                                    .iter()
+                                    .find(|p| p.entity_info.logical_name == rel.entity1_logical_name)
+                                    .map(|p| p.entity_info.entity_set_name.clone())
+                                    .unwrap_or_else(|| format!("{}s", rel.entity1_logical_name));
+
+                                let target_entity_set = entity_plans
+                                    .iter()
+                                    .find(|p| p.entity_info.logical_name == rel.entity2_logical_name)
+                                    .map(|p| p.entity_info.entity_set_name.clone())
+                                    .unwrap_or_else(|| format!("{}s", rel.entity2_logical_name));
+
+                                let nn_info = NNRelationshipInfo {
+                                    navigation_property: rel.entity1_navigation_property.clone(),
+                                    parent_entity: rel.entity1_logical_name.clone(),
+                                    parent_entity_set,
+                                    parent_fk_field: rel.entity1_intersect_attribute.clone(),
+                                    target_entity: rel.entity2_logical_name.clone(),
+                                    target_entity_set,
+                                    target_fk_field: rel.entity2_intersect_attribute.clone(),
+                                };
+
+                                // Update the entity plan with N:N info
+                                if let Some(plan) = entity_plans
+                                    .iter_mut()
+                                    .find(|p| &p.entity_info.logical_name == junction_name)
+                                {
+                                    plan.entity_info.nn_relationship = Some(nn_info);
+                                }
+
+                                set_entity_nn_status(junction_name, FetchStatus::Done);
+                                log::info!("Found N:N relationship for {}: nav_prop={}", junction_name, rel.entity1_navigation_property);
+                            } else {
+                                set_entity_nn_status(junction_name, FetchStatus::Failed(
+                                    format!("No matching N:N relationship found for {}", junction_name)
+                                ));
+                                log::warn!("No N:N relationship found for junction entity {}", junction_name);
+                            }
+                        }
+                        Err(e) => {
+                            set_entity_nn_status(junction_name, FetchStatus::Failed(e.to_string()));
+                            log::error!("Failed to fetch N:N relationships for {}: {}", parent, e);
+                        }
+                    }
+                } else {
+                    set_entity_nn_status(junction_name, FetchStatus::Failed(
+                        "No internal lookup found".to_string()
+                    ));
+                    log::warn!("Junction entity {} has no internal lookups", junction_name);
+                }
+            }
+        }
+    }
 
     set_analysis_complete();
 

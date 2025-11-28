@@ -68,6 +68,8 @@ pub struct EntityProgress {
     pub record_count: Option<usize>,
     pub refs_status: FetchStatus,
     pub refs_count: Option<usize>,
+    /// N:N relationship metadata fetch status (only for junction entities)
+    pub nn_status: FetchStatus,
 }
 
 impl EntityProgress {
@@ -80,6 +82,7 @@ impl EntityProgress {
             record_count: None,
             refs_status: FetchStatus::Pending,
             refs_count: None,
+            nn_status: FetchStatus::Pending,
         }
     }
 }
@@ -155,6 +158,15 @@ pub fn set_entity_refs_status(entity: &str, status: FetchStatus, count: Option<u
             if let Some(c) = count {
                 ep.refs_count = Some(c);
             }
+        }
+    }
+}
+
+/// Update N:N relationship metadata fetch status for an entity (junction entities only)
+pub fn set_entity_nn_status(entity: &str, status: FetchStatus) {
+    if let Ok(mut progress) = ANALYSIS_PROGRESS.write() {
+        if let Some(ep) = progress.entities.get_mut(entity) {
+            ep.nn_status = status;
         }
     }
 }
