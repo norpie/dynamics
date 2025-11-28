@@ -825,7 +825,9 @@ async fn run_analysis(
 
                 set_entity_records_status(&entity_name, FetchStatus::Fetching, None);
 
-                let origin_records = fetch_all_records(&origin_client, &entity_name, &metadata.entity_set_name, true).await;
+                // Don't use active_only filter for junction/intersect entities (they don't have statecode)
+                let active_only = !metadata.is_intersect;
+                let origin_records = fetch_all_records(&origin_client, &entity_name, &metadata.entity_set_name, active_only).await;
                 let target_ids = fetch_record_ids(&target_client, &entity_name, &metadata.entity_set_name).await;
 
                 match (&origin_records, &target_ids) {
