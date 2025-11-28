@@ -531,11 +531,12 @@ fn render_lookups_tab(plan: &EntitySyncPlan, theme: &Theme) -> Element<Msg> {
     // Summary
     lines.push(Element::text(""));
     let total_out = plan.entity_info.lookups.len();
+    let internal_out = internal.len();
     let total_in = plan.entity_info.incoming_references.len();
     let internal_in = internal_refs.len();
     let summary = format!(
-        "Summary: {} outgoing, {} incoming ({} from sync set)",
-        total_out, total_in, internal_in
+        "Outgoing: {}/{} internal | Incoming: {}/{} internal",
+        internal_out, total_out, internal_in, total_in
     );
     lines.push(Element::styled_text(Line::from(Span::styled(
         summary,
