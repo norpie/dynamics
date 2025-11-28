@@ -757,11 +757,11 @@ async fn run_analysis(
         async move {
             set_entity_schema_status(&entity_name, FetchStatus::Fetching);
 
-            // Fetch fields and EntitySetName in parallel
-            let (origin_fields, target_fields, entity_set_name) = tokio::join!(
+            // Fetch fields and entity metadata in parallel
+            let (origin_fields, target_fields, entity_metadata) = tokio::join!(
                 origin_client.fetch_entity_fields_combined(&entity_name),
                 target_client.fetch_entity_fields_combined(&entity_name),
-                origin_client.fetch_entity_set_name(&entity_name)
+                origin_client.fetch_entity_metadata_info(&entity_name)
             );
 
             let origin_fields = origin_fields
@@ -769,13 +769,13 @@ async fn run_analysis(
 
             let target_fields = target_fields.unwrap_or_default();
 
-            let entity_set_name = entity_set_name
-                .map_err(|e| format!("Failed to fetch EntitySetName for {}: {}", entity_name, e));
+            let entity_metadata = entity_metadata
+                .map_err(|e| format!("Failed to fetch entity metadata for {}: {}", entity_name, e));
 
-            match (origin_fields, entity_set_name) {
-                (Ok(fields), Ok(set_name)) => {
+            match (origin_fields, entity_metadata) {
+                (Ok(fields), Ok(metadata)) => {
                     set_entity_schema_status(&entity_name, FetchStatus::Done);
-                    Ok((entity_name, fields, target_fields, set_name))
+                    Ok((entity_name, fields, target_fields, metadata))
                 }
                 (Err(e), _) | (_, Err(e)) => {
                     set_entity_schema_status(&entity_name, FetchStatus::Failed(e.clone()));
@@ -785,20 +785,20 @@ async fn run_analysis(
         }
     }).collect();
 
-    let schema_results: Vec<Result<(String, Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>, String), String>> =
+    let schema_results: Vec<Result<(String, Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>, crate::api::EntityMetadataInfo), String>> =
         join_all(schema_futures).await;
 
     // Collect successful schema results
     let mut schema_data: std::collections::HashMap<String, (Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>)> =
         std::collections::HashMap::new();
-    let mut entity_set_names: std::collections::HashMap<String, String> =
+    let mut entity_metadata_map: std::collections::HashMap<String, crate::api::EntityMetadataInfo> =
         std::collections::HashMap::new();
 
     for result in schema_results {
         match result {
-            Ok((entity_name, origin_fields, target_fields, set_name)) => {
+            Ok((entity_name, origin_fields, target_fields, metadata)) => {
                 schema_data.insert(entity_name.clone(), (origin_fields, target_fields));
-                entity_set_names.insert(entity_name, set_name);
+                entity_metadata_map.insert(entity_name, metadata);
             }
             Err(e) => {
                 log::error!("Schema fetch failed: {}", e);
@@ -809,24 +809,24 @@ async fn run_analysis(
     // Phase 2: Fetch all records in parallel (only for entities with successful schema fetch)
     set_analysis_phase("Fetching records...");
 
-    let entity_set_names = Arc::new(entity_set_names);
+    let entity_metadata_map = Arc::new(entity_metadata_map);
 
     let record_futures: Vec<_> = selected_entities.iter()
-        .filter(|name| entity_set_names.contains_key(*name))
+        .filter(|name| entity_metadata_map.contains_key(*name))
         .map(|entity_name| {
             let origin_client = Arc::clone(&origin_client);
             let target_client = Arc::clone(&target_client);
-            let entity_set_names = Arc::clone(&entity_set_names);
+            let entity_metadata_map = Arc::clone(&entity_metadata_map);
             let entity_name = entity_name.clone();
 
             async move {
-                let entity_set_name = entity_set_names.get(&entity_name)
-                    .expect("entity_set_name must exist (filtered above)");
+                let metadata = entity_metadata_map.get(&entity_name)
+                    .expect("entity metadata must exist (filtered above)");
 
                 set_entity_records_status(&entity_name, FetchStatus::Fetching, None);
 
-                let origin_records = fetch_all_records(&origin_client, &entity_name, entity_set_name, true).await;
-                let target_ids = fetch_record_ids(&target_client, &entity_name, entity_set_name).await;
+                let origin_records = fetch_all_records(&origin_client, &entity_name, &metadata.entity_set_name, true).await;
+                let target_ids = fetch_record_ids(&target_client, &entity_name, &metadata.entity_set_name).await;
 
                 match (&origin_records, &target_ids) {
                     (Ok(records), Ok(ids)) => {
@@ -904,6 +904,12 @@ async fn run_analysis(
 
         let primary_name_attribute = primary_names.get(entity_name).cloned().flatten();
 
+        // Get entity metadata (is_intersect flag)
+        let is_intersect = entity_metadata_map
+            .get(entity_name)
+            .map(|m| m.is_intersect)
+            .unwrap_or(false);
+
         // Store for dependency graph
         entities_with_fields.push((entity_name.clone(), None, origin_fields.clone()));
 
@@ -921,7 +927,7 @@ async fn run_analysis(
         total_insert_count += origin_count;
 
         // Extract lookup info from fields
-        let lookups: Vec<LookupInfo> = origin_fields
+        let mut lookups: Vec<LookupInfo> = origin_fields
             .iter()
             .filter(|f| matches!(f.field_type, FieldType::Lookup))
             .filter_map(|f| {
@@ -933,13 +939,46 @@ async fn run_analysis(
             })
             .collect();
 
+        // For junction/intersect entities, parse Uniqueidentifier fields to find related entities
+        // These don't use Lookup fields - they store GUIDs directly in Uniqueidentifier fields
+        if is_intersect {
+            let pk_field = format!("{}id", entity_name);
+            for field in origin_fields.iter() {
+                if matches!(field.field_type, FieldType::UniqueIdentifier) {
+                    // Skip the primary key field
+                    if field.logical_name == pk_field {
+                        continue;
+                    }
+                    // Extract entity name from field name (e.g., "nrq_fundid" -> "nrq_fund")
+                    if let Some(target_entity) = field.logical_name.strip_suffix("id") {
+                        // Check if this entity exists in our selection
+                        let is_internal = selected_set.contains(target_entity);
+                        lookups.push(LookupInfo {
+                            field_name: field.logical_name.clone(),
+                            target_entity: target_entity.to_string(),
+                            is_internal,
+                        });
+                        log::debug!("Junction {} has reference to {} (internal: {})",
+                            entity_name, target_entity, is_internal);
+                    }
+                }
+            }
+        }
+
+        // Determine category based on is_intersect flag and lookup count
+        let category = if is_intersect {
+            DependencyCategory::Junction
+        } else {
+            DependencyCategory::Standalone // Will be updated by dependency graph
+        };
+
         // Build entity plan
         entity_plans.push(EntitySyncPlan {
             entity_info: SyncEntityInfo {
                 logical_name: entity_name.clone(),
                 display_name: None,
                 primary_name_attribute,
-                category: DependencyCategory::Standalone,
+                category,
                 lookups: lookups.clone(),
                 dependents: vec![],
                 insert_priority: 0,
@@ -966,8 +1005,32 @@ async fn run_analysis(
         });
     }
 
-    // Build dependency graph
-    let dep_graph = DependencyGraph::build(entities_with_fields);
+    // Build dependency graph from fields
+    let mut dep_graph = DependencyGraph::build(entities_with_fields);
+
+    // Add junction entity dependencies manually (they use Uniqueidentifier fields, not Lookups)
+    for plan in &entity_plans {
+        if plan.entity_info.category == DependencyCategory::Junction {
+            let entity_name = &plan.entity_info.logical_name;
+            for lookup in &plan.entity_info.lookups {
+                if lookup.is_internal {
+                    // Add dependency: junction depends on target entity
+                    dep_graph.dependencies
+                        .entry(entity_name.clone())
+                        .or_default()
+                        .insert(lookup.target_entity.clone());
+
+                    // Add reverse: target entity has this junction as dependent
+                    dep_graph.dependents
+                        .entry(lookup.target_entity.clone())
+                        .or_default()
+                        .insert(entity_name.clone());
+
+                    log::debug!("Added junction dependency: {} -> {}", entity_name, lookup.target_entity);
+                }
+            }
+        }
+    }
 
     // Get sorted order and update priorities
     set_analysis_phase("Computing sync order...");
@@ -976,7 +1039,11 @@ async fn run_analysis(
             if let Some(plan) = entity_plans.iter_mut().find(|p| &p.entity_info.logical_name == name) {
                 plan.entity_info.insert_priority = insert_priority as u32;
                 plan.entity_info.delete_priority = (sorted.len() - 1 - insert_priority) as u32;
-                plan.entity_info.category = dep_graph.categorize(name);
+
+                // Preserve Junction category from is_intersect flag, otherwise use graph categorization
+                if plan.entity_info.category != DependencyCategory::Junction {
+                    plan.entity_info.category = dep_graph.categorize(name);
+                }
 
                 // Get dependents
                 if let Some(deps) = dep_graph.dependents.get(name) {

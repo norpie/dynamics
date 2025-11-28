@@ -18,6 +18,13 @@ pub struct DynamicsClient {
     metrics_collector: MetricsCollector, // Performance metrics collector
 }
 
+/// Entity metadata from EntityDefinitions (EntitySetName, IsIntersect, etc.)
+#[derive(Debug, Clone)]
+pub struct EntityMetadataInfo {
+    pub entity_set_name: String,
+    pub is_intersect: bool,
+}
+
 impl DynamicsClient {
     /// Apply rate limiting using the client's global rate limiter
     async fn apply_rate_limiting(&self) -> anyhow::Result<()> {
@@ -1133,11 +1140,12 @@ impl DynamicsClient {
         Ok(result)
     }
 
-    /// Fetch the EntitySetName for an entity from EntityDefinitions
-    /// This is the plural form used in OData URLs (e.g., "accounts", "nrq_fund_nrq_flemishshareset")
-    pub async fn fetch_entity_set_name(&self, entity_name: &str) -> anyhow::Result<String> {
+    /// Fetch entity metadata (EntitySetName, IsIntersect) from EntityDefinitions
+    /// - EntitySetName: plural form used in OData URLs (e.g., "accounts", "nrq_fund_nrq_flemishshareset")
+    /// - IsIntersect: true for junction/many-to-many relationship entities
+    pub async fn fetch_entity_metadata_info(&self, entity_name: &str) -> anyhow::Result<EntityMetadataInfo> {
         let url = format!(
-            "{}/{}/EntityDefinitions(LogicalName='{}')?$select=EntitySetName",
+            "{}/{}/EntityDefinitions(LogicalName='{}')?$select=EntitySetName,IsIntersect",
             self.base_url,
             constants::api_path(),
             entity_name
@@ -1163,10 +1171,16 @@ impl DynamicsClient {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("EntitySetName not found in response"))?
                 .to_string();
-            Ok(entity_set_name)
+            let is_intersect = json["IsIntersect"]
+                .as_bool()
+                .unwrap_or(false);
+            Ok(EntityMetadataInfo {
+                entity_set_name,
+                is_intersect,
+            })
         } else {
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("EntitySetName fetch failed with status {}: {}", status, error_text)
+            anyhow::bail!("Entity metadata fetch failed with status {}: {}", status, error_text)
         }
     }
 
