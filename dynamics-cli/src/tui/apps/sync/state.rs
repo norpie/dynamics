@@ -325,8 +325,11 @@ pub struct DiffReviewState {
     /// Field list for current entity
     pub field_list: ListState,
 
-    /// Data records list for current entity
+    /// Origin data records list for current entity
     pub data_list: ListState,
+
+    /// Target data records list for current entity
+    pub target_data_list: ListState,
 
     /// Active tab (Schema / Data / Lookups)
     pub active_tab: DiffTab,

@@ -346,7 +346,8 @@ impl ListItem for RecordItem {
 
         let text = format!("{} | {}", name, self.id);
 
-        let style = Style::default().fg(theme.text_primary);
+        // Green for origin records
+        let style = Style::default().fg(theme.accent_success);
         let bg_style = if is_focused {
             Style::default().bg(theme.bg_surface)
         } else {
@@ -359,38 +360,79 @@ impl ListItem for RecordItem {
     }
 }
 
+/// Target record ID item (for records to be deleted)
+#[derive(Clone)]
+struct TargetIdItem {
+    id: String,
+}
+
+impl ListItem for TargetIdItem {
+    type Msg = Msg;
+
+    fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
+        let theme = &crate::global_runtime_config().theme;
+
+        // Red for target records (to be deleted)
+        let style = Style::default().fg(theme.accent_error);
+
+        let bg_style = if is_focused {
+            Style::default().bg(theme.bg_surface)
+        } else {
+            Style::default()
+        };
+
+        Element::styled_text(Line::from(Span::styled(self.id.clone(), style)))
+            .background(bg_style)
+            .build()
+    }
+}
+
 /// Render the data tab content
 fn render_data_tab(state: &mut State, plan: &EntitySyncPlan, theme: &Theme) -> Element<Msg> {
     use_constraints!();
 
     let preview = &plan.data_preview;
-    let name = plan.entity_info.display_name
-        .as_ref()
-        .unwrap_or(&plan.entity_info.logical_name);
 
-    let origin_text = format!("Origin: {} records (active)", preview.origin_count);
-    let target_text = format!("Target: {} records (to delete)", preview.target_count);
-
-    // Build record items from origin data
+    // Build origin record items (green)
     let primary_name_attr = plan.entity_info.primary_name_attribute.as_deref();
-    let record_items: Vec<RecordItem> = preview.origin_records.iter()
+    let origin_items: Vec<RecordItem> = preview.origin_records.iter()
         .map(|record| RecordItem::from_json(record, &plan.entity_info.logical_name, primary_name_attr))
         .collect();
 
-    let record_list = Element::list(
-        "data-record-list",
-        &record_items,
+    let origin_list = Element::list(
+        "data-origin-list",
+        &origin_items,
         &state.diff_review.data_list,
         theme,
     )
     .on_navigate(Msg::DataListNavigate)
     .build();
 
-    col![
-        Element::text(origin_text) => Length(1),
-        Element::text(target_text) => Length(1),
-        spacer!() => Length(1),
-        Element::panel(record_list).title(format!("Origin Records ({})", preview.origin_count)).build() => Fill(1),
+    // Build target ID items (red)
+    let target_items: Vec<TargetIdItem> = preview.target_record_ids.iter()
+        .map(|id| TargetIdItem { id: id.clone() })
+        .collect();
+
+    let target_list = Element::list(
+        "data-target-list",
+        &target_items,
+        &state.diff_review.target_data_list,
+        theme,
+    )
+    .on_navigate(Msg::TargetDataListNavigate)
+    .build();
+
+    let origin_panel = Element::panel(origin_list)
+        .title(format!("Origin ({} to insert)", preview.origin_count))
+        .build();
+
+    let target_panel = Element::panel(target_list)
+        .title(format!("Target ({} to delete)", preview.target_count))
+        .build();
+
+    row![
+        origin_panel => Fill(1),
+        target_panel => Fill(1),
     ]
 }
 

@@ -398,7 +398,7 @@ impl App for EntitySyncApp {
                 Command::None
             }
             Msg::DataListNavigate(key) => {
-                // Get record count for current entity
+                // Get origin record count for current entity
                 let count = state
                     .sync_plan
                     .as_ref()
@@ -406,6 +406,17 @@ impl App for EntitySyncApp {
                     .map(|e| e.data_preview.origin_records.len())
                     .unwrap_or(0);
                 state.diff_review.data_list.handle_key(key, count, 15);
+                Command::None
+            }
+            Msg::TargetDataListNavigate(key) => {
+                // Get target record count for current entity
+                let count = state
+                    .sync_plan
+                    .as_ref()
+                    .and_then(|p| p.entity_plans.get(state.diff_review.selected_entity_idx))
+                    .map(|e| e.data_preview.target_record_ids.len())
+                    .unwrap_or(0);
+                state.diff_review.target_data_list.handle_key(key, count, 15);
                 Command::None
             }
             Msg::DiffNextTab => {
