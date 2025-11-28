@@ -25,6 +25,13 @@ pub struct EntityMetadataInfo {
     pub is_intersect: bool,
 }
 
+/// Incoming reference from another entity (OneToMany relationship)
+#[derive(Debug, Clone)]
+pub struct IncomingReference {
+    pub referencing_entity: String,
+    pub referencing_attribute: String,
+}
+
 impl DynamicsClient {
     /// Apply rate limiting using the client's global rate limiter
     async fn apply_rate_limiting(&self) -> anyhow::Result<()> {
@@ -1181,6 +1188,55 @@ impl DynamicsClient {
         } else {
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
             anyhow::bail!("Entity metadata fetch failed with status {}: {}", status, error_text)
+        }
+    }
+
+    /// Fetch incoming references (entities that have lookups pointing TO this entity)
+    /// Uses OneToManyRelationships metadata
+    pub async fn fetch_incoming_references(&self, entity_name: &str) -> anyhow::Result<Vec<IncomingReference>> {
+        let url = format!(
+            "{}/{}/EntityDefinitions(LogicalName='{}')/OneToManyRelationships?$select=ReferencingEntity,ReferencingAttribute",
+            self.base_url,
+            constants::api_path(),
+            entity_name
+        );
+
+        // Apply rate limiting before making the request
+        self.apply_rate_limiting().await?;
+
+        let response = self.retry_policy.execute(|| async {
+            self.http_client
+                .get(&url)
+                .bearer_auth(&self.access_token)
+                .header("Accept", headers::CONTENT_TYPE_JSON)
+                .header("OData-Version", headers::ODATA_VERSION)
+                .send()
+                .await
+        }).await?;
+
+        let status = response.status();
+        if status.is_success() {
+            let json: Value = response.json().await?;
+            let relationships = json["value"]
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("Expected 'value' array in response"))?;
+
+            let refs: Vec<IncomingReference> = relationships
+                .iter()
+                .filter_map(|rel| {
+                    let referencing_entity = rel["ReferencingEntity"].as_str()?;
+                    let referencing_attribute = rel["ReferencingAttribute"].as_str()?;
+                    Some(IncomingReference {
+                        referencing_entity: referencing_entity.to_string(),
+                        referencing_attribute: referencing_attribute.to_string(),
+                    })
+                })
+                .collect();
+
+            Ok(refs)
+        } else {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!("Incoming references fetch failed with status {}: {}", status, error_text)
         }
     }
 

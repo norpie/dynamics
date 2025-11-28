@@ -727,7 +727,7 @@ async fn run_analysis(
     use super::logic::{compare_schemas, DependencyGraph};
     use super::types::*;
     use super::{init_analysis_progress, set_analysis_phase, set_analysis_complete,
-                set_entity_schema_status, set_entity_records_status, FetchStatus};
+                set_entity_schema_status, set_entity_records_status, set_entity_refs_status, FetchStatus};
     use crate::api::metadata::FieldType;
     use std::collections::HashSet;
     use std::sync::Arc;
@@ -877,7 +877,49 @@ async fn run_analysis(
         }
     }
 
-    // Phase 3: Fetch primary name attributes in parallel
+    // Phase 3: Fetch incoming references in parallel
+    set_analysis_phase("Fetching incoming references...");
+
+    let refs_futures: Vec<_> = selected_entities.iter().map(|entity_name| {
+        let origin_client = Arc::clone(&origin_client);
+        let entity_name = entity_name.clone();
+
+        async move {
+            set_entity_refs_status(&entity_name, FetchStatus::Fetching, None);
+
+            match origin_client.fetch_incoming_references(&entity_name).await {
+                Ok(refs) => {
+                    let count = refs.len();
+                    set_entity_refs_status(&entity_name, FetchStatus::Done, Some(count));
+                    Ok((entity_name, refs))
+                }
+                Err(e) => {
+                    set_entity_refs_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
+                    Err(format!("Failed to fetch refs for {}: {}", entity_name, e))
+                }
+            }
+        }
+    }).collect();
+
+    let refs_results: Vec<Result<(String, Vec<crate::api::IncomingReference>), String>> =
+        join_all(refs_futures).await;
+
+    // Collect successful refs results
+    let mut refs_data: std::collections::HashMap<String, Vec<crate::api::IncomingReference>> =
+        std::collections::HashMap::new();
+
+    for result in refs_results {
+        match result {
+            Ok((entity_name, refs)) => {
+                refs_data.insert(entity_name, refs);
+            }
+            Err(e) => {
+                log::error!("Refs fetch failed: {}", e);
+            }
+        }
+    }
+
+    // Phase 4: Fetch primary name attributes in parallel
     set_analysis_phase("Fetching entity metadata...");
 
     let metadata_futures: Vec<_> = selected_entities.iter().map(|entity_name| {
@@ -985,6 +1027,20 @@ async fn run_analysis(
             DependencyCategory::Standalone // Will be updated by dependency graph
         };
 
+        // Convert incoming references to IncomingReferenceInfo with is_internal check
+        let incoming_refs: Vec<IncomingReferenceInfo> = refs_data
+            .get(entity_name)
+            .map(|refs| {
+                refs.iter()
+                    .map(|r| IncomingReferenceInfo {
+                        referencing_entity: r.referencing_entity.clone(),
+                        referencing_attribute: r.referencing_attribute.clone(),
+                        is_internal: selected_set.contains(&r.referencing_entity),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         // Build entity plan
         entity_plans.push(EntitySyncPlan {
             entity_info: SyncEntityInfo {
@@ -993,6 +1049,7 @@ async fn run_analysis(
                 primary_name_attribute,
                 category,
                 lookups: lookups.clone(),
+                incoming_references: incoming_refs,
                 dependents: vec![],
                 insert_priority: 0,
                 delete_priority: 0,

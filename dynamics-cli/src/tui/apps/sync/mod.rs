@@ -66,6 +66,8 @@ pub struct EntityProgress {
     pub schema_status: FetchStatus,
     pub records_status: FetchStatus,
     pub record_count: Option<usize>,
+    pub refs_status: FetchStatus,
+    pub refs_count: Option<usize>,
 }
 
 impl EntityProgress {
@@ -76,6 +78,8 @@ impl EntityProgress {
             schema_status: FetchStatus::Pending,
             records_status: FetchStatus::Pending,
             record_count: None,
+            refs_status: FetchStatus::Pending,
+            refs_count: None,
         }
     }
 }
@@ -138,6 +142,18 @@ pub fn set_entity_records_status(entity: &str, status: FetchStatus, count: Optio
             ep.records_status = status;
             if let Some(c) = count {
                 ep.record_count = Some(c);
+            }
+        }
+    }
+}
+
+/// Update incoming refs fetch status for an entity
+pub fn set_entity_refs_status(entity: &str, status: FetchStatus, count: Option<usize>) {
+    if let Ok(mut progress) = ANALYSIS_PROGRESS.write() {
+        if let Some(ep) = progress.entities.get_mut(entity) {
+            ep.refs_status = status;
+            if let Some(c) = count {
+                ep.refs_count = Some(c);
             }
         }
     }

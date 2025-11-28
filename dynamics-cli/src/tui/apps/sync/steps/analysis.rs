@@ -81,7 +81,7 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
     // Header row
     entity_lines.push(Element::styled_text(Line::from(vec![
         Span::styled(
-            format!("{:<30} {:^10} {:^15}", "Entity", "Schema", "Records"),
+            format!("{:<30} {:^10} {:^15} {:^12}", "Entity", "Schema", "Records", "Refs"),
             Style::default().fg(theme.text_secondary).bold()
         ),
     ])).build());
@@ -98,16 +98,23 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
 
             let schema_style = status_style(&ep.schema_status, theme);
             let records_style = status_style(&ep.records_status, theme);
+            let refs_style = status_style(&ep.refs_status, theme);
 
             let records_text = match (&ep.records_status, ep.record_count) {
                 (FetchStatus::Done, Some(count)) => format!("{} ({})", ep.records_status.symbol(), count),
                 _ => ep.records_status.symbol().to_string(),
             };
 
+            let refs_text = match (&ep.refs_status, ep.refs_count) {
+                (FetchStatus::Done, Some(count)) => format!("{} ({})", ep.refs_status.symbol(), count),
+                _ => ep.refs_status.symbol().to_string(),
+            };
+
             entity_lines.push(Element::styled_text(Line::from(vec![
                 Span::styled(format!("{:<30} ", display_truncated), Style::default().fg(theme.text_primary)),
                 Span::styled(format!("{:^10} ", ep.schema_status.symbol()), schema_style),
-                Span::styled(format!("{:^15}", records_text), records_style),
+                Span::styled(format!("{:^15} ", records_text), records_style),
+                Span::styled(format!("{:^12}", refs_text), refs_style),
             ])).build());
         }
     }
@@ -120,9 +127,12 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
     let records_done = progress.entities.values()
         .filter(|e| matches!(e.records_status, FetchStatus::Done))
         .count();
+    let refs_done = progress.entities.values()
+        .filter(|e| matches!(e.refs_status, FetchStatus::Done))
+        .count();
 
     let summary_line = Element::styled_text(Line::from(Span::styled(
-        format!("Schemas: {}/{} | Records: {}/{}", schemas_done, total, records_done, total),
+        format!("Schemas: {}/{} | Records: {}/{} | Refs: {}/{}", schemas_done, total, records_done, total, refs_done, total),
         Style::default().fg(theme.text_secondary)
     ))).build();
 

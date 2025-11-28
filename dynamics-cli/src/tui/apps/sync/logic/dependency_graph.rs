@@ -247,6 +247,7 @@ impl DependencyGraph {
                 primary_name_attribute: None, // Set by caller
                 category: self.categorize(entity_name),
                 lookups: entity.lookups.clone(),
+                incoming_references: vec![], // Set by caller
                 dependents,
                 insert_priority: priority as u32,
                 delete_priority: (insert_order.len() - 1 - priority) as u32,

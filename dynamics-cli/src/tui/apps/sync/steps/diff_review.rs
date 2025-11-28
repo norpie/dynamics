@@ -446,20 +446,25 @@ fn render_lookups_tab(plan: &EntitySyncPlan, theme: &Theme) -> Element<Msg> {
 
     let mut lines: Vec<Element<Msg>> = vec![];
 
+    // === OUTGOING LOOKUPS ===
+    lines.push(Element::styled_text(Line::from(Span::styled(
+        "Outgoing Lookups (this entity references):".to_string(),
+        Style::default().fg(theme.text_secondary).bold()
+    ))).build());
+
     // Internal lookups (to other selected entities)
     let internal: Vec<_> = plan.entity_info.lookups.iter()
         .filter(|l| l.is_internal)
         .collect();
 
     if !internal.is_empty() {
-        lines.push(Element::text("Internal Lookups (preserved):"));
-
         for lookup in &internal {
             let text = format!("  ✓ {} → {}", lookup.field_name, lookup.target_entity);
-            lines.push(Element::text(text));
+            lines.push(Element::styled_text(Line::from(Span::styled(
+                text,
+                Style::default().fg(theme.accent_success)
+            ))).build());
         }
-
-        lines.push(Element::text(""));
     }
 
     // External lookups (to entities not in selection - will be nulled)
@@ -468,30 +473,74 @@ fn render_lookups_tab(plan: &EntitySyncPlan, theme: &Theme) -> Element<Msg> {
         .collect();
 
     if !external.is_empty() {
-        lines.push(Element::text("External Lookups (will be nulled):"));
-
         for lookup in &external {
-            let text = format!("  ⚠ {} → {} (not in sync set)", lookup.field_name, lookup.target_entity);
-            lines.push(Element::text(text));
-        }
-
-        lines.push(Element::text(""));
-    }
-
-    // Nulled lookups with affected counts
-    if !plan.nulled_lookups.is_empty() {
-        lines.push(Element::text("Affected Records:"));
-
-        for nulled in &plan.nulled_lookups {
-            let text = format!("  ✗ {} ({} records)", nulled.field_name, nulled.affected_count);
-            lines.push(Element::text(text));
+            let text = format!("  ⚠ {} → {} (nulled)", lookup.field_name, lookup.target_entity);
+            lines.push(Element::styled_text(Line::from(Span::styled(
+                text,
+                Style::default().fg(theme.accent_warning)
+            ))).build());
         }
     }
 
-    // No lookups message
     if internal.is_empty() && external.is_empty() {
-        lines.push(Element::text("ℹ No lookup fields on this entity"));
+        lines.push(Element::text("  (none)"));
     }
+
+    lines.push(Element::text(""));
+
+    // === INCOMING REFERENCES ===
+    lines.push(Element::styled_text(Line::from(Span::styled(
+        "Incoming References (entities that reference this):".to_string(),
+        Style::default().fg(theme.text_secondary).bold()
+    ))).build());
+
+    // Internal incoming (from selected entities)
+    let internal_refs: Vec<_> = plan.entity_info.incoming_references.iter()
+        .filter(|r| r.is_internal)
+        .collect();
+
+    if !internal_refs.is_empty() {
+        for ref_info in &internal_refs {
+            let text = format!("  ✓ {}.{}", ref_info.referencing_entity, ref_info.referencing_attribute);
+            lines.push(Element::styled_text(Line::from(Span::styled(
+                text,
+                Style::default().fg(theme.accent_success)
+            ))).build());
+        }
+    }
+
+    // External incoming (from entities not in selection)
+    let external_refs: Vec<_> = plan.entity_info.incoming_references.iter()
+        .filter(|r| !r.is_internal)
+        .collect();
+
+    if !external_refs.is_empty() {
+        for ref_info in &external_refs {
+            let text = format!("  ○ {}.{} (external)", ref_info.referencing_entity, ref_info.referencing_attribute);
+            lines.push(Element::styled_text(Line::from(Span::styled(
+                text,
+                Style::default().fg(theme.text_tertiary)
+            ))).build());
+        }
+    }
+
+    if internal_refs.is_empty() && external_refs.is_empty() {
+        lines.push(Element::text("  (none)"));
+    }
+
+    // Summary
+    lines.push(Element::text(""));
+    let total_out = plan.entity_info.lookups.len();
+    let total_in = plan.entity_info.incoming_references.len();
+    let internal_in = internal_refs.len();
+    let summary = format!(
+        "Summary: {} outgoing, {} incoming ({} from sync set)",
+        total_out, total_in, internal_in
+    );
+    lines.push(Element::styled_text(Line::from(Span::styled(
+        summary,
+        Style::default().fg(theme.text_secondary)
+    ))).build());
 
     let content = Element::column(lines).build();
 

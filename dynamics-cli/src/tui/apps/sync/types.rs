@@ -48,6 +48,17 @@ pub struct LookupInfo {
     pub is_internal: bool,
 }
 
+/// Information about an incoming reference (another entity has a lookup pointing to us)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IncomingReferenceInfo {
+    /// The entity that has the lookup field
+    pub referencing_entity: String,
+    /// The lookup field name on the referencing entity
+    pub referencing_attribute: String,
+    /// Whether the referencing entity is in the selected set
+    pub is_internal: bool,
+}
+
 /// Metadata about an entity in the sync context
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncEntityInfo {
@@ -59,8 +70,10 @@ pub struct SyncEntityInfo {
     pub primary_name_attribute: Option<String>,
     /// Dependency category (standalone, dependent, junction)
     pub category: DependencyCategory,
-    /// Lookup fields on this entity
+    /// Lookup fields on this entity (outgoing references)
     pub lookups: Vec<LookupInfo>,
+    /// Incoming references (other entities that have lookups pointing to this entity)
+    pub incoming_references: Vec<IncomingReferenceInfo>,
     /// Entities that depend on this entity (have lookups to it)
     pub dependents: Vec<String>,
     /// Priority in the topological sort (lower = process first for inserts)
