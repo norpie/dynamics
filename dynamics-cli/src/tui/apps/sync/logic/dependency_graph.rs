@@ -134,6 +134,7 @@ impl DependencyGraph {
     }
 
     /// Categorize an entity based on its lookup relationships
+    /// Note: Junction category is NOT set here - it's determined by is_intersect from API metadata
     pub fn categorize(&self, entity_name: &str) -> DependencyCategory {
         let entity = match self.entities.get(entity_name) {
             Some(e) => e,
@@ -142,9 +143,7 @@ impl DependencyGraph {
 
         let internal_target_count = entity.internal_target_count();
 
-        if internal_target_count >= 2 {
-            DependencyCategory::Junction
-        } else if internal_target_count == 1 {
+        if internal_target_count >= 1 {
             DependencyCategory::Dependent
         } else {
             DependencyCategory::Standalone
