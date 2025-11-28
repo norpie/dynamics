@@ -18,11 +18,12 @@ pub struct DynamicsClient {
     metrics_collector: MetricsCollector, // Performance metrics collector
 }
 
-/// Entity metadata from EntityDefinitions (EntitySetName, IsIntersect, etc.)
+/// Entity metadata from EntityDefinitions (EntitySetName, IsIntersect, PrimaryNameAttribute, etc.)
 #[derive(Debug, Clone)]
 pub struct EntityMetadataInfo {
     pub entity_set_name: String,
     pub is_intersect: bool,
+    pub primary_name_attribute: Option<String>,
 }
 
 /// Incoming reference from another entity (OneToMany relationship)
@@ -1147,12 +1148,13 @@ impl DynamicsClient {
         Ok(result)
     }
 
-    /// Fetch entity metadata (EntitySetName, IsIntersect) from EntityDefinitions
+    /// Fetch entity metadata (EntitySetName, IsIntersect, PrimaryNameAttribute) from EntityDefinitions
     /// - EntitySetName: plural form used in OData URLs (e.g., "accounts", "nrq_fund_nrq_flemishshareset")
     /// - IsIntersect: true for junction/many-to-many relationship entities
+    /// - PrimaryNameAttribute: field used for display name (e.g., "name", "fullname")
     pub async fn fetch_entity_metadata_info(&self, entity_name: &str) -> anyhow::Result<EntityMetadataInfo> {
         let url = format!(
-            "{}/{}/EntityDefinitions(LogicalName='{}')?$select=EntitySetName,IsIntersect",
+            "{}/{}/EntityDefinitions(LogicalName='{}')?$select=EntitySetName,IsIntersect,PrimaryNameAttribute",
             self.base_url,
             constants::api_path(),
             entity_name
@@ -1181,9 +1183,13 @@ impl DynamicsClient {
             let is_intersect = json["IsIntersect"]
                 .as_bool()
                 .unwrap_or(false);
+            let primary_name_attribute = json["PrimaryNameAttribute"]
+                .as_str()
+                .map(|s| s.to_string());
             Ok(EntityMetadataInfo {
                 entity_set_name,
                 is_intersect,
+                primary_name_attribute,
             })
         } else {
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());

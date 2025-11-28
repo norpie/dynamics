@@ -166,6 +166,15 @@ impl EntitySchemaDiff {
     }
 }
 
+/// A target record with ID and display name (for deletion preview)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TargetRecord {
+    /// Record ID
+    pub id: String,
+    /// Display name from primary name attribute
+    pub name: Option<String>,
+}
+
 /// Data preview for an entity
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EntityDataPreview {
@@ -177,8 +186,8 @@ pub struct EntityDataPreview {
     pub target_count: usize,
     /// Actual records from origin (active only) - to be inserted
     pub origin_records: Vec<Value>,
-    /// Record IDs from target - to be deleted
-    pub target_record_ids: Vec<String>,
+    /// Records from target - to be deleted (with ID and name)
+    pub target_records: Vec<TargetRecord>,
 }
 
 /// Information about an external lookup that will be nulled

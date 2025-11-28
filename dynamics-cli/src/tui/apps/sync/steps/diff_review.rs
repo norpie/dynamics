@@ -360,17 +360,31 @@ impl ListItem for RecordItem {
     }
 }
 
-/// Target record ID item (for records to be deleted)
+/// Target record item (for records to be deleted)
 #[derive(Clone)]
-struct TargetIdItem {
+struct TargetRecordItem {
     id: String,
+    name: Option<String>,
 }
 
-impl ListItem for TargetIdItem {
+impl ListItem for TargetRecordItem {
     type Msg = Msg;
 
     fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
+
+        // Format: "name | id" or just "id" if no name
+        let text = if let Some(ref name) = self.name {
+            // Truncate name if too long
+            let display_name = if name.len() > 50 {
+                format!("{}...", &name[..47])
+            } else {
+                name.clone()
+            };
+            format!("{} | {}", display_name, self.id)
+        } else {
+            self.id.clone()
+        };
 
         // Red for target records (to be deleted)
         let style = Style::default().fg(theme.accent_error);
@@ -381,7 +395,7 @@ impl ListItem for TargetIdItem {
             Style::default()
         };
 
-        Element::styled_text(Line::from(Span::styled(self.id.clone(), style)))
+        Element::styled_text(Line::from(Span::styled(text, style)))
             .background(bg_style)
             .build()
     }
@@ -408,9 +422,9 @@ fn render_data_tab(state: &mut State, plan: &EntitySyncPlan, theme: &Theme) -> E
     .on_navigate(Msg::DataListNavigate)
     .build();
 
-    // Build target ID items (red)
-    let target_items: Vec<TargetIdItem> = preview.target_record_ids.iter()
-        .map(|id| TargetIdItem { id: id.clone() })
+    // Build target record items (red)
+    let target_items: Vec<TargetRecordItem> = preview.target_records.iter()
+        .map(|tr| TargetRecordItem { id: tr.id.clone(), name: tr.name.clone() })
         .collect();
 
     let target_list = Element::list(

@@ -414,7 +414,7 @@ impl App for EntitySyncApp {
                     .sync_plan
                     .as_ref()
                     .and_then(|p| p.entity_plans.get(state.diff_review.selected_entity_idx))
-                    .map(|e| e.data_preview.target_record_ids.len())
+                    .map(|e| e.data_preview.target_records.len())
                     .unwrap_or(0);
                 state.diff_review.target_data_list.handle_key(key, count, 15);
                 Command::None
@@ -839,13 +839,18 @@ async fn run_analysis(
                 // Don't use active_only filter for junction/intersect entities (they don't have statecode)
                 let active_only = !metadata.is_intersect;
                 let origin_records = fetch_all_records(&origin_client, &entity_name, &metadata.entity_set_name, active_only).await;
-                let target_ids = fetch_record_ids(&target_client, &entity_name, &metadata.entity_set_name).await;
+                let target_records = fetch_target_records(
+                    &target_client,
+                    &entity_name,
+                    &metadata.entity_set_name,
+                    metadata.primary_name_attribute.as_deref(),
+                ).await;
 
-                match (&origin_records, &target_ids) {
-                    (Ok(records), Ok(ids)) => {
+                match (&origin_records, &target_records) {
+                    (Ok(records), Ok(targets)) => {
                         let count = records.len();
                         set_entity_records_status(&entity_name, FetchStatus::Done, Some(count));
-                        Ok((entity_name, records.clone(), ids.clone()))
+                        Ok((entity_name, records.clone(), targets.clone()))
                     }
                     (Err(e), _) => {
                         set_entity_records_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
@@ -853,23 +858,23 @@ async fn run_analysis(
                     }
                     (_, Err(e)) => {
                         set_entity_records_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
-                        Err(format!("Failed to fetch target IDs for {}: {}", entity_name, e))
+                        Err(format!("Failed to fetch target records for {}: {}", entity_name, e))
                     }
                 }
             }
         }).collect();
 
-    let record_results: Vec<Result<(String, Vec<serde_json::Value>, Vec<String>), String>> =
+    let record_results: Vec<Result<(String, Vec<serde_json::Value>, Vec<super::types::TargetRecord>), String>> =
         join_all(record_futures).await;
 
     // Collect successful record results
-    let mut record_data: std::collections::HashMap<String, (Vec<serde_json::Value>, Vec<String>)> =
+    let mut record_data: std::collections::HashMap<String, (Vec<serde_json::Value>, Vec<super::types::TargetRecord>)> =
         std::collections::HashMap::new();
 
     for result in record_results {
         match result {
-            Ok((entity_name, origin_records, target_ids)) => {
-                record_data.insert(entity_name, (origin_records, target_ids));
+            Ok((entity_name, origin_records, target_records)) => {
+                record_data.insert(entity_name, (origin_records, target_records));
             }
             Err(e) => {
                 log::error!("Record fetch failed: {}", e);
@@ -919,24 +924,6 @@ async fn run_analysis(
         }
     }
 
-    // Phase 4: Fetch primary name attributes in parallel
-    set_analysis_phase("Fetching entity metadata...");
-
-    let metadata_futures: Vec<_> = selected_entities.iter().map(|entity_name| {
-        let origin_client = Arc::clone(&origin_client);
-        let entity_name = entity_name.clone();
-
-        async move {
-            let primary_name = fetch_primary_name_attribute(&origin_client, &entity_name).await;
-            (entity_name, primary_name)
-        }
-    }).collect();
-
-    let metadata_results: Vec<(String, Option<String>)> = join_all(metadata_futures).await;
-
-    let primary_names: std::collections::HashMap<String, Option<String>> =
-        metadata_results.into_iter().collect();
-
     // Phase 4: Build entity plans and dependency graph
     set_analysis_phase("Building dependency graph...");
 
@@ -952,18 +939,15 @@ async fn run_analysis(
             continue;
         };
 
-        let (origin_records, target_record_ids) = record_data
+        let (origin_records, target_records) = record_data
             .get(entity_name)
             .cloned()
             .unwrap_or_else(|| (vec![], vec![]));
 
-        let primary_name_attribute = primary_names.get(entity_name).cloned().flatten();
-
-        // Get entity metadata (is_intersect flag)
-        let is_intersect = entity_metadata_map
-            .get(entity_name)
-            .map(|m| m.is_intersect)
-            .unwrap_or(false);
+        // Get entity metadata (is_intersect, primary_name_attribute)
+        let metadata = entity_metadata_map.get(entity_name);
+        let is_intersect = metadata.map(|m| m.is_intersect).unwrap_or(false);
+        let primary_name_attribute = metadata.and_then(|m| m.primary_name_attribute.clone());
 
         // Store for dependency graph
         entities_with_fields.push((entity_name.clone(), None, origin_fields.clone()));
@@ -976,7 +960,7 @@ async fn run_analysis(
         }
 
         let origin_count = origin_records.len();
-        let target_count = target_record_ids.len();
+        let target_count = target_records.len();
 
         total_delete_count += target_count;
         total_insert_count += origin_count;
@@ -1060,7 +1044,7 @@ async fn run_analysis(
                 origin_count,
                 target_count,
                 origin_records,
-                target_record_ids,
+                target_records,
             },
             nulled_lookups: lookups
                 .iter()
@@ -1220,28 +1204,45 @@ async fn fetch_all_records(
     Ok(all_records)
 }
 
-/// Fetch record IDs for an entity (for deletion)
-async fn fetch_record_ids(
+/// Fetch target records (ID + name) for an entity (for deletion preview)
+async fn fetch_target_records(
     client: &crate::api::DynamicsClient,
     entity_name: &str,
     entity_set_name: &str,
-) -> anyhow::Result<Vec<String>> {
+    primary_name_attribute: Option<&str>,
+) -> anyhow::Result<Vec<super::types::TargetRecord>> {
     use crate::api::query::QueryBuilder;
 
     let pk_field = format!("{}id", entity_name);
-    let mut all_ids = Vec::new();
+    let mut all_records = Vec::new();
+
+    // Select ID and optionally the name field
+    let select_fields: Vec<&str> = if let Some(name_attr) = primary_name_attribute {
+        vec![&pk_field, name_attr]
+    } else {
+        vec![&pk_field]
+    };
 
     let query = QueryBuilder::new(entity_set_name)
-        .select(&[&pk_field])
+        .select(&select_fields)
         .top(5000)
         .build();
 
     let mut result = client.execute_query(&query).await?;
 
+    let extract_record = |record: &serde_json::Value| -> Option<super::types::TargetRecord> {
+        let id = record.get(&pk_field).and_then(|v| v.as_str())?.to_string();
+        let name = primary_name_attribute
+            .and_then(|attr| record.get(attr))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        Some(super::types::TargetRecord { id, name })
+    };
+
     if let Some(ref data) = result.data {
         for record in &data.value {
-            if let Some(id) = record.get(&pk_field).and_then(|v| v.as_str()) {
-                all_ids.push(id.to_string());
+            if let Some(tr) = extract_record(record) {
+                all_records.push(tr);
             }
         }
     }
@@ -1250,8 +1251,8 @@ async fn fetch_record_ids(
         if let Some(next) = result.next_page(client).await? {
             if let Some(ref data) = next.data {
                 for record in &data.value {
-                    if let Some(id) = record.get(&pk_field).and_then(|v| v.as_str()) {
-                        all_ids.push(id.to_string());
+                    if let Some(tr) = extract_record(record) {
+                        all_records.push(tr);
                     }
                 }
             }
@@ -1261,39 +1262,6 @@ async fn fetch_record_ids(
         }
     }
 
-    log::info!("Fetched {} record IDs from {} ({})", all_ids.len(), entity_name, entity_set_name);
-    Ok(all_ids)
-}
-
-/// Fetch the primary name attribute for an entity from metadata
-async fn fetch_primary_name_attribute(
-    client: &crate::api::DynamicsClient,
-    entity_name: &str,
-) -> Option<String> {
-    use crate::api::query::{QueryBuilder, Filter};
-
-    // Query EntityDefinitions for this entity's PrimaryNameAttribute
-    let query = QueryBuilder::new("EntityDefinitions")
-        .filter(Filter::eq("LogicalName", entity_name))
-        .select(&["PrimaryNameAttribute"])
-        .build();
-
-    match client.execute_query(&query).await {
-        Ok(result) => {
-            if let Some(ref data) = result.data {
-                if let Some(record) = data.value.first() {
-                    if let Some(attr) = record.get("PrimaryNameAttribute").and_then(|v| v.as_str()) {
-                        log::debug!("Primary name attribute for {}: {}", entity_name, attr);
-                        return Some(attr.to_string());
-                    }
-                }
-            }
-            log::debug!("No primary name attribute found for {}", entity_name);
-            None
-        }
-        Err(e) => {
-            log::warn!("Failed to fetch primary name attribute for {}: {}", entity_name, e);
-            None
-        }
-    }
+    log::info!("Fetched {} target records from {} ({})", all_records.len(), entity_name, entity_set_name);
+    Ok(all_records)
 }
