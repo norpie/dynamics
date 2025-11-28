@@ -264,7 +264,22 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
         .on_navigate(Msg::JunctionListNavigate)
         .build();
 
-        let junction_panel = Element::panel(junction_list)
+        // Junction select/deselect buttons
+        let junction_buttons = row![
+            Element::button("junction-select-all", "Select All")
+                .on_press(Msg::IncludeAllJunctions)
+                .build() => Fill(1),
+            Element::button("junction-deselect-all", "Deselect All")
+                .on_press(Msg::ExcludeAllJunctions)
+                .build() => Fill(1),
+        ];
+
+        let junction_content = col![
+            junction_list => Fill(1),
+            junction_buttons => Length(3),
+        ];
+
+        let junction_panel = Element::panel(junction_content)
             .title(junction_title)
             .build();
 
