@@ -1,17 +1,17 @@
 //! Step 3: Analysis View
 //!
-//! Loading screen with progress phases while fetching schemas and building dependency graph.
+//! Loading screen with per-entity progress while fetching schemas and records.
 
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 
 use crate::tui::element::Element;
 use crate::tui::state::theme::Theme;
-use crate::{col, spacer, use_constraints, button_row};
+use crate::{col, row, spacer, use_constraints, button_row};
 
 use super::super::state::{State, AnalysisPhase};
 use super::super::msg::Msg;
-use super::super::get_analysis_progress;
+use super::super::{get_analysis_progress, FetchStatus};
 
 /// Render the analysis step (loading screen)
 pub fn render_analysis(state: &mut State, theme: &Theme) -> Element<Msg> {
@@ -51,38 +51,7 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
     // Get real-time progress from global state
     let progress = get_analysis_progress();
 
-    // Current status message (from global progress)
-    let status_line = if !progress.message.is_empty() {
-        Element::styled_text(Line::from(Span::styled(
-            progress.message.clone(),
-            Style::default().fg(theme.accent_info).bold()
-        ))).build()
-    } else {
-        Element::text("Starting analysis...")
-    };
-
-    // Current entity being processed
-    let entity_line = match &progress.entity {
-        Some(entity) => {
-            let text = format!("Entity: {}", entity);
-            Element::styled_text(Line::from(Span::styled(
-                text,
-                Style::default().fg(theme.text_secondary)
-            ))).build()
-        }
-        None => Element::text(""),
-    };
-
-    // Current step/phase
-    let step_line = match &progress.step {
-        Some(step) => {
-            let text = format!("Phase: {}", step);
-            Element::text(text)
-        }
-        None => Element::text(""),
-    };
-
-    // Spinner animation (simple rotating chars)
+    // Spinner animation
     let spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     let spinner_idx = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -94,21 +63,89 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
         "✓"
     };
 
-    let spinner_line = Element::styled_text(Line::from(Span::styled(
-        format!("{} Analyzing...", spinner),
-        Style::default().fg(theme.accent_primary)
+    // Overall phase line
+    let phase_text = if progress.overall_phase.is_empty() {
+        "Starting analysis...".to_string()
+    } else {
+        progress.overall_phase.clone()
+    };
+
+    let phase_line = Element::styled_text(Line::from(Span::styled(
+        format!("{} {}", spinner, phase_text),
+        Style::default().fg(theme.accent_primary).bold()
     ))).build();
 
-    // Build content
+    // Build entity progress lines
+    let mut entity_lines: Vec<Element<Msg>> = Vec::new();
+
+    // Header row
+    entity_lines.push(Element::styled_text(Line::from(vec![
+        Span::styled(
+            format!("{:<30} {:^10} {:^15}", "Entity", "Schema", "Records"),
+            Style::default().fg(theme.text_secondary).bold()
+        ),
+    ])).build());
+
+    // Entity rows
+    for entity_name in &progress.entity_order {
+        if let Some(ep) = progress.entities.get(entity_name) {
+            let display = ep.display_name.as_ref().unwrap_or(&ep.entity);
+            let display_truncated = if display.len() > 28 {
+                format!("{}...", &display[..25])
+            } else {
+                display.clone()
+            };
+
+            let schema_style = status_style(&ep.schema_status, theme);
+            let records_style = status_style(&ep.records_status, theme);
+
+            let records_text = match (&ep.records_status, ep.record_count) {
+                (FetchStatus::Done, Some(count)) => format!("{} ({})", ep.records_status.symbol(), count),
+                _ => ep.records_status.symbol().to_string(),
+            };
+
+            entity_lines.push(Element::styled_text(Line::from(vec![
+                Span::styled(format!("{:<30} ", display_truncated), Style::default().fg(theme.text_primary)),
+                Span::styled(format!("{:^10} ", ep.schema_status.symbol()), schema_style),
+                Span::styled(format!("{:^15}", records_text), records_style),
+            ])).build());
+        }
+    }
+
+    // Calculate counts
+    let total = progress.entities.len();
+    let schemas_done = progress.entities.values()
+        .filter(|e| matches!(e.schema_status, FetchStatus::Done))
+        .count();
+    let records_done = progress.entities.values()
+        .filter(|e| matches!(e.records_status, FetchStatus::Done))
+        .count();
+
+    let summary_line = Element::styled_text(Line::from(Span::styled(
+        format!("Schemas: {}/{} | Records: {}/{}", schemas_done, total, records_done, total),
+        Style::default().fg(theme.text_secondary)
+    ))).build();
+
+    // Wrap entity lines in a scrollable column
+    let entity_list = Element::column(entity_lines).build();
+
     col![
-        spacer!() => Fill(1),
-        spinner_line => Length(1),
+        phase_line => Length(1),
         spacer!() => Length(1),
-        status_line => Length(1),
-        entity_line => Length(1),
-        step_line => Length(1),
-        spacer!() => Fill(1),
+        summary_line => Length(1),
+        spacer!() => Length(1),
+        entity_list => Fill(1),
     ]
+}
+
+/// Get style for a fetch status
+fn status_style(status: &FetchStatus, theme: &Theme) -> Style {
+    match status {
+        FetchStatus::Pending => Style::default().fg(theme.text_tertiary),
+        FetchStatus::Fetching => Style::default().fg(theme.accent_info),
+        FetchStatus::Done => Style::default().fg(theme.accent_success),
+        FetchStatus::Failed(_) => Style::default().fg(theme.accent_error),
+    }
 }
 
 /// Get status icon and style for a phase

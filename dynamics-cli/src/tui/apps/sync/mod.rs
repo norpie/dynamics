@@ -30,34 +30,131 @@ pub use steps::*;
 pub use app::EntitySyncApp;
 
 use std::sync::RwLock;
+use std::collections::HashMap;
+use once_cell::sync::Lazy;
 
 /// Global progress state for analysis (allows async task to update UI)
-static ANALYSIS_PROGRESS: RwLock<AnalysisProgressState> = RwLock::new(AnalysisProgressState::new());
+static ANALYSIS_PROGRESS: Lazy<RwLock<AnalysisProgressState>> = Lazy::new(|| {
+    RwLock::new(AnalysisProgressState::default())
+});
 
-/// Progress state updated during analysis
-#[derive(Debug, Clone)]
-pub struct AnalysisProgressState {
-    pub message: String,
-    pub entity: Option<String>,
-    pub step: Option<String>,
+/// Status of a single fetch operation
+#[derive(Debug, Clone, PartialEq)]
+pub enum FetchStatus {
+    Pending,
+    Fetching,
+    Done,
+    Failed(String),
 }
 
-impl AnalysisProgressState {
-    const fn new() -> Self {
-        Self {
-            message: String::new(),
-            entity: None,
-            step: None,
+impl FetchStatus {
+    pub fn symbol(&self) -> &'static str {
+        match self {
+            FetchStatus::Pending => "○",
+            FetchStatus::Fetching => "⋯",
+            FetchStatus::Done => "✓",
+            FetchStatus::Failed(_) => "✗",
         }
     }
 }
 
-/// Update the global analysis progress (called from async task)
-pub fn set_analysis_progress(message: &str, entity: Option<&str>, step: Option<&str>) {
+/// Progress for a single entity
+#[derive(Debug, Clone)]
+pub struct EntityProgress {
+    pub entity: String,
+    pub display_name: Option<String>,
+    pub schema_status: FetchStatus,
+    pub records_status: FetchStatus,
+    pub record_count: Option<usize>,
+}
+
+impl EntityProgress {
+    pub fn new(entity: &str, display_name: Option<&str>) -> Self {
+        Self {
+            entity: entity.to_string(),
+            display_name: display_name.map(|s| s.to_string()),
+            schema_status: FetchStatus::Pending,
+            records_status: FetchStatus::Pending,
+            record_count: None,
+        }
+    }
+}
+
+/// Progress state updated during analysis
+#[derive(Debug, Clone)]
+pub struct AnalysisProgressState {
+    /// Per-entity progress
+    pub entities: HashMap<String, EntityProgress>,
+    /// Order of entities (for consistent display)
+    pub entity_order: Vec<String>,
+    /// Overall phase message
+    pub overall_phase: String,
+    /// Whether analysis is complete
+    pub complete: bool,
+}
+
+impl Default for AnalysisProgressState {
+    fn default() -> Self {
+        Self {
+            entities: HashMap::new(),
+            entity_order: Vec::new(),
+            overall_phase: String::new(),
+            complete: false,
+        }
+    }
+}
+
+/// Initialize progress tracking for a set of entities
+pub fn init_analysis_progress(entities: &[(String, Option<String>)]) {
     if let Ok(mut progress) = ANALYSIS_PROGRESS.write() {
-        progress.message = message.to_string();
-        progress.entity = entity.map(|s| s.to_string());
-        progress.step = step.map(|s| s.to_string());
+        progress.entities.clear();
+        progress.entity_order.clear();
+        progress.overall_phase = "Starting analysis...".to_string();
+        progress.complete = false;
+
+        for (entity, display_name) in entities {
+            progress.entities.insert(
+                entity.clone(),
+                EntityProgress::new(entity, display_name.as_deref()),
+            );
+            progress.entity_order.push(entity.clone());
+        }
+    }
+}
+
+/// Update schema fetch status for an entity
+pub fn set_entity_schema_status(entity: &str, status: FetchStatus) {
+    if let Ok(mut progress) = ANALYSIS_PROGRESS.write() {
+        if let Some(ep) = progress.entities.get_mut(entity) {
+            ep.schema_status = status;
+        }
+    }
+}
+
+/// Update records fetch status for an entity
+pub fn set_entity_records_status(entity: &str, status: FetchStatus, count: Option<usize>) {
+    if let Ok(mut progress) = ANALYSIS_PROGRESS.write() {
+        if let Some(ep) = progress.entities.get_mut(entity) {
+            ep.records_status = status;
+            if let Some(c) = count {
+                ep.record_count = Some(c);
+            }
+        }
+    }
+}
+
+/// Set overall phase message
+pub fn set_analysis_phase(phase: &str) {
+    if let Ok(mut progress) = ANALYSIS_PROGRESS.write() {
+        progress.overall_phase = phase.to_string();
+    }
+}
+
+/// Mark analysis as complete
+pub fn set_analysis_complete() {
+    if let Ok(mut progress) = ANALYSIS_PROGRESS.write() {
+        progress.complete = true;
+        progress.overall_phase = "Analysis complete".to_string();
     }
 }
 
@@ -66,5 +163,5 @@ pub fn get_analysis_progress() -> AnalysisProgressState {
     ANALYSIS_PROGRESS
         .read()
         .map(|p| p.clone())
-        .unwrap_or_else(|_| AnalysisProgressState::new())
+        .unwrap_or_default()
 }

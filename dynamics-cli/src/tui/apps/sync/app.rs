@@ -696,7 +696,7 @@ fn handle_next(state: &mut State) -> Command<Msg> {
     }
 }
 
-/// Run the full analysis process
+/// Run the full analysis process with parallel fetching
 async fn run_analysis(
     origin_env: &str,
     target_env: &str,
@@ -704,99 +704,188 @@ async fn run_analysis(
 ) -> Result<super::types::SyncPlan, String> {
     use super::logic::{compare_schemas, DependencyGraph};
     use super::types::*;
-    use super::set_analysis_progress;
+    use super::{init_analysis_progress, set_analysis_phase, set_analysis_complete,
+                set_entity_schema_status, set_entity_records_status, FetchStatus};
     use crate::api::metadata::FieldType;
     use std::collections::HashSet;
+    use std::sync::Arc;
+    use futures::future::join_all;
 
-    let entity_count = selected_entities.len();
-    set_analysis_progress("Connecting to environments...", None, Some("Setup"));
+    // Initialize progress tracking
+    let entities_for_progress: Vec<(String, Option<String>)> = selected_entities
+        .iter()
+        .map(|e| (e.clone(), None))
+        .collect();
+    init_analysis_progress(&entities_for_progress);
+
+    set_analysis_phase("Connecting to environments...");
 
     let manager = crate::client_manager();
 
     // Get clients for both environments
-    set_analysis_progress(&format!("Connecting to {}...", origin_env), None, Some("Setup"));
-    let origin_client = manager
+    let origin_client = Arc::new(manager
         .get_client(origin_env)
         .await
-        .map_err(|e| format!("Failed to get origin client: {}", e))?;
+        .map_err(|e| format!("Failed to get origin client: {}", e))?);
 
-    set_analysis_progress(&format!("Connecting to {}...", target_env), None, Some("Setup"));
-    let target_client = manager
+    let target_client = Arc::new(manager
         .get_client(target_env)
         .await
-        .map_err(|e| format!("Failed to get target client: {}", e))?;
+        .map_err(|e| format!("Failed to get target client: {}", e))?);
 
     let selected_set: HashSet<String> = selected_entities.iter().cloned().collect();
+
+    // Phase 1: Fetch all schemas in parallel
+    set_analysis_phase("Fetching schemas...");
+
+    let schema_futures: Vec<_> = selected_entities.iter().map(|entity_name| {
+        let origin_client = Arc::clone(&origin_client);
+        let target_client = Arc::clone(&target_client);
+        let entity_name = entity_name.clone();
+
+        async move {
+            set_entity_schema_status(&entity_name, FetchStatus::Fetching);
+
+            let origin_fields = origin_client
+                .fetch_entity_fields_combined(&entity_name)
+                .await
+                .map_err(|e| format!("Failed to fetch origin fields for {}: {}", entity_name, e));
+
+            let target_fields = target_client
+                .fetch_entity_fields_combined(&entity_name)
+                .await
+                .unwrap_or_default();
+
+            match origin_fields {
+                Ok(fields) => {
+                    set_entity_schema_status(&entity_name, FetchStatus::Done);
+                    Ok((entity_name, fields, target_fields))
+                }
+                Err(e) => {
+                    set_entity_schema_status(&entity_name, FetchStatus::Failed(e.clone()));
+                    Err(e)
+                }
+            }
+        }
+    }).collect();
+
+    let schema_results: Vec<Result<(String, Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>), String>> =
+        join_all(schema_futures).await;
+
+    // Collect successful schema results
+    let mut schema_data: std::collections::HashMap<String, (Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>)> =
+        std::collections::HashMap::new();
+
+    for result in schema_results {
+        match result {
+            Ok((entity_name, origin_fields, target_fields)) => {
+                schema_data.insert(entity_name, (origin_fields, target_fields));
+            }
+            Err(e) => {
+                log::error!("Schema fetch failed: {}", e);
+            }
+        }
+    }
+
+    // Phase 2: Fetch all records in parallel
+    set_analysis_phase("Fetching records...");
+
+    let record_futures: Vec<_> = selected_entities.iter().map(|entity_name| {
+        let origin_client = Arc::clone(&origin_client);
+        let target_client = Arc::clone(&target_client);
+        let entity_name = entity_name.clone();
+
+        async move {
+            set_entity_records_status(&entity_name, FetchStatus::Fetching, None);
+
+            let origin_records = fetch_all_records(&origin_client, &entity_name, true).await;
+            let target_ids = fetch_record_ids(&target_client, &entity_name).await;
+
+            match (&origin_records, &target_ids) {
+                (Ok(records), Ok(ids)) => {
+                    let count = records.len();
+                    set_entity_records_status(&entity_name, FetchStatus::Done, Some(count));
+                    Ok((entity_name, records.clone(), ids.clone()))
+                }
+                (Err(e), _) => {
+                    set_entity_records_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
+                    Err(format!("Failed to fetch records for {}: {}", entity_name, e))
+                }
+                (_, Err(e)) => {
+                    set_entity_records_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
+                    Err(format!("Failed to fetch target IDs for {}: {}", entity_name, e))
+                }
+            }
+        }
+    }).collect();
+
+    let record_results: Vec<Result<(String, Vec<serde_json::Value>, Vec<String>), String>> =
+        join_all(record_futures).await;
+
+    // Collect successful record results
+    let mut record_data: std::collections::HashMap<String, (Vec<serde_json::Value>, Vec<String>)> =
+        std::collections::HashMap::new();
+
+    for result in record_results {
+        match result {
+            Ok((entity_name, origin_records, target_ids)) => {
+                record_data.insert(entity_name, (origin_records, target_ids));
+            }
+            Err(e) => {
+                log::error!("Record fetch failed: {}", e);
+            }
+        }
+    }
+
+    // Phase 3: Fetch primary name attributes in parallel
+    set_analysis_phase("Fetching entity metadata...");
+
+    let metadata_futures: Vec<_> = selected_entities.iter().map(|entity_name| {
+        let origin_client = Arc::clone(&origin_client);
+        let entity_name = entity_name.clone();
+
+        async move {
+            let primary_name = fetch_primary_name_attribute(&origin_client, &entity_name).await;
+            (entity_name, primary_name)
+        }
+    }).collect();
+
+    let metadata_results: Vec<(String, Option<String>)> = join_all(metadata_futures).await;
+
+    let primary_names: std::collections::HashMap<String, Option<String>> =
+        metadata_results.into_iter().collect();
+
+    // Phase 4: Build entity plans and dependency graph
+    set_analysis_phase("Building dependency graph...");
+
     let mut entities_with_fields: Vec<(String, Option<String>, Vec<crate::api::metadata::FieldMetadata>)> = Vec::new();
     let mut entity_plans = Vec::new();
     let mut total_delete_count = 0usize;
     let mut total_insert_count = 0usize;
     let mut has_schema_changes = false;
 
-    // Process each selected entity
-    for (idx, entity_name) in selected_entities.iter().enumerate() {
-        let progress_prefix = format!("[{}/{}]", idx + 1, entity_count);
-        log::info!("Analyzing entity: {}", entity_name);
+    for entity_name in selected_entities {
+        let Some((origin_fields, target_fields)) = schema_data.get(entity_name) else {
+            log::warn!("Skipping {} - no schema data", entity_name);
+            continue;
+        };
 
-        // Fetch field metadata from both environments
-        set_analysis_progress(
-            &format!("{} Fetching origin schema...", progress_prefix),
-            Some(entity_name),
-            Some("Schema"),
-        );
-        let origin_fields = origin_client
-            .fetch_entity_fields_combined(entity_name)
-            .await
-            .map_err(|e| format!("Failed to fetch origin fields for {}: {}", entity_name, e))?;
+        let (origin_records, target_record_ids) = record_data
+            .get(entity_name)
+            .cloned()
+            .unwrap_or_else(|| (vec![], vec![]));
 
-        set_analysis_progress(
-            &format!("{} Fetching target schema...", progress_prefix),
-            Some(entity_name),
-            Some("Schema"),
-        );
-        let target_fields = target_client
-            .fetch_entity_fields_combined(entity_name)
-            .await
-            .unwrap_or_default(); // Target might not have the entity
+        let primary_name_attribute = primary_names.get(entity_name).cloned().flatten();
 
         // Store for dependency graph
         entities_with_fields.push((entity_name.clone(), None, origin_fields.clone()));
 
-        // Compare schemas (pass None for raw origin data - not needed for this use case)
-        let schema_diff = compare_schemas(entity_name, &origin_fields, &target_fields, None);
+        // Compare schemas
+        let schema_diff = compare_schemas(entity_name, origin_fields, target_fields, None);
 
         if schema_diff.has_changes() {
             has_schema_changes = true;
         }
-
-        // Fetch actual records from both environments
-        set_analysis_progress(
-            &format!("{} Fetching origin records...", progress_prefix),
-            Some(entity_name),
-            Some("Records"),
-        );
-        log::info!("Fetching records for {}", entity_name);
-
-        let origin_records = match fetch_all_records(&origin_client, entity_name, true).await {
-            Ok(records) => records,
-            Err(e) => {
-                log::error!("Failed to fetch origin records for {}: {}", entity_name, e);
-                vec![]
-            }
-        };
-
-        set_analysis_progress(
-            &format!("{} Fetching target record IDs...", progress_prefix),
-            Some(entity_name),
-            Some("Records"),
-        );
-        let target_record_ids = match fetch_record_ids(&target_client, entity_name).await {
-            Ok(ids) => ids,
-            Err(e) => {
-                log::error!("Failed to fetch target record IDs for {}: {}", entity_name, e);
-                vec![]
-            }
-        };
 
         let origin_count = origin_records.len();
         let target_count = target_record_ids.len();
@@ -816,14 +905,6 @@ async fn run_analysis(
                 })
             })
             .collect();
-
-        // Fetch primary name attribute from entity metadata
-        set_analysis_progress(
-            &format!("{} Fetching entity metadata...", progress_prefix),
-            Some(entity_name),
-            Some("Metadata"),
-        );
-        let primary_name_attribute = fetch_primary_name_attribute(&origin_client, entity_name).await;
 
         // Build entity plan
         entity_plans.push(EntitySyncPlan {
@@ -859,11 +940,10 @@ async fn run_analysis(
     }
 
     // Build dependency graph
-    set_analysis_progress("Building dependency graph...", None, Some("Dependencies"));
     let dep_graph = DependencyGraph::build(entities_with_fields);
 
     // Get sorted order and update priorities
-    set_analysis_progress("Computing sync order...", None, Some("Dependencies"));
+    set_analysis_phase("Computing sync order...");
     if let Ok(sorted) = dep_graph.topological_sort() {
         for (insert_priority, name) in sorted.iter().enumerate() {
             if let Some(plan) = entity_plans.iter_mut().find(|p| &p.entity_info.logical_name == name) {
@@ -882,13 +962,13 @@ async fn run_analysis(
     // Sort by insert priority
     entity_plans.sort_by_key(|p| p.entity_info.insert_priority);
 
-    set_analysis_progress("Analysis complete!", None, Some("Complete"));
+    set_analysis_complete();
 
     Ok(SyncPlan {
         origin_env: origin_env.to_string(),
         target_env: target_env.to_string(),
         entity_plans,
-        detected_junctions: vec![], // Skip junction detection for now
+        detected_junctions: vec![],
         has_schema_changes,
         total_delete_count,
         total_insert_count,
