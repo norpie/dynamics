@@ -1133,6 +1133,43 @@ impl DynamicsClient {
         Ok(result)
     }
 
+    /// Fetch the EntitySetName for an entity from EntityDefinitions
+    /// This is the plural form used in OData URLs (e.g., "accounts", "nrq_fund_nrq_flemishshareset")
+    pub async fn fetch_entity_set_name(&self, entity_name: &str) -> anyhow::Result<String> {
+        let url = format!(
+            "{}/{}/EntityDefinitions(LogicalName='{}')?$select=EntitySetName",
+            self.base_url,
+            constants::api_path(),
+            entity_name
+        );
+
+        // Apply rate limiting before making the request
+        self.apply_rate_limiting().await?;
+
+        let response = self.retry_policy.execute(|| async {
+            self.http_client
+                .get(&url)
+                .bearer_auth(&self.access_token)
+                .header("Accept", headers::CONTENT_TYPE_JSON)
+                .header("OData-Version", headers::ODATA_VERSION)
+                .send()
+                .await
+        }).await?;
+
+        let status = response.status();
+        if status.is_success() {
+            let json: Value = response.json().await?;
+            let entity_set_name = json["EntitySetName"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("EntitySetName not found in response"))?
+                .to_string();
+            Ok(entity_set_name)
+        } else {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!("EntitySetName fetch failed with status {}: {}", status, error_text)
+        }
+    }
+
     /// Fetch entity forms from systemforms endpoint
     pub async fn fetch_entity_forms(&self, entity_name: &str) -> anyhow::Result<Vec<super::metadata::FormMetadata>> {
         let url = format!(

@@ -746,7 +746,7 @@ async fn run_analysis(
 
     let selected_set: HashSet<String> = selected_entities.iter().cloned().collect();
 
-    // Phase 1: Fetch all schemas in parallel
+    // Phase 1: Fetch all schemas and EntitySetNames in parallel
     set_analysis_phase("Fetching schemas...");
 
     let schema_futures: Vec<_> = selected_entities.iter().map(|entity_name| {
@@ -757,22 +757,27 @@ async fn run_analysis(
         async move {
             set_entity_schema_status(&entity_name, FetchStatus::Fetching);
 
-            let origin_fields = origin_client
-                .fetch_entity_fields_combined(&entity_name)
-                .await
+            // Fetch fields and EntitySetName in parallel
+            let (origin_fields, target_fields, entity_set_name) = tokio::join!(
+                origin_client.fetch_entity_fields_combined(&entity_name),
+                target_client.fetch_entity_fields_combined(&entity_name),
+                origin_client.fetch_entity_set_name(&entity_name)
+            );
+
+            let origin_fields = origin_fields
                 .map_err(|e| format!("Failed to fetch origin fields for {}: {}", entity_name, e));
 
-            let target_fields = target_client
-                .fetch_entity_fields_combined(&entity_name)
-                .await
-                .unwrap_or_default();
+            let target_fields = target_fields.unwrap_or_default();
 
-            match origin_fields {
-                Ok(fields) => {
+            let entity_set_name = entity_set_name
+                .map_err(|e| format!("Failed to fetch EntitySetName for {}: {}", entity_name, e));
+
+            match (origin_fields, entity_set_name) {
+                (Ok(fields), Ok(set_name)) => {
                     set_entity_schema_status(&entity_name, FetchStatus::Done);
-                    Ok((entity_name, fields, target_fields))
+                    Ok((entity_name, fields, target_fields, set_name))
                 }
-                Err(e) => {
+                (Err(e), _) | (_, Err(e)) => {
                     set_entity_schema_status(&entity_name, FetchStatus::Failed(e.clone()));
                     Err(e)
                 }
@@ -780,17 +785,20 @@ async fn run_analysis(
         }
     }).collect();
 
-    let schema_results: Vec<Result<(String, Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>), String>> =
+    let schema_results: Vec<Result<(String, Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>, String), String>> =
         join_all(schema_futures).await;
 
     // Collect successful schema results
     let mut schema_data: std::collections::HashMap<String, (Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>)> =
         std::collections::HashMap::new();
+    let mut entity_set_names: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
 
     for result in schema_results {
         match result {
-            Ok((entity_name, origin_fields, target_fields)) => {
-                schema_data.insert(entity_name, (origin_fields, target_fields));
+            Ok((entity_name, origin_fields, target_fields, set_name)) => {
+                schema_data.insert(entity_name.clone(), (origin_fields, target_fields));
+                entity_set_names.insert(entity_name, set_name);
             }
             Err(e) => {
                 log::error!("Schema fetch failed: {}", e);
@@ -798,37 +806,45 @@ async fn run_analysis(
         }
     }
 
-    // Phase 2: Fetch all records in parallel
+    // Phase 2: Fetch all records in parallel (only for entities with successful schema fetch)
     set_analysis_phase("Fetching records...");
 
-    let record_futures: Vec<_> = selected_entities.iter().map(|entity_name| {
-        let origin_client = Arc::clone(&origin_client);
-        let target_client = Arc::clone(&target_client);
-        let entity_name = entity_name.clone();
+    let entity_set_names = Arc::new(entity_set_names);
 
-        async move {
-            set_entity_records_status(&entity_name, FetchStatus::Fetching, None);
+    let record_futures: Vec<_> = selected_entities.iter()
+        .filter(|name| entity_set_names.contains_key(*name))
+        .map(|entity_name| {
+            let origin_client = Arc::clone(&origin_client);
+            let target_client = Arc::clone(&target_client);
+            let entity_set_names = Arc::clone(&entity_set_names);
+            let entity_name = entity_name.clone();
 
-            let origin_records = fetch_all_records(&origin_client, &entity_name, true).await;
-            let target_ids = fetch_record_ids(&target_client, &entity_name).await;
+            async move {
+                let entity_set_name = entity_set_names.get(&entity_name)
+                    .expect("entity_set_name must exist (filtered above)");
 
-            match (&origin_records, &target_ids) {
-                (Ok(records), Ok(ids)) => {
-                    let count = records.len();
-                    set_entity_records_status(&entity_name, FetchStatus::Done, Some(count));
-                    Ok((entity_name, records.clone(), ids.clone()))
-                }
-                (Err(e), _) => {
-                    set_entity_records_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
-                    Err(format!("Failed to fetch records for {}: {}", entity_name, e))
-                }
-                (_, Err(e)) => {
-                    set_entity_records_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
-                    Err(format!("Failed to fetch target IDs for {}: {}", entity_name, e))
+                set_entity_records_status(&entity_name, FetchStatus::Fetching, None);
+
+                let origin_records = fetch_all_records(&origin_client, &entity_name, entity_set_name, true).await;
+                let target_ids = fetch_record_ids(&target_client, &entity_name, entity_set_name).await;
+
+                match (&origin_records, &target_ids) {
+                    (Ok(records), Ok(ids)) => {
+                        let count = records.len();
+                        set_entity_records_status(&entity_name, FetchStatus::Done, Some(count));
+                        Ok((entity_name, records.clone(), ids.clone()))
+                    }
+                    (Err(e), _) => {
+                        set_entity_records_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
+                        Err(format!("Failed to fetch records for {}: {}", entity_name, e))
+                    }
+                    (_, Err(e)) => {
+                        set_entity_records_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
+                        Err(format!("Failed to fetch target IDs for {}: {}", entity_name, e))
+                    }
                 }
             }
-        }
-    }).collect();
+        }).collect();
 
     let record_results: Vec<Result<(String, Vec<serde_json::Value>, Vec<String>), String>> =
         join_all(record_futures).await;
@@ -1035,17 +1051,14 @@ async fn load_entities_for_env(env_name: &str) -> Result<Vec<super::state::Entit
 async fn fetch_all_records(
     client: &crate::api::DynamicsClient,
     entity_name: &str,
+    entity_set_name: &str,
     active_only: bool,
 ) -> anyhow::Result<Vec<serde_json::Value>> {
     use crate::api::query::QueryBuilder;
-    use crate::api::pluralization::overrideable_pluralize_entity_name;
 
     let mut all_records = Vec::new();
 
-    // Use simple pluralization for custom entities (with prefix like nrq_)
-    let is_custom = entity_name.contains('_');
-    let entity_set = overrideable_pluralize_entity_name(entity_name, is_custom);
-    let mut builder = QueryBuilder::new(&entity_set).top(5000);
+    let mut builder = QueryBuilder::new(entity_set_name).top(5000);
     if active_only {
         builder = builder.active_only();
     }
@@ -1066,7 +1079,7 @@ async fn fetch_all_records(
         }
     }
 
-    log::info!("Fetched {} records from {}", all_records.len(), entity_name);
+    log::info!("Fetched {} records from {} ({})", all_records.len(), entity_name, entity_set_name);
     Ok(all_records)
 }
 
@@ -1074,17 +1087,14 @@ async fn fetch_all_records(
 async fn fetch_record_ids(
     client: &crate::api::DynamicsClient,
     entity_name: &str,
+    entity_set_name: &str,
 ) -> anyhow::Result<Vec<String>> {
     use crate::api::query::QueryBuilder;
-    use crate::api::pluralization::overrideable_pluralize_entity_name;
 
     let pk_field = format!("{}id", entity_name);
     let mut all_ids = Vec::new();
 
-    // Use simple pluralization for custom entities (with prefix like nrq_)
-    let is_custom = entity_name.contains('_');
-    let entity_set = overrideable_pluralize_entity_name(entity_name, is_custom);
-    let query = QueryBuilder::new(&entity_set)
+    let query = QueryBuilder::new(entity_set_name)
         .select(&[&pk_field])
         .top(5000)
         .build();
@@ -1114,7 +1124,7 @@ async fn fetch_record_ids(
         }
     }
 
-    log::info!("Fetched {} record IDs from {}", all_ids.len(), entity_name);
+    log::info!("Fetched {} record IDs from {} ({})", all_ids.len(), entity_name, entity_set_name);
     Ok(all_ids)
 }
 
