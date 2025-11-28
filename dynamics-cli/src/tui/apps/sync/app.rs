@@ -171,6 +171,8 @@ impl App for EntitySyncApp {
                         state.entity_select.selected_entities.insert(name);
                     }
                 }
+                // Detect junction candidates after selection change
+                state.entity_select.detect_junction_candidates();
                 Command::None
             }
             Msg::SelectAllEntities => {
@@ -184,10 +186,15 @@ impl App for EntitySyncApp {
                 for name in names {
                     state.entity_select.selected_entities.insert(name);
                 }
+                // Detect junction candidates after selection change
+                state.entity_select.detect_junction_candidates();
                 Command::None
             }
             Msg::DeselectAllEntities => {
                 state.entity_select.selected_entities.clear();
+                // Clear junction candidates when deselecting all
+                state.entity_select.junction_candidates.clear();
+                state.entity_select.included_junctions.clear();
                 Command::None
             }
             Msg::PresetSelectEvent(event) => {
@@ -217,6 +224,8 @@ impl App for EntitySyncApp {
                                     state.entity_select.selected_entities.insert(entity_name.to_string());
                                 }
                                 log::info!("Applied preset '{}' with {} entities", preset.name, preset.entities.len());
+                                // Detect junction candidates after preset applied
+                                state.entity_select.detect_junction_candidates();
                             }
                         }
                     }
@@ -236,6 +245,8 @@ impl App for EntitySyncApp {
                                     state.entity_select.selected_entities.insert(entity_name.to_string());
                                 }
                                 log::info!("Applied preset '{}' with {} entities", preset.name, preset.entities.len());
+                                // Detect junction candidates after preset applied
+                                state.entity_select.detect_junction_candidates();
                             }
                         }
                     }

@@ -166,6 +166,71 @@ impl EntitySelectState {
             _ => Vec::new(),
         }
     }
+
+    /// Detect junction entity candidates based on selected entities.
+    /// Looks for entities matching pattern `a_b` or `b_a` for each pair of selected entities.
+    pub fn detect_junction_candidates(&mut self) {
+        let Resource::Success(available) = &self.available_entities else {
+            return;
+        };
+
+        // Build a set of available entity names for quick lookup
+        let available_set: HashSet<&str> = available.iter()
+            .map(|e| e.logical_name.as_str())
+            .collect();
+
+        // Track which junction candidates we've already found
+        let mut found_junctions: HashSet<String> = HashSet::new();
+        let mut new_candidates: Vec<JunctionCandidate> = Vec::new();
+
+        // Get selected entities as a vec for iteration
+        let selected: Vec<&str> = self.selected_entities.iter()
+            .map(|s| s.as_str())
+            .collect();
+
+        // For each pair of selected entities, check for junction patterns
+        for (i, entity_a) in selected.iter().enumerate() {
+            for entity_b in selected.iter().skip(i + 1) {
+                // Try both orderings: a_b and b_a
+                let pattern_ab = format!("{}_{}", entity_a, entity_b);
+                let pattern_ba = format!("{}_{}", entity_b, entity_a);
+
+                for pattern in [&pattern_ab, &pattern_ba] {
+                    if available_set.contains(pattern.as_str())
+                        && !found_junctions.contains(pattern)
+                        && !self.selected_entities.contains(pattern)
+                    {
+                        found_junctions.insert(pattern.clone());
+
+                        // Get display name if available
+                        let display_name = available.iter()
+                            .find(|e| e.logical_name == *pattern)
+                            .and_then(|e| e.display_name.clone());
+
+                        new_candidates.push(JunctionCandidate {
+                            logical_name: pattern.clone(),
+                            display_name,
+                            connects: vec![entity_a.to_string(), entity_b.to_string()],
+                        });
+                    }
+                }
+            }
+        }
+
+        // Update junction candidates, preserving any that are still valid
+        self.junction_candidates = new_candidates;
+
+        // Remove any included junctions that are no longer candidates
+        let candidate_names: HashSet<&str> = self.junction_candidates.iter()
+            .map(|j| j.logical_name.as_str())
+            .collect();
+        self.included_junctions.retain(|j| candidate_names.contains(j.as_str()));
+
+        // Auto-show junction panel if we found candidates
+        if !self.junction_candidates.is_empty() {
+            self.show_junctions = true;
+        }
+    }
 }
 
 /// Item in the entity list
