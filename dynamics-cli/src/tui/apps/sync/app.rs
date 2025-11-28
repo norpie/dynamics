@@ -1027,11 +1027,13 @@ async fn fetch_all_records(
     active_only: bool,
 ) -> anyhow::Result<Vec<serde_json::Value>> {
     use crate::api::query::QueryBuilder;
-    use crate::api::pluralization::pluralize_entity_name;
+    use crate::api::pluralization::overrideable_pluralize_entity_name;
 
     let mut all_records = Vec::new();
 
-    let entity_set = pluralize_entity_name(entity_name);
+    // Use simple pluralization for custom entities (with prefix like nrq_)
+    let is_custom = entity_name.contains('_');
+    let entity_set = overrideable_pluralize_entity_name(entity_name, is_custom);
     let mut builder = QueryBuilder::new(&entity_set).top(5000);
     if active_only {
         builder = builder.active_only();
@@ -1063,12 +1065,14 @@ async fn fetch_record_ids(
     entity_name: &str,
 ) -> anyhow::Result<Vec<String>> {
     use crate::api::query::QueryBuilder;
-    use crate::api::pluralization::pluralize_entity_name;
+    use crate::api::pluralization::overrideable_pluralize_entity_name;
 
     let pk_field = format!("{}id", entity_name);
     let mut all_ids = Vec::new();
 
-    let entity_set = pluralize_entity_name(entity_name);
+    // Use simple pluralization for custom entities (with prefix like nrq_)
+    let is_custom = entity_name.contains('_');
+    let entity_set = overrideable_pluralize_entity_name(entity_name, is_custom);
     let query = QueryBuilder::new(&entity_set)
         .select(&[&pk_field])
         .top(5000)
