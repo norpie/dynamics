@@ -20,6 +20,7 @@ use super::super::msg::Msg;
 /// Entity list item for the left panel
 #[derive(Clone)]
 struct EntityPlanItem {
+    index: usize,
     logical_name: String,
     display_name: Option<String>,
     category: DependencyCategory,
@@ -36,7 +37,7 @@ impl ListItem for EntityPlanItem {
         let name = self.display_name.as_ref().unwrap_or(&self.logical_name);
         let change_indicator = if self.has_changes { " ●" } else { " ✓" };
 
-        let text = format!("{} {}{}", category_symbol, name, change_indicator);
+        let text = format!("{}. {} {}{}", self.index + 1, category_symbol, name, change_indicator);
 
         let style = if self.has_changes {
             Style::default().fg(theme.accent_warning)
@@ -162,8 +163,9 @@ fn render_diff_content(state: &mut State, theme: &Theme) -> Element<Msg> {
                 .build();
         };
 
-        let items: Vec<EntityPlanItem> = plan.entity_plans.iter().map(|p| {
+        let items: Vec<EntityPlanItem> = plan.entity_plans.iter().enumerate().map(|(idx, p)| {
             EntityPlanItem {
+                index: idx,
                 logical_name: p.entity_info.logical_name.clone(),
                 display_name: p.entity_info.display_name.clone(),
                 category: p.entity_info.category,
