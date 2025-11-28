@@ -224,40 +224,6 @@ impl DependencyGraph {
         Ok(order)
     }
 
-    /// Build SyncEntityInfo for all entities with assigned priorities
-    pub fn build_entity_infos(&self) -> Result<Vec<SyncEntityInfo>, CycleError> {
-        let insert_order = self.insert_order()?;
-
-        let mut infos = Vec::new();
-
-        for (priority, entity_name) in insert_order.iter().enumerate() {
-            let entity = match self.entities.get(entity_name) {
-                Some(e) => e,
-                None => continue,
-            };
-
-            let dependents: Vec<String> = self.dependents
-                .get(entity_name)
-                .map(|d| d.iter().cloned().collect())
-                .unwrap_or_default();
-
-            let info = SyncEntityInfo {
-                logical_name: entity_name.clone(),
-                display_name: entity.display_name.clone(),
-                primary_name_attribute: None, // Set by caller
-                category: self.categorize(entity_name),
-                lookups: entity.lookups.clone(),
-                incoming_references: vec![], // Set by caller
-                dependents,
-                insert_priority: priority as u32,
-                delete_priority: (insert_order.len() - 1 - priority) as u32,
-            };
-
-            infos.push(info);
-        }
-
-        Ok(infos)
-    }
 }
 
 /// Error when a cycle is detected in the dependency graph
