@@ -398,25 +398,26 @@ impl App for EntitySyncApp {
                 Command::None
             }
             Msg::DataListNavigate(key) => {
-                // Get origin record count for current entity
+                // Get combined record count (origin + target-only) for current entity
                 let count = state
                     .sync_plan
                     .as_ref()
                     .and_then(|p| p.entity_plans.get(state.diff_review.selected_entity_idx))
-                    .map(|e| e.data_preview.origin_records.len())
+                    .map(|e| {
+                        // Total = origin records + target-only records (deactivates)
+                        // We need to compute this properly based on GUID comparison
+                        let preview = &e.data_preview;
+                        let pk_field = format!("{}id", e.entity_info.logical_name);
+                        let origin_ids: std::collections::HashSet<&str> = preview.origin_records.iter()
+                            .filter_map(|r| r.get(&pk_field).and_then(|v| v.as_str()))
+                            .collect();
+                        let target_only = preview.target_records.iter()
+                            .filter(|tr| !origin_ids.contains(tr.id.as_str()))
+                            .count();
+                        preview.origin_records.len() + target_only
+                    })
                     .unwrap_or(0);
                 state.diff_review.data_list.handle_key(key, count, 15);
-                Command::None
-            }
-            Msg::TargetDataListNavigate(key) => {
-                // Get target record count for current entity
-                let count = state
-                    .sync_plan
-                    .as_ref()
-                    .and_then(|p| p.entity_plans.get(state.diff_review.selected_entity_idx))
-                    .map(|e| e.data_preview.target_records.len())
-                    .unwrap_or(0);
-                state.diff_review.target_data_list.handle_key(key, count, 15);
                 Command::None
             }
             Msg::DiffNextTab => {

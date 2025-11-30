@@ -299,39 +299,29 @@ fn render_schema_tab(state: &mut State, plan: &EntitySyncPlan, theme: &Theme) ->
     ]
 }
 
-/// Record list item for the data tab
+/// Operation type for a record in the data preview
+#[derive(Clone, Copy, PartialEq)]
+enum RecordOperation {
+    /// Record exists only in origin - will be created (green)
+    Create,
+    /// Record exists in both - will be updated (orange)
+    Update,
+    /// Record exists only in target - will be deactivated (red)
+    Deactivate,
+}
+
+/// Record list item for the data tab (unified view)
 #[derive(Clone)]
-struct RecordItem {
+struct DataRecordItem {
     /// Display name from primary name attribute
     name: String,
-    /// Record ID
+    /// Record ID (GUID)
     id: String,
+    /// What operation will be performed
+    operation: RecordOperation,
 }
 
-impl RecordItem {
-    fn from_json(record: &serde_json::Value, entity_name: &str, primary_name_attr: Option<&str>) -> Self {
-        let pk_field = format!("{}id", entity_name);
-
-        // Get the record ID
-        let id = record
-            .get(&pk_field)
-            .and_then(|v| v.as_str())
-            .unwrap_or("(no id)")
-            .to_string();
-
-        // Get the name from the primary name attribute
-        let name = primary_name_attr
-            .and_then(|attr| record.get(attr))
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("(no name)")
-            .to_string();
-
-        Self { name, id }
-    }
-}
-
-impl ListItem for RecordItem {
+impl ListItem for DataRecordItem {
     type Msg = Msg;
 
     fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
@@ -344,51 +334,16 @@ impl ListItem for RecordItem {
             self.name.clone()
         };
 
-        let text = format!("{} | {}", name, self.id);
-
-        // Green for origin records
-        let style = Style::default().fg(theme.accent_success);
-        let bg_style = if is_focused {
-            Style::default().bg(theme.bg_surface)
-        } else {
-            Style::default()
+        // Icon and color based on operation
+        let (icon, color) = match self.operation {
+            RecordOperation::Create => ("+", theme.accent_success),      // Green
+            RecordOperation::Update => ("~", theme.accent_warning),      // Orange
+            RecordOperation::Deactivate => ("-", theme.accent_error),    // Red
         };
 
-        Element::styled_text(Line::from(Span::styled(text, style)))
-            .background(bg_style)
-            .build()
-    }
-}
+        let text = format!("{} {} | {}", icon, name, self.id);
 
-/// Target record item (for records to be updated/deactivated)
-#[derive(Clone)]
-struct TargetRecordItem {
-    id: String,
-    name: Option<String>,
-}
-
-impl ListItem for TargetRecordItem {
-    type Msg = Msg;
-
-    fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
-        let theme = &crate::global_runtime_config().theme;
-
-        // Format: "name | id" or just "id" if no name
-        let text = if let Some(ref name) = self.name {
-            // Truncate name if too long
-            let display_name = if name.len() > 50 {
-                format!("{}...", &name[..47])
-            } else {
-                name.clone()
-            };
-            format!("{} | {}", display_name, self.id)
-        } else {
-            self.id.clone()
-        };
-
-        // Style for target records
-        let style = Style::default().fg(theme.accent_error);
-
+        let style = Style::default().fg(color);
         let bg_style = if is_focused {
             Style::default().bg(theme.bg_surface)
         } else {
@@ -406,47 +361,102 @@ fn render_data_tab(state: &mut State, plan: &EntitySyncPlan, theme: &Theme) -> E
     use_constraints!();
 
     let preview = &plan.data_preview;
-
-    // Build origin record items (green)
+    let pk_field = format!("{}id", plan.entity_info.logical_name);
     let primary_name_attr = plan.entity_info.primary_name_attribute.as_deref();
-    let origin_items: Vec<RecordItem> = preview.origin_records.iter()
-        .map(|record| RecordItem::from_json(record, &plan.entity_info.logical_name, primary_name_attr))
+
+    // Build sets for GUID comparison
+    let origin_ids: std::collections::HashSet<&str> = preview.origin_records.iter()
+        .filter_map(|r| r.get(&pk_field).and_then(|v| v.as_str()))
         .collect();
 
-    let origin_list = Element::list(
-        "data-origin-list",
-        &origin_items,
+    let target_ids: std::collections::HashSet<&str> = preview.target_records.iter()
+        .map(|tr| tr.id.as_str())
+        .collect();
+
+    let mut items: Vec<DataRecordItem> = Vec::new();
+
+    // Deactivates first (target-only) - red
+    for tr in &preview.target_records {
+        if !origin_ids.contains(tr.id.as_str()) {
+            items.push(DataRecordItem {
+                name: tr.name.clone().unwrap_or_else(|| "(no name)".to_string()),
+                id: tr.id.clone(),
+                operation: RecordOperation::Deactivate,
+            });
+        }
+    }
+
+    // Updates next (in both) - orange
+    for record in &preview.origin_records {
+        let id = record.get(&pk_field)
+            .and_then(|v| v.as_str())
+            .unwrap_or("(no id)");
+
+        if target_ids.contains(id) {
+            let name = primary_name_attr
+                .and_then(|attr| record.get(attr))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("(no name)");
+
+            items.push(DataRecordItem {
+                name: name.to_string(),
+                id: id.to_string(),
+                operation: RecordOperation::Update,
+            });
+        }
+    }
+
+    // Creates last (origin-only) - green
+    for record in &preview.origin_records {
+        let id = record.get(&pk_field)
+            .and_then(|v| v.as_str())
+            .unwrap_or("(no id)");
+
+        if !target_ids.contains(id) {
+            let name = primary_name_attr
+                .and_then(|attr| record.get(attr))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("(no name)");
+
+            items.push(DataRecordItem {
+                name: name.to_string(),
+                id: id.to_string(),
+                operation: RecordOperation::Create,
+            });
+        }
+    }
+
+    // Count by operation type
+    let create_count = items.iter().filter(|i| i.operation == RecordOperation::Create).count();
+    let update_count = items.iter().filter(|i| i.operation == RecordOperation::Update).count();
+    let deactivate_count = items.iter().filter(|i| i.operation == RecordOperation::Deactivate).count();
+
+    let data_list = Element::list(
+        "data-record-list",
+        &items,
         &state.diff_review.data_list,
         theme,
     )
     .on_navigate(Msg::DataListNavigate)
     .build();
 
-    // Build target record items (red)
-    let target_items: Vec<TargetRecordItem> = preview.target_records.iter()
-        .map(|tr| TargetRecordItem { id: tr.id.clone(), name: tr.name.clone() })
-        .collect();
+    let name = plan.entity_info.display_name
+        .as_ref()
+        .unwrap_or(&plan.entity_info.logical_name);
 
-    let target_list = Element::list(
-        "data-target-list",
-        &target_items,
-        &state.diff_review.target_data_list,
-        theme,
-    )
-    .on_navigate(Msg::TargetDataListNavigate)
-    .build();
+    // Summary line
+    let summary = Element::styled_text(Line::from(vec![
+        Span::styled(format!("+{} ", create_count), Style::default().fg(theme.accent_success)),
+        Span::styled(format!("~{} ", update_count), Style::default().fg(theme.accent_warning)),
+        Span::styled(format!("-{}", deactivate_count), Style::default().fg(theme.accent_error)),
+    ])).build();
 
-    let origin_panel = Element::panel(origin_list)
-        .title(format!("Origin ({} active records)", preview.origin_count))
-        .build();
-
-    let target_panel = Element::panel(target_list)
-        .title(format!("Target ({} records)", preview.target_count))
-        .build();
-
-    row![
-        origin_panel => Fill(1),
-        target_panel => Fill(1),
+    col![
+        summary => Length(1),
+        spacer!() => Length(1),
+        Element::panel(data_list).title(format!("{} - Data", name)).build() => Fill(1),
     ]
 }
 
