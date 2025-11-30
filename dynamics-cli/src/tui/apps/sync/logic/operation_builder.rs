@@ -8,6 +8,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::api::operations::Operation;
 use super::super::types::{EntitySyncPlan, FieldDiffEntry, SyncPlan};
 
 /// A single sync operation to be executed
@@ -325,6 +326,32 @@ pub fn build_operation_summary(sync_plan: &SyncPlan) -> OperationSummary {
     summary
 }
 
+// =============================================================================
+// Queue Operation Builders
+// =============================================================================
+// These functions convert SyncPlan data into the actual Operation types
+// used by the queue system for execution.
+
+/// Build delete operations for all target records.
+/// Returns operations in delete order (dependents before dependencies).
+pub fn build_delete_operations(plan: &SyncPlan) -> Vec<Operation> {
+    let mut operations = Vec::new();
+
+    // Get entities in delete order (higher delete_priority = delete first)
+    for entity_plan in plan.delete_order() {
+        let entity_set = &entity_plan.entity_info.entity_set_name;
+
+        for record in &entity_plan.data_preview.target_records {
+            operations.push(Operation::Delete {
+                entity: entity_set.clone(),
+                id: record.id.clone(),
+            });
+        }
+    }
+
+    operations
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,12 +366,15 @@ mod tests {
                     entity_info: SyncEntityInfo {
                         logical_name: "parent".to_string(),
                         display_name: Some("Parent".to_string()),
+                        entity_set_name: "parents".to_string(),
                         primary_name_attribute: Some("name".to_string()),
                         category: DependencyCategory::Standalone,
                         lookups: vec![],
+                        incoming_references: vec![],
                         dependents: vec!["child".to_string()],
                         insert_priority: 0,
-                        delete_priority: 1,
+                        delete_priority: 1, // Lower = delete later (parent deleted after child)
+                        nn_relationship: None,
                     },
                     schema_diff: EntitySchemaDiff {
                         entity_name: "parent".to_string(),
@@ -363,9 +393,12 @@ mod tests {
                     data_preview: EntityDataPreview {
                         entity_name: "parent".to_string(),
                         origin_count: 10,
-                        target_count: 5,
+                        target_count: 2,
                         origin_records: vec![],
-                        target_record_ids: vec![],
+                        target_records: vec![
+                            TargetRecord { id: "parent-1".to_string(), name: Some("Parent 1".to_string()) },
+                            TargetRecord { id: "parent-2".to_string(), name: Some("Parent 2".to_string()) },
+                        ],
                     },
                     nulled_lookups: vec![],
                 },
@@ -373,6 +406,7 @@ mod tests {
                     entity_info: SyncEntityInfo {
                         logical_name: "child".to_string(),
                         display_name: Some("Child".to_string()),
+                        entity_set_name: "children".to_string(),
                         primary_name_attribute: Some("name".to_string()),
                         category: DependencyCategory::Dependent,
                         lookups: vec![LookupInfo {
@@ -380,24 +414,30 @@ mod tests {
                             target_entity: "parent".to_string(),
                             is_internal: true,
                         }],
+                        incoming_references: vec![],
                         dependents: vec![],
                         insert_priority: 1,
-                        delete_priority: 0,
+                        delete_priority: 2, // Higher = delete first (child deleted before parent)
+                        nn_relationship: None,
                     },
                     schema_diff: EntitySchemaDiff::default(),
                     data_preview: EntityDataPreview {
                         entity_name: "child".to_string(),
                         origin_count: 20,
-                        target_count: 10,
+                        target_count: 3,
                         origin_records: vec![],
-                        target_record_ids: vec![],
+                        target_records: vec![
+                            TargetRecord { id: "child-1".to_string(), name: Some("Child 1".to_string()) },
+                            TargetRecord { id: "child-2".to_string(), name: Some("Child 2".to_string()) },
+                            TargetRecord { id: "child-3".to_string(), name: Some("Child 3".to_string()) },
+                        ],
                     },
                     nulled_lookups: vec![],
                 },
             ],
             detected_junctions: vec![],
             has_schema_changes: true,
-            total_delete_count: 15,
+            total_delete_count: 5,
             total_insert_count: 30,
         }
     }
@@ -467,5 +507,36 @@ mod tests {
 
         // System field should not generate an operation
         assert_eq!(op_plan.total_schema_ops, 1);
+    }
+
+    #[test]
+    fn test_build_delete_operations_priority_order() {
+        let sync_plan = make_test_plan();
+        let delete_ops = build_delete_operations(&sync_plan);
+
+        // Should have 5 delete operations total (2 parent + 3 child)
+        assert_eq!(delete_ops.len(), 5);
+
+        // Child has higher delete_priority (2) than parent (1)
+        // So child records should come FIRST in the delete order
+        // Expected order: child-1, child-2, child-3, parent-1, parent-2
+
+        // Extract entity names from the operations
+        let entity_order: Vec<&str> = delete_ops
+            .iter()
+            .map(|op| match op {
+                Operation::Delete { entity, .. } => entity.as_str(),
+                _ => panic!("Expected Delete operation"),
+            })
+            .collect();
+
+        // First 3 should be children (deleted first)
+        assert_eq!(entity_order[0], "children");
+        assert_eq!(entity_order[1], "children");
+        assert_eq!(entity_order[2], "children");
+
+        // Last 2 should be parents (deleted after children)
+        assert_eq!(entity_order[3], "parents");
+        assert_eq!(entity_order[4], "parents");
     }
 }

@@ -334,12 +334,15 @@ mod tests {
                 entity_info: SyncEntityInfo {
                     logical_name: "account".to_string(),
                     display_name: Some("Account".to_string()),
+                    entity_set_name: "accounts".to_string(),
                     primary_name_attribute: Some("name".to_string()),
                     category: DependencyCategory::Standalone,
                     lookups: vec![],
+                    incoming_references: vec![],
                     dependents: vec![],
                     insert_priority: 0,
                     delete_priority: 0,
+                    nn_relationship: None,
                 },
                 schema_diff: EntitySchemaDiff {
                     entity_name: "account".to_string(),
@@ -377,7 +380,7 @@ mod tests {
                     origin_count: 100,
                     target_count: 50,
                     origin_records: vec![],
-                    target_record_ids: vec![],
+                    target_records: vec![],
                 },
                 nulled_lookups: vec![NulledLookupInfo {
                     entity_name: "account".to_string(),
