@@ -5,11 +5,22 @@
 //! - Deletes: dependents before dependencies (reverse topological order)
 //! - Inserts: dependencies before dependents (topological order)
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::api::operations::Operation;
 use super::super::types::{EntitySyncPlan, FieldDiffEntry, NulledLookupInfo, SyncPlan, SYSTEM_FIELDS};
+
+/// Context for cleaning records before insertion
+pub struct InsertCleaningContext<'a> {
+    /// Map from lookup field name to target entity_set_name
+    /// e.g., "nrq_fund" -> "nrq_funds"
+    pub internal_lookups: HashMap<String, String>,
+    /// External lookups to null
+    pub nulled_lookups: &'a [NulledLookupInfo],
+}
 
 /// A single sync operation to be executed
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -398,6 +409,18 @@ pub fn build_schema_operations(plan: &SyncPlan, solution_name: Option<&str>) -> 
 pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
     let mut operations = Vec::new();
 
+    // Build entity_set lookup map from all entity plans
+    let entity_set_map: HashMap<String, String> = plan
+        .entity_plans
+        .iter()
+        .map(|p| {
+            (
+                p.entity_info.logical_name.clone(),
+                p.entity_info.entity_set_name.clone(),
+            )
+        })
+        .collect();
+
     // Get entities in insert order (lower insert_priority = insert first)
     for entity_plan in plan.insert_order() {
         // Skip junction entities - they use AssociateRef, not Create
@@ -405,10 +428,28 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
             continue;
         }
 
+        // Build internal lookups map for this entity
+        let internal_lookups: HashMap<String, String> = entity_plan
+            .entity_info
+            .lookups
+            .iter()
+            .filter(|l| l.is_internal)
+            .filter_map(|l| {
+                entity_set_map
+                    .get(&l.target_entity)
+                    .map(|entity_set| (l.field_name.clone(), entity_set.clone()))
+            })
+            .collect();
+
+        let ctx = InsertCleaningContext {
+            internal_lookups,
+            nulled_lookups: &entity_plan.nulled_lookups,
+        };
+
         let entity_set = &entity_plan.entity_info.entity_set_name;
 
         for record in &entity_plan.data_preview.origin_records {
-            let cleaned = clean_record_for_insert(record, &entity_plan.nulled_lookups);
+            let cleaned = clean_record_for_insert(record, &ctx);
             operations.push(Operation::Create {
                 entity: entity_set.clone(),
                 data: cleaned,
@@ -419,27 +460,62 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
     operations
 }
 
-/// Clean a record for insertion by removing system fields and nulling external lookups.
+/// Clean a record for insertion by filtering out API response metadata and converting lookups.
 ///
-/// - Removes all system fields (createdby, modifiedon, etc.) that are auto-populated
-/// - Sets external lookup fields to null (lookups to entities not in sync set)
-pub fn clean_record_for_insert(record: &Value, nulled_lookups: &[NulledLookupInfo]) -> Value {
+/// - Filters out OData annotations (@odata.*, @OData.*, @Microsoft.*)
+/// - Filters out navigation property values (_*_value fields)
+/// - Removes system fields (createdby, modifiedon, etc.)
+/// - Converts internal lookups to @odata.bind format
+/// - Nulls external lookups (lookups to entities not in sync set)
+pub fn clean_record_for_insert(record: &Value, ctx: &InsertCleaningContext) -> Value {
     let Some(obj) = record.as_object() else {
         return record.clone();
     };
 
-    let mut cleaned = obj.clone();
+    let mut cleaned = serde_json::Map::new();
 
-    // Remove system fields
-    for field in SYSTEM_FIELDS {
-        cleaned.remove(*field);
+    for (key, value) in obj {
+        // Skip null values - no need to send them
+        if value.is_null() {
+            continue;
+        }
+
+        // Skip OData annotations (contains @odata, @OData, or @Microsoft)
+        if key.contains("@odata") || key.contains("@OData") || key.contains("@Microsoft") {
+            continue;
+        }
+
+        // Skip navigation property values (_*_value fields)
+        if key.starts_with('_') && key.ends_with("_value") {
+            continue;
+        }
+
+        // Skip system fields
+        if SYSTEM_FIELDS.contains(&key.as_str()) {
+            continue;
+        }
+
+        // Keep the field
+        cleaned.insert(key.clone(), value.clone());
     }
 
-    // Null external lookups
-    for nulled in nulled_lookups {
-        // Set the lookup field to null (don't remove - we want to overwrite any existing value)
-        cleaned.insert(nulled.field_name.clone(), Value::Null);
+    // Add internal lookups as @odata.bind
+    for (field_name, entity_set_name) in &ctx.internal_lookups {
+        let value_key = format!("_{}_value", field_name);
+        if let Some(guid) = obj.get(&value_key).and_then(|v| v.as_str()) {
+            if !guid.is_empty() {
+                let bind_key = format!("{}@odata.bind", field_name);
+                let bind_value = format!("/{}({})", entity_set_name, guid);
+                cleaned.insert(bind_key, Value::String(bind_value));
+            }
+        }
     }
+
+    // Note: External lookups are tracked in ctx.nulled_lookups for reporting,
+    // but we don't need to explicitly null them in the payload since:
+    // 1. We're doing delete-then-insert (no existing values to clear)
+    // 2. Original values come in as _*_value navigation properties which we filter out
+    // 3. Omitting the field is equivalent to setting it to null for new records
 
     Value::Object(cleaned)
 }
@@ -1131,7 +1207,12 @@ mod tests {
             "statuscode": 1
         });
 
-        let cleaned = clean_record_for_insert(&record, &[]);
+        let ctx = InsertCleaningContext {
+            internal_lookups: HashMap::new(),
+            nulled_lookups: &[],
+        };
+
+        let cleaned = clean_record_for_insert(&record, &ctx);
 
         // Should keep business fields
         assert_eq!(cleaned["accountid"], "abc-123");
@@ -1148,12 +1229,130 @@ mod tests {
     }
 
     #[test]
-    fn test_clean_record_nulls_external_lookups() {
+    fn test_clean_record_filters_odata_annotations() {
+        let record = serde_json::json!({
+            "accountid": "abc-123",
+            "name": "Test Account",
+            "@odata.etag": "W/\"12345\"",
+            "createdon@OData.Community.Display.V1.FormattedValue": "1/1/2024",
+            "statecode@OData.Community.Display.V1.FormattedValue": "Active",
+            "_createdby_value@Microsoft.Dynamics.CRM.lookuplogicalname": "systemuser"
+        });
+
+        let ctx = InsertCleaningContext {
+            internal_lookups: HashMap::new(),
+            nulled_lookups: &[],
+        };
+
+        let cleaned = clean_record_for_insert(&record, &ctx);
+
+        // Should keep business fields
+        assert_eq!(cleaned["accountid"], "abc-123");
+        assert_eq!(cleaned["name"], "Test Account");
+
+        // Should remove OData annotations
+        assert!(cleaned.get("@odata.etag").is_none());
+        assert!(cleaned.get("createdon@OData.Community.Display.V1.FormattedValue").is_none());
+        assert!(cleaned.get("statecode@OData.Community.Display.V1.FormattedValue").is_none());
+        assert!(cleaned.get("_createdby_value@Microsoft.Dynamics.CRM.lookuplogicalname").is_none());
+    }
+
+    #[test]
+    fn test_clean_record_filters_navigation_properties() {
+        let record = serde_json::json!({
+            "accountid": "abc-123",
+            "name": "Test Account",
+            "_createdby_value": "user-guid-123",
+            "_modifiedby_value": "user-guid-456",
+            "_ownerid_value": "owner-guid-789",
+            "_parentaccountid_value": "parent-guid-000"
+        });
+
+        let ctx = InsertCleaningContext {
+            internal_lookups: HashMap::new(),
+            nulled_lookups: &[],
+        };
+
+        let cleaned = clean_record_for_insert(&record, &ctx);
+
+        // Should keep business fields
+        assert_eq!(cleaned["accountid"], "abc-123");
+        assert_eq!(cleaned["name"], "Test Account");
+
+        // Should remove navigation property values
+        assert!(cleaned.get("_createdby_value").is_none());
+        assert!(cleaned.get("_modifiedby_value").is_none());
+        assert!(cleaned.get("_ownerid_value").is_none());
+        assert!(cleaned.get("_parentaccountid_value").is_none());
+    }
+
+    #[test]
+    fn test_clean_record_skips_null_values() {
+        let record = serde_json::json!({
+            "accountid": "abc-123",
+            "name": "Test Account",
+            "description": null,
+            "parentaccountid": null,
+            "websiteurl": null,
+            "revenue": 1000000
+        });
+
+        let ctx = InsertCleaningContext {
+            internal_lookups: HashMap::new(),
+            nulled_lookups: &[],
+        };
+
+        let cleaned = clean_record_for_insert(&record, &ctx);
+
+        // Should keep non-null business fields
+        assert_eq!(cleaned["accountid"], "abc-123");
+        assert_eq!(cleaned["name"], "Test Account");
+        assert_eq!(cleaned["revenue"], 1000000);
+
+        // Should skip null values entirely
+        assert!(cleaned.get("description").is_none());
+        assert!(cleaned.get("parentaccountid").is_none());
+        assert!(cleaned.get("websiteurl").is_none());
+    }
+
+    #[test]
+    fn test_clean_record_converts_internal_lookups() {
         let record = serde_json::json!({
             "contactid": "con-123",
             "fullname": "John Doe",
-            "parentcustomerid": "acc-456",
-            "owninguser": "user-1"
+            "_parentcustomerid_value": "acc-456"
+        });
+
+        let mut internal_lookups = HashMap::new();
+        internal_lookups.insert("parentcustomerid".to_string(), "accounts".to_string());
+
+        let ctx = InsertCleaningContext {
+            internal_lookups,
+            nulled_lookups: &[],
+        };
+
+        let cleaned = clean_record_for_insert(&record, &ctx);
+
+        // Should keep business fields
+        assert_eq!(cleaned["contactid"], "con-123");
+        assert_eq!(cleaned["fullname"], "John Doe");
+
+        // Should convert internal lookup to @odata.bind format
+        assert_eq!(cleaned["parentcustomerid@odata.bind"], "/accounts(acc-456)");
+
+        // Navigation property should be removed
+        assert!(cleaned.get("_parentcustomerid_value").is_none());
+    }
+
+    #[test]
+    fn test_clean_record_external_lookups_from_nav_properties() {
+        // External lookups come in as _*_value navigation properties
+        // which get filtered out. We don't need to explicitly null them.
+        let record = serde_json::json!({
+            "contactid": "con-123",
+            "fullname": "John Doe",
+            "_parentcustomerid_value": "acc-456",  // External lookup as nav property
+            "_owninguser_value": "user-1"          // System lookup as nav property
         });
 
         let nulled_lookups = vec![
@@ -1165,60 +1364,24 @@ mod tests {
             },
         ];
 
-        let cleaned = clean_record_for_insert(&record, &nulled_lookups);
+        let ctx = InsertCleaningContext {
+            internal_lookups: HashMap::new(),
+            nulled_lookups: &nulled_lookups,
+        };
+
+        let cleaned = clean_record_for_insert(&record, &ctx);
 
         // Should keep business fields
         assert_eq!(cleaned["contactid"], "con-123");
         assert_eq!(cleaned["fullname"], "John Doe");
 
-        // Should null the external lookup
-        assert!(cleaned["parentcustomerid"].is_null());
+        // Navigation properties should be filtered out (not present at all)
+        assert!(cleaned.get("_parentcustomerid_value").is_none());
+        assert!(cleaned.get("_owninguser_value").is_none());
 
-        // System field should be removed (not just nulled)
+        // No explicit null added for external lookups
+        assert!(cleaned.get("parentcustomerid").is_none());
         assert!(cleaned.get("owninguser").is_none());
-    }
-
-    #[test]
-    fn test_clean_record_handles_multiple_nulled_lookups() {
-        let record = serde_json::json!({
-            "opportunityid": "opp-123",
-            "name": "Big Deal",
-            "customerid": "acc-456",
-            "pricelevelid": "price-789",
-            "transactioncurrencyid": "curr-000"
-        });
-
-        let nulled_lookups = vec![
-            NulledLookupInfo {
-                entity_name: "opportunity".to_string(),
-                field_name: "customerid".to_string(),
-                target_entity: "account".to_string(),
-                affected_count: 5,
-            },
-            NulledLookupInfo {
-                entity_name: "opportunity".to_string(),
-                field_name: "pricelevelid".to_string(),
-                target_entity: "pricelevel".to_string(),
-                affected_count: 5,
-            },
-            NulledLookupInfo {
-                entity_name: "opportunity".to_string(),
-                field_name: "transactioncurrencyid".to_string(),
-                target_entity: "transactioncurrency".to_string(),
-                affected_count: 5,
-            },
-        ];
-
-        let cleaned = clean_record_for_insert(&record, &nulled_lookups);
-
-        // Business fields kept
-        assert_eq!(cleaned["opportunityid"], "opp-123");
-        assert_eq!(cleaned["name"], "Big Deal");
-
-        // All external lookups nulled
-        assert!(cleaned["customerid"].is_null());
-        assert!(cleaned["pricelevelid"].is_null());
-        assert!(cleaned["transactioncurrencyid"].is_null());
     }
 
     #[test]
@@ -1260,14 +1423,10 @@ mod tests {
             assert_eq!(data["parentid"], "p1");
             assert_eq!(data["name"], "Parent 1");
 
-            // System fields should be removed
+            // System fields should be removed (ownerid is a system field)
             assert!(data.get("createdby").is_none());
             assert!(data.get("modifiedon").is_none());
-
-            // ownerid is both a system field AND a nulled lookup
-            // System fields are removed first, then nulled lookups are inserted as null
-            // So ownerid ends up as null (re-inserted by nulled lookup processing)
-            assert!(data["ownerid"].is_null());
+            assert!(data.get("ownerid").is_none());
         }
     }
 
