@@ -142,6 +142,9 @@ impl DynamicsClient {
             Operation::AssociateRef { entity, entity_ref, navigation_property, target_ref } => {
                 self.associate_ref(entity, entity_ref, navigation_property, target_ref, resilience).await
             }
+            Operation::DisassociateRef { entity, entity_ref, navigation_property, target_id } => {
+                self.disassociate_ref(entity, entity_ref, navigation_property, target_id, resilience).await
+            }
             // Schema/Metadata operations
             Operation::CreateAttribute { entity, attribute_data, solution_name } => {
                 self.create_attribute(entity, attribute_data, solution_name.as_deref(), resilience).await
@@ -571,6 +574,34 @@ impl DynamicsClient {
             entity_ref: entity_ref.to_string(),
             navigation_property: navigation_property.to_string(),
             target_ref: target_ref.to_string(),
+        }, response).await
+    }
+
+    /// Disassociate records via navigation property (remove N:N relationship)
+    async fn disassociate_ref(&self, entity: &str, entity_ref: &str, navigation_property: &str, target_id: &str, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+        // DELETE /entities(id)/navigation_property(target_id)/$ref
+        let url = format!("{}/{}({})/{}({})/$ref", self.base_url, entity, entity_ref, navigation_property, target_id);
+        let correlation_id = uuid::Uuid::new_v4().to_string();
+
+        // Apply rate limiting before making the request
+        self.apply_rate_limiting().await?;
+
+        let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
+        let response = retry_policy.execute(|| async {
+            self.http_client
+                .delete(&url)
+                .bearer_auth(&self.access_token)
+                .header("OData-Version", headers::ODATA_VERSION)
+                .header(headers::X_CORRELATION_ID, &correlation_id)
+                .send()
+                .await
+        }).await?;
+
+        self.parse_response(Operation::DisassociateRef {
+            entity: entity.to_string(),
+            entity_ref: entity_ref.to_string(),
+            navigation_property: navigation_property.to_string(),
+            target_id: target_id.to_string(),
         }, response).await
     }
 

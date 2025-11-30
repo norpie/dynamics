@@ -406,9 +406,10 @@ pub fn build_operation_summary(sync_plan: &SyncPlan) -> OperationSummary {
 // - Origin-only records → Create (POST with GUID in body)
 // - Both exist → Update (PATCH with origin data, reactivates if inactive)
 // - Target-only records → Deactivate (PATCH statecode: 1) for regular entities
-// - Junction entities still use Delete (no statecode on intersect tables)
+// - Junction entities use DisassociateRef (DELETE on $ref, not DELETE on entity)
 
 /// Build delete operations for junction entities only.
+/// Uses DisassociateRef instead of Delete (Dynamics 365 intersect entities don't support DELETE).
 /// Regular entities use deactivation instead of deletion.
 /// Returns operations in delete order (dependents before dependencies).
 pub fn build_delete_operations(plan: &SyncPlan) -> Vec<Operation> {
@@ -416,18 +417,35 @@ pub fn build_delete_operations(plan: &SyncPlan) -> Vec<Operation> {
 
     // Get entities in delete order (higher delete_priority = delete first)
     for entity_plan in plan.delete_order() {
-        // Only delete junction/intersect entities (they don't have statecode)
-        if entity_plan.entity_info.nn_relationship.is_none() {
+        // Only process junction/intersect entities (they don't have statecode)
+        let Some(ref nn_info) = entity_plan.entity_info.nn_relationship else {
             continue;
-        }
+        };
 
-        let entity_set = &entity_plan.entity_info.entity_set_name;
+        // Use raw junction target records to get FK values
+        // (target_records only has id + name, but we need the FK GUIDs)
+        for record in &entity_plan.data_preview.junction_target_raw {
+            // Extract FK values using the relationship metadata
+            let parent_id = record.get(&nn_info.parent_fk_field).and_then(|v| v.as_str());
+            let target_id = record.get(&nn_info.target_fk_field).and_then(|v| v.as_str());
 
-        for record in &entity_plan.data_preview.target_records {
-            operations.push(Operation::Delete {
-                entity: entity_set.clone(),
-                id: record.id.clone(),
-            });
+            match (parent_id, target_id) {
+                (Some(parent_id), Some(target_id)) => {
+                    // Use DisassociateRef: DELETE /parent_entity(parent_id)/navigation_property(target_id)/$ref
+                    operations.push(Operation::DisassociateRef {
+                        entity: nn_info.parent_entity_set.clone(),
+                        entity_ref: parent_id.to_string(),
+                        navigation_property: nn_info.navigation_property.clone(),
+                        target_id: target_id.to_string(),
+                    });
+                }
+                _ => {
+                    log::warn!(
+                        "Junction record missing FK fields (parent={}, target={}): {:?}",
+                        nn_info.parent_fk_field, nn_info.target_fk_field, record
+                    );
+                }
+            }
         }
     }
 
@@ -834,9 +852,10 @@ mod tests {
                         target_count: 2,
                         origin_records: vec![],
                         target_records: vec![
-                            TargetRecord { id: "parent-1".to_string(), name: Some("Parent 1".to_string()) },
-                            TargetRecord { id: "parent-2".to_string(), name: Some("Parent 2".to_string()) },
+                            TargetRecord { id: "parent-1".to_string(), name: Some("Parent 1".to_string()), junction_parent_id: None, junction_target_id: None },
+                            TargetRecord { id: "parent-2".to_string(), name: Some("Parent 2".to_string()), junction_parent_id: None, junction_target_id: None },
                         ],
+                        junction_target_raw: vec![],
                     },
                     nulled_lookups: vec![],
                 },
@@ -866,10 +885,11 @@ mod tests {
                         target_count: 3,
                         origin_records: vec![],
                         target_records: vec![
-                            TargetRecord { id: "child-1".to_string(), name: Some("Child 1".to_string()) },
-                            TargetRecord { id: "child-2".to_string(), name: Some("Child 2".to_string()) },
-                            TargetRecord { id: "child-3".to_string(), name: Some("Child 3".to_string()) },
+                            TargetRecord { id: "child-1".to_string(), name: Some("Child 1".to_string()), junction_parent_id: None, junction_target_id: None },
+                            TargetRecord { id: "child-2".to_string(), name: Some("Child 2".to_string()), junction_parent_id: None, junction_target_id: None },
+                            TargetRecord { id: "child-3".to_string(), name: Some("Child 3".to_string()), junction_parent_id: None, junction_target_id: None },
                         ],
+                        junction_target_raw: vec![],
                     },
                     nulled_lookups: vec![],
                 },
@@ -1111,6 +1131,7 @@ mod tests {
                             serde_json::json!({"parentid": "p2", "name": "Parent 2"}),
                         ],
                         target_records: vec![],
+                        junction_target_raw: vec![],
                     },
                     nulled_lookups: vec![],
                 },
@@ -1144,6 +1165,7 @@ mod tests {
                             serde_json::json!({"childid": "c3", "name": "Child 3", "parentid": "p2"}),
                         ],
                         target_records: vec![],
+                        junction_target_raw: vec![],
                     },
                     nulled_lookups: vec![],
                 },
@@ -1220,6 +1242,7 @@ mod tests {
                     serde_json::json!({"parentid": "p2", "childid": "c2"}),
                 ],
                 target_records: vec![],
+                junction_target_raw: vec![],
             },
             nulled_lookups: vec![],
         });
@@ -1283,6 +1306,7 @@ mod tests {
                             serde_json::json!({"accountid": "acc-2", "name": "Account 2"}),
                         ],
                         target_records: vec![],
+                        junction_target_raw: vec![],
                     },
                     nulled_lookups: vec![],
                 },
@@ -1310,6 +1334,7 @@ mod tests {
                             serde_json::json!({"contactid": "con-2", "fullname": "Contact 2"}),
                         ],
                         target_records: vec![],
+                        junction_target_raw: vec![],
                     },
                     nulled_lookups: vec![],
                 },
@@ -1346,6 +1371,7 @@ mod tests {
                             serde_json::json!({"accountid": "acc-2", "contactid": "con-1"}),
                         ],
                         target_records: vec![],
+                        junction_target_raw: vec![],
                     },
                     nulled_lookups: vec![],
                 },
@@ -1788,10 +1814,11 @@ mod tests {
                             serde_json::json!({"parentid": "p3", "name": "Parent 3 New", "statecode": 0}),
                         ],
                         target_records: vec![
-                            TargetRecord { id: "p1".to_string(), name: Some("Parent 1".to_string()) },
-                            TargetRecord { id: "p2".to_string(), name: Some("Parent 2".to_string()) },
-                            TargetRecord { id: "p4".to_string(), name: Some("Parent 4 ToDeactivate".to_string()) },
+                            TargetRecord { id: "p1".to_string(), name: Some("Parent 1".to_string()), junction_parent_id: None, junction_target_id: None },
+                            TargetRecord { id: "p2".to_string(), name: Some("Parent 2".to_string()), junction_parent_id: None, junction_target_id: None },
+                            TargetRecord { id: "p4".to_string(), name: Some("Parent 4 ToDeactivate".to_string()), junction_parent_id: None, junction_target_id: None },
                         ],
+                        junction_target_raw: vec![],
                     },
                     nulled_lookups: vec![],
                 },
@@ -1879,24 +1906,29 @@ mod tests {
     fn test_build_delete_operations_junction_with_target_records() {
         let mut sync_plan = make_test_plan_with_junction();
 
-        // Add target records to the junction entity
-        sync_plan.entity_plans[2].data_preview.target_records = vec![
-            TargetRecord { id: "junc-1".to_string(), name: None },
-            TargetRecord { id: "junc-2".to_string(), name: None },
+        // Add raw junction target records with FK values
+        // (junction_target_raw is used, not target_records)
+        sync_plan.entity_plans[2].data_preview.junction_target_raw = vec![
+            serde_json::json!({"accountid": "acc-1", "contactid": "con-1"}),
+            serde_json::json!({"accountid": "acc-2", "contactid": "con-2"}),
         ];
 
         let delete_ops = build_delete_operations(&sync_plan);
 
-        // Should have 2 delete operations for the junction entity only
+        // Should have 2 DisassociateRef operations for the junction entity
         assert_eq!(delete_ops.len(), 2);
 
         for op in &delete_ops {
             match op {
-                Operation::Delete { entity, id } => {
-                    assert_eq!(entity, "accountcontacts");
-                    assert!(id == "junc-1" || id == "junc-2");
+                Operation::DisassociateRef { entity, entity_ref, navigation_property, target_id } => {
+                    // entity should be parent entity set (accounts)
+                    assert_eq!(entity, "accounts");
+                    assert_eq!(navigation_property, "contact_account_association");
+                    // Check FK values are extracted correctly
+                    assert!(entity_ref == "acc-1" || entity_ref == "acc-2");
+                    assert!(target_id == "con-1" || target_id == "con-2");
                 }
-                _ => panic!("Expected Delete operation"),
+                _ => panic!("Expected DisassociateRef operation, got {:?}", op),
             }
         }
     }

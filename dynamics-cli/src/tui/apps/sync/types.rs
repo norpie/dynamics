@@ -200,6 +200,12 @@ pub struct TargetRecord {
     pub id: String,
     /// Display name from primary name attribute
     pub name: Option<String>,
+    /// For junction entities: FK value to parent entity (Entity1)
+    /// Used for DisassociateRef operations
+    pub junction_parent_id: Option<String>,
+    /// For junction entities: FK value to target entity (Entity2)
+    /// Used for DisassociateRef operations
+    pub junction_target_id: Option<String>,
 }
 
 /// Data preview for an entity
@@ -215,6 +221,9 @@ pub struct EntityDataPreview {
     pub origin_records: Vec<Value>,
     /// Records from target - to be deleted (with ID and name)
     pub target_records: Vec<TargetRecord>,
+    /// For junction entities: raw target records with FK values
+    /// Used to build DisassociateRef operations (need FK values, not just record ID)
+    pub junction_target_raw: Vec<Value>,
 }
 
 /// Information about an external lookup that will be nulled

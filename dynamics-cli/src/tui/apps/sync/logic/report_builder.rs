@@ -381,6 +381,7 @@ mod tests {
                     target_count: 50,
                     origin_records: vec![],
                     target_records: vec![],
+                    junction_target_raw: vec![],
                 },
                 nulled_lookups: vec![NulledLookupInfo {
                     entity_name: "account".to_string(),

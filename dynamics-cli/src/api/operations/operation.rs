@@ -64,6 +64,18 @@ pub enum Operation {
         /// Target entity reference (e.g., "/cgk_supports(guid)")
         target_ref: String,
     },
+    /// Disassociate records via navigation property (remove N:N relationship)
+    /// DELETE /entities(id)/navigation_property(target_id)/$ref
+    DisassociateRef {
+        /// Base entity collection name (e.g., "nrq_categories")
+        entity: String,
+        /// Entity ID (e.g., "guid")
+        entity_ref: String,
+        /// Navigation property name (e.g., "nrq_category_nrq_flemishshare")
+        navigation_property: String,
+        /// Target entity ID (e.g., "guid")
+        target_id: String,
+    },
 
     // === Schema/Metadata Operations ===
 
@@ -212,6 +224,7 @@ impl Operation {
             Self::Delete { entity, .. } => entity,
             Self::Upsert { entity, .. } => entity,
             Self::AssociateRef { entity, .. } => entity,
+            Self::DisassociateRef { entity, .. } => entity,
             Self::CreateAttribute { entity, .. } => entity,
             Self::UpdateAttribute { entity, .. } => entity,
             Self::DeleteAttribute { entity, .. } => entity,
@@ -228,6 +241,7 @@ impl Operation {
             Self::Delete { .. } => "DELETE",
             Self::Upsert { .. } => "PATCH", // Upsert uses PATCH with specific headers
             Self::AssociateRef { .. } => "POST",
+            Self::DisassociateRef { .. } => "DELETE",
             Self::CreateAttribute { .. } => "POST",
             Self::UpdateAttribute { .. } => "PUT", // Schema updates use PUT, not PATCH
             Self::DeleteAttribute { .. } => "DELETE",
@@ -244,6 +258,7 @@ impl Operation {
             Self::Delete { .. } => "delete",
             Self::Upsert { .. } => "upsert",
             Self::AssociateRef { .. } => "associate_ref",
+            Self::DisassociateRef { .. } => "disassociate_ref",
             Self::CreateAttribute { .. } => "create_attribute",
             Self::UpdateAttribute { .. } => "update_attribute",
             Self::DeleteAttribute { .. } => "delete_attribute",

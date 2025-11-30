@@ -1064,19 +1064,21 @@ async fn run_analysis(
 
                 // Don't use active_only filter for junction/intersect entities (they don't have statecode)
                 let active_only = !metadata.is_intersect;
+                let is_intersect = metadata.is_intersect;
                 let origin_records = fetch_all_records(&origin_client, &entity_name, &metadata.entity_set_name, active_only).await;
-                let target_records = fetch_target_records(
+                let target_result = fetch_target_records(
                     &target_client,
                     &entity_name,
                     &metadata.entity_set_name,
                     metadata.primary_name_attribute.as_deref(),
+                    is_intersect,
                 ).await;
 
-                match (&origin_records, &target_records) {
-                    (Ok(records), Ok(targets)) => {
+                match (&origin_records, &target_result) {
+                    (Ok(records), Ok(target_res)) => {
                         let count = records.len();
                         set_entity_records_status(&entity_name, FetchStatus::Done, Some(count));
-                        Ok((entity_name, records.clone(), targets.clone()))
+                        Ok((entity_name, records.clone(), target_res.records.clone(), target_res.raw_records.clone()))
                     }
                     (Err(e), _) => {
                         set_entity_records_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
@@ -1090,17 +1092,19 @@ async fn run_analysis(
             }
         }).collect();
 
-    let record_results: Vec<Result<(String, Vec<serde_json::Value>, Vec<super::types::TargetRecord>), String>> =
+    // Result tuple: (entity_name, origin_records, target_records, junction_target_raw)
+    let record_results: Vec<Result<(String, Vec<serde_json::Value>, Vec<super::types::TargetRecord>, Vec<serde_json::Value>), String>> =
         join_all(record_futures).await;
 
     // Collect successful record results
-    let mut record_data: std::collections::HashMap<String, (Vec<serde_json::Value>, Vec<super::types::TargetRecord>)> =
+    // Map: entity_name -> (origin_records, target_records, junction_target_raw)
+    let mut record_data: std::collections::HashMap<String, (Vec<serde_json::Value>, Vec<super::types::TargetRecord>, Vec<serde_json::Value>)> =
         std::collections::HashMap::new();
 
     for result in record_results {
         match result {
-            Ok((entity_name, origin_records, target_records)) => {
-                record_data.insert(entity_name, (origin_records, target_records));
+            Ok((entity_name, origin_records, target_records, junction_target_raw)) => {
+                record_data.insert(entity_name, (origin_records, target_records, junction_target_raw));
             }
             Err(e) => {
                 log::error!("Record fetch failed: {}", e);
@@ -1165,10 +1169,10 @@ async fn run_analysis(
             continue;
         };
 
-        let (origin_records, target_records) = record_data
+        let (origin_records, target_records, junction_target_raw) = record_data
             .get(entity_name)
             .cloned()
-            .unwrap_or_else(|| (vec![], vec![]));
+            .unwrap_or_else(|| (vec![], vec![], vec![]));
 
         // Get entity metadata (is_intersect, primary_name_attribute)
         let metadata = entity_metadata_map.get(entity_name);
@@ -1300,6 +1304,7 @@ async fn run_analysis(
                 target_count,
                 origin_records,
                 target_records,
+                junction_target_raw,
             },
             nulled_lookups: lookups
                 .iter()
@@ -1553,29 +1558,46 @@ async fn fetch_all_records(
     Ok(all_records)
 }
 
+/// Result of fetching target records
+struct TargetRecordsResult {
+    /// Extracted target records (id + name)
+    records: Vec<super::types::TargetRecord>,
+    /// For junction entities: raw records with all fields (for FK extraction)
+    raw_records: Vec<serde_json::Value>,
+}
+
 /// Fetch target records (ID + name) for an entity (for deletion preview)
+/// For junction entities (is_intersect=true), also returns raw records for FK extraction
 async fn fetch_target_records(
     client: &crate::api::DynamicsClient,
     entity_name: &str,
     entity_set_name: &str,
     primary_name_attribute: Option<&str>,
-) -> anyhow::Result<Vec<super::types::TargetRecord>> {
+    is_intersect: bool,
+) -> anyhow::Result<TargetRecordsResult> {
     use crate::api::query::QueryBuilder;
 
     let pk_field = format!("{}id", entity_name);
     let mut all_records = Vec::new();
+    let mut raw_records = Vec::new();
 
-    // Select ID and optionally the name field
-    let select_fields: Vec<&str> = if let Some(name_attr) = primary_name_attribute {
-        vec![&pk_field, name_attr]
+    // For junction entities, fetch all fields (we need FK values for DisassociateRef)
+    // For regular entities, just fetch ID and name
+    let query = if is_intersect {
+        QueryBuilder::new(entity_set_name)
+            .top(5000)
+            .build()
     } else {
-        vec![&pk_field]
+        let select_fields: Vec<&str> = if let Some(name_attr) = primary_name_attribute {
+            vec![&pk_field, name_attr]
+        } else {
+            vec![&pk_field]
+        };
+        QueryBuilder::new(entity_set_name)
+            .select(&select_fields)
+            .top(5000)
+            .build()
     };
-
-    let query = QueryBuilder::new(entity_set_name)
-        .select(&select_fields)
-        .top(5000)
-        .build();
 
     let mut result = client.execute_query(&query).await?;
 
@@ -1585,13 +1607,21 @@ async fn fetch_target_records(
             .and_then(|attr| record.get(attr))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        Some(super::types::TargetRecord { id, name })
+        Some(super::types::TargetRecord {
+            id,
+            name,
+            junction_parent_id: None,
+            junction_target_id: None,
+        })
     };
 
     if let Some(ref data) = result.data {
         for record in &data.value {
             if let Some(tr) = extract_record(record) {
                 all_records.push(tr);
+            }
+            if is_intersect {
+                raw_records.push(record.clone());
             }
         }
     }
@@ -1603,6 +1633,9 @@ async fn fetch_target_records(
                     if let Some(tr) = extract_record(record) {
                         all_records.push(tr);
                     }
+                    if is_intersect {
+                        raw_records.push(record.clone());
+                    }
                 }
             }
             result = next;
@@ -1611,6 +1644,9 @@ async fn fetch_target_records(
         }
     }
 
-    log::info!("Fetched {} target records from {} ({})", all_records.len(), entity_name, entity_set_name);
-    Ok(all_records)
+    log::info!("Fetched {} target records from {} ({}){}",
+        all_records.len(), entity_name, entity_set_name,
+        if is_intersect { " (with raw data for junction)" } else { "" }
+    );
+    Ok(TargetRecordsResult { records: all_records, raw_records })
 }

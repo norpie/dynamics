@@ -140,6 +140,9 @@ fn build_operation_details(item: &super::models::QueueItem, child_idx: usize, th
         Operation::AssociateRef { entity, entity_ref, navigation_property, .. } => {
             format!("POST /{}({})/{}/$ref", entity, entity_ref, navigation_property)
         }
+        Operation::DisassociateRef { entity, entity_ref, navigation_property, target_id } => {
+            format!("DELETE /{}({})/{}({})/$ref", entity, entity_ref, navigation_property, target_id)
+        }
         // Schema operations
         Operation::CreateAttribute { entity, .. } => {
             format!("POST /EntityDefinitions('{}')/Attributes", entity)
@@ -201,6 +204,21 @@ fn build_operation_details(item: &super::models::QueueItem, child_idx: usize, th
             lines.push(Element::styled_text(RataLine::from(vec![
                 Span::styled("Target: ", Style::default().fg(theme.border_primary)),
                 Span::styled(target_ref.clone(), Style::default().fg(theme.text_primary)),
+            ])).build());
+        }
+        Operation::DisassociateRef { entity_ref, navigation_property, target_id, .. } => {
+            lines.push(Element::text(""));
+            lines.push(Element::styled_text(RataLine::from(vec![
+                Span::styled("Entity Ref: ", Style::default().fg(theme.border_primary)),
+                Span::styled(entity_ref.clone(), Style::default().fg(theme.text_primary)),
+            ])).build());
+            lines.push(Element::styled_text(RataLine::from(vec![
+                Span::styled("Navigation: ", Style::default().fg(theme.border_primary)),
+                Span::styled(navigation_property.clone(), Style::default().fg(theme.text_primary)),
+            ])).build());
+            lines.push(Element::styled_text(RataLine::from(vec![
+                Span::styled("Target ID: ", Style::default().fg(theme.border_primary)),
+                Span::styled(target_id.clone(), Style::default().fg(theme.text_primary)),
             ])).build());
         }
         // Schema operations

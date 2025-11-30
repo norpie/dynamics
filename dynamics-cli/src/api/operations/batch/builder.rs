@@ -199,6 +199,24 @@ impl BatchRequestBuilder {
                     body: Some(body),
                 }
             }
+            Operation::DisassociateRef { entity, entity_ref, navigation_property, target_id } => {
+                // DELETE /entities(id)/navigation_property(target_id)/$ref
+                let path = format!("{}/{}({})/{}({})/$ref",
+                    constants::api_path(),
+                    entity,
+                    entity_ref,
+                    navigation_property,
+                    target_id
+                );
+
+                ChangeSetOperation {
+                    content_id,
+                    method: methods::DELETE.to_string(),
+                    path,
+                    headers: vec![],
+                    body: None,
+                }
+            }
             // Schema operations - these typically shouldn't be in batch changesets,
             // but we handle them for completeness
             Operation::CreateAttribute { entity, attribute_data, solution_name } => {
