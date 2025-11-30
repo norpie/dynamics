@@ -677,7 +677,13 @@ impl App for OperationQueueApp {
                     };
                 }
 
-                // Continue if auto-play
+                // Pause on failure - don't continue to next item if this one failed
+                if !result.success && state.auto_play {
+                    state.auto_play = false;
+                    log::warn!("Queue paused due to failed operation");
+                }
+
+                // Continue if auto-play (will be false if we just paused due to failure)
                 let next_cmd = if state.auto_play {
                     execute_next_if_available(state)
                 } else {
