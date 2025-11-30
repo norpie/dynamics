@@ -492,14 +492,17 @@ impl App for EntitySyncApp {
                 }
                 state.confirm.current_batch = 1;
 
-                // Publish all items to the queue
+                // Publish all items to the queue and navigate to queue app
                 let all_items = queue_items.all_items();
                 let queue_items_json = serde_json::to_value(&all_items).unwrap_or_default();
 
-                Command::Publish {
-                    topic: "queue:add_items".to_string(),
-                    data: queue_items_json,
-                }
+                Command::Batch(vec![
+                    Command::Publish {
+                        topic: "queue:add_items".to_string(),
+                        data: queue_items_json,
+                    },
+                    Command::NavigateTo(crate::tui::command::AppId::OperationQueue),
+                ])
             }
             Msg::ExportReport => {
                 if let Some(ref plan) = state.sync_plan {
@@ -768,6 +771,11 @@ impl App for EntitySyncApp {
 
     fn title() -> &'static str {
         "Entity Sync"
+    }
+
+    fn suspend_policy() -> crate::tui::SuspendPolicy {
+        // Stay active in background to receive queue completion events
+        crate::tui::SuspendPolicy::AlwaysActive
     }
 
     fn status(state: &State) -> Option<Line<'static>> {
