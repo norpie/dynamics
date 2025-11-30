@@ -28,6 +28,10 @@ pub struct QueueItem {
     /// When the interruption occurred (app exit timestamp)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interrupted_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Indices of operations that have already succeeded (for partial retry)
+    /// On retry, only operations NOT in this set will be executed
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub succeeded_indices: Vec<usize>,
 }
 
 impl QueueItem {
@@ -43,7 +47,18 @@ impl QueueItem {
             started_at: None,
             was_interrupted: false,
             interrupted_at: None,
+            succeeded_indices: Vec::new(),
         }
+    }
+
+    /// Get the number of operations that still need to be executed
+    pub fn pending_operation_count(&self) -> usize {
+        self.operations.len().saturating_sub(self.succeeded_indices.len())
+    }
+
+    /// Check if this item has partial success (some ops succeeded, some failed)
+    pub fn is_partially_succeeded(&self) -> bool {
+        !self.succeeded_indices.is_empty() && self.succeeded_indices.len() < self.operations.len()
     }
 }
 
@@ -73,8 +88,10 @@ pub enum OperationStatus {
     Paused,
     /// Completed successfully
     Done,
-    /// Execution failed
+    /// Execution failed (all operations failed or fatal error)
     Failed,
+    /// Some operations succeeded, some failed (retryable)
+    PartiallyFailed,
 }
 
 impl OperationStatus {
@@ -86,6 +103,7 @@ impl OperationStatus {
             Self::Paused => "⏸",
             Self::Done => "✓",
             Self::Failed => "⚠",
+            Self::PartiallyFailed => "◐",
         }
     }
 
@@ -97,6 +115,7 @@ impl OperationStatus {
             Self::Paused => "Paused",
             Self::Done => "Done",
             Self::Failed => "Failed",
+            Self::PartiallyFailed => "Partial",
         }
     }
 }

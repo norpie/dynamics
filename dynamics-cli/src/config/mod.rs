@@ -455,6 +455,10 @@ impl Config {
         repository::queue::update_queue_item_result(&self.pool, id, result).await
     }
 
+    pub async fn update_queue_item_succeeded_indices(&self, id: &str, succeeded_indices: &[usize]) -> Result<()> {
+        repository::queue::update_queue_item_succeeded_indices(&self.pool, id, succeeded_indices).await
+    }
+
     pub async fn mark_queue_item_interrupted(&self, id: &str, interrupted_at: chrono::DateTime<chrono::Utc>) -> Result<()> {
         repository::queue::mark_queue_item_interrupted(&self.pool, id, interrupted_at).await
     }

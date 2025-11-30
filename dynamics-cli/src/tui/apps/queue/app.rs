@@ -466,6 +466,20 @@ impl App for OperationQueueApp {
                 let item = state.queue_items.iter().find(|i| i.id == id).cloned();
 
                 if let Some(item) = item {
+                    // Get operations to execute (excluding already-succeeded ones)
+                    let ops_to_execute = if item.succeeded_indices.is_empty() {
+                        item.operations.clone()
+                    } else {
+                        log::info!(
+                            "Retrying item {} with {} succeeded indices, executing {} of {} operations",
+                            item.id,
+                            item.succeeded_indices.len(),
+                            item.operations.len() - item.succeeded_indices.len(),
+                            item.operations.len()
+                        );
+                        item.operations.without_indices(&item.succeeded_indices)
+                    };
+
                     let exec_cmd = Command::perform(
                         async move {
                             let start = std::time::Instant::now();
@@ -485,7 +499,7 @@ impl App for OperationQueueApp {
                             };
 
                             let resilience = ResilienceConfig::default();
-                            let result = item.operations.execute(&client, &resilience).await;
+                            let result = ops_to_execute.execute(&client, &resilience).await;
                             let duration_ms = start.elapsed().as_millis() as u64;
 
                             let queue_result = match result {
@@ -521,17 +535,70 @@ impl App for OperationQueueApp {
                 let mut persist_cmd = Command::None;
 
                 if let Some(item) = state.queue_items.iter_mut().find(|i| i.id == id) {
+                    // Determine new status based on operation results
+                    let succeeded_count = result.operation_results.iter().filter(|r| r.success).count();
+                    let failed_count = result.operation_results.iter().filter(|r| !r.success).count();
+                    let total_count = result.operation_results.len();
+
                     let new_status = if result.success {
+                        // All succeeded - clear any previous succeeded_indices
+                        item.succeeded_indices.clear();
                         OperationStatus::Done
+                    } else if succeeded_count > 0 && failed_count > 0 {
+                        // Partial success - track which operations succeeded
+                        // Note: indices are relative to the operations that were executed
+                        // If this was a retry, we need to map back to original indices
+                        let newly_succeeded: Vec<usize> = result.operation_results
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, r)| r.success)
+                            .map(|(idx, _)| {
+                                // If we have previous succeeded indices, the current execution
+                                // was on a subset. We need to find the original index.
+                                if item.succeeded_indices.is_empty() {
+                                    idx
+                                } else {
+                                    // Find the idx-th non-succeeded original index
+                                    let mut original_idx = 0;
+                                    let mut count = 0;
+                                    for i in 0..item.operations.len() {
+                                        if !item.succeeded_indices.contains(&i) {
+                                            if count == idx {
+                                                original_idx = i;
+                                                break;
+                                            }
+                                            count += 1;
+                                        }
+                                    }
+                                    original_idx
+                                }
+                            })
+                            .collect();
+
+                        // Merge with existing succeeded indices
+                        for idx in newly_succeeded {
+                            if !item.succeeded_indices.contains(&idx) {
+                                item.succeeded_indices.push(idx);
+                            }
+                        }
+                        item.succeeded_indices.sort();
+
+                        OperationStatus::PartiallyFailed
+                    } else if total_count == 0 && result.error.is_some() {
+                        // Fatal error before any operations ran
+                        OperationStatus::Failed
                     } else {
+                        // All operations failed
                         OperationStatus::Failed
                     };
+
                     item.status = new_status.clone();
                     item.result = Some(result.clone());
 
                     // Persist to database
                     let item_id = id.clone();
                     let result_clone = result.clone();
+                    let succeeded_indices_clone = item.succeeded_indices.clone();
                     persist_cmd = Command::perform(
                         async move {
                             let config = crate::global_config();
@@ -539,6 +606,9 @@ impl App for OperationQueueApp {
                                 .map_err(|e| format!("Failed to update status: {}", e))?;
                             config.update_queue_item_result(&item_id, &result_clone).await
                                 .map_err(|e| format!("Failed to update result: {}", e))?;
+                            // Persist succeeded indices for partial retry support
+                            config.update_queue_item_succeeded_indices(&item_id, &succeeded_indices_clone).await
+                                .map_err(|e| format!("Failed to update succeeded_indices: {}", e))?;
                             Ok(())
                         },
                         |result| {

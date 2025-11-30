@@ -329,6 +329,7 @@ fn build_batch_overview(item: &super::models::QueueItem, theme: &crate::tui::sta
                     OperationStatus::Paused => theme.border_primary,
                     OperationStatus::Done => theme.accent_success,
                     OperationStatus::Failed => theme.accent_error,
+                    OperationStatus::PartiallyFailed => theme.accent_warning,
                 })
             ),
             Span::styled(

@@ -34,21 +34,24 @@ pub async fn save_queue_item(pool: &SqlitePool, item: &QueueItem) -> Result<()> 
     let result_json = item.result.as_ref()
         .map(|r| serde_json::to_string(r).ok())
         .flatten();
+    let succeeded_indices_json = serde_json::to_string(&item.succeeded_indices)
+        .context("Failed to serialize succeeded_indices")?;
 
     sqlx::query(
         r#"
         INSERT INTO queue_items (
             id, environment_name, operations_json, metadata_json,
             status, priority, result_json, was_interrupted, interrupted_at,
-            created_at, updated_at
+            succeeded_indices_json, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             status = excluded.status,
             priority = excluded.priority,
             result_json = excluded.result_json,
             was_interrupted = excluded.was_interrupted,
             interrupted_at = excluded.interrupted_at,
+            succeeded_indices_json = excluded.succeeded_indices_json,
             updated_at = CURRENT_TIMESTAMP
         "#
     )
@@ -61,6 +64,7 @@ pub async fn save_queue_item(pool: &SqlitePool, item: &QueueItem) -> Result<()> 
     .bind(result_json)
     .bind(item.was_interrupted)
     .bind(item.interrupted_at)
+    .bind(&succeeded_indices_json)
     .execute(pool)
     .await
     .with_context(|| format!("Failed to save queue item '{}'", item.id))?;
@@ -73,7 +77,8 @@ pub async fn get_queue_item(pool: &SqlitePool, id: &str) -> Result<Option<QueueI
     let row = sqlx::query(
         r#"
         SELECT id, environment_name, operations_json, metadata_json,
-               status, priority, result_json, was_interrupted, interrupted_at
+               status, priority, result_json, was_interrupted, interrupted_at,
+               succeeded_indices_json
         FROM queue_items
         WHERE id = ?
         "#
@@ -95,7 +100,8 @@ pub async fn list_queue_items(pool: &SqlitePool) -> Result<Vec<QueueItem>> {
     let rows = sqlx::query(
         r#"
         SELECT id, environment_name, operations_json, metadata_json,
-               status, priority, result_json, was_interrupted, interrupted_at
+               status, priority, result_json, was_interrupted, interrupted_at,
+               succeeded_indices_json
         FROM queue_items
         ORDER BY priority ASC, created_at ASC
         "#
@@ -165,6 +171,31 @@ pub async fn update_queue_item_result(
     .execute(pool)
     .await
     .with_context(|| format!("Failed to update result for queue item '{}'", id))?;
+
+    if query_result.rows_affected() == 0 {
+        anyhow::bail!("Queue item '{}' not found", id);
+    }
+
+    Ok(())
+}
+
+/// Update succeeded indices for a queue item (for partial retry support)
+pub async fn update_queue_item_succeeded_indices(
+    pool: &SqlitePool,
+    id: &str,
+    succeeded_indices: &[usize]
+) -> Result<()> {
+    let indices_json = serde_json::to_string(succeeded_indices)
+        .context("Failed to serialize succeeded_indices")?;
+
+    let query_result = sqlx::query(
+        "UPDATE queue_items SET succeeded_indices_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    )
+    .bind(&indices_json)
+    .bind(id)
+    .execute(pool)
+    .await
+    .with_context(|| format!("Failed to update succeeded_indices for queue item '{}'", id))?;
 
     if query_result.rows_affected() == 0 {
         anyhow::bail!("Queue item '{}' not found", id);
@@ -311,6 +342,7 @@ fn parse_queue_item_row(row: sqlx::sqlite::SqliteRow) -> Result<QueueItem> {
     let result_json: Option<String> = row.try_get("result_json")?;
     let was_interrupted: bool = row.try_get("was_interrupted")?;
     let interrupted_at: Option<DateTime<Utc>> = row.try_get("interrupted_at")?;
+    let succeeded_indices_json: Option<String> = row.try_get("succeeded_indices_json").ok();
 
     let operations = serde_json::from_str(&operations_json)
         .with_context(|| format!("Failed to deserialize operations for queue item '{}'", id))?;
@@ -320,6 +352,9 @@ fn parse_queue_item_row(row: sqlx::sqlite::SqliteRow) -> Result<QueueItem> {
     let result = result_json
         .map(|json| serde_json::from_str(&json).ok())
         .flatten();
+    let succeeded_indices: Vec<usize> = succeeded_indices_json
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
 
     Ok(QueueItem {
         id,
@@ -331,6 +366,7 @@ fn parse_queue_item_row(row: sqlx::sqlite::SqliteRow) -> Result<QueueItem> {
         started_at: None, // Runtime state, not persisted
         was_interrupted,
         interrupted_at,
+        succeeded_indices,
     })
 }
 
@@ -341,6 +377,7 @@ fn status_to_string(status: &OperationStatus) -> &'static str {
         OperationStatus::Paused => "Paused",
         OperationStatus::Done => "Done",
         OperationStatus::Failed => "Failed",
+        OperationStatus::PartiallyFailed => "PartiallyFailed",
     }
 }
 
@@ -351,6 +388,7 @@ fn parse_status(s: &str) -> OperationStatus {
         "Paused" => OperationStatus::Paused,
         "Done" => OperationStatus::Done,
         "Failed" => OperationStatus::Failed,
+        "PartiallyFailed" => OperationStatus::PartiallyFailed,
         _ => OperationStatus::Pending, // Default fallback
     }
 }

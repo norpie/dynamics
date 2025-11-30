@@ -74,6 +74,27 @@ impl Operations {
         &self.operations
     }
 
+    /// Get operations excluding those at the specified indices
+    /// Used for retrying only failed operations
+    pub fn excluding_indices(&self, succeeded_indices: &[usize]) -> Vec<(usize, &Operation)> {
+        self.operations
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| !succeeded_indices.contains(idx))
+            .collect()
+    }
+
+    /// Create a new Operations containing only items NOT at the specified indices
+    pub fn without_indices(&self, succeeded_indices: &[usize]) -> Self {
+        let ops: Vec<Operation> = self.operations
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| !succeeded_indices.contains(idx))
+            .map(|(_, op)| op.clone())
+            .collect();
+        Self::from_operations(ops)
+    }
+
     /// Extend this collection with operations from another collection
     pub fn extend(mut self, other: Operations) -> Self {
         self.operations.extend(other.operations);
