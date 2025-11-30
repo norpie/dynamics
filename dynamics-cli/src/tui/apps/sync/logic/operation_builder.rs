@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::api::operations::Operation;
-use super::super::types::{EntitySyncPlan, FieldDiffEntry, SyncPlan};
+use super::super::types::{EntitySyncPlan, FieldDiffEntry, NulledLookupInfo, SyncPlan, SYSTEM_FIELDS};
 
 /// A single sync operation to be executed
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -408,14 +408,40 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
         let entity_set = &entity_plan.entity_info.entity_set_name;
 
         for record in &entity_plan.data_preview.origin_records {
+            let cleaned = clean_record_for_insert(record, &entity_plan.nulled_lookups);
             operations.push(Operation::Create {
                 entity: entity_set.clone(),
-                data: record.clone(),
+                data: cleaned,
             });
         }
     }
 
     operations
+}
+
+/// Clean a record for insertion by removing system fields and nulling external lookups.
+///
+/// - Removes all system fields (createdby, modifiedon, etc.) that are auto-populated
+/// - Sets external lookup fields to null (lookups to entities not in sync set)
+pub fn clean_record_for_insert(record: &Value, nulled_lookups: &[NulledLookupInfo]) -> Value {
+    let Some(obj) = record.as_object() else {
+        return record.clone();
+    };
+
+    let mut cleaned = obj.clone();
+
+    // Remove system fields
+    for field in SYSTEM_FIELDS {
+        cleaned.remove(*field);
+    }
+
+    // Null external lookups
+    for nulled in nulled_lookups {
+        // Set the lookup field to null (don't remove - we want to overwrite any existing value)
+        cleaned.insert(nulled.field_name.clone(), Value::Null);
+    }
+
+    Value::Object(cleaned)
 }
 
 /// Build junction operations for N:N relationships.
@@ -1074,5 +1100,159 @@ mod tests {
         let junction_ops = build_junction_operations(&sync_plan);
 
         assert!(junction_ops.is_empty());
+    }
+
+    #[test]
+    fn test_clean_record_removes_system_fields() {
+        let record = serde_json::json!({
+            "accountid": "abc-123",
+            "name": "Test Account",
+            "createdby": "user-1",
+            "createdon": "2024-01-01",
+            "modifiedby": "user-2",
+            "modifiedon": "2024-01-02",
+            "ownerid": "owner-1",
+            "statecode": 0,
+            "statuscode": 1
+        });
+
+        let cleaned = clean_record_for_insert(&record, &[]);
+
+        // Should keep business fields
+        assert_eq!(cleaned["accountid"], "abc-123");
+        assert_eq!(cleaned["name"], "Test Account");
+
+        // Should remove system fields
+        assert!(cleaned.get("createdby").is_none());
+        assert!(cleaned.get("createdon").is_none());
+        assert!(cleaned.get("modifiedby").is_none());
+        assert!(cleaned.get("modifiedon").is_none());
+        assert!(cleaned.get("ownerid").is_none());
+        assert!(cleaned.get("statecode").is_none());
+        assert!(cleaned.get("statuscode").is_none());
+    }
+
+    #[test]
+    fn test_clean_record_nulls_external_lookups() {
+        let record = serde_json::json!({
+            "contactid": "con-123",
+            "fullname": "John Doe",
+            "parentcustomerid": "acc-456",
+            "owninguser": "user-1"
+        });
+
+        let nulled_lookups = vec![
+            NulledLookupInfo {
+                entity_name: "contact".to_string(),
+                field_name: "parentcustomerid".to_string(),
+                target_entity: "account".to_string(),
+                affected_count: 10,
+            },
+        ];
+
+        let cleaned = clean_record_for_insert(&record, &nulled_lookups);
+
+        // Should keep business fields
+        assert_eq!(cleaned["contactid"], "con-123");
+        assert_eq!(cleaned["fullname"], "John Doe");
+
+        // Should null the external lookup
+        assert!(cleaned["parentcustomerid"].is_null());
+
+        // System field should be removed (not just nulled)
+        assert!(cleaned.get("owninguser").is_none());
+    }
+
+    #[test]
+    fn test_clean_record_handles_multiple_nulled_lookups() {
+        let record = serde_json::json!({
+            "opportunityid": "opp-123",
+            "name": "Big Deal",
+            "customerid": "acc-456",
+            "pricelevelid": "price-789",
+            "transactioncurrencyid": "curr-000"
+        });
+
+        let nulled_lookups = vec![
+            NulledLookupInfo {
+                entity_name: "opportunity".to_string(),
+                field_name: "customerid".to_string(),
+                target_entity: "account".to_string(),
+                affected_count: 5,
+            },
+            NulledLookupInfo {
+                entity_name: "opportunity".to_string(),
+                field_name: "pricelevelid".to_string(),
+                target_entity: "pricelevel".to_string(),
+                affected_count: 5,
+            },
+            NulledLookupInfo {
+                entity_name: "opportunity".to_string(),
+                field_name: "transactioncurrencyid".to_string(),
+                target_entity: "transactioncurrency".to_string(),
+                affected_count: 5,
+            },
+        ];
+
+        let cleaned = clean_record_for_insert(&record, &nulled_lookups);
+
+        // Business fields kept
+        assert_eq!(cleaned["opportunityid"], "opp-123");
+        assert_eq!(cleaned["name"], "Big Deal");
+
+        // All external lookups nulled
+        assert!(cleaned["customerid"].is_null());
+        assert!(cleaned["pricelevelid"].is_null());
+        assert!(cleaned["transactioncurrencyid"].is_null());
+    }
+
+    #[test]
+    fn test_build_insert_operations_cleans_records() {
+        let mut sync_plan = make_test_plan_with_records();
+
+        // Add system fields and external lookup to test data
+        sync_plan.entity_plans[0].data_preview.origin_records = vec![
+            serde_json::json!({
+                "parentid": "p1",
+                "name": "Parent 1",
+                "createdby": "user-1",
+                "modifiedon": "2024-01-01",
+                "ownerid": "owner-1"
+            }),
+        ];
+
+        // Add a nulled lookup
+        sync_plan.entity_plans[0].nulled_lookups = vec![
+            NulledLookupInfo {
+                entity_name: "parent".to_string(),
+                field_name: "ownerid".to_string(),
+                target_entity: "systemuser".to_string(),
+                affected_count: 1,
+            },
+        ];
+
+        let insert_ops = build_insert_operations(&sync_plan);
+
+        // Find the parent operation
+        let parent_op = insert_ops.iter().find(|op| {
+            matches!(op, Operation::Create { entity, .. } if entity == "parents")
+        });
+
+        assert!(parent_op.is_some());
+
+        if let Operation::Create { data, .. } = parent_op.unwrap() {
+            // Business fields should be kept
+            assert_eq!(data["parentid"], "p1");
+            assert_eq!(data["name"], "Parent 1");
+
+            // System fields should be removed
+            assert!(data.get("createdby").is_none());
+            assert!(data.get("modifiedon").is_none());
+
+            // ownerid is both a system field AND a nulled lookup
+            // System fields are removed first, then nulled lookups are inserted as null
+            // So ownerid ends up as null (re-inserted by nulled lookup processing)
+            assert!(data["ownerid"].is_null());
+        }
     }
 }
