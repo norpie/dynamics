@@ -35,6 +35,7 @@ impl EntityWithLookups {
             .filter_map(|f| {
                 f.related_entity.as_ref().map(|target| LookupInfo {
                     field_name: f.logical_name.clone(),
+                    schema_name: f.logical_name.clone(), // Not used for dependency analysis
                     target_entity: target.clone(),
                     is_internal: selected_entities.contains(target),
                 })

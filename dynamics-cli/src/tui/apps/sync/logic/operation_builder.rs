@@ -15,9 +15,10 @@ use super::super::types::{EntitySyncPlan, FieldDiffEntry, NulledLookupInfo, Sync
 
 /// Context for cleaning records before insertion
 pub struct InsertCleaningContext<'a> {
-    /// Map from lookup field name to target entity_set_name
-    /// e.g., "nrq_fund" -> "nrq_funds"
-    pub internal_lookups: HashMap<String, String>,
+    /// Map from lookup field name to (schema_name, entity_set_name)
+    /// e.g., "nrq_fund" -> ("nrq_Fund", "nrq_funds")
+    /// The schema_name is used for @odata.bind which requires proper casing
+    pub internal_lookups: HashMap<String, (String, String)>,
     /// External lookups to null
     pub nulled_lookups: &'a [NulledLookupInfo],
 }
@@ -548,7 +549,8 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
             .collect();
 
         // Build internal lookups map for this entity
-        let internal_lookups: HashMap<String, String> = entity_plan
+        // Maps field_name -> (schema_name, entity_set_name)
+        let internal_lookups: HashMap<String, (String, String)> = entity_plan
             .entity_info
             .lookups
             .iter()
@@ -556,7 +558,7 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
             .filter_map(|l| {
                 entity_set_map
                     .get(&l.target_entity)
-                    .map(|entity_set| (l.field_name.clone(), entity_set.clone()))
+                    .map(|entity_set| (l.field_name.clone(), (l.schema_name.clone(), entity_set.clone())))
             })
             .collect();
 
@@ -627,7 +629,8 @@ pub fn build_update_operations(plan: &SyncPlan) -> Vec<Operation> {
             .collect();
 
         // Build internal lookups map for this entity
-        let internal_lookups: HashMap<String, String> = entity_plan
+        // Maps field_name -> (schema_name, entity_set_name)
+        let internal_lookups: HashMap<String, (String, String)> = entity_plan
             .entity_info
             .lookups
             .iter()
@@ -635,7 +638,7 @@ pub fn build_update_operations(plan: &SyncPlan) -> Vec<Operation> {
             .filter_map(|l| {
                 entity_set_map
                     .get(&l.target_entity)
-                    .map(|entity_set| (l.field_name.clone(), entity_set.clone()))
+                    .map(|entity_set| (l.field_name.clone(), (l.schema_name.clone(), entity_set.clone())))
             })
             .collect();
 
@@ -710,11 +713,12 @@ pub fn clean_record_for_insert(record: &Value, ctx: &InsertCleaningContext) -> V
     }
 
     // Add internal lookups as @odata.bind
-    for (field_name, entity_set_name) in &ctx.internal_lookups {
+    // Use schema_name for the bind key (OData requires proper casing)
+    for (field_name, (schema_name, entity_set_name)) in &ctx.internal_lookups {
         let value_key = format!("_{}_value", field_name);
         if let Some(guid) = obj.get(&value_key).and_then(|v| v.as_str()) {
             if !guid.is_empty() {
-                let bind_key = format!("{}@odata.bind", field_name);
+                let bind_key = format!("{}@odata.bind", schema_name);
                 let bind_value = format!("/{}({})", entity_set_name, guid);
                 cleaned.insert(bind_key, Value::String(bind_value));
             }
@@ -845,6 +849,7 @@ mod tests {
                         category: DependencyCategory::Dependent,
                         lookups: vec![LookupInfo {
                             field_name: "parentid".to_string(),
+                            schema_name: "parentid".to_string(),
                             target_entity: "parent".to_string(),
                             is_internal: true,
                         }],
@@ -1118,6 +1123,7 @@ mod tests {
                         category: DependencyCategory::Dependent,
                         lookups: vec![LookupInfo {
                             field_name: "parentid".to_string(),
+                            schema_name: "parentid".to_string(),
                             target_entity: "parent".to_string(),
                             is_internal: true,
                         }],
@@ -1564,7 +1570,8 @@ mod tests {
         });
 
         let mut internal_lookups = HashMap::new();
-        internal_lookups.insert("parentcustomerid".to_string(), "accounts".to_string());
+        // Map field_name -> (schema_name, entity_set_name)
+        internal_lookups.insert("parentcustomerid".to_string(), ("ParentCustomerId".to_string(), "accounts".to_string()));
 
         let ctx = InsertCleaningContext {
             internal_lookups,
@@ -1577,8 +1584,8 @@ mod tests {
         assert_eq!(cleaned["contactid"], "con-123");
         assert_eq!(cleaned["fullname"], "John Doe");
 
-        // Should convert internal lookup to @odata.bind format
-        assert_eq!(cleaned["parentcustomerid@odata.bind"], "/accounts(acc-456)");
+        // Should convert internal lookup to @odata.bind format using schema name casing
+        assert_eq!(cleaned["ParentCustomerId@odata.bind"], "/accounts(acc-456)");
 
         // Navigation property should be removed
         assert!(cleaned.get("_parentcustomerid_value").is_none());

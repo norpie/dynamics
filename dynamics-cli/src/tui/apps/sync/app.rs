@@ -1192,14 +1192,26 @@ async fn run_analysis(
         total_insert_count += origin_count;
 
         // Extract lookup info from fields
+        // Use raw attributes to get SchemaName for proper @odata.bind casing
         let mut lookups: Vec<LookupInfo> = origin_fields
             .iter()
             .filter(|f| matches!(f.field_type, FieldType::Lookup))
             .filter_map(|f| {
-                f.related_entity.as_ref().map(|target| LookupInfo {
-                    field_name: f.logical_name.clone(),
-                    target_entity: target.clone(),
-                    is_internal: selected_set.contains(target),
+                f.related_entity.as_ref().map(|target| {
+                    // Get schema name from raw attributes, fall back to logical name
+                    let schema_name = origin_attrs_raw
+                        .as_ref()
+                        .and_then(|attrs| attrs.get(&f.logical_name))
+                        .and_then(|attr| attr["SchemaName"].as_str())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| f.logical_name.clone());
+
+                    LookupInfo {
+                        field_name: f.logical_name.clone(),
+                        schema_name,
+                        target_entity: target.clone(),
+                        is_internal: selected_set.contains(target),
+                    }
                 })
             })
             .collect();
@@ -1218,8 +1230,18 @@ async fn run_analysis(
                     if let Some(target_entity) = field.logical_name.strip_suffix("id") {
                         // Check if this entity exists in our selection
                         let is_internal = selected_set.contains(target_entity);
+
+                        // Get schema name from raw attributes, fall back to logical name
+                        let schema_name = origin_attrs_raw
+                            .as_ref()
+                            .and_then(|attrs| attrs.get(&field.logical_name))
+                            .and_then(|attr| attr["SchemaName"].as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| field.logical_name.clone());
+
                         lookups.push(LookupInfo {
                             field_name: field.logical_name.clone(),
+                            schema_name,
                             target_entity: target_entity.to_string(),
                             is_internal,
                         });

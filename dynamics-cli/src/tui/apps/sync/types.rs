@@ -40,8 +40,11 @@ impl DependencyCategory {
 /// Information about a lookup field on an entity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LookupInfo {
-    /// The field name (e.g., "nrq_accountid")
+    /// The field logical name (e.g., "nrq_fund")
     pub field_name: String,
+    /// The field schema name with proper casing (e.g., "nrq_Fund")
+    /// Used for @odata.bind annotations which require schema name casing
+    pub schema_name: String,
     /// The target entity (e.g., "account")
     pub target_entity: String,
     /// Whether the target entity is in the selected set
