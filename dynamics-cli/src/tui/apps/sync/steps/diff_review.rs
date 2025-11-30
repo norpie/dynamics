@@ -360,7 +360,7 @@ impl ListItem for RecordItem {
     }
 }
 
-/// Target record item (for records to be deleted)
+/// Target record item (for records to be updated/deactivated)
 #[derive(Clone)]
 struct TargetRecordItem {
     id: String,
@@ -386,7 +386,7 @@ impl ListItem for TargetRecordItem {
             self.id.clone()
         };
 
-        // Red for target records (to be deleted)
+        // Style for target records
         let style = Style::default().fg(theme.accent_error);
 
         let bg_style = if is_focused {
@@ -437,11 +437,11 @@ fn render_data_tab(state: &mut State, plan: &EntitySyncPlan, theme: &Theme) -> E
     .build();
 
     let origin_panel = Element::panel(origin_list)
-        .title(format!("Origin ({} to insert)", preview.origin_count))
+        .title(format!("Origin ({} active records)", preview.origin_count))
         .build();
 
     let target_panel = Element::panel(target_list)
-        .title(format!("Target ({} to delete)", preview.target_count))
+        .title(format!("Target ({} records)", preview.target_count))
         .build();
 
     row![

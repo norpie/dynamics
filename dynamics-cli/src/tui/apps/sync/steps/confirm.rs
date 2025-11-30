@@ -134,15 +134,29 @@ fn render_operation_summary(summary: &OperationSummary, theme: &Theme) -> Elemen
 
     let mut lines: Vec<Element<Msg>> = vec![];
 
-    // Deletes section
+    // Deletes section (junction entities only)
     if !summary.entities_with_deletes.is_empty() {
         let total_deletes: usize = summary.entities_with_deletes.iter().map(|(_, c)| c).sum();
         lines.push(Element::styled_text(Line::from(Span::styled(
-            format!("Records to DELETE: {}", total_deletes),
+            format!("Junction records to DELETE: {}", total_deletes),
             Style::default().fg(theme.accent_error).bold()
         ))).build());
 
         for (entity, count) in &summary.entities_with_deletes {
+            lines.push(Element::text(format!("  {} ({} records)", entity, count)));
+        }
+        lines.push(Element::text(""));
+    }
+
+    // Deactivates section (regular entities, target-only)
+    if !summary.entities_with_deactivates.is_empty() {
+        let total_deactivates: usize = summary.entities_with_deactivates.iter().map(|(_, c)| c).sum();
+        lines.push(Element::styled_text(Line::from(Span::styled(
+            format!("Records to DEACTIVATE: {}", total_deactivates),
+            Style::default().fg(theme.accent_warning).bold()
+        ))).build());
+
+        for (entity, count) in &summary.entities_with_deactivates {
             lines.push(Element::text(format!("  {} ({} records)", entity, count)));
         }
         lines.push(Element::text(""));
@@ -162,15 +176,29 @@ fn render_operation_summary(summary: &OperationSummary, theme: &Theme) -> Elemen
         lines.push(Element::text(""));
     }
 
-    // Inserts section
-    if !summary.entities_with_inserts.is_empty() {
-        let total_inserts: usize = summary.entities_with_inserts.iter().map(|(_, c)| c).sum();
+    // Updates section (records in both)
+    if !summary.entities_with_updates.is_empty() {
+        let total_updates: usize = summary.entities_with_updates.iter().map(|(_, c)| c).sum();
         lines.push(Element::styled_text(Line::from(Span::styled(
-            format!("Records to INSERT: {}", total_inserts),
+            format!("Records to UPDATE: {}", total_updates),
+            Style::default().fg(theme.accent_info).bold()
+        ))).build());
+
+        for (entity, count) in &summary.entities_with_updates {
+            lines.push(Element::text(format!("  {} ({} records)", entity, count)));
+        }
+        lines.push(Element::text(""));
+    }
+
+    // Creates section (origin-only)
+    if !summary.entities_with_creates.is_empty() {
+        let total_creates: usize = summary.entities_with_creates.iter().map(|(_, c)| c).sum();
+        lines.push(Element::styled_text(Line::from(Span::styled(
+            format!("Records to CREATE: {}", total_creates),
             Style::default().fg(theme.accent_success).bold()
         ))).build());
 
-        for (entity, count) in &summary.entities_with_inserts {
+        for (entity, count) in &summary.entities_with_creates {
             lines.push(Element::text(format!("  {} ({} records)", entity, count)));
         }
     }
@@ -254,7 +282,7 @@ fn render_confirmation(state: &State, theme: &Theme) -> Element<Msg> {
     };
 
     let confirm_text = format!(
-        "{} I understand this will DELETE existing records and replace them",
+        "{} I understand this will sync records (deactivate/update/create)",
         checkbox
     );
 
@@ -310,9 +338,11 @@ fn render_execution_progress(state: &State, theme: &Theme) -> Element<Msg> {
 
     // Phase indicators
     let phase_lines: Vec<Element<Msg>> = vec![
-        render_phase_indicator("Deleting records", phase, ExecutionPhase::Deleting, theme),
+        render_phase_indicator("Deleting junctions", phase, ExecutionPhase::Deleting, theme),
+        render_phase_indicator("Deactivating records", phase, ExecutionPhase::Deactivating, theme),
         render_phase_indicator("Adding fields", phase, ExecutionPhase::AddingFields, theme),
-        render_phase_indicator("Inserting records", phase, ExecutionPhase::Inserting, theme),
+        render_phase_indicator("Updating records", phase, ExecutionPhase::Updating, theme),
+        render_phase_indicator("Creating records", phase, ExecutionPhase::Inserting, theme),
         render_phase_indicator("Creating associations", phase, ExecutionPhase::InsertingJunctions, theme),
     ];
 
@@ -341,12 +371,14 @@ fn render_phase_indicator(
         match p {
             ExecutionPhase::NotStarted => 0,
             ExecutionPhase::Deleting => 1,
-            ExecutionPhase::AddingFields => 2,
-            ExecutionPhase::Publishing => 3,
-            ExecutionPhase::Inserting => 4,
-            ExecutionPhase::InsertingJunctions => 5,
-            ExecutionPhase::Complete => 6,
-            ExecutionPhase::Failed => 6,
+            ExecutionPhase::Deactivating => 2,
+            ExecutionPhase::AddingFields => 3,
+            ExecutionPhase::Publishing => 4,
+            ExecutionPhase::Updating => 5,
+            ExecutionPhase::Inserting => 6,
+            ExecutionPhase::InsertingJunctions => 7,
+            ExecutionPhase::Complete => 8,
+            ExecutionPhase::Failed => 8,
         }
     };
 

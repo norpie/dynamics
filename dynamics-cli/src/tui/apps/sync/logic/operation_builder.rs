@@ -5,7 +5,7 @@
 //! - Deletes: dependents before dependencies (reverse topological order)
 //! - Inserts: dependencies before dependents (topological order)
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -44,10 +44,14 @@ pub struct SyncOperation {
 /// Type of sync operation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OperationType {
-    /// Delete a record from target
+    /// Delete a record from target (only for junction entities)
     DeleteRecord,
+    /// Deactivate a record in target (PATCH statecode: 1)
+    DeactivateRecord,
     /// Create a record in target (with preserved GUID)
     CreateRecord,
+    /// Update a record in target (PATCH with origin data)
+    UpdateRecord,
     /// Create a new attribute on target entity
     CreateAttribute,
 }
@@ -56,7 +60,9 @@ impl OperationType {
     pub fn label(&self) -> &'static str {
         match self {
             Self::DeleteRecord => "Delete",
+            Self::DeactivateRecord => "Deactivate",
             Self::CreateRecord => "Create",
+            Self::UpdateRecord => "Update",
             Self::CreateAttribute => "Add Field",
         }
     }
@@ -64,7 +70,9 @@ impl OperationType {
     pub fn symbol(&self) -> &'static str {
         match self {
             Self::DeleteRecord => "×",
+            Self::DeactivateRecord => "○",
             Self::CreateRecord => "+",
+            Self::UpdateRecord => "~",
             Self::CreateAttribute => "⊕",
         }
     }
@@ -77,21 +85,25 @@ pub struct EntityOperationBatch {
     pub entity_name: String,
     /// Entity display name
     pub display_name: Option<String>,
-    /// Delete operations (executed first)
+    /// Delete operations - only for junction entities (executed first)
     pub deletes: Vec<SyncOperation>,
-    /// Schema operations (executed after deletes)
+    /// Deactivate operations - for regular entities target-only records (executed first)
+    pub deactivates: Vec<SyncOperation>,
+    /// Schema operations (executed after deletes/deactivates)
     pub schema_ops: Vec<SyncOperation>,
-    /// Insert operations (executed last)
+    /// Update operations - for records existing in both origin and target
+    pub updates: Vec<SyncOperation>,
+    /// Insert/Create operations - for origin-only records (executed last)
     pub inserts: Vec<SyncOperation>,
 }
 
 impl EntityOperationBatch {
     pub fn total_ops(&self) -> usize {
-        self.deletes.len() + self.schema_ops.len() + self.inserts.len()
+        self.deletes.len() + self.deactivates.len() + self.schema_ops.len() + self.updates.len() + self.inserts.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.deletes.is_empty() && self.schema_ops.is_empty() && self.inserts.is_empty()
+        self.deletes.is_empty() && self.deactivates.is_empty() && self.schema_ops.is_empty() && self.updates.is_empty() && self.inserts.is_empty()
     }
 }
 
@@ -104,11 +116,15 @@ pub struct OperationPlan {
     pub target_env: String,
     /// Entity batches in execution order
     pub entity_batches: Vec<EntityOperationBatch>,
-    /// Total delete operations
+    /// Total delete operations (junction entities only)
     pub total_deletes: usize,
+    /// Total deactivate operations (regular entities, target-only records)
+    pub total_deactivates: usize,
     /// Total schema operations
     pub total_schema_ops: usize,
-    /// Total insert operations
+    /// Total update operations (records in both origin and target)
+    pub total_updates: usize,
+    /// Total insert/create operations (origin-only records)
     pub total_inserts: usize,
 }
 
@@ -117,18 +133,27 @@ impl OperationPlan {
     pub fn all_operations(&self) -> Vec<&SyncOperation> {
         let mut ops = Vec::new();
 
-        // Phase 1: All deletes (in dependency order - dependents first)
+        // Phase 1: All deletes (junction entities, in dependency order - dependents first)
         for batch in &self.entity_batches {
             ops.extend(batch.deletes.iter());
         }
 
-        // Phase 2: All schema changes
+        // Phase 2: All deactivates (regular entities, target-only records)
+        for batch in &self.entity_batches {
+            ops.extend(batch.deactivates.iter());
+        }
+
+        // Phase 3: All schema changes
         for batch in &self.entity_batches {
             ops.extend(batch.schema_ops.iter());
         }
 
-        // Phase 3: All inserts (in dependency order - dependencies first)
-        // Batches are already in insert order, so just iterate
+        // Phase 4: All updates (records in both origin and target)
+        for batch in &self.entity_batches {
+            ops.extend(batch.updates.iter());
+        }
+
+        // Phase 5: All inserts (origin-only records, in dependency order - dependencies first)
         for batch in &self.entity_batches {
             ops.extend(batch.inserts.iter());
         }
@@ -137,7 +162,7 @@ impl OperationPlan {
     }
 
     pub fn total_operations(&self) -> usize {
-        self.total_deletes + self.total_schema_ops + self.total_inserts
+        self.total_deletes + self.total_deactivates + self.total_schema_ops + self.total_updates + self.total_inserts
     }
 }
 
@@ -247,12 +272,16 @@ fn build_create_attribute_op(
 /// Summary of planned operations
 #[derive(Debug, Clone, Default)]
 pub struct OperationSummary {
-    /// Entities that will have records deleted
+    /// Entities that will have records deleted (junction entities only)
     pub entities_with_deletes: Vec<(String, usize)>,
+    /// Entities that will have records deactivated (regular entities, target-only)
+    pub entities_with_deactivates: Vec<(String, usize)>,
     /// Entities that will have schema changes
     pub entities_with_schema_changes: Vec<(String, usize)>,
-    /// Entities that will have records inserted
-    pub entities_with_inserts: Vec<(String, usize)>,
+    /// Entities that will have records updated (both origin and target)
+    pub entities_with_updates: Vec<(String, usize)>,
+    /// Entities that will have records created (origin-only)
+    pub entities_with_creates: Vec<(String, usize)>,
     /// Fields that need manual review (type mismatches)
     pub fields_needing_review: Vec<(String, String, String)>, // (entity, field, reason)
     /// External lookups that will be nulled
@@ -265,13 +294,49 @@ pub fn build_operation_summary(sync_plan: &SyncPlan) -> OperationSummary {
 
     for entity_plan in &sync_plan.entity_plans {
         let entity_name = &entity_plan.entity_info.logical_name;
+        let is_junction = entity_plan.entity_info.nn_relationship.is_some();
+        let pk_field = format!("{}id", entity_name);
 
-        // Deletes
-        if entity_plan.data_preview.target_count > 0 {
-            summary.entities_with_deletes.push((
-                entity_name.clone(),
-                entity_plan.data_preview.target_count,
-            ));
+        // Build sets for GUID comparison
+        let origin_guids: HashSet<String> = entity_plan
+            .data_preview
+            .origin_records
+            .iter()
+            .filter_map(|r| r.get(&pk_field).and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .collect();
+
+        let target_guids: HashSet<String> = entity_plan
+            .data_preview
+            .target_records
+            .iter()
+            .map(|r| r.id.clone())
+            .collect();
+
+        // Count by operation type
+        let creates = origin_guids.iter().filter(|g| !target_guids.contains(*g)).count();
+        let updates = origin_guids.iter().filter(|g| target_guids.contains(*g)).count();
+        let target_only = target_guids.iter().filter(|g| !origin_guids.contains(*g)).count();
+
+        if is_junction {
+            // Junction entities: target-only records are deleted
+            if target_only > 0 {
+                summary.entities_with_deletes.push((entity_name.clone(), target_only));
+            }
+        } else {
+            // Regular entities: target-only records are deactivated
+            if target_only > 0 {
+                summary.entities_with_deactivates.push((entity_name.clone(), target_only));
+            }
+        }
+
+        // Updates (records in both)
+        if updates > 0 {
+            summary.entities_with_updates.push((entity_name.clone(), updates));
+        }
+
+        // Creates (origin-only records)
+        if creates > 0 {
+            summary.entities_with_creates.push((entity_name.clone(), creates));
         }
 
         // Schema changes
@@ -283,14 +348,6 @@ pub fn build_operation_summary(sync_plan: &SyncPlan) -> OperationSummary {
             summary.entities_with_schema_changes.push((
                 entity_name.clone(),
                 schema_changes,
-            ));
-        }
-
-        // Inserts
-        if entity_plan.data_preview.origin_count > 0 {
-            summary.entities_with_inserts.push((
-                entity_name.clone(),
-                entity_plan.data_preview.origin_count,
             ));
         }
 
@@ -342,14 +399,27 @@ pub fn build_operation_summary(sync_plan: &SyncPlan) -> OperationSummary {
 // =============================================================================
 // These functions convert SyncPlan data into the actual Operation types
 // used by the queue system for execution.
+//
+// Sync Strategy:
+// - Compare origin and target records by primary key (GUID)
+// - Origin-only records → Create (POST with GUID in body)
+// - Both exist → Update (PATCH with origin data, reactivates if inactive)
+// - Target-only records → Deactivate (PATCH statecode: 1) for regular entities
+// - Junction entities still use Delete (no statecode on intersect tables)
 
-/// Build delete operations for all target records.
+/// Build delete operations for junction entities only.
+/// Regular entities use deactivation instead of deletion.
 /// Returns operations in delete order (dependents before dependencies).
 pub fn build_delete_operations(plan: &SyncPlan) -> Vec<Operation> {
     let mut operations = Vec::new();
 
     // Get entities in delete order (higher delete_priority = delete first)
     for entity_plan in plan.delete_order() {
+        // Only delete junction/intersect entities (they don't have statecode)
+        if entity_plan.entity_info.nn_relationship.is_none() {
+            continue;
+        }
+
         let entity_set = &entity_plan.entity_info.entity_set_name;
 
         for record in &entity_plan.data_preview.target_records {
@@ -357,6 +427,45 @@ pub fn build_delete_operations(plan: &SyncPlan) -> Vec<Operation> {
                 entity: entity_set.clone(),
                 id: record.id.clone(),
             });
+        }
+    }
+
+    operations
+}
+
+/// Build deactivate operations for target-only records in regular entities.
+/// These are records that exist in target but not in origin - they get deactivated.
+/// Returns operations in delete order (dependents before dependencies).
+pub fn build_deactivate_operations(plan: &SyncPlan) -> Vec<Operation> {
+    let mut operations = Vec::new();
+
+    // Get entities in delete order (higher delete_priority = process first)
+    for entity_plan in plan.delete_order() {
+        // Skip junction entities - they use delete, not deactivate
+        if entity_plan.entity_info.nn_relationship.is_some() {
+            continue;
+        }
+
+        let entity_set = &entity_plan.entity_info.entity_set_name;
+        let pk_field = format!("{}id", entity_plan.entity_info.logical_name);
+
+        // Build set of origin GUIDs
+        let origin_guids: HashSet<String> = entity_plan
+            .data_preview
+            .origin_records
+            .iter()
+            .filter_map(|r| r.get(&pk_field).and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .collect();
+
+        // Deactivate target records not in origin
+        for target_record in &entity_plan.data_preview.target_records {
+            if !origin_guids.contains(&target_record.id) {
+                operations.push(Operation::Update {
+                    entity: entity_set.clone(),
+                    id: target_record.id.clone(),
+                    data: serde_json::json!({"statecode": 1}),
+                });
+            }
         }
     }
 
@@ -403,7 +512,7 @@ pub fn build_schema_operations(plan: &SyncPlan, solution_name: Option<&str>) -> 
     operations
 }
 
-/// Build insert operations for all origin records.
+/// Build insert operations for origin-only records (records not in target).
 /// Returns operations in insert order (dependencies before dependents).
 /// Skips junction entities (handled by build_junction_operations).
 pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
@@ -428,6 +537,16 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
             continue;
         }
 
+        let pk_field = format!("{}id", entity_plan.entity_info.logical_name);
+
+        // Build set of target GUIDs
+        let target_guids: HashSet<String> = entity_plan
+            .data_preview
+            .target_records
+            .iter()
+            .map(|r| r.id.clone())
+            .collect();
+
         // Build internal lookups map for this entity
         let internal_lookups: HashMap<String, String> = entity_plan
             .entity_info
@@ -448,10 +567,101 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
 
         let entity_set = &entity_plan.entity_info.entity_set_name;
 
+        // Only create records that don't exist in target
         for record in &entity_plan.data_preview.origin_records {
+            let Some(guid) = record.get(&pk_field).and_then(|v| v.as_str()) else {
+                log::warn!("Origin record missing primary key field '{}': {:?}", pk_field, record);
+                continue;
+            };
+
+            // Skip if already exists in target (will be updated instead)
+            if target_guids.contains(guid) {
+                continue;
+            }
+
             let cleaned = clean_record_for_insert(record, &ctx);
             operations.push(Operation::Create {
                 entity: entity_set.clone(),
+                data: cleaned,
+            });
+        }
+    }
+
+    operations
+}
+
+/// Build update operations for records that exist in both origin and target.
+/// Uses origin data to update target records (also reactivates inactive records).
+/// Returns operations in insert order (dependencies before dependents).
+/// Skips junction entities (handled by build_junction_operations).
+pub fn build_update_operations(plan: &SyncPlan) -> Vec<Operation> {
+    let mut operations = Vec::new();
+
+    // Build entity_set lookup map from all entity plans
+    let entity_set_map: HashMap<String, String> = plan
+        .entity_plans
+        .iter()
+        .map(|p| {
+            (
+                p.entity_info.logical_name.clone(),
+                p.entity_info.entity_set_name.clone(),
+            )
+        })
+        .collect();
+
+    // Get entities in insert order (lower insert_priority = process first)
+    for entity_plan in plan.insert_order() {
+        // Skip junction entities - they use AssociateRef, not Update
+        if entity_plan.entity_info.nn_relationship.is_some() {
+            continue;
+        }
+
+        let pk_field = format!("{}id", entity_plan.entity_info.logical_name);
+
+        // Build set of target GUIDs
+        let target_guids: HashSet<String> = entity_plan
+            .data_preview
+            .target_records
+            .iter()
+            .map(|r| r.id.clone())
+            .collect();
+
+        // Build internal lookups map for this entity
+        let internal_lookups: HashMap<String, String> = entity_plan
+            .entity_info
+            .lookups
+            .iter()
+            .filter(|l| l.is_internal)
+            .filter_map(|l| {
+                entity_set_map
+                    .get(&l.target_entity)
+                    .map(|entity_set| (l.field_name.clone(), entity_set.clone()))
+            })
+            .collect();
+
+        let ctx = InsertCleaningContext {
+            internal_lookups,
+            nulled_lookups: &entity_plan.nulled_lookups,
+        };
+
+        let entity_set = &entity_plan.entity_info.entity_set_name;
+
+        // Only update records that exist in both origin and target
+        for record in &entity_plan.data_preview.origin_records {
+            let Some(guid) = record.get(&pk_field).and_then(|v| v.as_str()) else {
+                continue;
+            };
+
+            // Skip if doesn't exist in target (will be created instead)
+            if !target_guids.contains(guid) {
+                continue;
+            }
+
+            // Clean the record (same as for insert, includes statecode for reactivation)
+            let cleaned = clean_record_for_insert(record, &ctx);
+            operations.push(Operation::Update {
+                entity: entity_set.clone(),
+                id: guid.to_string(),
                 data: cleaned,
             });
         }
@@ -710,9 +920,13 @@ mod tests {
         let sync_plan = make_test_plan();
         let summary = build_operation_summary(&sync_plan);
 
-        assert_eq!(summary.entities_with_deletes.len(), 2);
-        assert_eq!(summary.entities_with_schema_changes.len(), 1);
-        assert_eq!(summary.entities_with_inserts.len(), 2);
+        // make_test_plan has target_records but empty origin_records
+        // So all targets become deactivates (not deletes - not junctions)
+        assert_eq!(summary.entities_with_deletes.len(), 0); // No junction entities
+        assert_eq!(summary.entities_with_deactivates.len(), 2); // parent + child (target-only)
+        assert_eq!(summary.entities_with_updates.len(), 0); // No overlap (empty origin_records)
+        assert_eq!(summary.entities_with_creates.len(), 0); // No origin_records
+        assert_eq!(summary.entities_with_schema_changes.len(), 1); // parent has new_field
     }
 
     #[test]
@@ -734,32 +948,56 @@ mod tests {
     }
 
     #[test]
-    fn test_build_delete_operations_priority_order() {
+    fn test_build_delete_operations_only_junctions() {
+        // Regular entities (non-junction) should NOT generate delete operations
         let sync_plan = make_test_plan();
         let delete_ops = build_delete_operations(&sync_plan);
 
-        // Should have 5 delete operations total (2 parent + 3 child)
-        assert_eq!(delete_ops.len(), 5);
+        // make_test_plan has no junction entities, so no deletes
+        assert_eq!(delete_ops.len(), 0);
+    }
+
+    #[test]
+    fn test_build_deactivate_operations_target_only() {
+        let sync_plan = make_test_plan();
+        let deactivate_ops = build_deactivate_operations(&sync_plan);
+
+        // All 5 target records should be deactivated (2 parent + 3 child)
+        // because make_test_plan has empty origin_records
+        assert_eq!(deactivate_ops.len(), 5);
+
+        // All should be Update operations with statecode: 1
+        for op in &deactivate_ops {
+            match op {
+                Operation::Update { data, .. } => {
+                    assert_eq!(data["statecode"], 1);
+                }
+                _ => panic!("Expected Update operation for deactivation"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_build_deactivate_operations_priority_order() {
+        let sync_plan = make_test_plan();
+        let deactivate_ops = build_deactivate_operations(&sync_plan);
 
         // Child has higher delete_priority (2) than parent (1)
-        // So child records should come FIRST in the delete order
-        // Expected order: child-1, child-2, child-3, parent-1, parent-2
-
-        // Extract entity names from the operations
-        let entity_order: Vec<&str> = delete_ops
+        // So child records should come FIRST in the deactivate order
+        let entity_order: Vec<&str> = deactivate_ops
             .iter()
             .map(|op| match op {
-                Operation::Delete { entity, .. } => entity.as_str(),
-                _ => panic!("Expected Delete operation"),
+                Operation::Update { entity, .. } => entity.as_str(),
+                _ => panic!("Expected Update operation"),
             })
             .collect();
 
-        // First 3 should be children (deleted first)
+        // First 3 should be children (deactivated first)
         assert_eq!(entity_order[0], "children");
         assert_eq!(entity_order[1], "children");
         assert_eq!(entity_order[2], "children");
 
-        // Last 2 should be parents (deleted after children)
+        // Last 2 should be parents (deactivated after children)
         assert_eq!(entity_order[3], "parents");
         assert_eq!(entity_order[4], "parents");
     }
@@ -1503,5 +1741,176 @@ mod tests {
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].len(), 3);
         assert_eq!(chunks[1].len(), 3);
+    }
+
+    // =========================================================================
+    // Tests for Create/Update/Deactivate GUID-based comparison logic
+    // =========================================================================
+
+    fn make_test_plan_with_overlap() -> SyncPlan {
+        // Creates a plan where:
+        // - Origin has records: p1, p2, p3 (p3 is origin-only)
+        // - Target has records: p1, p2, p4 (p4 is target-only)
+        // Expected: p1, p2 -> Update, p3 -> Create, p4 -> Deactivate
+        SyncPlan {
+            origin_env: "dev".to_string(),
+            target_env: "test".to_string(),
+            entity_plans: vec![
+                EntitySyncPlan {
+                    entity_info: SyncEntityInfo {
+                        logical_name: "parent".to_string(),
+                        display_name: Some("Parent".to_string()),
+                        entity_set_name: "parents".to_string(),
+                        primary_name_attribute: Some("name".to_string()),
+                        category: DependencyCategory::Standalone,
+                        lookups: vec![],
+                        incoming_references: vec![],
+                        dependents: vec![],
+                        insert_priority: 0,
+                        delete_priority: 1,
+                        nn_relationship: None,
+                    },
+                    schema_diff: EntitySchemaDiff::default(),
+                    data_preview: EntityDataPreview {
+                        entity_name: "parent".to_string(),
+                        origin_count: 3,
+                        target_count: 3,
+                        origin_records: vec![
+                            serde_json::json!({"parentid": "p1", "name": "Parent 1 Updated", "statecode": 0}),
+                            serde_json::json!({"parentid": "p2", "name": "Parent 2 Updated", "statecode": 0}),
+                            serde_json::json!({"parentid": "p3", "name": "Parent 3 New", "statecode": 0}),
+                        ],
+                        target_records: vec![
+                            TargetRecord { id: "p1".to_string(), name: Some("Parent 1".to_string()) },
+                            TargetRecord { id: "p2".to_string(), name: Some("Parent 2".to_string()) },
+                            TargetRecord { id: "p4".to_string(), name: Some("Parent 4 ToDeactivate".to_string()) },
+                        ],
+                    },
+                    nulled_lookups: vec![],
+                },
+            ],
+            detected_junctions: vec![],
+            has_schema_changes: false,
+            total_delete_count: 1,
+            total_insert_count: 1,
+        }
+    }
+
+    #[test]
+    fn test_build_insert_operations_origin_only() {
+        let sync_plan = make_test_plan_with_overlap();
+        let insert_ops = build_insert_operations(&sync_plan);
+
+        // Only p3 should be created (origin-only)
+        assert_eq!(insert_ops.len(), 1);
+
+        match &insert_ops[0] {
+            Operation::Create { entity, data } => {
+                assert_eq!(entity, "parents");
+                assert_eq!(data["parentid"], "p3");
+                assert_eq!(data["name"], "Parent 3 New");
+            }
+            _ => panic!("Expected Create operation"),
+        }
+    }
+
+    #[test]
+    fn test_build_update_operations_both_exist() {
+        let sync_plan = make_test_plan_with_overlap();
+        let update_ops = build_update_operations(&sync_plan);
+
+        // p1 and p2 should be updated (exist in both)
+        assert_eq!(update_ops.len(), 2);
+
+        let ids: Vec<&str> = update_ops
+            .iter()
+            .map(|op| match op {
+                Operation::Update { id, .. } => id.as_str(),
+                _ => panic!("Expected Update operation"),
+            })
+            .collect();
+
+        assert!(ids.contains(&"p1"));
+        assert!(ids.contains(&"p2"));
+    }
+
+    #[test]
+    fn test_build_update_operations_includes_statecode() {
+        let sync_plan = make_test_plan_with_overlap();
+        let update_ops = build_update_operations(&sync_plan);
+
+        // Updates should include statecode: 0 to reactivate inactive records
+        for op in &update_ops {
+            match op {
+                Operation::Update { data, .. } => {
+                    assert_eq!(data["statecode"], 0);
+                }
+                _ => panic!("Expected Update operation"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_build_deactivate_operations_target_only_with_overlap() {
+        let sync_plan = make_test_plan_with_overlap();
+        let deactivate_ops = build_deactivate_operations(&sync_plan);
+
+        // Only p4 should be deactivated (target-only)
+        assert_eq!(deactivate_ops.len(), 1);
+
+        match &deactivate_ops[0] {
+            Operation::Update { entity, id, data } => {
+                assert_eq!(entity, "parents");
+                assert_eq!(id, "p4");
+                assert_eq!(data["statecode"], 1);
+            }
+            _ => panic!("Expected Update operation for deactivation"),
+        }
+    }
+
+    #[test]
+    fn test_build_delete_operations_junction_with_target_records() {
+        let mut sync_plan = make_test_plan_with_junction();
+
+        // Add target records to the junction entity
+        sync_plan.entity_plans[2].data_preview.target_records = vec![
+            TargetRecord { id: "junc-1".to_string(), name: None },
+            TargetRecord { id: "junc-2".to_string(), name: None },
+        ];
+
+        let delete_ops = build_delete_operations(&sync_plan);
+
+        // Should have 2 delete operations for the junction entity only
+        assert_eq!(delete_ops.len(), 2);
+
+        for op in &delete_ops {
+            match op {
+                Operation::Delete { entity, id } => {
+                    assert_eq!(entity, "accountcontacts");
+                    assert!(id == "junc-1" || id == "junc-2");
+                }
+                _ => panic!("Expected Delete operation"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_complete_sync_operation_counts() {
+        // Test that the combination of all operation types covers all records correctly
+        let sync_plan = make_test_plan_with_overlap();
+
+        let insert_ops = build_insert_operations(&sync_plan);
+        let update_ops = build_update_operations(&sync_plan);
+        let deactivate_ops = build_deactivate_operations(&sync_plan);
+        let delete_ops = build_delete_operations(&sync_plan);
+
+        // Origin has 3 records: 2 overlap (update) + 1 origin-only (create)
+        assert_eq!(update_ops.len() + insert_ops.len(), 3);
+
+        // Target has 3 records: 2 overlap (update) + 1 target-only (deactivate)
+        assert_eq!(update_ops.len() + deactivate_ops.len(), 3);
+
+        // No junction entities, so no deletes
+        assert_eq!(delete_ops.len(), 0);
     }
 }

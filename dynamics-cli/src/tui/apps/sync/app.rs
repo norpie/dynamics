@@ -460,24 +460,32 @@ impl App for EntitySyncApp {
                 let queue_items = super::logic::build_sync_queue_items(plan, &target_env);
 
                 // Store batch IDs for tracking
-                let (delete_ids, schema_ids, insert_ids, junction_ids) = queue_items.item_ids();
-                state.confirm.delete_batch_ids = delete_ids;
-                state.confirm.schema_batch_ids = schema_ids;
-                state.confirm.insert_batch_ids = insert_ids;
-                state.confirm.junction_batch_ids = junction_ids;
+                let ids = queue_items.item_ids();
+                state.confirm.delete_batch_ids = ids.delete_ids;
+                state.confirm.deactivate_batch_ids = ids.deactivate_ids;
+                state.confirm.schema_batch_ids = ids.schema_ids;
+                state.confirm.update_batch_ids = ids.update_ids;
+                state.confirm.insert_batch_ids = ids.insert_ids;
+                state.confirm.junction_batch_ids = ids.junction_ids;
 
                 // Set initial state
                 state.confirm.executing = true;
                 state.confirm.total_operations = queue_items.total_operations();
                 state.confirm.completed_operations = 0;
 
-                // Determine initial phase
+                // Determine initial phase (in execution order)
                 if !state.confirm.delete_batch_ids.is_empty() {
                     state.confirm.phase = super::state::ExecutionPhase::Deleting;
                     state.confirm.total_batches = state.confirm.delete_batch_ids.len();
+                } else if !state.confirm.deactivate_batch_ids.is_empty() {
+                    state.confirm.phase = super::state::ExecutionPhase::Deactivating;
+                    state.confirm.total_batches = state.confirm.deactivate_batch_ids.len();
                 } else if !state.confirm.schema_batch_ids.is_empty() {
                     state.confirm.phase = super::state::ExecutionPhase::AddingFields;
                     state.confirm.total_batches = state.confirm.schema_batch_ids.len();
+                } else if !state.confirm.update_batch_ids.is_empty() {
+                    state.confirm.phase = super::state::ExecutionPhase::Updating;
+                    state.confirm.total_batches = state.confirm.update_batch_ids.len();
                 } else if !state.confirm.insert_batch_ids.is_empty() {
                     state.confirm.phase = super::state::ExecutionPhase::Inserting;
                     state.confirm.total_batches = state.confirm.insert_batch_ids.len();
@@ -541,16 +549,54 @@ impl App for EntitySyncApp {
                     // Count completed operations
                     confirm.completed_operations += result.operation_results.len();
 
+                    // Helper to advance to next phase
+                    let advance_to_next_phase = |confirm: &mut super::state::ConfirmState| {
+                        // Check phases in execution order
+                        if !confirm.deactivate_batch_ids.is_empty() {
+                            confirm.phase = super::state::ExecutionPhase::Deactivating;
+                            confirm.total_batches = confirm.deactivate_batch_ids.len();
+                            confirm.current_batch = 1;
+                        } else if !confirm.schema_batch_ids.is_empty() {
+                            confirm.phase = super::state::ExecutionPhase::AddingFields;
+                            confirm.total_batches = confirm.schema_batch_ids.len();
+                            confirm.current_batch = 1;
+                        } else if !confirm.update_batch_ids.is_empty() {
+                            confirm.phase = super::state::ExecutionPhase::Updating;
+                            confirm.total_batches = confirm.update_batch_ids.len();
+                            confirm.current_batch = 1;
+                        } else if !confirm.insert_batch_ids.is_empty() {
+                            confirm.phase = super::state::ExecutionPhase::Inserting;
+                            confirm.total_batches = confirm.insert_batch_ids.len();
+                            confirm.current_batch = 1;
+                        } else if !confirm.junction_batch_ids.is_empty() {
+                            confirm.phase = super::state::ExecutionPhase::InsertingJunctions;
+                            confirm.total_batches = confirm.junction_batch_ids.len();
+                            confirm.current_batch = 1;
+                        } else {
+                            confirm.phase = super::state::ExecutionPhase::Complete;
+                            confirm.executing = false;
+                        }
+                    };
+
                     // Check which phase completed
                     if let Some(pos) = confirm.delete_batch_ids.iter().position(|bid| bid == &id) {
                         confirm.delete_batch_ids.remove(pos);
                         confirm.current_batch = confirm.total_batches - confirm.delete_batch_ids.len();
-
                         if confirm.delete_batch_ids.is_empty() {
-                            // Move to next phase
+                            advance_to_next_phase(confirm);
+                        }
+                    } else if let Some(pos) = confirm.deactivate_batch_ids.iter().position(|bid| bid == &id) {
+                        confirm.deactivate_batch_ids.remove(pos);
+                        confirm.current_batch = confirm.total_batches - confirm.deactivate_batch_ids.len();
+                        if confirm.deactivate_batch_ids.is_empty() {
+                            // Skip deactivate in next phase check
                             if !confirm.schema_batch_ids.is_empty() {
                                 confirm.phase = super::state::ExecutionPhase::AddingFields;
                                 confirm.total_batches = confirm.schema_batch_ids.len();
+                                confirm.current_batch = 1;
+                            } else if !confirm.update_batch_ids.is_empty() {
+                                confirm.phase = super::state::ExecutionPhase::Updating;
+                                confirm.total_batches = confirm.update_batch_ids.len();
                                 confirm.current_batch = 1;
                             } else if !confirm.insert_batch_ids.is_empty() {
                                 confirm.phase = super::state::ExecutionPhase::Inserting;
@@ -568,9 +614,28 @@ impl App for EntitySyncApp {
                     } else if let Some(pos) = confirm.schema_batch_ids.iter().position(|bid| bid == &id) {
                         confirm.schema_batch_ids.remove(pos);
                         confirm.current_batch = confirm.total_batches - confirm.schema_batch_ids.len();
-
                         if confirm.schema_batch_ids.is_empty() {
-                            // Move to next phase
+                            if !confirm.update_batch_ids.is_empty() {
+                                confirm.phase = super::state::ExecutionPhase::Updating;
+                                confirm.total_batches = confirm.update_batch_ids.len();
+                                confirm.current_batch = 1;
+                            } else if !confirm.insert_batch_ids.is_empty() {
+                                confirm.phase = super::state::ExecutionPhase::Inserting;
+                                confirm.total_batches = confirm.insert_batch_ids.len();
+                                confirm.current_batch = 1;
+                            } else if !confirm.junction_batch_ids.is_empty() {
+                                confirm.phase = super::state::ExecutionPhase::InsertingJunctions;
+                                confirm.total_batches = confirm.junction_batch_ids.len();
+                                confirm.current_batch = 1;
+                            } else {
+                                confirm.phase = super::state::ExecutionPhase::Complete;
+                                confirm.executing = false;
+                            }
+                        }
+                    } else if let Some(pos) = confirm.update_batch_ids.iter().position(|bid| bid == &id) {
+                        confirm.update_batch_ids.remove(pos);
+                        confirm.current_batch = confirm.total_batches - confirm.update_batch_ids.len();
+                        if confirm.update_batch_ids.is_empty() {
                             if !confirm.insert_batch_ids.is_empty() {
                                 confirm.phase = super::state::ExecutionPhase::Inserting;
                                 confirm.total_batches = confirm.insert_batch_ids.len();
@@ -587,9 +652,7 @@ impl App for EntitySyncApp {
                     } else if let Some(pos) = confirm.insert_batch_ids.iter().position(|bid| bid == &id) {
                         confirm.insert_batch_ids.remove(pos);
                         confirm.current_batch = confirm.total_batches - confirm.insert_batch_ids.len();
-
                         if confirm.insert_batch_ids.is_empty() {
-                            // Move to next phase
                             if !confirm.junction_batch_ids.is_empty() {
                                 confirm.phase = super::state::ExecutionPhase::InsertingJunctions;
                                 confirm.total_batches = confirm.junction_batch_ids.len();
@@ -602,7 +665,6 @@ impl App for EntitySyncApp {
                     } else if let Some(pos) = confirm.junction_batch_ids.iter().position(|bid| bid == &id) {
                         confirm.junction_batch_ids.remove(pos);
                         confirm.current_batch = confirm.total_batches - confirm.junction_batch_ids.len();
-
                         if confirm.junction_batch_ids.is_empty() {
                             confirm.phase = super::state::ExecutionPhase::Complete;
                             confirm.executing = false;

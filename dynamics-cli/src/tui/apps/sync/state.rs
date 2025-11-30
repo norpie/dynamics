@@ -384,10 +384,12 @@ impl DiffReviewState {
 pub enum ExecutionPhase {
     #[default]
     NotStarted,
-    Deleting,
+    Deleting,           // Junction entities only
+    Deactivating,       // Regular entities, target-only records
     AddingFields,
     Publishing,
-    Inserting,
+    Updating,           // Regular entities, records in both
+    Inserting,          // Regular entities, origin-only records
     InsertingJunctions,
     Complete,
     Failed,
@@ -397,10 +399,12 @@ impl ExecutionPhase {
     pub fn label(&self) -> &'static str {
         match self {
             Self::NotStarted => "Not started",
-            Self::Deleting => "Deleting records...",
+            Self::Deleting => "Deleting junctions...",
+            Self::Deactivating => "Deactivating records...",
             Self::AddingFields => "Adding fields...",
             Self::Publishing => "Publishing customizations...",
-            Self::Inserting => "Inserting records...",
+            Self::Updating => "Updating records...",
+            Self::Inserting => "Creating records...",
             Self::InsertingJunctions => "Creating associations...",
             Self::Complete => "Complete",
             Self::Failed => "Failed",
@@ -448,7 +452,9 @@ pub struct ConfirmState {
 
     /// Queue item IDs for each phase (for tracking completion)
     pub delete_batch_ids: Vec<String>,
+    pub deactivate_batch_ids: Vec<String>,
     pub schema_batch_ids: Vec<String>,
+    pub update_batch_ids: Vec<String>,
     pub insert_batch_ids: Vec<String>,
     pub junction_batch_ids: Vec<String>,
 
