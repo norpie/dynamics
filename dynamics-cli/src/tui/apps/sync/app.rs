@@ -769,11 +769,12 @@ async fn run_analysis(
         async move {
             set_entity_schema_status(&entity_name, FetchStatus::Fetching);
 
-            // Fetch fields and entity metadata in parallel
-            let (origin_fields, target_fields, entity_metadata) = tokio::join!(
+            // Fetch fields, entity metadata, and raw attribute metadata in parallel
+            let (origin_fields, target_fields, entity_metadata, origin_attrs_raw) = tokio::join!(
                 origin_client.fetch_entity_fields_combined(&entity_name),
                 target_client.fetch_entity_fields_combined(&entity_name),
-                origin_client.fetch_entity_metadata_info(&entity_name)
+                origin_client.fetch_entity_metadata_info(&entity_name),
+                origin_client.fetch_entity_attributes_raw(&entity_name)
             );
 
             let origin_fields = origin_fields
@@ -784,10 +785,19 @@ async fn run_analysis(
             let entity_metadata = entity_metadata
                 .map_err(|e| format!("Failed to fetch entity metadata for {}: {}", entity_name, e));
 
+            // Raw attributes are optional - log warning if failed but don't fail the whole entity
+            let origin_attrs_raw = match origin_attrs_raw {
+                Ok(attrs) => Some(attrs),
+                Err(e) => {
+                    log::warn!("Failed to fetch raw attributes for {}: {} - schema sync will skip this entity", entity_name, e);
+                    None
+                }
+            };
+
             match (origin_fields, entity_metadata) {
                 (Ok(fields), Ok(metadata)) => {
                     set_entity_schema_status(&entity_name, FetchStatus::Done);
-                    Ok((entity_name, fields, target_fields, metadata))
+                    Ok((entity_name, fields, target_fields, metadata, origin_attrs_raw))
                 }
                 (Err(e), _) | (_, Err(e)) => {
                     set_entity_schema_status(&entity_name, FetchStatus::Failed(e.clone()));
@@ -797,19 +807,21 @@ async fn run_analysis(
         }
     }).collect();
 
-    let schema_results: Vec<Result<(String, Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>, crate::api::EntityMetadataInfo), String>> =
-        join_all(schema_futures).await;
+    type SchemaResult = Result<(String, Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>, crate::api::EntityMetadataInfo, Option<std::collections::HashMap<String, serde_json::Value>>), String>;
+    let schema_results: Vec<SchemaResult> = join_all(schema_futures).await;
 
     // Collect successful schema results
-    let mut schema_data: std::collections::HashMap<String, (Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>)> =
+    // schema_data now includes raw attribute metadata for CreateAttribute operations
+    type RawAttrsMap = Option<std::collections::HashMap<String, serde_json::Value>>;
+    let mut schema_data: std::collections::HashMap<String, (Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>, RawAttrsMap)> =
         std::collections::HashMap::new();
     let mut entity_metadata_map: std::collections::HashMap<String, crate::api::EntityMetadataInfo> =
         std::collections::HashMap::new();
 
     for result in schema_results {
         match result {
-            Ok((entity_name, origin_fields, target_fields, metadata)) => {
-                schema_data.insert(entity_name.clone(), (origin_fields, target_fields));
+            Ok((entity_name, origin_fields, target_fields, metadata, origin_attrs_raw)) => {
+                schema_data.insert(entity_name.clone(), (origin_fields, target_fields, origin_attrs_raw));
                 entity_metadata_map.insert(entity_name, metadata);
             }
             Err(e) => {
@@ -935,7 +947,7 @@ async fn run_analysis(
     let mut has_schema_changes = false;
 
     for entity_name in selected_entities {
-        let Some((origin_fields, target_fields)) = schema_data.get(entity_name) else {
+        let Some((origin_fields, target_fields, origin_attrs_raw)) = schema_data.get(entity_name) else {
             log::warn!("Skipping {} - no schema data", entity_name);
             continue;
         };
@@ -953,8 +965,8 @@ async fn run_analysis(
         // Store for dependency graph
         entities_with_fields.push((entity_name.clone(), None, origin_fields.clone()));
 
-        // Compare schemas
-        let schema_diff = compare_schemas(entity_name, origin_fields, target_fields, None);
+        // Compare schemas - pass raw attribute metadata for CreateAttribute operations
+        let schema_diff = compare_schemas(entity_name, origin_fields, target_fields, origin_attrs_raw.as_ref());
 
         if schema_diff.has_changes() {
             has_schema_changes = true;

@@ -352,6 +352,46 @@ pub fn build_delete_operations(plan: &SyncPlan) -> Vec<Operation> {
     operations
 }
 
+/// Build schema operations for adding new fields to target.
+/// Returns CreateAttribute operations followed by PublishAllXml.
+/// Order doesn't matter for schema operations (no dependencies between fields).
+pub fn build_schema_operations(plan: &SyncPlan, solution_name: Option<&str>) -> Vec<Operation> {
+    let mut operations = Vec::new();
+
+    for entity_plan in &plan.entity_plans {
+        let entity_name = &entity_plan.entity_info.logical_name;
+
+        for field in &entity_plan.schema_diff.fields_to_add {
+            // Skip system fields
+            if field.is_system_field {
+                continue;
+            }
+
+            // Skip fields without raw metadata (can't create without it)
+            let Some(ref attr_data) = field.origin_metadata else {
+                log::warn!(
+                    "Skipping field {}.{} - no raw attribute metadata available",
+                    entity_name, field.logical_name
+                );
+                continue;
+            };
+
+            operations.push(Operation::CreateAttribute {
+                entity: entity_name.clone(),
+                attribute_data: attr_data.clone(),
+                solution_name: solution_name.map(|s| s.to_string()),
+            });
+        }
+    }
+
+    // Add PublishAllXml at the end if any schema changes were made
+    if !operations.is_empty() {
+        operations.push(Operation::PublishAllXml);
+    }
+
+    operations
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -538,5 +578,80 @@ mod tests {
         // Last 2 should be parents (deleted after children)
         assert_eq!(entity_order[3], "parents");
         assert_eq!(entity_order[4], "parents");
+    }
+
+    #[test]
+    fn test_build_schema_operations() {
+        let mut sync_plan = make_test_plan();
+
+        // Add a field with origin_metadata
+        sync_plan.entity_plans[0].schema_diff.fields_to_add.push(FieldDiffEntry {
+            logical_name: "new_custom_field".to_string(),
+            display_name: Some("New Custom Field".to_string()),
+            field_type: "String".to_string(),
+            status: FieldSyncStatus::OriginOnly,
+            is_system_field: false,
+            origin_metadata: Some(serde_json::json!({
+                "@odata.type": "Microsoft.Dynamics.CRM.StringAttributeMetadata",
+                "LogicalName": "new_custom_field",
+                "SchemaName": "new_CustomField"
+            })),
+        });
+
+        // Add a system field (should be excluded)
+        sync_plan.entity_plans[0].schema_diff.fields_to_add.push(FieldDiffEntry {
+            logical_name: "createdby".to_string(),
+            display_name: Some("Created By".to_string()),
+            field_type: "Lookup".to_string(),
+            status: FieldSyncStatus::OriginOnly,
+            is_system_field: true,
+            origin_metadata: Some(serde_json::json!({})),
+        });
+
+        // Add a field without origin_metadata (should be excluded)
+        sync_plan.entity_plans[0].schema_diff.fields_to_add.push(FieldDiffEntry {
+            logical_name: "missing_metadata".to_string(),
+            display_name: Some("Missing Metadata".to_string()),
+            field_type: "String".to_string(),
+            status: FieldSyncStatus::OriginOnly,
+            is_system_field: false,
+            origin_metadata: None,
+        });
+
+        let schema_ops = build_schema_operations(&sync_plan, None);
+
+        // Should have 2 operations: 1 CreateAttribute + 1 PublishAllXml
+        // (parent already has new_field in make_test_plan, plus our new_custom_field)
+        // Note: new_field has origin_metadata: None in make_test_plan, so only new_custom_field counts
+        assert_eq!(schema_ops.len(), 2);
+
+        // First should be CreateAttribute
+        match &schema_ops[0] {
+            Operation::CreateAttribute { entity, attribute_data, solution_name } => {
+                // Should use logical_name, not entity_set_name
+                assert_eq!(entity, "parent");
+                assert!(attribute_data["LogicalName"].as_str() == Some("new_custom_field"));
+                assert!(solution_name.is_none());
+            }
+            _ => panic!("Expected CreateAttribute operation"),
+        }
+
+        // Last should be PublishAllXml
+        assert!(matches!(schema_ops.last(), Some(Operation::PublishAllXml)));
+    }
+
+    #[test]
+    fn test_build_schema_operations_empty_when_no_changes() {
+        let mut sync_plan = make_test_plan();
+
+        // Clear all fields_to_add
+        for entity_plan in &mut sync_plan.entity_plans {
+            entity_plan.schema_diff.fields_to_add.clear();
+        }
+
+        let schema_ops = build_schema_operations(&sync_plan, None);
+
+        // Should be empty (no PublishAllXml when no changes)
+        assert!(schema_ops.is_empty());
     }
 }

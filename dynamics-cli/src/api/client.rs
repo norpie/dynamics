@@ -1086,6 +1086,50 @@ impl DynamicsClient {
         }
     }
 
+    /// Fetch raw attribute metadata for an entity
+    /// Returns a HashMap keyed by logical_name containing the full attribute JSON
+    /// Used for CreateAttribute operations during schema sync
+    pub async fn fetch_entity_attributes_raw(&self, entity_name: &str) -> anyhow::Result<HashMap<String, Value>> {
+        let url = format!(
+            "{}/{}/EntityDefinitions(LogicalName='{}')/Attributes",
+            self.base_url,
+            constants::api_path(),
+            entity_name
+        );
+
+        // Apply rate limiting before making the request
+        self.apply_rate_limiting().await?;
+
+        let response = self.retry_policy.execute(|| async {
+            self.http_client
+                .get(&url)
+                .bearer_auth(&self.access_token)
+                .header("Accept", headers::CONTENT_TYPE_JSON)
+                .header("OData-Version", headers::ODATA_VERSION)
+                .send()
+                .await
+        }).await?;
+
+        let status = response.status();
+        if status.is_success() {
+            let json: Value = response.json().await?;
+            let attributes = json["value"].as_array()
+                .ok_or_else(|| anyhow::anyhow!("Expected 'value' array in response"))?;
+
+            let mut raw_map = HashMap::new();
+            for attr in attributes {
+                if let Some(logical_name) = attr["LogicalName"].as_str() {
+                    raw_map.insert(logical_name.to_string(), attr.clone());
+                }
+            }
+
+            Ok(raw_map)
+        } else {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!("Raw attribute metadata fetch failed with status {}: {}", status, error_text)
+        }
+    }
+
     /// Fetch entity fields by combining both metadata sources
     /// - XML metadata: NavigationProperties (relationships)
     /// - EntityDefinitions API: Attributes with proper lookup targets

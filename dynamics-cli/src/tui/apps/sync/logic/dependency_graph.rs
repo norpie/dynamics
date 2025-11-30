@@ -296,6 +296,9 @@ mod tests {
 
     #[test]
     fn test_junction_entity() {
+        // Note: Junction category is determined by is_intersect from API metadata,
+        // NOT by counting lookups. The categorize() method only returns Standalone or Dependent.
+        // An entity with lookups to 2+ selected entities is still categorized as Dependent here.
         let entities = vec![
             ("account".to_string(), None, vec![make_string_field("name")]),
             ("contact".to_string(), None, vec![make_string_field("name")]),
@@ -309,7 +312,8 @@ mod tests {
 
         assert_eq!(graph.categorize("account"), DependencyCategory::Standalone);
         assert_eq!(graph.categorize("contact"), DependencyCategory::Standalone);
-        assert_eq!(graph.categorize("account_contact"), DependencyCategory::Junction);
+        // Has lookups to selected entities, so it's Dependent (Junction is set via is_intersect metadata)
+        assert_eq!(graph.categorize("account_contact"), DependencyCategory::Dependent);
     }
 
     #[test]
