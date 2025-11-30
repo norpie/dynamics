@@ -485,6 +485,21 @@ pub fn build_junction_operations(plan: &SyncPlan) -> Vec<Operation> {
     operations
 }
 
+/// Default batch size for queue operations (Dynamics 365 batch limit)
+pub const DEFAULT_BATCH_SIZE: usize = 50;
+
+/// Chunk operations into batches for queue submission.
+/// Preserves operation order - operations within each batch maintain their relative order.
+pub fn chunk_operations(ops: Vec<Operation>, chunk_size: usize) -> Vec<Vec<Operation>> {
+    if ops.is_empty() {
+        return vec![];
+    }
+
+    ops.chunks(chunk_size)
+        .map(|chunk| chunk.to_vec())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1254,5 +1269,78 @@ mod tests {
             // So ownerid ends up as null (re-inserted by nulled lookup processing)
             assert!(data["ownerid"].is_null());
         }
+    }
+
+    #[test]
+    fn test_chunk_operations_preserves_order() {
+        // Create operations with identifiable IDs
+        let ops: Vec<Operation> = (0..7)
+            .map(|i| Operation::Delete {
+                entity: "accounts".to_string(),
+                id: format!("id-{}", i),
+            })
+            .collect();
+
+        let chunks = chunk_operations(ops, 3);
+
+        // Should have 3 chunks: [0,1,2], [3,4,5], [6]
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].len(), 3);
+        assert_eq!(chunks[1].len(), 3);
+        assert_eq!(chunks[2].len(), 1);
+
+        // Verify order is preserved
+        let mut expected_id = 0;
+        for chunk in &chunks {
+            for op in chunk {
+                match op {
+                    Operation::Delete { id, .. } => {
+                        assert_eq!(id, &format!("id-{}", expected_id));
+                        expected_id += 1;
+                    }
+                    _ => panic!("Expected Delete operation"),
+                }
+            }
+        }
+        assert_eq!(expected_id, 7);
+    }
+
+    #[test]
+    fn test_chunk_operations_empty() {
+        let chunks = chunk_operations(vec![], 50);
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_chunk_operations_smaller_than_chunk_size() {
+        let ops: Vec<Operation> = (0..3)
+            .map(|i| Operation::Delete {
+                entity: "accounts".to_string(),
+                id: format!("id-{}", i),
+            })
+            .collect();
+
+        let chunks = chunk_operations(ops, 50);
+
+        // Should have 1 chunk with all 3 operations
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].len(), 3);
+    }
+
+    #[test]
+    fn test_chunk_operations_exact_multiple() {
+        let ops: Vec<Operation> = (0..6)
+            .map(|i| Operation::Delete {
+                entity: "accounts".to_string(),
+                id: format!("id-{}", i),
+            })
+            .collect();
+
+        let chunks = chunk_operations(ops, 3);
+
+        // Should have exactly 2 chunks of 3 each
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].len(), 3);
+        assert_eq!(chunks[1].len(), 3);
     }
 }
