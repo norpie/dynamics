@@ -176,7 +176,12 @@ impl BatchRequestBuilder {
                 let absolute_target_ref = if target_ref.starts_with("http://") || target_ref.starts_with("https://") {
                     target_ref.clone()
                 } else {
-                    format!("{}{}", self.base_url, target_ref)
+                    // target_ref is like "/nrq_categories(guid)", need to prepend base_url + api path
+                    let base = self.base_url.trim_end_matches('/');
+                    let api_path = constants::api_path();
+                    let api_path = api_path.trim_start_matches('/');
+                    let path = target_ref.trim_start_matches('/');
+                    format!("{}/{}/{}", base, api_path, path)
                 };
 
                 let body_json = serde_json::json!({
