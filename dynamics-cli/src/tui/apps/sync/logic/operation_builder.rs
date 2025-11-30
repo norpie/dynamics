@@ -1224,8 +1224,10 @@ mod tests {
         assert!(cleaned.get("modifiedby").is_none());
         assert!(cleaned.get("modifiedon").is_none());
         assert!(cleaned.get("ownerid").is_none());
-        assert!(cleaned.get("statecode").is_none());
-        assert!(cleaned.get("statuscode").is_none());
+
+        // statecode and statuscode should be KEPT (for activate/deactivate workflow)
+        assert_eq!(cleaned["statecode"], 0);
+        assert_eq!(cleaned["statuscode"], 1);
     }
 
     #[test]

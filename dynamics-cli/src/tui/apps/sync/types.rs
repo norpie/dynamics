@@ -297,8 +297,6 @@ pub const SYSTEM_FIELDS: &[&str] = &[
     "overriddencreatedon",
     "timezoneruleversionnumber",
     "utcconversiontimezonecode",
-    "statecode",
-    "statuscode",
 ];
 
 /// Check if a field name is a system field
