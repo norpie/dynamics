@@ -54,6 +54,13 @@ pub const PRESETS: &[EntityPreset] = &[
             "nrq_type",
         ],
     },
+    EntityPreset {
+        name: "VAF (test)",
+        entities: &[
+            "cgk_category",
+            "cgk_length",
+        ],
+    },
 ];
 
 /// Get preset options as strings for the dropdown
