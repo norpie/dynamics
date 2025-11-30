@@ -392,6 +392,32 @@ pub fn build_schema_operations(plan: &SyncPlan, solution_name: Option<&str>) -> 
     operations
 }
 
+/// Build insert operations for all origin records.
+/// Returns operations in insert order (dependencies before dependents).
+/// Skips junction entities (handled by build_junction_operations).
+pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
+    let mut operations = Vec::new();
+
+    // Get entities in insert order (lower insert_priority = insert first)
+    for entity_plan in plan.insert_order() {
+        // Skip junction entities - they use AssociateRef, not Create
+        if entity_plan.entity_info.nn_relationship.is_some() {
+            continue;
+        }
+
+        let entity_set = &entity_plan.entity_info.entity_set_name;
+
+        for record in &entity_plan.data_preview.origin_records {
+            operations.push(Operation::Create {
+                entity: entity_set.clone(),
+                data: record.clone(),
+            });
+        }
+    }
+
+    operations
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -653,5 +679,176 @@ mod tests {
 
         // Should be empty (no PublishAllXml when no changes)
         assert!(schema_ops.is_empty());
+    }
+
+    fn make_test_plan_with_records() -> SyncPlan {
+        SyncPlan {
+            origin_env: "dev".to_string(),
+            target_env: "test".to_string(),
+            entity_plans: vec![
+                EntitySyncPlan {
+                    entity_info: SyncEntityInfo {
+                        logical_name: "parent".to_string(),
+                        display_name: Some("Parent".to_string()),
+                        entity_set_name: "parents".to_string(),
+                        primary_name_attribute: Some("name".to_string()),
+                        category: DependencyCategory::Standalone,
+                        lookups: vec![],
+                        incoming_references: vec![],
+                        dependents: vec!["child".to_string()],
+                        insert_priority: 0, // Insert first (no dependencies)
+                        delete_priority: 1,
+                        nn_relationship: None,
+                    },
+                    schema_diff: EntitySchemaDiff::default(),
+                    data_preview: EntityDataPreview {
+                        entity_name: "parent".to_string(),
+                        origin_count: 2,
+                        target_count: 0,
+                        origin_records: vec![
+                            serde_json::json!({"parentid": "p1", "name": "Parent 1"}),
+                            serde_json::json!({"parentid": "p2", "name": "Parent 2"}),
+                        ],
+                        target_records: vec![],
+                    },
+                    nulled_lookups: vec![],
+                },
+                EntitySyncPlan {
+                    entity_info: SyncEntityInfo {
+                        logical_name: "child".to_string(),
+                        display_name: Some("Child".to_string()),
+                        entity_set_name: "children".to_string(),
+                        primary_name_attribute: Some("name".to_string()),
+                        category: DependencyCategory::Dependent,
+                        lookups: vec![LookupInfo {
+                            field_name: "parentid".to_string(),
+                            target_entity: "parent".to_string(),
+                            is_internal: true,
+                        }],
+                        incoming_references: vec![],
+                        dependents: vec![],
+                        insert_priority: 1, // Insert after parent
+                        delete_priority: 2,
+                        nn_relationship: None,
+                    },
+                    schema_diff: EntitySchemaDiff::default(),
+                    data_preview: EntityDataPreview {
+                        entity_name: "child".to_string(),
+                        origin_count: 3,
+                        target_count: 0,
+                        origin_records: vec![
+                            serde_json::json!({"childid": "c1", "name": "Child 1", "parentid": "p1"}),
+                            serde_json::json!({"childid": "c2", "name": "Child 2", "parentid": "p1"}),
+                            serde_json::json!({"childid": "c3", "name": "Child 3", "parentid": "p2"}),
+                        ],
+                        target_records: vec![],
+                    },
+                    nulled_lookups: vec![],
+                },
+            ],
+            detected_junctions: vec![],
+            has_schema_changes: false,
+            total_delete_count: 0,
+            total_insert_count: 5,
+        }
+    }
+
+    #[test]
+    fn test_build_insert_operations_order() {
+        let sync_plan = make_test_plan_with_records();
+        let insert_ops = build_insert_operations(&sync_plan);
+
+        // Should have 5 operations (2 parent + 3 child)
+        assert_eq!(insert_ops.len(), 5);
+
+        // Parent has lower insert_priority (0) than child (1)
+        // So parent records should come FIRST
+        let entity_order: Vec<&str> = insert_ops
+            .iter()
+            .map(|op| match op {
+                Operation::Create { entity, .. } => entity.as_str(),
+                _ => panic!("Expected Create operation"),
+            })
+            .collect();
+
+        // First 2 should be parents
+        assert_eq!(entity_order[0], "parents");
+        assert_eq!(entity_order[1], "parents");
+
+        // Last 3 should be children
+        assert_eq!(entity_order[2], "children");
+        assert_eq!(entity_order[3], "children");
+        assert_eq!(entity_order[4], "children");
+    }
+
+    #[test]
+    fn test_build_insert_operations_skips_junction() {
+        let mut sync_plan = make_test_plan_with_records();
+
+        // Add a junction entity
+        sync_plan.entity_plans.push(EntitySyncPlan {
+            entity_info: SyncEntityInfo {
+                logical_name: "parent_child_junction".to_string(),
+                display_name: Some("Junction".to_string()),
+                entity_set_name: "parent_child_junctions".to_string(),
+                primary_name_attribute: None,
+                category: DependencyCategory::Junction,
+                lookups: vec![],
+                incoming_references: vec![],
+                dependents: vec![],
+                insert_priority: 2, // Insert last
+                delete_priority: 3,
+                nn_relationship: Some(NNRelationshipInfo {
+                    navigation_property: "children".to_string(),
+                    parent_entity: "parent".to_string(),
+                    parent_entity_set: "parents".to_string(),
+                    parent_fk_field: "parentid".to_string(),
+                    target_entity: "child".to_string(),
+                    target_entity_set: "children".to_string(),
+                    target_fk_field: "childid".to_string(),
+                }),
+            },
+            schema_diff: EntitySchemaDiff::default(),
+            data_preview: EntityDataPreview {
+                entity_name: "parent_child_junction".to_string(),
+                origin_count: 2,
+                target_count: 0,
+                origin_records: vec![
+                    serde_json::json!({"parentid": "p1", "childid": "c1"}),
+                    serde_json::json!({"parentid": "p2", "childid": "c2"}),
+                ],
+                target_records: vec![],
+            },
+            nulled_lookups: vec![],
+        });
+
+        let insert_ops = build_insert_operations(&sync_plan);
+
+        // Should still have only 5 operations (junction skipped)
+        assert_eq!(insert_ops.len(), 5);
+
+        // No operations for junction entity
+        for op in &insert_ops {
+            match op {
+                Operation::Create { entity, .. } => {
+                    assert_ne!(entity, "parent_child_junctions");
+                }
+                _ => panic!("Expected Create operation"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_build_insert_operations_empty_when_no_records() {
+        let mut sync_plan = make_test_plan_with_records();
+
+        // Clear all origin_records
+        for entity_plan in &mut sync_plan.entity_plans {
+            entity_plan.data_preview.origin_records.clear();
+        }
+
+        let insert_ops = build_insert_operations(&sync_plan);
+
+        assert!(insert_ops.is_empty());
     }
 }
