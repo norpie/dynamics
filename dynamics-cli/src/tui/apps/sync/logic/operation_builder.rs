@@ -21,6 +21,8 @@ pub struct InsertCleaningContext<'a> {
     pub internal_lookups: HashMap<String, (String, String)>,
     /// External lookups to null
     pub nulled_lookups: &'a [NulledLookupInfo],
+    /// Fields that exist in target schema (only these will be included in payload)
+    pub target_fields: HashSet<String>,
 }
 
 /// A single sync operation to be executed
@@ -580,9 +582,18 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
             })
             .collect();
 
+        // Build set of fields that exist in target schema
+        let target_fields: HashSet<String> = entity_plan
+            .schema_diff
+            .fields_in_both
+            .iter()
+            .map(|f| f.logical_name.clone())
+            .collect();
+
         let ctx = InsertCleaningContext {
             internal_lookups,
             nulled_lookups: &entity_plan.nulled_lookups,
+            target_fields,
         };
 
         let entity_set = &entity_plan.entity_info.entity_set_name;
@@ -660,9 +671,18 @@ pub fn build_update_operations(plan: &SyncPlan) -> Vec<Operation> {
             })
             .collect();
 
+        // Build set of fields that exist in target schema
+        let target_fields: HashSet<String> = entity_plan
+            .schema_diff
+            .fields_in_both
+            .iter()
+            .map(|f| f.logical_name.clone())
+            .collect();
+
         let ctx = InsertCleaningContext {
             internal_lookups,
             nulled_lookups: &entity_plan.nulled_lookups,
+            target_fields,
         };
 
         let entity_set = &entity_plan.entity_info.entity_set_name;
@@ -723,6 +743,11 @@ pub fn clean_record_for_insert(record: &Value, ctx: &InsertCleaningContext) -> V
 
         // Skip system fields
         if SYSTEM_FIELDS.contains(&key.as_str()) {
+            continue;
+        }
+
+        // Skip fields that don't exist in target schema
+        if !ctx.target_fields.is_empty() && !ctx.target_fields.contains(key) {
             continue;
         }
 
@@ -1480,6 +1505,7 @@ mod tests {
         let ctx = InsertCleaningContext {
             internal_lookups: HashMap::new(),
             nulled_lookups: &[],
+            target_fields: HashSet::new(), // Empty = no filtering
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);
@@ -1514,6 +1540,7 @@ mod tests {
         let ctx = InsertCleaningContext {
             internal_lookups: HashMap::new(),
             nulled_lookups: &[],
+            target_fields: HashSet::new(),
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);
@@ -1543,6 +1570,7 @@ mod tests {
         let ctx = InsertCleaningContext {
             internal_lookups: HashMap::new(),
             nulled_lookups: &[],
+            target_fields: HashSet::new(),
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);
@@ -1572,6 +1600,7 @@ mod tests {
         let ctx = InsertCleaningContext {
             internal_lookups: HashMap::new(),
             nulled_lookups: &[],
+            target_fields: HashSet::new(),
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);
@@ -1602,6 +1631,7 @@ mod tests {
         let ctx = InsertCleaningContext {
             internal_lookups,
             nulled_lookups: &[],
+            target_fields: HashSet::new(),
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);
@@ -1640,6 +1670,7 @@ mod tests {
         let ctx = InsertCleaningContext {
             internal_lookups: HashMap::new(),
             nulled_lookups: &nulled_lookups,
+            target_fields: HashSet::new(),
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);

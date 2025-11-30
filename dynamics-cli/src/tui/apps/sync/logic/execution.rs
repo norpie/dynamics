@@ -9,7 +9,7 @@ use crate::tui::apps::queue::models::{QueueItem, QueueMetadata};
 
 use super::operation_builder::{
     build_deactivate_operations, build_delete_operations, build_insert_operations,
-    build_junction_operations, build_schema_operations, build_update_operations,
+    build_junction_operations, build_update_operations,
     chunk_operations, DEFAULT_BATCH_SIZE,
 };
 use super::super::types::SyncPlan;
@@ -98,9 +98,10 @@ pub fn build_sync_queue_items(
     let delete_ops = build_delete_operations(plan);
     // Phase 2: Deactivate (regular entities, target-only records)
     let deactivate_ops = build_deactivate_operations(plan);
-    // Phase 3: Schema changes
-    // TODO: Add solution_name parameter when config is available
-    let schema_ops = build_schema_operations(plan, None);
+    // Phase 3: Schema changes - DISABLED
+    // Schema changes via API don't work on managed environments.
+    // Fields that don't exist in target are now stripped from record payloads.
+    let schema_ops: Vec<Operation> = vec![];
     // Phase 4: Update (regular entities, records in both)
     let update_ops = build_update_operations(plan);
     // Phase 5: Insert/Create (regular entities, origin-only records)
