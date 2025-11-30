@@ -47,6 +47,13 @@ pub const PRESETS: &[EntityPreset] = &[
             "nrq_kostenplaats",
         ],
     },
+    EntityPreset {
+        name: "VAF Settings (minimal)",
+        entities: &[
+            "nrq_fund",
+            "nrq_type",
+        ],
+    },
 ];
 
 /// Get preset options as strings for the dropdown
