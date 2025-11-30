@@ -341,8 +341,17 @@ fn render_step_header(state: &State, theme: &Theme) -> Element<Msg> {
 fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
     use_constraints!();
 
+    let entities_loaded = matches!(state.entity_select.available_entities, Resource::Success(_));
+    let has_selection = !state.entity_select.selected_entities.is_empty();
+
     // Validation/status message
-    let status = if state.entity_select.selected_entities.is_empty() {
+    let status = if !entities_loaded {
+        let text = "Loading entities...".to_string();
+        Element::styled_text(Line::from(Span::styled(
+            text,
+            Style::default().fg(theme.text_secondary)
+        ))).build()
+    } else if !has_selection {
         let text = "⚠ Select at least one entity".to_string();
         Element::styled_text(Line::from(Span::styled(
             text,
@@ -357,14 +366,33 @@ fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
         ))).build()
     };
 
-    let buttons = button_row![
-        ("entity-back-btn", "Back", Msg::Back),
-        ("entity-next-btn", "Analyze", Msg::Next),
-    ];
+    // Hide buttons during loading to prevent UB from canceling fetch
+    // Show Back once loaded, show Analyze only when has selection
+    if !entities_loaded {
+        col![
+            status => Length(1),
+            spacer!() => Fill(1),
+        ]
+    } else if has_selection {
+        let buttons = button_row![
+            ("entity-back-btn", "Back", Msg::Back),
+            ("entity-next-btn", "Analyze", Msg::Next),
+        ];
 
-    col![
-        status => Length(1),
-        spacer!() => Length(1),
-        buttons => Length(3),
-    ]
+        col![
+            status => Length(1),
+            spacer!() => Length(1),
+            buttons => Length(3),
+        ]
+    } else {
+        let buttons = button_row![
+            ("entity-back-btn", "Back", Msg::Back),
+        ];
+
+        col![
+            status => Length(1),
+            spacer!() => Length(1),
+            buttons => Length(3),
+        ]
+    }
 }
