@@ -61,6 +61,10 @@ pub const PRESETS: &[EntityPreset] = &[
             "cgk_length",
         ],
     },
+    EntityPreset {
+        name: "VAF Settings (absolute minimal)",
+        entities: &["nrq_country"],
+    },
 ];
 
 /// Get preset options as strings for the dropdown
