@@ -418,6 +418,47 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
     operations
 }
 
+/// Build junction operations for N:N relationships.
+/// Returns AssociateRef operations for entities with nn_relationship metadata.
+/// These create the associations between already-inserted records.
+pub fn build_junction_operations(plan: &SyncPlan) -> Vec<Operation> {
+    let mut operations = Vec::new();
+
+    for entity_plan in plan.insert_order() {
+        let Some(ref nn_info) = entity_plan.entity_info.nn_relationship else {
+            continue;
+        };
+
+        for record in &entity_plan.data_preview.origin_records {
+            // Extract parent and target IDs from junction record
+            let Some(parent_id) = record.get(&nn_info.parent_fk_field).and_then(|v| v.as_str()) else {
+                log::warn!(
+                    "Junction record missing parent FK field '{}': {:?}",
+                    nn_info.parent_fk_field, record
+                );
+                continue;
+            };
+
+            let Some(target_id) = record.get(&nn_info.target_fk_field).and_then(|v| v.as_str()) else {
+                log::warn!(
+                    "Junction record missing target FK field '{}': {:?}",
+                    nn_info.target_fk_field, record
+                );
+                continue;
+            };
+
+            operations.push(Operation::AssociateRef {
+                entity: nn_info.parent_entity_set.clone(),
+                entity_ref: parent_id.to_string(),
+                navigation_property: nn_info.navigation_property.clone(),
+                target_ref: format!("/{}({})", nn_info.target_entity_set, target_id),
+            });
+        }
+    }
+
+    operations
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -850,5 +891,188 @@ mod tests {
         let insert_ops = build_insert_operations(&sync_plan);
 
         assert!(insert_ops.is_empty());
+    }
+
+    fn make_test_plan_with_junction() -> SyncPlan {
+        SyncPlan {
+            origin_env: "dev".to_string(),
+            target_env: "test".to_string(),
+            entity_plans: vec![
+                EntitySyncPlan {
+                    entity_info: SyncEntityInfo {
+                        logical_name: "account".to_string(),
+                        display_name: Some("Account".to_string()),
+                        entity_set_name: "accounts".to_string(),
+                        primary_name_attribute: Some("name".to_string()),
+                        category: DependencyCategory::Standalone,
+                        lookups: vec![],
+                        incoming_references: vec![],
+                        dependents: vec![],
+                        insert_priority: 0,
+                        delete_priority: 2,
+                        nn_relationship: None,
+                    },
+                    schema_diff: EntitySchemaDiff::default(),
+                    data_preview: EntityDataPreview {
+                        entity_name: "account".to_string(),
+                        origin_count: 2,
+                        target_count: 0,
+                        origin_records: vec![
+                            serde_json::json!({"accountid": "acc-1", "name": "Account 1"}),
+                            serde_json::json!({"accountid": "acc-2", "name": "Account 2"}),
+                        ],
+                        target_records: vec![],
+                    },
+                    nulled_lookups: vec![],
+                },
+                EntitySyncPlan {
+                    entity_info: SyncEntityInfo {
+                        logical_name: "contact".to_string(),
+                        display_name: Some("Contact".to_string()),
+                        entity_set_name: "contacts".to_string(),
+                        primary_name_attribute: Some("fullname".to_string()),
+                        category: DependencyCategory::Standalone,
+                        lookups: vec![],
+                        incoming_references: vec![],
+                        dependents: vec![],
+                        insert_priority: 0,
+                        delete_priority: 2,
+                        nn_relationship: None,
+                    },
+                    schema_diff: EntitySchemaDiff::default(),
+                    data_preview: EntityDataPreview {
+                        entity_name: "contact".to_string(),
+                        origin_count: 2,
+                        target_count: 0,
+                        origin_records: vec![
+                            serde_json::json!({"contactid": "con-1", "fullname": "Contact 1"}),
+                            serde_json::json!({"contactid": "con-2", "fullname": "Contact 2"}),
+                        ],
+                        target_records: vec![],
+                    },
+                    nulled_lookups: vec![],
+                },
+                EntitySyncPlan {
+                    entity_info: SyncEntityInfo {
+                        logical_name: "accountcontact".to_string(),
+                        display_name: Some("Account Contact".to_string()),
+                        entity_set_name: "accountcontacts".to_string(),
+                        primary_name_attribute: None,
+                        category: DependencyCategory::Junction,
+                        lookups: vec![],
+                        incoming_references: vec![],
+                        dependents: vec![],
+                        insert_priority: 1, // After both account and contact
+                        delete_priority: 0,
+                        nn_relationship: Some(NNRelationshipInfo {
+                            navigation_property: "contact_account_association".to_string(),
+                            parent_entity: "account".to_string(),
+                            parent_entity_set: "accounts".to_string(),
+                            parent_fk_field: "accountid".to_string(),
+                            target_entity: "contact".to_string(),
+                            target_entity_set: "contacts".to_string(),
+                            target_fk_field: "contactid".to_string(),
+                        }),
+                    },
+                    schema_diff: EntitySchemaDiff::default(),
+                    data_preview: EntityDataPreview {
+                        entity_name: "accountcontact".to_string(),
+                        origin_count: 3,
+                        target_count: 0,
+                        origin_records: vec![
+                            serde_json::json!({"accountid": "acc-1", "contactid": "con-1"}),
+                            serde_json::json!({"accountid": "acc-1", "contactid": "con-2"}),
+                            serde_json::json!({"accountid": "acc-2", "contactid": "con-1"}),
+                        ],
+                        target_records: vec![],
+                    },
+                    nulled_lookups: vec![],
+                },
+            ],
+            detected_junctions: vec!["accountcontact".to_string()],
+            has_schema_changes: false,
+            total_delete_count: 0,
+            total_insert_count: 7,
+        }
+    }
+
+    #[test]
+    fn test_build_junction_operations() {
+        let sync_plan = make_test_plan_with_junction();
+        let junction_ops = build_junction_operations(&sync_plan);
+
+        // Should have 3 AssociateRef operations
+        assert_eq!(junction_ops.len(), 3);
+
+        // All should be AssociateRef
+        for op in &junction_ops {
+            match op {
+                Operation::AssociateRef { entity, entity_ref, navigation_property, target_ref } => {
+                    assert_eq!(entity, "accounts");
+                    assert_eq!(navigation_property, "contact_account_association");
+                    assert!(entity_ref.starts_with("acc-"));
+                    assert!(target_ref.starts_with("/contacts(con-"));
+                }
+                _ => panic!("Expected AssociateRef operation"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_build_junction_operations_correct_refs() {
+        let sync_plan = make_test_plan_with_junction();
+        let junction_ops = build_junction_operations(&sync_plan);
+
+        // Check first operation specifically
+        match &junction_ops[0] {
+            Operation::AssociateRef { entity_ref, target_ref, .. } => {
+                assert_eq!(entity_ref, "acc-1");
+                assert_eq!(target_ref, "/contacts(con-1)");
+            }
+            _ => panic!("Expected AssociateRef"),
+        }
+
+        // Check second operation
+        match &junction_ops[1] {
+            Operation::AssociateRef { entity_ref, target_ref, .. } => {
+                assert_eq!(entity_ref, "acc-1");
+                assert_eq!(target_ref, "/contacts(con-2)");
+            }
+            _ => panic!("Expected AssociateRef"),
+        }
+
+        // Check third operation
+        match &junction_ops[2] {
+            Operation::AssociateRef { entity_ref, target_ref, .. } => {
+                assert_eq!(entity_ref, "acc-2");
+                assert_eq!(target_ref, "/contacts(con-1)");
+            }
+            _ => panic!("Expected AssociateRef"),
+        }
+    }
+
+    #[test]
+    fn test_build_junction_operations_skips_non_junction() {
+        let sync_plan = make_test_plan_with_junction();
+        let junction_ops = build_junction_operations(&sync_plan);
+
+        // Should only have junction operations, not regular entities
+        for op in &junction_ops {
+            match op {
+                Operation::AssociateRef { entity, .. } => {
+                    // Entity should be accounts (the parent), not contacts or accountcontacts
+                    assert_eq!(entity, "accounts");
+                }
+                _ => panic!("Expected AssociateRef operation"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_build_junction_operations_empty_when_no_junctions() {
+        let sync_plan = make_test_plan_with_records(); // No junction entities
+        let junction_ops = build_junction_operations(&sync_plan);
+
+        assert!(junction_ops.is_empty());
     }
 }
