@@ -9,7 +9,7 @@ use crate::tui::apps::queue::models::{QueueItem, QueueMetadata};
 
 use super::operation_builder::{
     build_deactivate_operations, build_delete_operations, build_insert_operations,
-    build_junction_operations, build_update_operations,
+    build_junction_operations, build_post_insert_deactivate_operations, build_update_operations,
     chunk_operations, DEFAULT_BATCH_SIZE,
 };
 use super::super::types::SyncPlan;
@@ -21,6 +21,7 @@ pub mod priority {
     pub const SCHEMA: u8 = 64;
     pub const UPDATE: u8 = 80;      // Regular entities, records in both
     pub const INSERT: u8 = 96;      // Regular entities, origin-only records
+    pub const POST_INSERT_DEACTIVATE: u8 = 112; // Deactivate newly created inactive records
     pub const JUNCTION: u8 = 128;   // N:N associations
 }
 
@@ -37,6 +38,8 @@ pub struct SyncQueueItems {
     pub update_items: Vec<QueueItem>,
     /// Insert operation batches (regular entities, origin-only records)
     pub insert_items: Vec<QueueItem>,
+    /// Post-insert deactivate batches (deactivate newly created inactive records)
+    pub post_insert_deactivate_items: Vec<QueueItem>,
     /// Junction operation batches (N:N associations)
     pub junction_items: Vec<QueueItem>,
 }
@@ -50,6 +53,7 @@ impl SyncQueueItems {
         items.extend(self.schema_items.clone());
         items.extend(self.update_items.clone());
         items.extend(self.insert_items.clone());
+        items.extend(self.post_insert_deactivate_items.clone());
         items.extend(self.junction_items.clone());
         items
     }
@@ -62,6 +66,7 @@ impl SyncQueueItems {
             schema_ids: self.schema_items.iter().map(|i| i.id.clone()).collect(),
             update_ids: self.update_items.iter().map(|i| i.id.clone()).collect(),
             insert_ids: self.insert_items.iter().map(|i| i.id.clone()).collect(),
+            post_insert_deactivate_ids: self.post_insert_deactivate_items.iter().map(|i| i.id.clone()).collect(),
             junction_ids: self.junction_items.iter().map(|i| i.id.clone()).collect(),
         }
     }
@@ -73,6 +78,7 @@ impl SyncQueueItems {
             + self.schema_items.iter().map(|i| i.operations.len()).sum::<usize>()
             + self.update_items.iter().map(|i| i.operations.len()).sum::<usize>()
             + self.insert_items.iter().map(|i| i.operations.len()).sum::<usize>()
+            + self.post_insert_deactivate_items.iter().map(|i| i.operations.len()).sum::<usize>()
             + self.junction_items.iter().map(|i| i.operations.len()).sum::<usize>()
     }
 }
@@ -85,6 +91,7 @@ pub struct SyncQueueItemIds {
     pub schema_ids: Vec<String>,
     pub update_ids: Vec<String>,
     pub insert_ids: Vec<String>,
+    pub post_insert_deactivate_ids: Vec<String>,
     pub junction_ids: Vec<String>,
 }
 
@@ -106,7 +113,9 @@ pub fn build_sync_queue_items(
     let update_ops = build_update_operations(plan);
     // Phase 5: Insert/Create (regular entities, origin-only records)
     let insert_ops = build_insert_operations(plan);
-    // Phase 6: Junction associations (N:N relationships)
+    // Phase 6: Post-insert deactivate (deactivate newly created inactive records)
+    let post_insert_deactivate_ops = build_post_insert_deactivate_operations(plan);
+    // Phase 7: Junction associations (N:N relationships)
     let junction_ops = build_junction_operations(plan);
 
     // Chunk into batches
@@ -115,6 +124,7 @@ pub fn build_sync_queue_items(
     let schema_batches = chunk_operations(schema_ops, DEFAULT_BATCH_SIZE);
     let update_batches = chunk_operations(update_ops, DEFAULT_BATCH_SIZE);
     let insert_batches = chunk_operations(insert_ops, DEFAULT_BATCH_SIZE);
+    let post_insert_deactivate_batches = chunk_operations(post_insert_deactivate_ops, DEFAULT_BATCH_SIZE);
     let junction_batches = chunk_operations(junction_ops, DEFAULT_BATCH_SIZE);
 
     // Build queue items
@@ -148,6 +158,12 @@ pub fn build_sync_queue_items(
         priority::INSERT,
         target_env,
     );
+    let post_insert_deactivate_items = build_queue_items_for_phase(
+        post_insert_deactivate_batches,
+        "deactivate-new",
+        priority::POST_INSERT_DEACTIVATE,
+        target_env,
+    );
     let junction_items = build_queue_items_for_phase(
         junction_batches,
         "junction",
@@ -161,6 +177,7 @@ pub fn build_sync_queue_items(
         schema_items,
         update_items,
         insert_items,
+        post_insert_deactivate_items,
         junction_items,
     }
 }
@@ -272,7 +289,8 @@ mod tests {
         assert!(priority::DEACTIVATE < priority::SCHEMA);
         assert!(priority::SCHEMA < priority::UPDATE);
         assert!(priority::UPDATE < priority::INSERT);
-        assert!(priority::INSERT < priority::JUNCTION);
+        assert!(priority::INSERT < priority::POST_INSERT_DEACTIVATE);
+        assert!(priority::POST_INSERT_DEACTIVATE < priority::JUNCTION);
     }
 
     #[test]
@@ -312,6 +330,7 @@ mod tests {
                     priority::INSERT,
                 ),
             ],
+            post_insert_deactivate_items: vec![],
             junction_items: vec![],
         };
 

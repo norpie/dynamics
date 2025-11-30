@@ -23,6 +23,8 @@ pub struct InsertCleaningContext<'a> {
     pub nulled_lookups: &'a [NulledLookupInfo],
     /// Fields that exist in target schema (only these will be included in payload)
     pub target_fields: HashSet<String>,
+    /// Whether to skip statecode/statuscode (for creates - must deactivate separately)
+    pub skip_state_fields: bool,
 }
 
 /// A single sync operation to be executed
@@ -594,6 +596,7 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
             internal_lookups,
             nulled_lookups: &entity_plan.nulled_lookups,
             target_fields,
+            skip_state_fields: true, // Creates can't set inactive state directly
         };
 
         let entity_set = &entity_plan.entity_info.entity_set_name;
@@ -614,6 +617,68 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
             operations.push(Operation::Create {
                 entity: entity_set.clone(),
                 data: cleaned,
+            });
+        }
+    }
+
+    operations
+}
+
+/// Build deactivate operations for newly created records that were inactive in origin.
+/// These must run after inserts complete, since you can't create a record in inactive state.
+/// Returns operations in insert order (dependencies before dependents).
+/// Skips junction entities (they don't have statecode).
+pub fn build_post_insert_deactivate_operations(plan: &SyncPlan) -> Vec<Operation> {
+    let mut operations = Vec::new();
+
+    for entity_plan in plan.insert_order() {
+        // Skip junction entities - they don't have statecode
+        if entity_plan.entity_info.nn_relationship.is_some() {
+            continue;
+        }
+
+        let pk_field = format!("{}id", entity_plan.entity_info.logical_name);
+
+        // Build set of target GUIDs (records that already exist)
+        let target_guids: HashSet<String> = entity_plan
+            .data_preview
+            .target_records
+            .iter()
+            .map(|r| r.id.clone())
+            .collect();
+
+        let entity_set = &entity_plan.entity_info.entity_set_name;
+
+        // Only deactivate newly created records (not in target) that were inactive in origin
+        for record in &entity_plan.data_preview.origin_records {
+            let Some(guid) = record.get(&pk_field).and_then(|v| v.as_str()) else {
+                continue;
+            };
+
+            // Skip if already exists in target (update handles state)
+            if target_guids.contains(guid) {
+                continue;
+            }
+
+            // Check if origin record is inactive (statecode != 0)
+            let statecode = record.get("statecode").and_then(|v| v.as_i64()).unwrap_or(0);
+            if statecode == 0 {
+                continue; // Active, no deactivation needed
+            }
+
+            // Get the statuscode from origin
+            let statuscode = record.get("statuscode").and_then(|v| v.as_i64()).unwrap_or(2);
+
+            // Create update to set the state
+            let state_data = serde_json::json!({
+                "statecode": statecode,
+                "statuscode": statuscode
+            });
+
+            operations.push(Operation::Update {
+                entity: entity_set.clone(),
+                id: guid.to_string(),
+                data: state_data,
             });
         }
     }
@@ -683,6 +748,7 @@ pub fn build_update_operations(plan: &SyncPlan) -> Vec<Operation> {
             internal_lookups,
             nulled_lookups: &entity_plan.nulled_lookups,
             target_fields,
+            skip_state_fields: false, // Updates can set state directly
         };
 
         let entity_set = &entity_plan.entity_info.entity_set_name;
@@ -743,6 +809,11 @@ pub fn clean_record_for_insert(record: &Value, ctx: &InsertCleaningContext) -> V
 
         // Skip system fields
         if SYSTEM_FIELDS.contains(&key.as_str()) {
+            continue;
+        }
+
+        // Skip statecode/statuscode for creates (must deactivate separately)
+        if ctx.skip_state_fields && (key == "statecode" || key == "statuscode") {
             continue;
         }
 
@@ -1506,6 +1577,7 @@ mod tests {
             internal_lookups: HashMap::new(),
             nulled_lookups: &[],
             target_fields: HashSet::new(), // Empty = no filtering
+            skip_state_fields: false,
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);
@@ -1541,6 +1613,7 @@ mod tests {
             internal_lookups: HashMap::new(),
             nulled_lookups: &[],
             target_fields: HashSet::new(),
+            skip_state_fields: false,
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);
@@ -1571,6 +1644,7 @@ mod tests {
             internal_lookups: HashMap::new(),
             nulled_lookups: &[],
             target_fields: HashSet::new(),
+            skip_state_fields: false,
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);
@@ -1601,6 +1675,7 @@ mod tests {
             internal_lookups: HashMap::new(),
             nulled_lookups: &[],
             target_fields: HashSet::new(),
+            skip_state_fields: false,
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);
@@ -1632,6 +1707,7 @@ mod tests {
             internal_lookups,
             nulled_lookups: &[],
             target_fields: HashSet::new(),
+            skip_state_fields: false,
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);
@@ -1671,6 +1747,7 @@ mod tests {
             internal_lookups: HashMap::new(),
             nulled_lookups: &nulled_lookups,
             target_fields: HashSet::new(),
+            skip_state_fields: false,
         };
 
         let cleaned = clean_record_for_insert(&record, &ctx);
