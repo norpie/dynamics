@@ -55,6 +55,13 @@ pub const PRESETS: &[EntityPreset] = &[
         ],
     },
     EntityPreset {
+        name: "VAF Settings (junction test)",
+        entities: &[
+            "nrq_flemishshare",
+            "nrq_category",
+        ],
+    },
+    EntityPreset {
         name: "VAF (test)",
         entities: &[
             "cgk_category",
