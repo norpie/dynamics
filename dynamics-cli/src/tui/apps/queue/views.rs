@@ -172,16 +172,11 @@ fn build_operation_details(item: &super::models::QueueItem, child_idx: usize, th
                 Span::styled("Data:", Style::default().fg(theme.accent_muted).bold()),
             ])).build());
 
-            // Pretty print JSON data (limit to reasonable size)
+            // Pretty print JSON data
             if let Ok(json_str) = serde_json::to_string_pretty(data) {
-                for line in json_str.lines().take(20) {
+                for line in json_str.lines() {
                     lines.push(Element::styled_text(RataLine::from(vec![
                         Span::styled(format!("  {}", line), Style::default().fg(theme.text_primary)),
-                    ])).build());
-                }
-                if json_str.lines().count() > 20 {
-                    lines.push(Element::styled_text(RataLine::from(vec![
-                        Span::styled("  ... (truncated)", Style::default().fg(theme.border_primary).italic()),
                     ])).build());
                 }
             }
@@ -216,14 +211,9 @@ fn build_operation_details(item: &super::models::QueueItem, child_idx: usize, th
             ])).build());
 
             if let Ok(json_str) = serde_json::to_string_pretty(attribute_data) {
-                for line in json_str.lines().take(20) {
+                for line in json_str.lines() {
                     lines.push(Element::styled_text(RataLine::from(vec![
                         Span::styled(format!("  {}", line), Style::default().fg(theme.text_primary)),
-                    ])).build());
-                }
-                if json_str.lines().count() > 20 {
-                    lines.push(Element::styled_text(RataLine::from(vec![
-                        Span::styled("  ... (truncated)", Style::default().fg(theme.border_primary).italic()),
                     ])).build());
                 }
             }
@@ -243,14 +233,9 @@ fn build_operation_details(item: &super::models::QueueItem, child_idx: usize, th
             ])).build());
 
             if let Ok(json_str) = serde_json::to_string_pretty(attribute_data) {
-                for line in json_str.lines().take(20) {
+                for line in json_str.lines() {
                     lines.push(Element::styled_text(RataLine::from(vec![
                         Span::styled(format!("  {}", line), Style::default().fg(theme.text_primary)),
-                    ])).build());
-                }
-                if json_str.lines().count() > 20 {
-                    lines.push(Element::styled_text(RataLine::from(vec![
-                        Span::styled("  ... (truncated)", Style::default().fg(theme.border_primary).italic()),
                     ])).build());
                 }
             }
