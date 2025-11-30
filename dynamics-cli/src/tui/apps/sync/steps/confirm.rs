@@ -10,7 +10,7 @@ use crate::tui::widgets::ListItem;
 use crate::tui::state::theme::Theme;
 use crate::{col, row, spacer, use_constraints, button_row};
 
-use super::super::state::State;
+use super::super::state::{State, ExecutionPhase};
 use super::super::msg::Msg;
 use super::super::logic::operation_builder::{build_operation_summary, OperationSummary};
 
@@ -288,8 +288,9 @@ fn render_confirmation(state: &State, theme: &Theme) -> Element<Msg> {
 fn render_execution_progress(state: &State, theme: &Theme) -> Element<Msg> {
     use_constraints!();
 
-    let progress = state.confirm.execution_progress;
-    let status = &state.confirm.execution_status;
+    let progress = state.confirm.progress_percent();
+    let status = state.confirm.status_message();
+    let phase = state.confirm.phase;
 
     // Progress bar
     let progress_bar = Element::progress_bar(progress as usize, 100)
@@ -297,16 +298,22 @@ fn render_execution_progress(state: &State, theme: &Theme) -> Element<Msg> {
         .build();
 
     // Status message
+    let status_style = match phase {
+        ExecutionPhase::Complete => Style::default().fg(theme.accent_success),
+        ExecutionPhase::Failed => Style::default().fg(theme.accent_error),
+        _ => Style::default().fg(theme.text_primary),
+    };
     let status_text = Element::styled_text(Line::from(Span::styled(
-        status.clone(),
-        Style::default().fg(theme.text_primary)
+        status,
+        status_style,
     ))).build();
 
     // Phase indicators
     let phase_lines: Vec<Element<Msg>> = vec![
-        render_phase_indicator("Deleting records", progress, 0, 33, theme),
-        render_phase_indicator("Adding fields", progress, 33, 66, theme),
-        render_phase_indicator("Inserting records", progress, 66, 100, theme),
+        render_phase_indicator("Deleting records", phase, ExecutionPhase::Deleting, theme),
+        render_phase_indicator("Adding fields", phase, ExecutionPhase::AddingFields, theme),
+        render_phase_indicator("Inserting records", phase, ExecutionPhase::Inserting, theme),
+        render_phase_indicator("Creating associations", phase, ExecutionPhase::InsertingJunctions, theme),
     ];
 
     let content = Element::column(vec![
@@ -326,17 +333,34 @@ fn render_execution_progress(state: &State, theme: &Theme) -> Element<Msg> {
 /// Render a phase indicator line
 fn render_phase_indicator(
     label: &str,
-    progress: u8,
-    start: u8,
-    end: u8,
+    current_phase: ExecutionPhase,
+    this_phase: ExecutionPhase,
     theme: &Theme,
 ) -> Element<Msg> {
-    let (icon, style) = if progress >= end {
-        ("Done", Style::default().fg(theme.accent_success))
-    } else if progress >= start {
-        ("...", Style::default().fg(theme.accent_info).bold())
+    let phase_order = |p: ExecutionPhase| -> u8 {
+        match p {
+            ExecutionPhase::NotStarted => 0,
+            ExecutionPhase::Deleting => 1,
+            ExecutionPhase::AddingFields => 2,
+            ExecutionPhase::Publishing => 3,
+            ExecutionPhase::Inserting => 4,
+            ExecutionPhase::InsertingJunctions => 5,
+            ExecutionPhase::Complete => 6,
+            ExecutionPhase::Failed => 6,
+        }
+    };
+
+    let current_order = phase_order(current_phase);
+    let this_order = phase_order(this_phase);
+
+    let (icon, style) = if current_phase == ExecutionPhase::Failed && current_order >= this_order {
+        ("✗", Style::default().fg(theme.accent_error))
+    } else if current_order > this_order {
+        ("✓", Style::default().fg(theme.accent_success))
+    } else if current_order == this_order {
+        ("▶", Style::default().fg(theme.accent_info).bold())
     } else {
-        ("Pending", Style::default().fg(theme.text_tertiary))
+        ("·", Style::default().fg(theme.text_tertiary))
     };
 
     let text = format!("  {} {}", icon, label);

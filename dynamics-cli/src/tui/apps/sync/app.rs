@@ -446,14 +446,60 @@ impl App for EntitySyncApp {
                 Command::None
             }
             Msg::Execute => {
-                if !state.confirm.confirmed {
+                if !state.confirm.can_execute() {
                     return Command::None;
                 }
+
+                let Some(ref plan) = state.sync_plan else {
+                    return Command::None;
+                };
+
+                let target_env = state.env_select.target_env.clone().unwrap_or_default();
+
+                // Build queue items
+                let queue_items = super::logic::build_sync_queue_items(plan, &target_env);
+
+                // Store batch IDs for tracking
+                let (delete_ids, schema_ids, insert_ids, junction_ids) = queue_items.item_ids();
+                state.confirm.delete_batch_ids = delete_ids;
+                state.confirm.schema_batch_ids = schema_ids;
+                state.confirm.insert_batch_ids = insert_ids;
+                state.confirm.junction_batch_ids = junction_ids;
+
+                // Set initial state
                 state.confirm.executing = true;
-                state.confirm.execution_progress = 0;
-                state.confirm.execution_status = "Starting sync...".to_string();
-                // In a real implementation, this would kick off the sync
-                Command::None
+                state.confirm.total_operations = queue_items.total_operations();
+                state.confirm.completed_operations = 0;
+
+                // Determine initial phase
+                if !state.confirm.delete_batch_ids.is_empty() {
+                    state.confirm.phase = super::state::ExecutionPhase::Deleting;
+                    state.confirm.total_batches = state.confirm.delete_batch_ids.len();
+                } else if !state.confirm.schema_batch_ids.is_empty() {
+                    state.confirm.phase = super::state::ExecutionPhase::AddingFields;
+                    state.confirm.total_batches = state.confirm.schema_batch_ids.len();
+                } else if !state.confirm.insert_batch_ids.is_empty() {
+                    state.confirm.phase = super::state::ExecutionPhase::Inserting;
+                    state.confirm.total_batches = state.confirm.insert_batch_ids.len();
+                } else if !state.confirm.junction_batch_ids.is_empty() {
+                    state.confirm.phase = super::state::ExecutionPhase::InsertingJunctions;
+                    state.confirm.total_batches = state.confirm.junction_batch_ids.len();
+                } else {
+                    // Nothing to do
+                    state.confirm.phase = super::state::ExecutionPhase::Complete;
+                    state.confirm.executing = false;
+                    return Command::None;
+                }
+                state.confirm.current_batch = 1;
+
+                // Publish all items to the queue
+                let all_items = queue_items.all_items();
+                let queue_items_json = serde_json::to_value(&all_items).unwrap_or_default();
+
+                Command::Publish {
+                    topic: "queue:add_items".to_string(),
+                    data: queue_items_json,
+                }
             }
             Msg::ExportReport => {
                 if let Some(ref plan) = state.sync_plan {
@@ -484,22 +530,106 @@ impl App for EntitySyncApp {
                 }
                 Command::None
             }
-            Msg::ExecutionStarted => {
-                state.confirm.executing = true;
+            Msg::QueueItemCompleted { id, result, metadata: _ } => {
+                // Find which phase this batch belongs to and update progress
+                let confirm = &mut state.confirm;
+
+                if result.success {
+                    // Count completed operations
+                    confirm.completed_operations += result.operation_results.len();
+
+                    // Check which phase completed
+                    if let Some(pos) = confirm.delete_batch_ids.iter().position(|bid| bid == &id) {
+                        confirm.delete_batch_ids.remove(pos);
+                        confirm.current_batch = confirm.total_batches - confirm.delete_batch_ids.len();
+
+                        if confirm.delete_batch_ids.is_empty() {
+                            // Move to next phase
+                            if !confirm.schema_batch_ids.is_empty() {
+                                confirm.phase = super::state::ExecutionPhase::AddingFields;
+                                confirm.total_batches = confirm.schema_batch_ids.len();
+                                confirm.current_batch = 1;
+                            } else if !confirm.insert_batch_ids.is_empty() {
+                                confirm.phase = super::state::ExecutionPhase::Inserting;
+                                confirm.total_batches = confirm.insert_batch_ids.len();
+                                confirm.current_batch = 1;
+                            } else if !confirm.junction_batch_ids.is_empty() {
+                                confirm.phase = super::state::ExecutionPhase::InsertingJunctions;
+                                confirm.total_batches = confirm.junction_batch_ids.len();
+                                confirm.current_batch = 1;
+                            } else {
+                                confirm.phase = super::state::ExecutionPhase::Complete;
+                                confirm.executing = false;
+                            }
+                        }
+                    } else if let Some(pos) = confirm.schema_batch_ids.iter().position(|bid| bid == &id) {
+                        confirm.schema_batch_ids.remove(pos);
+                        confirm.current_batch = confirm.total_batches - confirm.schema_batch_ids.len();
+
+                        if confirm.schema_batch_ids.is_empty() {
+                            // Move to next phase
+                            if !confirm.insert_batch_ids.is_empty() {
+                                confirm.phase = super::state::ExecutionPhase::Inserting;
+                                confirm.total_batches = confirm.insert_batch_ids.len();
+                                confirm.current_batch = 1;
+                            } else if !confirm.junction_batch_ids.is_empty() {
+                                confirm.phase = super::state::ExecutionPhase::InsertingJunctions;
+                                confirm.total_batches = confirm.junction_batch_ids.len();
+                                confirm.current_batch = 1;
+                            } else {
+                                confirm.phase = super::state::ExecutionPhase::Complete;
+                                confirm.executing = false;
+                            }
+                        }
+                    } else if let Some(pos) = confirm.insert_batch_ids.iter().position(|bid| bid == &id) {
+                        confirm.insert_batch_ids.remove(pos);
+                        confirm.current_batch = confirm.total_batches - confirm.insert_batch_ids.len();
+
+                        if confirm.insert_batch_ids.is_empty() {
+                            // Move to next phase
+                            if !confirm.junction_batch_ids.is_empty() {
+                                confirm.phase = super::state::ExecutionPhase::InsertingJunctions;
+                                confirm.total_batches = confirm.junction_batch_ids.len();
+                                confirm.current_batch = 1;
+                            } else {
+                                confirm.phase = super::state::ExecutionPhase::Complete;
+                                confirm.executing = false;
+                            }
+                        }
+                    } else if let Some(pos) = confirm.junction_batch_ids.iter().position(|bid| bid == &id) {
+                        confirm.junction_batch_ids.remove(pos);
+                        confirm.current_batch = confirm.total_batches - confirm.junction_batch_ids.len();
+
+                        if confirm.junction_batch_ids.is_empty() {
+                            confirm.phase = super::state::ExecutionPhase::Complete;
+                            confirm.executing = false;
+                        }
+                    }
+                } else {
+                    // Batch failed
+                    confirm.phase = super::state::ExecutionPhase::Failed;
+                    confirm.executing = false;
+                    confirm.failed = Some(super::state::FailedOperation {
+                        phase: confirm.phase,
+                        batch_id: id,
+                        error: result.error.unwrap_or_else(|| "Unknown error".to_string()),
+                    });
+                }
+
                 Command::None
             }
-            Msg::ExecutionProgress(progress, status) => {
-                state.confirm.execution_progress = progress;
-                state.confirm.execution_status = status;
+            Msg::ExecutionPhaseChanged(phase) => {
+                state.confirm.phase = phase;
                 Command::None
             }
             Msg::ExecutionComplete(result) => {
                 state.confirm.executing = false;
                 match result {
                     Ok(()) => {
-                        state.confirm.execution_status = "Sync completed successfully!".to_string();
+                        state.confirm.phase = super::state::ExecutionPhase::Complete;
                     }
                     Err(e) => {
+                        state.confirm.phase = super::state::ExecutionPhase::Failed;
                         state.error = Some(format!("Sync failed: {}", e));
                     }
                 }
@@ -617,6 +747,18 @@ impl App for EntitySyncApp {
                             Msg::Execute,
                         ));
                     }
+                }
+
+                // Subscribe to queue completion events during execution
+                if state.confirm.executing {
+                    subs.push(Subscription::subscribe("queue:item_completed", |value| {
+                        let id = value.get("id")?.as_str()?.to_string();
+                        let result: crate::tui::apps::queue::models::QueueResult =
+                            serde_json::from_value(value.get("result")?.clone()).ok()?;
+                        let metadata: crate::tui::apps::queue::models::QueueMetadata =
+                            serde_json::from_value(value.get("metadata")?.clone()).ok()?;
+                        Some(Msg::QueueItemCompleted { id, result, metadata })
+                    }));
                 }
             }
         }

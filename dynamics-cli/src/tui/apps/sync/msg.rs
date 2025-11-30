@@ -8,8 +8,9 @@ use crossterm::event::KeyCode;
 use crate::api::models::Environment as ApiEnvironment;
 use crate::tui::widgets::TextInputEvent;
 
-use super::state::{EntityListItem, JunctionCandidate, AnalysisPhase};
+use super::state::{EntityListItem, JunctionCandidate, AnalysisPhase, ExecutionPhase};
 use super::types::SyncPlan;
+use crate::tui::apps::queue::models::{QueueResult, QueueMetadata};
 
 /// All messages for the Entity Sync App
 #[derive(Clone)]
@@ -117,10 +118,14 @@ pub enum Msg {
     ExportReport,
     /// Report exported successfully
     ReportExported(Result<String, String>),
-    /// Execution started
-    ExecutionStarted,
-    /// Execution progress update
-    ExecutionProgress(u8, String),
+    /// Queue item completed (from subscription)
+    QueueItemCompleted {
+        id: String,
+        result: QueueResult,
+        metadata: QueueMetadata,
+    },
+    /// Execution phase changed
+    ExecutionPhaseChanged(ExecutionPhase),
     /// Execution completed
     ExecutionComplete(Result<(), String>),
 
@@ -181,8 +186,10 @@ impl std::fmt::Debug for Msg {
             Self::Execute => write!(f, "Execute"),
             Self::ExportReport => write!(f, "ExportReport"),
             Self::ReportExported(r) => write!(f, "ReportExported({:?})", r.is_ok()),
-            Self::ExecutionStarted => write!(f, "ExecutionStarted"),
-            Self::ExecutionProgress(p, s) => write!(f, "ExecutionProgress({}, {})", p, s),
+            Self::QueueItemCompleted { id, result, .. } => {
+                write!(f, "QueueItemCompleted({}, success={})", id, result.success)
+            }
+            Self::ExecutionPhaseChanged(p) => write!(f, "ExecutionPhaseChanged({:?})", p),
             Self::ExecutionComplete(r) => write!(f, "ExecutionComplete({:?})", r.is_ok()),
             Self::DismissError => write!(f, "DismissError"),
             Self::Noop => write!(f, "Noop"),

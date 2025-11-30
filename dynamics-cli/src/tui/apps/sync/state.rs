@@ -379,6 +379,43 @@ impl DiffReviewState {
     }
 }
 
+/// Execution phase for sync operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExecutionPhase {
+    #[default]
+    NotStarted,
+    Deleting,
+    AddingFields,
+    Publishing,
+    Inserting,
+    InsertingJunctions,
+    Complete,
+    Failed,
+}
+
+impl ExecutionPhase {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::NotStarted => "Not started",
+            Self::Deleting => "Deleting records...",
+            Self::AddingFields => "Adding fields...",
+            Self::Publishing => "Publishing customizations...",
+            Self::Inserting => "Inserting records...",
+            Self::InsertingJunctions => "Creating associations...",
+            Self::Complete => "Complete",
+            Self::Failed => "Failed",
+        }
+    }
+}
+
+/// Information about a failed operation
+#[derive(Debug, Clone)]
+pub struct FailedOperation {
+    pub phase: ExecutionPhase,
+    pub batch_id: String,
+    pub error: String,
+}
+
 /// State for Step 5: Confirm & Execute
 #[derive(Debug, Default)]
 pub struct ConfirmState {
@@ -394,15 +431,63 @@ pub struct ConfirmState {
     /// Whether execution has started
     pub executing: bool,
 
-    /// Execution progress (0-100)
-    pub execution_progress: u8,
+    /// Current execution phase
+    pub phase: ExecutionPhase,
 
-    /// Current execution status
-    pub execution_status: String,
+    /// Current batch number within phase
+    pub current_batch: usize,
+
+    /// Total batches in current phase
+    pub total_batches: usize,
+
+    /// Completed operations count
+    pub completed_operations: usize,
+
+    /// Total operations count
+    pub total_operations: usize,
+
+    /// Queue item IDs for each phase (for tracking completion)
+    pub delete_batch_ids: Vec<String>,
+    pub schema_batch_ids: Vec<String>,
+    pub insert_batch_ids: Vec<String>,
+    pub junction_batch_ids: Vec<String>,
+
+    /// Failed operation details (if any)
+    pub failed: Option<FailedOperation>,
 }
 
 impl ConfirmState {
     pub fn can_execute(&self) -> bool {
-        !self.executing && !self.confirmed
+        self.confirmed && !self.executing && self.phase == ExecutionPhase::NotStarted
+    }
+
+    /// Calculate overall progress percentage
+    pub fn progress_percent(&self) -> u8 {
+        if self.total_operations == 0 {
+            return 0;
+        }
+        ((self.completed_operations as f64 / self.total_operations as f64) * 100.0) as u8
+    }
+
+    /// Get current status message
+    pub fn status_message(&self) -> String {
+        match self.phase {
+            ExecutionPhase::NotStarted => "Ready to execute".to_string(),
+            ExecutionPhase::Complete => "Sync completed successfully".to_string(),
+            ExecutionPhase::Failed => {
+                if let Some(ref failed) = self.failed {
+                    format!("Failed: {}", failed.error)
+                } else {
+                    "Execution failed".to_string()
+                }
+            }
+            _ => {
+                if self.total_batches > 0 {
+                    format!("{} (batch {}/{})", self.phase.label(), self.current_batch, self.total_batches)
+                } else {
+                    self.phase.label().to_string()
+                }
+            }
+        }
     }
 }
