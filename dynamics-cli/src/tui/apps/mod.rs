@@ -9,6 +9,7 @@ pub mod deadlines;
 pub mod queue;
 pub mod copy_questionnaires;
 pub mod sync;
+pub mod transfer;
 
 pub use app_launcher::AppLauncher;
 pub use screens::{LoadingScreen, ErrorScreen};
@@ -19,3 +20,4 @@ pub use deadlines::{DeadlinesFileSelectApp, DeadlinesMappingApp, DeadlinesInspec
 pub use queue::OperationQueueApp;
 pub use copy_questionnaires::{SelectQuestionnaireApp, CopyQuestionnaireApp};
 pub use sync::EntitySyncApp;
+pub use transfer::TransferConfigListApp;

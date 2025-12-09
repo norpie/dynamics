@@ -118,6 +118,8 @@ pub enum AppId {
     CopyQuestionnaire,
     PushQuestionnaire,
     EntitySync,
+    TransferConfigList,
+    TransferMappingEditor,
 }
 
 impl<Msg> Command<Msg> {

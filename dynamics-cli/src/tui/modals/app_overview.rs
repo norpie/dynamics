@@ -78,6 +78,8 @@ impl<Msg: Clone> AppOverviewModal<Msg> {
             AppId::CopyQuestionnaire => "Copy Questionnaire",
             AppId::PushQuestionnaire => "Push Questionnaire",
             AppId::EntitySync => "Entity Sync",
+            AppId::TransferConfigList => "Data Transfer",
+            AppId::TransferMappingEditor => "Mapping Editor",
         }
     }
 

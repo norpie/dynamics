@@ -51,6 +51,11 @@ impl Default for State {
                     description: "Sync settings entities between Dynamics 365 environments".to_string(),
                 },
                 AppInfo {
+                    id: AppId::TransferConfigList,
+                    name: "Data Transfer".to_string(),
+                    description: "Transfer data between Dynamics 365 environments with field mapping".to_string(),
+                },
+                AppInfo {
                     id: AppId::OperationQueue,
                     name: "Operation Queue".to_string(),
                     description: "Manage and execute API operation batches".to_string(),
