@@ -23,6 +23,14 @@ pub struct State {
     pub source_env: String,
     /// Target environment name
     pub target_env: String,
+    /// Loaded transfer config (needed for transform step)
+    pub config: Option<crate::transfer::TransferConfig>,
+    /// Number of pending fetch tasks
+    pub pending_fetches: usize,
+    /// Accumulated source records by entity name
+    pub source_data: std::collections::HashMap<String, Vec<serde_json::Value>>,
+    /// Accumulated target records by entity name
+    pub target_data: std::collections::HashMap<String, Vec<serde_json::Value>>,
     /// Resolved transfer data (loaded async)
     pub resolved: Resource<ResolvedTransfer>,
     /// Currently selected entity index
@@ -45,6 +53,10 @@ impl Default for State {
             config_name: String::new(),
             source_env: String::new(),
             target_env: String::new(),
+            config: None,
+            pending_fetches: 0,
+            source_data: std::collections::HashMap::new(),
+            target_data: std::collections::HashMap::new(),
             resolved: Resource::NotAsked,
             current_entity_idx: 0,
             filter: RecordFilter::All,
@@ -134,6 +146,8 @@ pub enum PreviewModal {
 #[derive(Clone)]
 pub enum Msg {
     // Data loading
+    ConfigLoaded(Result<crate::transfer::TransferConfig, String>),
+    FetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
     ResolvedLoaded(Result<ResolvedTransfer, String>),
 
     // Navigation

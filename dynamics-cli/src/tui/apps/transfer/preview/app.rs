@@ -1,5 +1,9 @@
 //! Transfer Preview app - displays resolved records after transform
 
+use std::collections::HashMap;
+
+use crate::config::repository::transfer::get_transfer_config;
+use crate::transfer::{ResolvedTransfer, TransferConfig, TransformEngine};
 use crate::tui::resource::Resource;
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
@@ -25,17 +29,122 @@ impl App for TransferPreviewApp {
             ..Default::default()
         };
 
-        // TODO (Chunk 3): Load config and run transform engine
-        // For now, just return None command - data loading will be implemented
-        // in Chunk 3 when we wire up the transform engine
-        let cmd = Command::None;
+        // First load config to know which entities to fetch
+        let cmd = Command::perform(
+            load_config(params.config_name),
+            Msg::ConfigLoaded,
+        );
 
         (state, cmd)
     }
 
     fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         match msg {
-            // Data loading
+            // Data loading - Step 1: Config loaded, now fetch records
+            Msg::ConfigLoaded(result) => {
+                match result {
+                    Ok(config) => {
+                        // Build parallel fetch tasks for loading screen
+                        let mut builder = Command::perform_parallel()
+                            .with_title("Fetching Records");
+
+                        let num_entities = config.entity_mappings.len();
+
+                        // Add source fetch tasks
+                        for mapping in &config.entity_mappings {
+                            let entity = mapping.source_entity.clone();
+                            let env = config.source_env.clone();
+                            builder = builder.add_task(
+                                format!("Source: {}", entity),
+                                fetch_entity_records(env, entity.clone(), true),
+                            );
+                        }
+
+                        // Add target fetch tasks
+                        for mapping in &config.entity_mappings {
+                            let entity = mapping.target_entity.clone();
+                            let env = config.target_env.clone();
+                            builder = builder.add_task(
+                                format!("Target: {}", entity),
+                                fetch_entity_records(env, entity.clone(), false),
+                            );
+                        }
+
+                        // Track how many fetches we're waiting for (source + target for each entity)
+                        state.pending_fetches = num_entities * 2;
+                        state.config = Some(config);
+
+                        builder
+                            .on_complete(AppId::TransferPreview)
+                            .build(|_task_idx, result| {
+                                let data = result
+                                    .downcast::<Result<(String, bool, Vec<serde_json::Value>), String>>()
+                                    .unwrap();
+                                Msg::FetchResult(*data)
+                            })
+                    }
+                    Err(e) => {
+                        state.resolved = Resource::Failure(e);
+                        Command::None
+                    }
+                }
+            }
+
+            // Data loading - Step 2: Each fetch result comes in individually
+            Msg::FetchResult(result) => {
+                match result {
+                    Ok((entity_name, is_source, records)) => {
+                        if is_source {
+                            state.source_data.insert(entity_name, records);
+                        } else {
+                            state.target_data.insert(entity_name, records);
+                        }
+
+                        state.pending_fetches = state.pending_fetches.saturating_sub(1);
+
+                        // When all fetches complete, run the transform
+                        if state.pending_fetches == 0 {
+                            if let Some(config) = state.config.take() {
+                                // Build primary keys map
+                                let primary_keys: HashMap<String, String> = config
+                                    .entity_mappings
+                                    .iter()
+                                    .map(|m| (m.source_entity.clone(), format!("{}id", m.source_entity)))
+                                    .collect();
+
+                                // Run transform
+                                let resolved = TransformEngine::transform_all(
+                                    &config,
+                                    &state.source_data,
+                                    &state.target_data,
+                                    &primary_keys,
+                                );
+
+                                log::info!(
+                                    "Transform complete: {} records ({} upsert, {} nochange, {} skip, {} error)",
+                                    resolved.total_records(),
+                                    resolved.upsert_count(),
+                                    resolved.nochange_count(),
+                                    resolved.skip_count(),
+                                    resolved.error_count()
+                                );
+
+                                // Clear accumulated data
+                                state.source_data.clear();
+                                state.target_data.clear();
+
+                                state.resolved = Resource::Success(resolved);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        state.resolved = Resource::Failure(e);
+                        state.pending_fetches = 0;
+                    }
+                }
+                Command::None
+            }
+
             Msg::ResolvedLoaded(result) => {
                 state.resolved = match result {
                     Ok(resolved) => Resource::Success(resolved),
@@ -215,4 +324,76 @@ impl App for TransferPreviewApp {
     fn title() -> &'static str {
         "Transfer Preview"
     }
+}
+
+// =============================================================================
+// Async helper functions
+// =============================================================================
+
+/// Load transfer config from database
+async fn load_config(config_name: String) -> Result<TransferConfig, String> {
+    let pool = &crate::global_config().pool;
+    get_transfer_config(pool, &config_name)
+        .await
+        .map_err(|e| format!("Failed to load config: {}", e))?
+        .ok_or_else(|| format!("Config '{}' not found", config_name))
+}
+
+/// Fetch all records for an entity from an environment
+/// Returns (entity_name, is_source, records)
+async fn fetch_entity_records(
+    env_name: String,
+    entity_name: String,
+    is_source: bool,
+) -> Result<(String, bool, Vec<serde_json::Value>), String> {
+    use crate::api::pluralization::pluralize_entity_name;
+    use crate::api::query::QueryBuilder;
+
+    let manager = crate::client_manager();
+    let client = manager
+        .get_client(&env_name)
+        .await
+        .map_err(|e| format!("Failed to get client for {}: {}", env_name, e))?;
+
+    let entity_set = pluralize_entity_name(&entity_name);
+    let mut all_records = Vec::new();
+
+    let query = QueryBuilder::new(&entity_set)
+        .active_only()
+        .top(5000)
+        .build();
+
+    let mut result = client
+        .execute_query(&query)
+        .await
+        .map_err(|e| format!("Query failed for {}: {}", entity_name, e))?;
+
+    if let Some(ref data) = result.data {
+        all_records.extend(data.value.clone());
+    }
+
+    // Handle pagination
+    while result.has_more() {
+        if let Some(next) = result
+            .next_page(&client)
+            .await
+            .map_err(|e| format!("Pagination failed: {}", e))?
+        {
+            if let Some(ref data) = next.data {
+                all_records.extend(data.value.clone());
+            }
+            result = next;
+        } else {
+            break;
+        }
+    }
+
+    log::info!(
+        "Fetched {} records for {} from {}",
+        all_records.len(),
+        entity_name,
+        env_name
+    );
+
+    Ok((entity_name, is_source, all_records))
 }
