@@ -238,6 +238,7 @@ impl FallbackType {
 }
 
 impl FieldMappingForm {
+    /// Basic validation - checks that required fields are filled
     pub fn is_valid(&self) -> bool {
         let target_valid = !self.target_field.value.trim().is_empty();
         let transform_valid = match self.transform_type {
@@ -255,6 +256,208 @@ impl FieldMappingForm {
         target_valid && transform_valid
     }
 
+    /// Full validation with type checking
+    /// Returns (can_save, warnings, errors)
+    pub fn validate(
+        &self,
+        target_fields: &[crate::api::FieldMetadata],
+        source_fields: &[crate::api::FieldMetadata],
+    ) -> FormValidation {
+        use super::validation::{ValidationResult, validate_constant_value, validate_copy_types};
+
+        let mut validation = FormValidation::default();
+
+        // Find target field metadata
+        let target_meta = target_fields
+            .iter()
+            .find(|f| f.logical_name == self.target_field.value.trim());
+
+        if self.target_field.value.trim().is_empty() {
+            validation.target_error = Some("Target field is required".into());
+            return validation;
+        }
+
+        // If target field not found in metadata, warn but allow
+        let Some(target) = target_meta else {
+            validation.target_warning = Some("Target field not found in schema".into());
+            return validation;
+        };
+
+        match self.transform_type {
+            TransformType::Copy => {
+                let source_path = self.source_path.value.trim();
+                if source_path.is_empty() {
+                    validation.source_error = Some("Source field is required".into());
+                    return validation;
+                }
+
+                // Get the base field name (before any dot for lookups)
+                let base_field = source_path.split('.').next().unwrap_or(source_path);
+                if let Some(source) = source_fields.iter().find(|f| f.logical_name == base_field) {
+                    let result = validate_copy_types(&source.field_type, &target.field_type);
+                    match result {
+                        ValidationResult::Valid => {}
+                        ValidationResult::Warning(msg) => validation.transform_warning = Some(msg),
+                        ValidationResult::Error(msg) => validation.transform_error = Some(msg),
+                    }
+                } else {
+                    validation.source_warning = Some("Source field not found in schema".into());
+                }
+            }
+
+            TransformType::Constant => {
+                let value = self.constant_value.value.trim();
+                let result = validate_constant_value(value, &target.field_type, target.is_required);
+                match result {
+                    ValidationResult::Valid => {}
+                    ValidationResult::Warning(msg) => validation.value_warning = Some(msg),
+                    ValidationResult::Error(msg) => validation.value_error = Some(msg),
+                }
+            }
+
+            TransformType::Conditional => {
+                let source_path = self.condition_source.value.trim();
+                if source_path.is_empty() {
+                    validation.source_error = Some("Source field is required".into());
+                    return validation;
+                }
+
+                // Validate then_value
+                let then_result = validate_constant_value(
+                    self.then_value.value.trim(),
+                    &target.field_type,
+                    false, // then/else can be null
+                );
+                match then_result {
+                    ValidationResult::Valid => {}
+                    ValidationResult::Warning(msg) => validation.then_warning = Some(msg),
+                    ValidationResult::Error(msg) => validation.then_error = Some(msg),
+                }
+
+                // Validate else_value
+                let else_result = validate_constant_value(
+                    self.else_value.value.trim(),
+                    &target.field_type,
+                    false,
+                );
+                match else_result {
+                    ValidationResult::Valid => {}
+                    ValidationResult::Warning(msg) => validation.else_warning = Some(msg),
+                    ValidationResult::Error(msg) => validation.else_error = Some(msg),
+                }
+            }
+
+            TransformType::ValueMap => {
+                let source_path = self.value_map_source.value.trim();
+                if source_path.is_empty() {
+                    validation.source_error = Some("Source field is required".into());
+                    return validation;
+                }
+
+                if self.value_map_entries.is_empty() {
+                    validation.transform_error = Some("At least one mapping is required".into());
+                    return validation;
+                }
+
+                // Validate each mapping's target value
+                for (i, entry) in self.value_map_entries.iter().enumerate() {
+                    let result = validate_constant_value(
+                        entry.target_value.value.trim(),
+                        &target.field_type,
+                        false,
+                    );
+                    if let ValidationResult::Error(msg) = result {
+                        validation.mapping_errors.push((i, msg));
+                    }
+                }
+
+                // Validate default value if fallback is Default
+                if self.value_map_fallback == FallbackType::Default {
+                    let result = validate_constant_value(
+                        self.value_map_default.value.trim(),
+                        &target.field_type,
+                        false,
+                    );
+                    match result {
+                        ValidationResult::Valid => {}
+                        ValidationResult::Warning(msg) => validation.default_warning = Some(msg),
+                        ValidationResult::Error(msg) => validation.default_error = Some(msg),
+                    }
+                }
+            }
+        }
+
+        validation
+    }
+}
+
+/// Validation results for the field mapping form
+#[derive(Clone, Default)]
+pub struct FormValidation {
+    pub target_error: Option<String>,
+    pub target_warning: Option<String>,
+    pub source_error: Option<String>,
+    pub source_warning: Option<String>,
+    pub value_error: Option<String>,
+    pub value_warning: Option<String>,
+    pub transform_error: Option<String>,
+    pub transform_warning: Option<String>,
+    pub then_error: Option<String>,
+    pub then_warning: Option<String>,
+    pub else_error: Option<String>,
+    pub else_warning: Option<String>,
+    pub default_error: Option<String>,
+    pub default_warning: Option<String>,
+    pub mapping_errors: Vec<(usize, String)>,
+}
+
+impl FormValidation {
+    pub fn has_errors(&self) -> bool {
+        self.target_error.is_some()
+            || self.source_error.is_some()
+            || self.value_error.is_some()
+            || self.transform_error.is_some()
+            || self.then_error.is_some()
+            || self.else_error.is_some()
+            || self.default_error.is_some()
+            || !self.mapping_errors.is_empty()
+    }
+
+    pub fn has_warnings(&self) -> bool {
+        self.target_warning.is_some()
+            || self.source_warning.is_some()
+            || self.value_warning.is_some()
+            || self.transform_warning.is_some()
+            || self.then_warning.is_some()
+            || self.else_warning.is_some()
+            || self.default_warning.is_some()
+    }
+
+    /// Get the first error message, if any
+    pub fn first_error(&self) -> Option<&str> {
+        self.target_error.as_deref()
+            .or(self.source_error.as_deref())
+            .or(self.value_error.as_deref())
+            .or(self.transform_error.as_deref())
+            .or(self.then_error.as_deref())
+            .or(self.else_error.as_deref())
+            .or(self.default_error.as_deref())
+            .or(self.mapping_errors.first().map(|(_, msg)| msg.as_str()))
+    }
+
+    /// Get the first warning message, if any
+    pub fn first_warning(&self) -> Option<&str> {
+        self.target_warning.as_deref()
+            .or(self.source_warning.as_deref())
+            .or(self.value_warning.as_deref())
+            .or(self.transform_warning.as_deref())
+            .or(self.then_warning.as_deref())
+            .or(self.else_warning.as_deref())
+            .or(self.default_warning.as_deref())
+    }
+}
+
+impl FieldMappingForm {
     pub fn from_mapping(mapping: &FieldMapping) -> Self {
         use crate::transfer::{Condition, Fallback};
 

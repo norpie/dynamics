@@ -585,15 +585,45 @@ fn render_field_modal(
             }
 
             let content = col
-                .add(mappings_header, LayoutConstraint::Length(1))
+                .add(mappings_header, LayoutConstraint::Length(3))
                 .add(mappings_col.build(), LayoutConstraint::Fill(1))
                 .spacing(1)
                 .build();
 
-            let base_height = if form.value_map_fallback == FallbackType::Default { 24 } else { 20 };
-            let height = base_height + (form.value_map_entries.len().min(4) * 3) as u16;
-            (content, height.min(40))
+            // Height calculation:
+            // - Border + padding: 4
+            // - Target field panel: 3 + spacing 1 = 4
+            // - Type indicator: 1 + spacing 1 = 2
+            // - Source panel: 3 + spacing 1 = 4
+            // - Fallback indicator: 1 + spacing 1 = 2
+            // - Default panel (optional): 3 + spacing 1 = 4
+            // - Mappings header: 3 + spacing 1 = 4
+            // - Entries: 3 each
+            // - Button row: 3
+            let base_height: u16 = if form.value_map_fallback == FallbackType::Default { 32 } else { 28 };
+            let entries_height = (form.value_map_entries.len().min(4) * 4) as u16;
+            let height = base_height + entries_height;
+            (content, height.min(45))
         }
+    };
+
+    // Run validation
+    let validation = form.validate(target_fields, source_fields);
+    let can_save = form.is_valid() && !validation.has_errors();
+
+    // Validation message (show error or warning)
+    let validation_msg = if let Some(err) = validation.first_error() {
+        Some(Element::styled_text(Line::from(vec![
+            Span::styled("Error: ", Style::default().fg(theme.accent_error)),
+            Span::styled(err.to_string(), Style::default().fg(theme.accent_error)),
+        ])).build())
+    } else if let Some(warn) = validation.first_warning() {
+        Some(Element::styled_text(Line::from(vec![
+            Span::styled("Warning: ", Style::default().fg(theme.accent_warning)),
+            Span::styled(warn.to_string(), Style::default().fg(theme.text_secondary)),
+        ])).build())
+    } else {
+        None
     };
 
     // Buttons
@@ -601,7 +631,7 @@ fn render_field_modal(
         .on_press(Msg::CloseFieldModal)
         .build();
 
-    let save_btn = if form.is_valid() {
+    let save_btn = if can_save {
         Element::button(FocusId::new("field-save"), "Save")
             .on_press(Msg::SaveField)
             .build()
@@ -615,18 +645,31 @@ fn render_field_modal(
         .add(save_btn, LayoutConstraint::Length(12))
         .build();
 
-    let form_content = ColumnBuilder::new()
+    let mut form_builder = ColumnBuilder::new()
         .add(target_panel, LayoutConstraint::Length(3))
         .add(type_indicator, LayoutConstraint::Length(1))
-        .add(transform_content, LayoutConstraint::Fill(1))
+        .add(transform_content, LayoutConstraint::Fill(1));
+
+    if let Some(msg) = validation_msg {
+        form_builder = form_builder.add(msg, LayoutConstraint::Length(1));
+    }
+
+    let form_content = form_builder
         .add(button_row, LayoutConstraint::Length(3))
         .spacing(1)
         .build();
 
+    // Adjust height for validation message
+    let final_height = if validation.has_errors() || validation.has_warnings() {
+        modal_height + 2
+    } else {
+        modal_height
+    };
+
     Element::panel(Element::container(form_content).padding(1).build())
         .title(title)
         .width(70)
-        .height(modal_height)
+        .height(final_height)
         .build()
 }
 
