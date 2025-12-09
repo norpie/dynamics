@@ -5,6 +5,8 @@
 
 pub mod types;
 pub mod transform;
+pub mod excel;
 
 pub use types::*;
 pub use transform::{TransformEngine, TransformContext, TransformError};
+pub use excel::{write_mapping_excel, read_mapping_excel, write_resolved_excel, read_resolved_excel};
