@@ -5,7 +5,7 @@ use crate::tui::resource::Resource;
 use crate::tui::widgets::TreeState;
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
-use crate::api::FieldMetadata;
+use crate::api::{FieldMetadata, FieldType};
 use super::state::{DeleteTarget, EditorParams, EntityMappingForm, FieldMappingForm, Msg, State, TransformType};
 use super::view;
 
@@ -35,6 +35,7 @@ impl App for MappingEditorApp {
             target_fields: Resource::NotAsked,
             current_field_entity_idx: None,
             pending_field_modal: None,
+            related_fields: std::collections::HashMap::new(),
             show_delete_confirm: false,
             delete_target: None,
         };
@@ -364,6 +365,7 @@ impl App for MappingEditorApp {
             Msg::CloseFieldModal => {
                 state.show_field_modal = false;
                 state.editing_field = None;
+                state.related_fields.clear();
                 Command::set_focus(FocusId::new("mapping-tree"))
             }
 
@@ -391,6 +393,7 @@ impl App for MappingEditorApp {
 
                 state.show_field_modal = false;
                 state.editing_field = None;
+                state.related_fields.clear();
 
                 // Auto-save
                 if let Resource::Success(config) = &state.config {
@@ -413,12 +416,10 @@ impl App for MappingEditorApp {
             }
 
             Msg::FieldFormSourcePath(event) => {
-                let options: Vec<String> = match &state.source_fields {
-                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
-                    _ => vec![],
-                };
+                let options = get_source_options(state);
                 state.field_form.source_path.handle_event::<Msg>(event, &options);
-                Command::None
+                // Check if we need to load related entity fields
+                check_for_nested_lookup(state, &state.field_form.source_path.value.clone())
             }
 
             Msg::FieldFormConstant(event) => {
@@ -433,12 +434,10 @@ impl App for MappingEditorApp {
 
             // Conditional transform fields
             Msg::FieldFormConditionSource(event) => {
-                let options: Vec<String> = match &state.source_fields {
-                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
-                    _ => vec![],
-                };
+                let options = get_source_options(state);
                 state.field_form.condition_source.handle_event::<Msg>(event, &options);
-                Command::None
+                // Check if we need to load related entity fields
+                check_for_nested_lookup(state, &state.field_form.condition_source.value.clone())
             }
 
             Msg::FieldFormToggleConditionType => {
@@ -463,12 +462,10 @@ impl App for MappingEditorApp {
 
             // ValueMap transform fields
             Msg::FieldFormValueMapSource(event) => {
-                let options: Vec<String> = match &state.source_fields {
-                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
-                    _ => vec![],
-                };
+                let options = get_source_options(state);
                 state.field_form.value_map_source.handle_event::<Msg>(event, &options);
-                Command::None
+                // Check if we need to load related entity fields
+                check_for_nested_lookup(state, &state.field_form.value_map_source.value.clone())
             }
 
             Msg::FieldFormToggleFallback => {
@@ -549,6 +546,25 @@ impl App for MappingEditorApp {
                     // TODO: Show error modal
                 }
                 Command::None
+            }
+
+            Msg::RelatedFieldsLoaded { lookup_field, result } => {
+                state.related_fields.insert(
+                    lookup_field,
+                    match result {
+                        Ok(fields) => Resource::Success(fields),
+                        Err(e) => Resource::Failure(e),
+                    }
+                );
+
+                // Restore focus to the appropriate source field based on transform type
+                let focus_id = match state.field_form.transform_type {
+                    TransformType::Copy => "field-source",
+                    TransformType::Conditional => "field-condition-source",
+                    TransformType::ValueMap => "field-valuemap-source",
+                    _ => "field-source",
+                };
+                Command::set_focus(FocusId::new(focus_id))
             }
 
             // Navigation
@@ -700,8 +716,10 @@ async fn load_entity_fields(env_name: String, entity_name: String) -> Result<Vec
             format!("Failed to get client for {}: {}", env_name, e)
         })?;
 
+    // Use fetch_entity_fields_alt which uses EntityDefinitions API
+    // This properly populates related_entity for lookup fields (needed for nested autocomplete)
     let fields = client
-        .fetch_entity_fields(&entity_name)
+        .fetch_entity_fields_alt(&entity_name)
         .await
         .map_err(|e| {
             log::error!("Failed to fetch fields for {}: {}", entity_name, e);
@@ -720,4 +738,91 @@ async fn load_entity_fields(env_name: String, entity_name: String) -> Result<Vec
     let _ = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await;
 
     Ok(fields)
+}
+
+/// Build the source field options for autocomplete, including nested lookup paths
+fn get_source_options(state: &State) -> Vec<String> {
+    let mut options = Vec::new();
+
+    // Add base fields
+    if let Resource::Success(fields) = &state.source_fields {
+        for f in fields {
+            options.push(f.logical_name.clone());
+        }
+    }
+
+    // Add nested paths for loaded related entities
+    for (lookup_field, resource) in &state.related_fields {
+        if let Resource::Success(related_fields) = resource {
+            for f in related_fields {
+                options.push(format!("{}.{}", lookup_field, f.logical_name));
+            }
+        }
+    }
+
+    options
+}
+
+/// Check if the current source path value contains a lookup field reference
+/// that requires loading the related entity's fields.
+/// Returns a Command to load the related entity if needed.
+fn check_for_nested_lookup(state: &mut State, current_value: &str) -> Command<Msg> {
+    if !current_value.contains('.') {
+        return Command::None;
+    }
+
+    let base_field = current_value.split('.').next().unwrap();
+    log::debug!("check_for_nested_lookup: looking for base_field '{}'", base_field);
+
+    // Find the lookup field in source_fields
+    let lookup_info = if let Resource::Success(fields) = &state.source_fields {
+        // First, find if there's a field matching this name
+        if let Some(field) = fields.iter().find(|f| f.logical_name == base_field) {
+            log::debug!("  Found field '{}' with type {:?}, related_entity: {:?}",
+                field.logical_name, field.field_type, field.related_entity);
+        } else {
+            log::debug!("  No field found matching '{}'", base_field);
+        }
+
+        fields.iter()
+            .find(|f| f.logical_name == base_field && f.field_type == FieldType::Lookup)
+            .and_then(|f| f.related_entity.clone().map(|e| (base_field.to_string(), e)))
+    } else {
+        log::debug!("  source_fields not loaded yet");
+        None
+    };
+
+    if let Some((field_name, related_entity)) = lookup_info {
+        // Check if already loaded or loading
+        if state.related_fields.contains_key(&field_name) {
+            return Command::None;
+        }
+
+        // Get source env name from config
+        let source_env = if let Resource::Success(config) = &state.config {
+            config.source_env.clone()
+        } else {
+            return Command::None;
+        };
+
+        state.related_fields.insert(field_name.clone(), Resource::Loading);
+
+        // Use loading screen for fetch
+        return Command::perform_parallel()
+            .add_task(
+                format!("Loading fields from {}", related_entity),
+                load_entity_fields(source_env, related_entity),
+            )
+            .with_title("Loading Related Entity")
+            .on_complete(AppId::TransferMappingEditor)
+            .build(move |_task_idx, result| {
+                let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                Msg::RelatedFieldsLoaded {
+                    lookup_field: field_name.clone(),
+                    result: *data,
+                }
+            });
+    }
+
+    Command::None
 }

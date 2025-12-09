@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, Transform};
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField};
@@ -46,6 +48,9 @@ pub struct State {
     // Pending field modal open (entity_idx, field_idx) - None field_idx means "add new"
     pub pending_field_modal: Option<(usize, Option<usize>)>,
 
+    // Related entity fields cache - keyed by lookup field name (e.g., "parentaccountid")
+    pub related_fields: HashMap<String, Resource<Vec<FieldMetadata>>>,
+
     // Delete confirmation
     pub show_delete_confirm: bool,
     pub delete_target: Option<DeleteTarget>,
@@ -69,6 +74,7 @@ impl Default for State {
             target_fields: Resource::NotAsked,
             current_field_entity_idx: None,
             pending_field_modal: None,
+            related_fields: HashMap::new(),
             show_delete_confirm: false,
             delete_target: None,
         }
@@ -665,6 +671,12 @@ pub enum Msg {
 
     // Auto-save result
     SaveCompleted(Result<(), String>),
+
+    // Related entity fields loading (for nested lookup autocomplete)
+    RelatedFieldsLoaded {
+        lookup_field: String,
+        result: Result<Vec<FieldMetadata>, String>,
+    },
 
     // Navigation
     Back,
