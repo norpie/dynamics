@@ -12,3 +12,4 @@ pub mod mappings;
 pub mod examples;
 pub mod update_metadata;
 pub mod queue;
+pub mod transfer;
