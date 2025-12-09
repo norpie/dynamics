@@ -45,6 +45,8 @@ pub enum TaskStatus {
 pub struct LoadingTask {
     pub name: String,
     pub status: TaskStatus,
+    /// Optional progress text (e.g., "500 records fetched")
+    pub progress: Option<String>,
 }
 
 #[derive(Default)]
@@ -75,6 +77,7 @@ impl App for LoadingScreen {
             .map(|name| LoadingTask {
                 name: name.clone(),
                 status: TaskStatus::Pending,
+                progress: None,
             })
             .collect();
 
@@ -101,17 +104,32 @@ impl App for LoadingScreen {
                 log::info!("  Task: '{}', Status: '{}'", task_name, status_str);
 
                 if let Some(task) = state.tasks.iter_mut().find(|t| t.name == task_name) {
-                    task.status = match status_str {
-                        "InProgress" => TaskStatus::InProgress,
-                        "Completed" => TaskStatus::Completed,
-                        "Failed" => TaskStatus::Failed(
-                            data.get("error")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Unknown error")
-                                .to_string()
-                        ),
-                        _ => TaskStatus::Pending,
-                    };
+                    // Don't downgrade from Completed/Failed back to InProgress
+                    let already_done = matches!(task.status, TaskStatus::Completed | TaskStatus::Failed(_));
+
+                    if !already_done || status_str == "Completed" || status_str == "Failed" {
+                        task.status = match status_str {
+                            "InProgress" => TaskStatus::InProgress,
+                            "Completed" => {
+                                task.progress = None; // Clear progress on completion
+                                TaskStatus::Completed
+                            }
+                            "Failed" => TaskStatus::Failed(
+                                data.get("error")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("Unknown error")
+                                    .to_string()
+                            ),
+                            _ => TaskStatus::Pending,
+                        };
+                    }
+
+                    // Update progress text if provided (but not if already completed)
+                    if !already_done {
+                        if let Some(progress) = data.get("progress").and_then(|v| v.as_str()) {
+                            task.progress = Some(progress.to_string());
+                        }
+                    }
                 }
 
                 // Check if all tasks are complete
@@ -215,10 +233,20 @@ impl App for LoadingScreen {
                 TaskStatus::Failed(_) => ("❌", theme.accent_error),
             };
 
-            content.push(Element::styled_text(Line::from(vec![
+            let mut spans = vec![
                 Span::styled(format!(" {} ", symbol), Style::default().fg(color)),
                 Span::styled(task.name.clone(), Style::default().fg(color)),
-            ])).build());
+            ];
+
+            // Add progress text if available
+            if let Some(ref progress) = task.progress {
+                spans.push(Span::styled(
+                    format!(" ({})", progress),
+                    Style::default().fg(theme.text_secondary),
+                ));
+            }
+
+            content.push(Element::styled_text(Line::from(spans)).build());
         }
 
         content.push(Element::text(""));

@@ -14,6 +14,7 @@ pub struct Query {
     pub orderby: OrderByClause,
     pub expand: Option<Vec<String>>,
     pub top: Option<u32>,
+    pub skip: Option<u32>,
     pub count: bool,
 }
 
@@ -26,6 +27,7 @@ impl Query {
             orderby: OrderByClause::new(),
             expand: None,
             top: None,
+            skip: None,
             count: false,
         }
     }
@@ -68,6 +70,10 @@ impl Query {
             params.push(format!("$top={}", top));
         }
 
+        if let Some(skip) = self.skip {
+            params.push(format!("$skip={}", skip));
+        }
+
         if self.count {
             params.push("$count=true".to_string());
         }
@@ -102,6 +108,10 @@ impl Query {
 
         if let Some(top) = self.top {
             params.insert("$top".to_string(), top.to_string());
+        }
+
+        if let Some(skip) = self.skip {
+            params.insert("$skip".to_string(), skip.to_string());
         }
 
         if self.count {

@@ -82,6 +82,17 @@ impl Transform {
             }
         }
     }
+
+    /// Get the source field(s) required by this transform
+    /// Returns the base field name (first segment of path)
+    pub fn source_fields(&self) -> Vec<&str> {
+        match self {
+            Transform::Copy { source_path } => vec![source_path.base_field()],
+            Transform::Constant { .. } => vec![],
+            Transform::Conditional { source_path, .. } => vec![source_path.base_field()],
+            Transform::ValueMap { source_path, .. } => vec![source_path.base_field()],
+        }
+    }
 }
 
 /// A path to a field, optionally traversing a lookup relationship

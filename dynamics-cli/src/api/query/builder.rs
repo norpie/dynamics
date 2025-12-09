@@ -58,6 +58,11 @@ impl QueryBuilder {
         self
     }
 
+    /// Skip a number of results (for pagination)
+    pub fn skip(mut self, skip: u32) -> Self {
+        self.query.skip = Some(skip);
+        self
+    }
 
     /// Include count in response
     pub fn count(mut self) -> Self {

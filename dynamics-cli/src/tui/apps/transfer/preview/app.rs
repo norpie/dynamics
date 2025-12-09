@@ -50,23 +50,50 @@ impl App for TransferPreviewApp {
 
                         let num_entities = config.entity_mappings.len();
 
-                        // Add source fetch tasks
+                        // Add source fetch tasks with progress reporting
                         for mapping in &config.entity_mappings {
                             let entity = mapping.source_entity.clone();
                             let env = config.source_env.clone();
-                            builder = builder.add_task(
+
+                            // Collect source fields from transforms + primary key
+                            let mut source_fields: Vec<String> = mapping
+                                .field_mappings
+                                .iter()
+                                .flat_map(|fm| fm.transform.source_fields())
+                                .map(|s| s.to_string())
+                                .collect();
+                            source_fields.push(format!("{}id", entity)); // Primary key
+                            source_fields.sort();
+                            source_fields.dedup();
+
+                            log::info!("[{}] Source fetch will select {} fields", entity, source_fields.len());
+
+                            builder = builder.add_task_with_progress(
                                 format!("Source: {}", entity),
-                                fetch_entity_records(env, entity.clone(), true),
+                                move |progress| fetch_entity_records(env, entity, true, source_fields, Some(progress)),
                             );
                         }
 
-                        // Add target fetch tasks
+                        // Add target fetch tasks with progress reporting
                         for mapping in &config.entity_mappings {
                             let entity = mapping.target_entity.clone();
                             let env = config.target_env.clone();
-                            builder = builder.add_task(
+
+                            // Collect target fields + primary key
+                            let mut target_fields: Vec<String> = mapping
+                                .field_mappings
+                                .iter()
+                                .map(|fm| fm.target_field.clone())
+                                .collect();
+                            target_fields.push(format!("{}id", entity)); // Primary key
+                            target_fields.sort();
+                            target_fields.dedup();
+
+                            log::info!("[{}] Target fetch will select {} fields", entity, target_fields.len());
+
+                            builder = builder.add_task_with_progress(
                                 format!("Target: {}", entity),
-                                fetch_entity_records(env, entity.clone(), false),
+                                move |progress| fetch_entity_records(env, entity, false, target_fields, Some(progress)),
                             );
                         }
 
@@ -102,45 +129,53 @@ impl App for TransferPreviewApp {
 
                         state.pending_fetches = state.pending_fetches.saturating_sub(1);
 
-                        // When all fetches complete, run the transform
+                        // Just accumulate data - transform runs after loading screen returns
                         if state.pending_fetches == 0 {
-                            if let Some(config) = state.config.take() {
-                                // Build primary keys map
-                                let primary_keys: HashMap<String, String> = config
-                                    .entity_mappings
-                                    .iter()
-                                    .map(|m| (m.source_entity.clone(), format!("{}id", m.source_entity)))
-                                    .collect();
-
-                                // Run transform
-                                let resolved = TransformEngine::transform_all(
-                                    &config,
-                                    &state.source_data,
-                                    &state.target_data,
-                                    &primary_keys,
-                                );
-
-                                log::info!(
-                                    "Transform complete: {} records ({} upsert, {} nochange, {} skip, {} error)",
-                                    resolved.total_records(),
-                                    resolved.upsert_count(),
-                                    resolved.nochange_count(),
-                                    resolved.skip_count(),
-                                    resolved.error_count()
-                                );
-
-                                // Clear accumulated data
-                                state.source_data.clear();
-                                state.target_data.clear();
-
-                                state.resolved = Resource::Success(resolved);
-                            }
+                            log::info!("All fetches complete, data ready for transform");
+                            // Mark as loading - transform will run when we become active again
+                            state.resolved = Resource::Loading;
                         }
                     }
                     Err(e) => {
                         state.resolved = Resource::Failure(e);
                         state.pending_fetches = 0;
                     }
+                }
+                Command::None
+            }
+
+            // Data loading - Step 3: Run transform after returning from loading screen
+            Msg::RunTransform => {
+                if let Some(config) = state.config.take() {
+                    // Build primary keys map
+                    let primary_keys: HashMap<String, String> = config
+                        .entity_mappings
+                        .iter()
+                        .map(|m| (m.source_entity.clone(), format!("{}id", m.source_entity)))
+                        .collect();
+
+                    // Run transform
+                    let resolved = TransformEngine::transform_all(
+                        &config,
+                        &state.source_data,
+                        &state.target_data,
+                        &primary_keys,
+                    );
+
+                    log::info!(
+                        "Transform complete: {} records ({} upsert, {} nochange, {} skip, {} error)",
+                        resolved.total_records(),
+                        resolved.upsert_count(),
+                        resolved.nochange_count(),
+                        resolved.skip_count(),
+                        resolved.error_count()
+                    );
+
+                    // Clear accumulated data
+                    state.source_data.clear();
+                    state.target_data.clear();
+
+                    state.resolved = Resource::Success(resolved);
                 }
                 Command::None
             }
@@ -324,6 +359,20 @@ impl App for TransferPreviewApp {
     fn title() -> &'static str {
         "Transfer Preview"
     }
+
+    fn on_resume(state: &mut State) -> Command<Msg> {
+        // If we have data but haven't transformed yet, run the transform now
+        if matches!(state.resolved, Resource::Loading)
+            && state.config.is_some()
+            && !state.source_data.is_empty()
+        {
+            log::info!("TransferPreviewApp resuming with data ready - triggering transform");
+            // Use a message to run transform so UI can update first
+            Command::perform(async { () }, |_| Msg::RunTransform)
+        } else {
+            Command::None
+        }
+    }
 }
 
 // =============================================================================
@@ -345,6 +394,8 @@ async fn fetch_entity_records(
     env_name: String,
     entity_name: String,
     is_source: bool,
+    fields: Vec<String>, // Fields to select (for performance)
+    progress: Option<crate::tui::command::ProgressSender>,
 ) -> Result<(String, bool, Vec<serde_json::Value>), String> {
     use crate::api::pluralization::pluralize_entity_name;
     use crate::api::query::QueryBuilder;
@@ -356,43 +407,105 @@ async fn fetch_entity_records(
         .map_err(|e| format!("Failed to get client for {}: {}", env_name, e))?;
 
     let entity_set = pluralize_entity_name(&entity_name);
-    let mut all_records = Vec::new();
 
-    let query = QueryBuilder::new(&entity_set)
-        .active_only()
-        .top(5000)
-        .build();
+    // First: get real count via FetchXML aggregate (OData $count caps at 5000)
+    let count_fetchxml = format!(
+        r#"<fetch aggregate="true"><entity name="{}"><attribute name="{}id" aggregate="count" alias="total"/><filter><condition attribute="statecode" operator="eq" value="0"/></filter></entity></fetch>"#,
+        entity_name, entity_name
+    );
+
+    let total_count: Option<u64> = match client.execute_fetchxml(&entity_name, &count_fetchxml).await {
+        Ok(result) => {
+            result.get("value")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|obj| obj.get("total"))
+                .and_then(|t| t.as_u64())
+        }
+        Err(e) => {
+            log::warn!("[{}] Count query failed, progress will show records only: {}", entity_name, e);
+            None
+        }
+    };
+    log::info!("[{}] Total count: {:?}", entity_name, total_count);
+
+    // Report initial progress
+    if let Some(ref tx) = progress {
+        let msg = match total_count {
+            Some(total) => format!("0/{}", total),
+            None => "Starting...".to_string(),
+        };
+        let _ = tx.send(msg);
+    }
+
+    // Fetch data using @odata.nextLink pagination (Dynamics doesn't support $skip)
+    let mut all_records = Vec::new();
+    let mut page = 0;
+
+    log::info!("[{}] 🚀 Starting data fetch...", entity_name);
+    let fetch_start = std::time::Instant::now();
+
+    // Build initial query (no $top - let API return default 5000 with nextLink)
+    let mut builder = QueryBuilder::new(&entity_set).active_only();
+    if !fields.is_empty() {
+        let field_refs: Vec<&str> = fields.iter().map(|s| s.as_str()).collect();
+        builder = builder.select(&field_refs);
+    }
+    let query = builder.build();
 
     let mut result = client
         .execute_query(&query)
         .await
         .map_err(|e| format!("Query failed for {}: {}", entity_name, e))?;
 
-    if let Some(ref data) = result.data {
-        all_records.extend(data.value.clone());
-    }
+    loop {
+        page += 1;
+        let page_start = std::time::Instant::now();
 
-    // Handle pagination
-    while result.has_more() {
-        if let Some(next) = result
+        let page_records = result.data
+            .as_ref()
+            .map(|d| d.value.len())
+            .unwrap_or(0);
+
+        log::info!("[{}] ✅ Page {} fetched in {}ms ({} records)",
+            entity_name, page, page_start.elapsed().as_millis(), page_records);
+
+        if let Some(ref data) = result.data {
+            all_records.extend(data.value.clone());
+        }
+
+        // Report progress
+        let progress_msg = match total_count {
+            Some(total) => format!("{}/{}", all_records.len(), total),
+            None => format!("{} records", all_records.len()),
+        };
+        if let Some(ref tx) = progress {
+            let _ = tx.send(progress_msg);
+        }
+
+        // Check if there's more data via nextLink
+        if !result.has_more() {
+            break;
+        }
+
+        // Fetch next page
+        let next_start = std::time::Instant::now();
+        result = result
             .next_page(&client)
             .await
             .map_err(|e| format!("Pagination failed: {}", e))?
-        {
-            if let Some(ref data) = next.data {
-                all_records.extend(data.value.clone());
-            }
-            result = next;
-        } else {
-            break;
-        }
+            .ok_or_else(|| "nextLink returned no data".to_string())?;
+
+        log::debug!("[{}] Next page request took {}ms", entity_name, next_start.elapsed().as_millis());
     }
 
+    let total_time = fetch_start.elapsed();
     log::info!(
-        "Fetched {} records for {} from {}",
+        "✅ Fetched {} records for {} from {} in {}ms",
         all_records.len(),
         entity_name,
-        env_name
+        env_name,
+        total_time.as_millis()
     );
 
     Ok((entity_name, is_source, all_records))

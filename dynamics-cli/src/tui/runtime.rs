@@ -113,6 +113,9 @@ pub struct Runtime<A: App> {
     /// Active parallel task coordinator
     parallel_coordinator: Option<ParallelTaskCoordinator<A::Msg>>,
 
+    /// Progress receivers for parallel tasks (task_name, receiver)
+    progress_receivers: Vec<(String, tokio::sync::mpsc::UnboundedReceiver<String>)>,
+
     /// Track if user explicitly unfocused via Escape (to prevent auto-restore)
     explicitly_unfocused: bool,
 
@@ -144,6 +147,7 @@ impl<A: App> Runtime<A> {
             pending_publishes: Vec::new(),
             pending_start_app: None,
             parallel_coordinator: None,
+            progress_receivers: Vec::new(),
             explicitly_unfocused: false,
             previous_layer_count: 1,  // Start with 1 (base layer)
         };
@@ -300,14 +304,27 @@ impl<A: App> Runtime<A> {
         use std::pin::Pin;
         use std::task::{Context, Poll};
 
+        let poll_start = std::time::Instant::now();
+
         // Create a dummy waker
         let waker = futures::task::noop_waker();
         let mut cx = Context::from_waker(&waker);
 
+        // Log poll state
+        if !self.pending_async.is_empty() || !self.pending_parallel.is_empty() {
+            log::debug!(
+                "⏱️ poll_async: {} async, {} parallel tasks pending",
+                self.pending_async.len(),
+                self.pending_parallel.len()
+            );
+        }
+
         // Poll regular async commands
         let mut completed = Vec::new();
         for (i, future) in self.pending_async.iter_mut().enumerate() {
-            if let Poll::Ready(msg) = future.as_mut().poll(&mut cx) {
+            let poll_result = future.as_mut().poll(&mut cx);
+            if let Poll::Ready(msg) = poll_result {
+                log::info!("⏱️ Async task {} completed", i);
                 completed.push((i, msg));
             }
         }
@@ -325,11 +342,42 @@ impl<A: App> Runtime<A> {
             self.update_subscriptions();
         }
 
+        // Poll progress receivers for incremental updates
+        for (task_name, rx) in &mut self.progress_receivers {
+            // Drain all available progress messages
+            while let Ok(progress) = rx.try_recv() {
+                log::info!("📊 Progress received for '{}': {}", task_name, progress);
+                self.pending_publishes.push((
+                    "loading:progress".to_string(),
+                    serde_json::json!({
+                        "task": task_name,
+                        "status": "InProgress",
+                        "progress": progress,
+                    }),
+                ));
+            }
+        }
+
         // Poll parallel coordination tasks
         let mut parallel_completed = Vec::new();
         for (i, future) in self.pending_parallel.iter_mut().enumerate() {
-            if let Poll::Ready((task_idx, task_name)) = future.as_mut().poll(&mut cx) {
-                parallel_completed.push((i, task_idx, task_name));
+            let poll_result = future.as_mut().poll(&mut cx);
+            match &poll_result {
+                Poll::Ready((task_idx, task_name)) => {
+                    log::info!("⏱️ Parallel task {} '{}' completed", task_idx, task_name);
+                    parallel_completed.push((i, *task_idx, task_name.clone()));
+                }
+                Poll::Pending => {
+                    // Only log occasionally to avoid spam
+                }
+            }
+        }
+
+        // Log poll duration if there were pending tasks
+        if !self.pending_parallel.is_empty() {
+            let elapsed = poll_start.elapsed();
+            if elapsed.as_millis() > 10 {
+                log::warn!("⏱️ poll_async took {}ms with {} parallel tasks", elapsed.as_millis(), self.pending_parallel.len());
             }
         }
 
@@ -380,8 +428,9 @@ impl<A: App> Runtime<A> {
                     // via its countdown timer. The target is already stored in the
                     // "loading:init" event data that was sent to LoadingScreen.
 
-                    // Clear all pending parallel futures to prevent re-polling
+                    // Clear all pending parallel futures and progress receivers
                     self.pending_parallel.clear();
+                    self.progress_receivers.clear();
                 }
             }
         }
@@ -776,6 +825,12 @@ impl<A: App> Runtime<A> {
                     let results_ref = results.clone();
                     let task_name = task.description.clone();
                     let future = task.future;
+
+                    // Store progress receiver if task has one
+                    if let Some(rx) = task.progress_rx {
+                        log::info!("📝 Storing progress receiver for task: '{}'", task_name);
+                        self.progress_receivers.push((task_name.clone(), rx));
+                    }
 
                     // Immediately publish InProgress status
                     self.pending_publishes.push((

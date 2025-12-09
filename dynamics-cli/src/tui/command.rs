@@ -2,8 +2,12 @@ use std::future::Future;
 use std::pin::Pin;
 use std::any::Any;
 use serde_json::Value;
+use tokio::sync::mpsc;
 use crate::tui::element::FocusId;
 use serde::{Serialize, Deserialize};
+
+/// Sender for reporting progress from within a parallel task
+pub type ProgressSender = mpsc::UnboundedSender<String>;
 
 /// Target for event dispatch - either widget auto-routing or app message
 ///
@@ -76,6 +80,8 @@ pub enum Command<Msg> {
 pub struct ParallelTask {
     pub description: String,
     pub future: Pin<Box<dyn Future<Output = Box<dyn Any + Send>> + Send>>,
+    /// Optional receiver for progress updates from the task
+    pub progress_rx: Option<mpsc::UnboundedReceiver<String>>,
 }
 
 /// Configuration for parallel task execution
@@ -232,6 +238,37 @@ impl<Msg: Send + 'static> ParallelBuilder<Msg> {
                 let result = future.await;
                 Box::new(result) as Box<dyn Any + Send>
             }),
+            progress_rx: None,
+        };
+        self.tasks.push(task);
+        self
+    }
+
+    /// Add a task with progress reporting capability
+    ///
+    /// The task factory receives a `ProgressSender` that can be used to send
+    /// progress updates (e.g., "50 records fetched", "Processing...").
+    /// These updates are displayed on the loading screen.
+    pub fn add_task_with_progress<F, Fut, T>(
+        mut self,
+        description: impl Into<String>,
+        task_factory: F,
+    ) -> Self
+    where
+        F: FnOnce(ProgressSender) -> Fut,
+        Fut: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let future = task_factory(tx);
+
+        let task = ParallelTask {
+            description: description.into(),
+            future: Box::pin(async move {
+                let result = future.await;
+                Box::new(result) as Box<dyn Any + Send>
+            }),
+            progress_rx: Some(rx),
         };
         self.tasks.push(task);
         self

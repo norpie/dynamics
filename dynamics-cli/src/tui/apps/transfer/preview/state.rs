@@ -148,6 +148,7 @@ pub enum Msg {
     // Data loading
     ConfigLoaded(Result<crate::transfer::TransferConfig, String>),
     FetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
+    RunTransform, // Triggered after loading screen returns
     ResolvedLoaded(Result<ResolvedTransfer, String>),
 
     // Navigation
