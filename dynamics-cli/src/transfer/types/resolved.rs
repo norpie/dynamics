@@ -59,6 +59,11 @@ impl ResolvedTransfer {
         self.count_by_action(RecordAction::Upsert)
     }
 
+    /// Get total no-change count (records that match target)
+    pub fn nochange_count(&self) -> usize {
+        self.count_by_action(RecordAction::NoChange)
+    }
+
     /// Get total skip count
     pub fn skip_count(&self) -> usize {
         self.count_by_action(RecordAction::Skip)
@@ -140,6 +145,11 @@ impl ResolvedEntity {
     /// Get upsert count
     pub fn upsert_count(&self) -> usize {
         self.count_by_action(RecordAction::Upsert)
+    }
+
+    /// Get no-change count
+    pub fn nochange_count(&self) -> usize {
+        self.count_by_action(RecordAction::NoChange)
     }
 
     /// Get skip count
@@ -250,9 +260,24 @@ impl ResolvedRecord {
         }
     }
 
+    /// Create a no-change record (target already matches)
+    pub fn nochange(source_id: Uuid, fields: HashMap<String, Value>) -> Self {
+        ResolvedRecord {
+            action: RecordAction::NoChange,
+            source_id,
+            fields,
+            error: None,
+        }
+    }
+
     /// Check if this record is ready for upsert
     pub fn is_upsert(&self) -> bool {
         self.action == RecordAction::Upsert
+    }
+
+    /// Check if this record has no changes
+    pub fn is_nochange(&self) -> bool {
+        self.action == RecordAction::NoChange
     }
 
     /// Check if this record has an error
@@ -302,6 +327,8 @@ impl ResolvedRecord {
 pub enum RecordAction {
     /// Ready to upsert to target
     Upsert,
+    /// No changes needed (target already matches)
+    NoChange,
     /// Skipped by user
     Skip,
     /// Transform error (cannot proceed)
@@ -312,6 +339,7 @@ impl std::fmt::Display for RecordAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RecordAction::Upsert => write!(f, "upsert"),
+            RecordAction::NoChange => write!(f, "nochange"),
             RecordAction::Skip => write!(f, "skip"),
             RecordAction::Error => write!(f, "error"),
         }

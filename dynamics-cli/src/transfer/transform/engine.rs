@@ -34,12 +34,14 @@ pub struct TransformContext {
 pub struct TransformEngine;
 
 impl TransformEngine {
-    /// Transform all entities in a config given pre-fetched source data
+    /// Transform all entities in a config given pre-fetched source and target data
     ///
     /// `source_data` is a map of entity name -> records
+    /// `target_data` is a map of entity name -> records (for comparison)
     pub fn transform_all(
         config: &TransferConfig,
         source_data: &HashMap<String, Vec<serde_json::Value>>,
+        target_data: &HashMap<String, Vec<serde_json::Value>>,
         primary_keys: &HashMap<String, String>,
     ) -> ResolvedTransfer {
         let mut resolved = ResolvedTransfer::new(
@@ -49,8 +51,13 @@ impl TransformEngine {
         );
 
         for entity_mapping in config.entity_mappings_by_priority() {
-            let records = source_data
+            let source_records = source_data
                 .get(&entity_mapping.source_entity)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+
+            let target_records = target_data
+                .get(&entity_mapping.target_entity)
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]);
 
@@ -63,7 +70,8 @@ impl TransformEngine {
                 primary_key_field: pk_field,
             };
 
-            let resolved_entity = Self::transform_entity(entity_mapping, records, &ctx);
+            let resolved_entity =
+                Self::transform_entity(entity_mapping, source_records, target_records, &ctx);
             resolved.add_entity(resolved_entity);
         }
 
@@ -74,6 +82,7 @@ impl TransformEngine {
     pub fn transform_entity(
         mapping: &EntityMapping,
         source_records: &[serde_json::Value],
+        target_records: &[serde_json::Value],
         ctx: &TransformContext,
     ) -> ResolvedEntity {
         let mut resolved = ResolvedEntity::new(
@@ -88,28 +97,47 @@ impl TransformEngine {
             .iter()
             .map(|f| f.target_field.clone())
             .collect();
-        resolved.set_field_names(field_names);
+        resolved.set_field_names(field_names.clone());
+
+        // Index target records by primary key for fast lookup
+        let target_index: HashMap<String, &serde_json::Value> = target_records
+            .iter()
+            .filter_map(|r| {
+                r.get(&ctx.primary_key_field)
+                    .and_then(|v| v.as_str())
+                    .map(|id| (id.to_string(), r))
+            })
+            .collect();
 
         for record in source_records {
-            let resolved_record = Self::transform_record(record, &mapping.field_mappings, ctx);
+            let resolved_record = Self::transform_record(
+                record,
+                &mapping.field_mappings,
+                &target_index,
+                &field_names,
+                ctx,
+            );
             resolved.add_record(resolved_record);
         }
 
         resolved
     }
 
-    /// Transform a single record
+    /// Transform a single record and compare against target
     pub fn transform_record(
         source: &serde_json::Value,
         field_mappings: &[FieldMapping],
+        target_index: &HashMap<String, &serde_json::Value>,
+        field_names: &[String],
         ctx: &TransformContext,
     ) -> ResolvedRecord {
         // Extract source ID
-        let source_id = source
+        let source_id_str = source
             .get(&ctx.primary_key_field)
             .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .unwrap_or_else(Uuid::new_v4);
+            .unwrap_or("");
+
+        let source_id = Uuid::parse_str(source_id_str).unwrap_or_else(|_| Uuid::new_v4());
 
         let mut fields = HashMap::new();
         let mut errors = Vec::new();
@@ -128,15 +156,81 @@ impl TransformEngine {
             }
         }
 
-        if errors.is_empty() {
-            ResolvedRecord::upsert(source_id, fields)
-        } else {
+        if !errors.is_empty() {
             let error_msg = errors
                 .iter()
                 .map(|e| e.to_string())
                 .collect::<Vec<_>>()
                 .join("; ");
-            ResolvedRecord::error_with_fields(source_id, fields, error_msg)
+            return ResolvedRecord::error_with_fields(source_id, fields, error_msg);
+        }
+
+        // Check if target record exists and compare
+        if let Some(target) = target_index.get(source_id_str) {
+            if Self::fields_match(&fields, target, field_names) {
+                return ResolvedRecord::nochange(source_id, fields);
+            }
+        }
+
+        ResolvedRecord::upsert(source_id, fields)
+    }
+
+    /// Compare resolved fields against target record
+    fn fields_match(
+        resolved: &HashMap<String, Value>,
+        target: &serde_json::Value,
+        field_names: &[String],
+    ) -> bool {
+        for field_name in field_names {
+            let resolved_value = resolved.get(field_name);
+            let target_value = target.get(field_name);
+
+            match (resolved_value, target_value) {
+                // Both null/missing -> match
+                (None, None) => continue,
+                (Some(Value::Null), None) => continue,
+                (None, Some(serde_json::Value::Null)) => continue,
+                (Some(Value::Null), Some(serde_json::Value::Null)) => continue,
+
+                // One exists, other doesn't -> no match
+                (None, Some(_)) => return false,
+                (Some(_), None) => return false,
+
+                // Both exist -> compare
+                (Some(resolved_val), Some(target_val)) => {
+                    if !Self::values_equal(resolved_val, target_val) {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    /// Compare a resolved Value against a JSON value
+    fn values_equal(resolved: &Value, target: &serde_json::Value) -> bool {
+        match (resolved, target) {
+            (Value::Null, serde_json::Value::Null) => true,
+            (Value::String(a), serde_json::Value::String(b)) => a == b,
+            (Value::Int(a), serde_json::Value::Number(b)) => {
+                b.as_i64().map(|b| *a == b).unwrap_or(false)
+            }
+            (Value::Float(a), serde_json::Value::Number(b)) => {
+                b.as_f64().map(|b| (*a - b).abs() < f64::EPSILON).unwrap_or(false)
+            }
+            (Value::Bool(a), serde_json::Value::Bool(b)) => a == b,
+            (Value::Guid(a), serde_json::Value::String(b)) => {
+                Uuid::parse_str(b).map(|b| *a == b).unwrap_or(false)
+            }
+            (Value::OptionSet(a), serde_json::Value::Number(b)) => {
+                b.as_i64().map(|b| *a as i64 == b).unwrap_or(false)
+            }
+            (Value::DateTime(a), serde_json::Value::String(b)) => {
+                chrono::DateTime::parse_from_rfc3339(b)
+                    .map(|b| *a == b.with_timezone(&chrono::Utc))
+                    .unwrap_or(false)
+            }
+            _ => false,
         }
     }
 }
@@ -144,7 +238,7 @@ impl TransformEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transfer::{Condition, FieldPath, Transform};
+    use crate::transfer::{FieldPath, Transform};
     use serde_json::json;
 
     fn make_ctx() -> TransformContext {
@@ -154,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transform_record_success() {
+    fn test_transform_record_upsert_when_no_target() {
         let source = json!({
             "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
             "name": "Contoso",
@@ -170,11 +264,74 @@ mod tests {
             }),
         ];
 
-        let result = TransformEngine::transform_record(&source, &mappings, &make_ctx());
+        let target_index = HashMap::new(); // No target records
+        let field_names = vec!["name".to_string(), "was_migrated".to_string()];
+
+        let result = TransformEngine::transform_record(
+            &source, &mappings, &target_index, &field_names, &make_ctx()
+        );
 
         assert!(result.is_upsert());
         assert_eq!(result.get_field("name"), Some(&Value::String("Contoso".into())));
         assert_eq!(result.get_field("was_migrated"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn test_transform_record_nochange_when_target_matches() {
+        let source = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "name": "Contoso"
+        });
+
+        let target = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "name": "Contoso"
+        });
+
+        let mappings = vec![
+            FieldMapping::new("name", Transform::Copy {
+                source_path: FieldPath::simple("name"),
+            }),
+        ];
+
+        let mut target_index = HashMap::new();
+        target_index.insert("a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(), &target);
+        let field_names = vec!["name".to_string()];
+
+        let result = TransformEngine::transform_record(
+            &source, &mappings, &target_index, &field_names, &make_ctx()
+        );
+
+        assert!(result.is_nochange());
+    }
+
+    #[test]
+    fn test_transform_record_upsert_when_target_differs() {
+        let source = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "name": "Contoso Updated"
+        });
+
+        let target = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "name": "Contoso"
+        });
+
+        let mappings = vec![
+            FieldMapping::new("name", Transform::Copy {
+                source_path: FieldPath::simple("name"),
+            }),
+        ];
+
+        let mut target_index = HashMap::new();
+        target_index.insert("a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(), &target);
+        let field_names = vec!["name".to_string()];
+
+        let result = TransformEngine::transform_record(
+            &source, &mappings, &target_index, &field_names, &make_ctx()
+        );
+
+        assert!(result.is_upsert());
     }
 
     #[test]
@@ -194,15 +351,20 @@ mod tests {
             }),
         ];
 
-        let result = TransformEngine::transform_record(&source, &mappings, &make_ctx());
+        let target_index = HashMap::new();
+        let field_names = vec!["gendercode".to_string()];
+
+        let result = TransformEngine::transform_record(
+            &source, &mappings, &target_index, &field_names, &make_ctx()
+        );
 
         assert!(result.is_error());
         assert!(result.error.is_some());
     }
 
     #[test]
-    fn test_transform_entity() {
-        let records = vec![
+    fn test_transform_entity_with_mixed_results() {
+        let source_records = vec![
             json!({
                 "accountid": "a1b2c3d4-0000-0000-0000-000000000001",
                 "name": "Contoso"
@@ -210,6 +372,15 @@ mod tests {
             json!({
                 "accountid": "a1b2c3d4-0000-0000-0000-000000000002",
                 "name": "Fabrikam"
+            }),
+        ];
+
+        // Target has Contoso with same name -> NoChange
+        // Target doesn't have Fabrikam -> Upsert
+        let target_records = vec![
+            json!({
+                "accountid": "a1b2c3d4-0000-0000-0000-000000000001",
+                "name": "Contoso"
             }),
         ];
 
@@ -225,11 +396,14 @@ mod tests {
             ],
         };
 
-        let result = TransformEngine::transform_entity(&mapping, &records, &make_ctx());
+        let result = TransformEngine::transform_entity(
+            &mapping, &source_records, &target_records, &make_ctx()
+        );
 
         assert_eq!(result.entity_name, "account");
         assert_eq!(result.records.len(), 2);
-        assert_eq!(result.upsert_count(), 2);
+        assert_eq!(result.nochange_count(), 1);
+        assert_eq!(result.upsert_count(), 1);
     }
 
     #[test]
@@ -259,13 +433,44 @@ mod tests {
             json!({"accountid": "a1b2c3d4-0000-0000-0000-000000000001", "name": "Test"}),
         ]);
 
+        let target_data = HashMap::new(); // Empty target
+
         let mut primary_keys = HashMap::new();
         primary_keys.insert("account".to_string(), "accountid".to_string());
 
-        let result = TransformEngine::transform_all(&config, &source_data, &primary_keys);
+        let result = TransformEngine::transform_all(&config, &source_data, &target_data, &primary_keys);
 
         assert_eq!(result.config_name, "test-migration");
         assert_eq!(result.entities.len(), 1);
         assert_eq!(result.total_records(), 1);
+        assert_eq!(result.upsert_count(), 1);
+    }
+
+    #[test]
+    fn test_values_equal() {
+        // String
+        assert!(TransformEngine::values_equal(
+            &Value::String("test".to_string()),
+            &json!("test")
+        ));
+
+        // Int
+        assert!(TransformEngine::values_equal(&Value::Int(42), &json!(42)));
+
+        // Bool
+        assert!(TransformEngine::values_equal(&Value::Bool(true), &json!(true)));
+
+        // Guid
+        let guid = Uuid::parse_str("a1b2c3d4-e5f6-7890-abcd-ef1234567890").unwrap();
+        assert!(TransformEngine::values_equal(
+            &Value::Guid(guid),
+            &json!("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+        ));
+
+        // Mismatch
+        assert!(!TransformEngine::values_equal(
+            &Value::String("a".to_string()),
+            &json!("b")
+        ));
     }
 }

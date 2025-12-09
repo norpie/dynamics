@@ -71,6 +71,7 @@ pub fn write_resolved_excel(entity: &ResolvedEntity, path: &str) -> Result<()> {
 fn format_action(action: &RecordAction) -> &'static str {
     match action {
         RecordAction::Upsert => "upsert",
+        RecordAction::NoChange => "nochange",
         RecordAction::Skip => "skip",
         RecordAction::Error => "error",
     }
