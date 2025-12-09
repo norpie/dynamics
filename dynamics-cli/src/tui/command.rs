@@ -120,6 +120,7 @@ pub enum AppId {
     EntitySync,
     TransferConfigList,
     TransferMappingEditor,
+    TransferPreview,
 }
 
 impl<Msg> Command<Msg> {

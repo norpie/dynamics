@@ -7,6 +7,7 @@ use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
 use crate::api::{FieldMetadata, FieldType};
 use super::state::{DeleteTarget, EditorParams, EntityMappingForm, FieldMappingForm, Msg, State, TransformType};
+use super::super::preview::PreviewParams;
 use super::view;
 
 pub struct MappingEditorApp;
@@ -573,9 +574,18 @@ impl App for MappingEditorApp {
             }
 
             Msg::Preview => {
-                // TODO: Navigate to preview app
-                log::info!("Would navigate to preview for: {}", state.config_name);
-                Command::None
+                // Navigate to preview app with current config info
+                if let Resource::Success(config) = &state.config {
+                    let params = PreviewParams {
+                        config_name: state.config_name.clone(),
+                        source_env: config.source_env.clone(),
+                        target_env: config.target_env.clone(),
+                    };
+                    Command::start_app(AppId::TransferPreview, params)
+                } else {
+                    log::warn!("Cannot preview: config not loaded");
+                    Command::None
+                }
             }
         }
     }

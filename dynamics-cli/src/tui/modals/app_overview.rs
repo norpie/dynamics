@@ -80,6 +80,7 @@ impl<Msg: Clone> AppOverviewModal<Msg> {
             AppId::EntitySync => "Entity Sync",
             AppId::TransferConfigList => "Data Transfer",
             AppId::TransferMappingEditor => "Mapping Editor",
+            AppId::TransferPreview => "Transfer Preview",
         }
     }
 
