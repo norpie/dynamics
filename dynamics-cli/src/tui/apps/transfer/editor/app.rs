@@ -23,7 +23,6 @@ impl App for MappingEditorApp {
             config_name: params.config_name.clone(),
             config: Resource::Loading,
             tree_state: TreeState::with_selection(),
-            dirty: false,
             source_entities: Resource::Loading,
             target_entities: Resource::Loading,
             show_entity_modal: false,
@@ -194,12 +193,20 @@ impl App for MappingEditorApp {
                         config.entity_mappings.push(new_mapping);
                     }
 
-                    state.dirty = true;
                     state.tree_state.invalidate_cache();
                 }
 
                 state.show_entity_modal = false;
                 state.editing_entity_idx = None;
+
+                // Auto-save
+                if let Resource::Success(config) = &state.config {
+                    let config_clone = config.clone();
+                    return Command::batch(vec![
+                        Command::perform(save_config(config_clone), Msg::SaveCompleted),
+                        Command::set_focus(FocusId::new("mapping-tree")),
+                    ]);
+                }
                 Command::set_focus(FocusId::new("mapping-tree"))
             }
 
@@ -376,7 +383,6 @@ impl App for MappingEditorApp {
                                     // Editing existing
                                     entity.field_mappings[field_idx] = new_mapping;
                                 }
-                                state.dirty = true;
                                 state.tree_state.invalidate_cache();
                             }
                         }
@@ -385,6 +391,15 @@ impl App for MappingEditorApp {
 
                 state.show_field_modal = false;
                 state.editing_field = None;
+
+                // Auto-save
+                if let Resource::Success(config) = &state.config {
+                    let config_clone = config.clone();
+                    return Command::batch(vec![
+                        Command::perform(save_config(config_clone), Msg::SaveCompleted),
+                        Command::set_focus(FocusId::new("mapping-tree")),
+                    ]);
+                }
                 Command::set_focus(FocusId::new("mapping-tree"))
             }
 
@@ -412,10 +427,81 @@ impl App for MappingEditorApp {
             }
 
             Msg::FieldFormToggleType => {
-                state.field_form.transform_type = match state.field_form.transform_type {
-                    TransformType::Copy => TransformType::Constant,
-                    TransformType::Constant => TransformType::Copy,
+                state.field_form.transform_type = state.field_form.transform_type.next();
+                Command::None
+            }
+
+            // Conditional transform fields
+            Msg::FieldFormConditionSource(event) => {
+                let options: Vec<String> = match &state.source_fields {
+                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
+                    _ => vec![],
                 };
+                state.field_form.condition_source.handle_event::<Msg>(event, &options);
+                Command::None
+            }
+
+            Msg::FieldFormToggleConditionType => {
+                state.field_form.condition_type = state.field_form.condition_type.next();
+                Command::None
+            }
+
+            Msg::FieldFormConditionValue(event) => {
+                state.field_form.condition_value.handle_event(event, Some(100));
+                Command::None
+            }
+
+            Msg::FieldFormThenValue(event) => {
+                state.field_form.then_value.handle_event(event, Some(100));
+                Command::None
+            }
+
+            Msg::FieldFormElseValue(event) => {
+                state.field_form.else_value.handle_event(event, Some(100));
+                Command::None
+            }
+
+            // ValueMap transform fields
+            Msg::FieldFormValueMapSource(event) => {
+                let options: Vec<String> = match &state.source_fields {
+                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
+                    _ => vec![],
+                };
+                state.field_form.value_map_source.handle_event::<Msg>(event, &options);
+                Command::None
+            }
+
+            Msg::FieldFormToggleFallback => {
+                state.field_form.value_map_fallback = state.field_form.value_map_fallback.next();
+                Command::None
+            }
+
+            Msg::FieldFormValueMapDefault(event) => {
+                state.field_form.value_map_default.handle_event(event, Some(100));
+                Command::None
+            }
+
+            Msg::FieldFormAddMapping => {
+                state.field_form.add_value_map_entry();
+                Command::None
+            }
+
+            Msg::FieldFormRemoveMapping(idx) => {
+                state.field_form.remove_value_map_entry(idx);
+                Command::None
+            }
+
+            Msg::FieldFormMappingSource(idx, event) => {
+                if let Some(entry) = state.field_form.value_map_entries.get_mut(idx) {
+                    entry.source_value.handle_event(event, Some(100));
+                }
+                Command::None
+            }
+
+            Msg::FieldFormMappingTarget(idx, event) => {
+                if let Some(entry) = state.field_form.value_map_entries.get_mut(idx) {
+                    entry.target_value.handle_event(event, Some(100));
+                }
                 Command::None
             }
 
@@ -427,7 +513,6 @@ impl App for MappingEditorApp {
                             DeleteTarget::Entity(idx) => {
                                 if idx < config.entity_mappings.len() {
                                     config.entity_mappings.remove(idx);
-                                    state.dirty = true;
                                     state.tree_state.invalidate_cache();
                                 }
                             }
@@ -435,7 +520,6 @@ impl App for MappingEditorApp {
                                 if let Some(entity) = config.entity_mappings.get_mut(entity_idx) {
                                     if field_idx < entity.field_mappings.len() {
                                         entity.field_mappings.remove(field_idx);
-                                        state.dirty = true;
                                         state.tree_state.invalidate_cache();
                                     }
                                 }
@@ -444,6 +528,12 @@ impl App for MappingEditorApp {
                     }
                 }
                 state.show_delete_confirm = false;
+
+                // Auto-save
+                if let Resource::Success(config) = &state.config {
+                    let config_clone = config.clone();
+                    return Command::perform(save_config(config_clone), Msg::SaveCompleted);
+                }
                 Command::None
             }
 
@@ -453,23 +543,10 @@ impl App for MappingEditorApp {
                 Command::None
             }
 
-            // Save
-            Msg::Save => {
-                if let Resource::Success(config) = &state.config {
-                    let config_clone = config.clone();
-                    return Command::perform(save_config(config_clone), Msg::SaveCompleted);
-                }
-                Command::None
-            }
-
             Msg::SaveCompleted(result) => {
-                match result {
-                    Ok(()) => {
-                        state.dirty = false;
-                    }
-                    Err(_e) => {
-                        // TODO: Show error modal
-                    }
+                if let Err(e) = result {
+                    log::error!("Failed to save config: {}", e);
+                    // TODO: Show error modal
                 }
                 Command::None
             }

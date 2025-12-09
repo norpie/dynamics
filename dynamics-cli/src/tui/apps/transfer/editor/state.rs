@@ -23,7 +23,6 @@ pub struct State {
     pub config_name: String,
     pub config: Resource<TransferConfig>,
     pub tree_state: TreeState,
-    pub dirty: bool,
 
     // Entity lists for autocomplete
     pub source_entities: Resource<Vec<String>>,
@@ -58,7 +57,6 @@ impl Default for State {
             config_name: String::new(),
             config: Resource::NotAsked,
             tree_state: TreeState::with_selection(),
-            dirty: false,
             source_entities: Resource::NotAsked,
             target_entities: Resource::NotAsked,
             show_entity_modal: false,
@@ -120,28 +118,146 @@ impl EntityMappingForm {
 pub struct FieldMappingForm {
     pub target_field: AutocompleteField,
     pub transform_type: TransformType,
+
+    // Copy transform fields
     pub source_path: AutocompleteField,
+
+    // Constant transform fields
     pub constant_value: TextInputField,
+
+    // Conditional transform fields
+    pub condition_source: AutocompleteField,
+    pub condition_type: ConditionType,
+    pub condition_value: TextInputField,
+    pub then_value: TextInputField,
+    pub else_value: TextInputField,
+
+    // ValueMap transform fields
+    pub value_map_source: AutocompleteField,
+    pub value_map_fallback: FallbackType,
+    pub value_map_default: TextInputField,
+    pub value_map_entries: Vec<ValueMapEntry>,
+    pub value_map_selected: Option<usize>,
 }
 
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, Default)]
+pub struct ValueMapEntry {
+    pub source_value: TextInputField,
+    pub target_value: TextInputField,
+}
+
+#[derive(Clone, Default, PartialEq, Copy)]
 pub enum TransformType {
     #[default]
     Copy,
     Constant,
+    Conditional,
+    ValueMap,
+}
+
+impl TransformType {
+    pub fn next(&self) -> Self {
+        match self {
+            TransformType::Copy => TransformType::Constant,
+            TransformType::Constant => TransformType::Conditional,
+            TransformType::Conditional => TransformType::ValueMap,
+            TransformType::ValueMap => TransformType::Copy,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            TransformType::Copy => "Copy",
+            TransformType::Constant => "Constant",
+            TransformType::Conditional => "Conditional",
+            TransformType::ValueMap => "Value Map",
+        }
+    }
+}
+
+#[derive(Clone, Default, PartialEq, Copy)]
+pub enum ConditionType {
+    #[default]
+    Equals,
+    NotEquals,
+    IsNull,
+    IsNotNull,
+}
+
+impl ConditionType {
+    pub fn next(&self) -> Self {
+        match self {
+            ConditionType::Equals => ConditionType::NotEquals,
+            ConditionType::NotEquals => ConditionType::IsNull,
+            ConditionType::IsNull => ConditionType::IsNotNull,
+            ConditionType::IsNotNull => ConditionType::Equals,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            ConditionType::Equals => "equals",
+            ConditionType::NotEquals => "not equals",
+            ConditionType::IsNull => "is null",
+            ConditionType::IsNotNull => "is not null",
+        }
+    }
+
+    pub fn needs_value(&self) -> bool {
+        matches!(self, ConditionType::Equals | ConditionType::NotEquals)
+    }
+}
+
+#[derive(Clone, Default, PartialEq, Copy)]
+pub enum FallbackType {
+    #[default]
+    Error,
+    Default,
+    PassThrough,
+    Null,
+}
+
+impl FallbackType {
+    pub fn next(&self) -> Self {
+        match self {
+            FallbackType::Error => FallbackType::Default,
+            FallbackType::Default => FallbackType::PassThrough,
+            FallbackType::PassThrough => FallbackType::Null,
+            FallbackType::Null => FallbackType::Error,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            FallbackType::Error => "Error",
+            FallbackType::Default => "Default",
+            FallbackType::PassThrough => "Pass Through",
+            FallbackType::Null => "Null",
+        }
+    }
 }
 
 impl FieldMappingForm {
     pub fn is_valid(&self) -> bool {
         let target_valid = !self.target_field.value.trim().is_empty();
-        let source_valid = match self.transform_type {
+        let transform_valid = match self.transform_type {
             TransformType::Copy => !self.source_path.value.trim().is_empty(),
             TransformType::Constant => true, // constant can be empty (null)
+            TransformType::Conditional => {
+                !self.condition_source.value.trim().is_empty()
+                    && (!self.condition_type.needs_value() || !self.condition_value.value.trim().is_empty())
+            }
+            TransformType::ValueMap => {
+                !self.value_map_source.value.trim().is_empty()
+                    && !self.value_map_entries.is_empty()
+            }
         };
-        target_valid && source_valid
+        target_valid && transform_valid
     }
 
     pub fn from_mapping(mapping: &FieldMapping) -> Self {
+        use crate::transfer::{Condition, Fallback};
+
         let mut form = Self::default();
         form.target_field.value = mapping.target_field.clone();
 
@@ -154,38 +270,98 @@ impl FieldMappingForm {
                 form.transform_type = TransformType::Constant;
                 form.constant_value.value = value.to_string();
             }
-            _ => {
-                // For complex transforms, show as copy for now
-                form.transform_type = TransformType::Copy;
+            Transform::Conditional { source_path, condition, then_value, else_value } => {
+                form.transform_type = TransformType::Conditional;
+                form.condition_source.value = source_path.to_string();
+                match condition {
+                    Condition::Equals { value } => {
+                        form.condition_type = ConditionType::Equals;
+                        form.condition_value.value = value.to_string();
+                    }
+                    Condition::NotEquals { value } => {
+                        form.condition_type = ConditionType::NotEquals;
+                        form.condition_value.value = value.to_string();
+                    }
+                    Condition::IsNull => {
+                        form.condition_type = ConditionType::IsNull;
+                    }
+                    Condition::IsNotNull => {
+                        form.condition_type = ConditionType::IsNotNull;
+                    }
+                }
+                form.then_value.value = then_value.to_string();
+                form.else_value.value = else_value.to_string();
+            }
+            Transform::ValueMap { source_path, mappings, fallback } => {
+                form.transform_type = TransformType::ValueMap;
+                form.value_map_source.value = source_path.to_string();
+                match fallback {
+                    Fallback::Error => form.value_map_fallback = FallbackType::Error,
+                    Fallback::Default { value } => {
+                        form.value_map_fallback = FallbackType::Default;
+                        form.value_map_default.value = value.to_string();
+                    }
+                    Fallback::PassThrough => form.value_map_fallback = FallbackType::PassThrough,
+                    Fallback::Null => form.value_map_fallback = FallbackType::Null,
+                }
+                form.value_map_entries = mappings.iter().map(|(src, tgt)| {
+                    ValueMapEntry {
+                        source_value: TextInputField { value: src.to_string(), ..Default::default() },
+                        target_value: TextInputField { value: tgt.to_string(), ..Default::default() },
+                    }
+                }).collect();
             }
         }
         form
     }
 
     pub fn to_mapping(&self) -> Option<FieldMapping> {
-        use crate::transfer::FieldPath;
-        use crate::transfer::Value;
+        use crate::transfer::{FieldPath, Value, Condition, Fallback};
 
         let target = self.target_field.value.trim().to_string();
 
         let transform = match self.transform_type {
             TransformType::Copy => {
-                let path = FieldPath::parse(&self.source_path.value.trim())
-                    .ok()?;
+                let path = FieldPath::parse(self.source_path.value.trim()).ok()?;
                 Transform::Copy { source_path: path }
             }
             TransformType::Constant => {
-                let val = self.constant_value.value.trim();
-                let value = if val.is_empty() {
-                    Value::Null
-                } else if let Ok(n) = val.parse::<i64>() {
-                    Value::Int(n)
-                } else if let Ok(b) = val.parse::<bool>() {
-                    Value::Bool(b)
-                } else {
-                    Value::String(val.to_string())
-                };
+                let value = parse_value(self.constant_value.value.trim());
                 Transform::Constant { value }
+            }
+            TransformType::Conditional => {
+                let source_path = FieldPath::parse(self.condition_source.value.trim()).ok()?;
+                let condition = match self.condition_type {
+                    ConditionType::Equals => Condition::Equals {
+                        value: parse_value(self.condition_value.value.trim()),
+                    },
+                    ConditionType::NotEquals => Condition::NotEquals {
+                        value: parse_value(self.condition_value.value.trim()),
+                    },
+                    ConditionType::IsNull => Condition::IsNull,
+                    ConditionType::IsNotNull => Condition::IsNotNull,
+                };
+                let then_value = parse_value(self.then_value.value.trim());
+                let else_value = parse_value(self.else_value.value.trim());
+                Transform::Conditional { source_path, condition, then_value, else_value }
+            }
+            TransformType::ValueMap => {
+                let source_path = FieldPath::parse(self.value_map_source.value.trim()).ok()?;
+                let mappings: Vec<(Value, Value)> = self.value_map_entries.iter()
+                    .map(|e| (
+                        parse_value(e.source_value.value.trim()),
+                        parse_value(e.target_value.value.trim()),
+                    ))
+                    .collect();
+                let fallback = match self.value_map_fallback {
+                    FallbackType::Error => Fallback::Error,
+                    FallbackType::Default => Fallback::Default {
+                        value: parse_value(self.value_map_default.value.trim()),
+                    },
+                    FallbackType::PassThrough => Fallback::PassThrough,
+                    FallbackType::Null => Fallback::Null,
+                };
+                Transform::ValueMap { source_path, mappings, fallback }
             }
         };
 
@@ -194,6 +370,39 @@ impl FieldMappingForm {
             target_field: target,
             transform,
         })
+    }
+
+    pub fn add_value_map_entry(&mut self) {
+        self.value_map_entries.push(ValueMapEntry::default());
+        self.value_map_selected = Some(self.value_map_entries.len() - 1);
+    }
+
+    pub fn remove_value_map_entry(&mut self, idx: usize) {
+        if idx < self.value_map_entries.len() {
+            self.value_map_entries.remove(idx);
+            if self.value_map_entries.is_empty() {
+                self.value_map_selected = None;
+            } else if let Some(selected) = self.value_map_selected {
+                if selected >= self.value_map_entries.len() {
+                    self.value_map_selected = Some(self.value_map_entries.len() - 1);
+                }
+            }
+        }
+    }
+}
+
+fn parse_value(s: &str) -> crate::transfer::Value {
+    use crate::transfer::Value;
+    if s.is_empty() {
+        Value::Null
+    } else if let Ok(n) = s.parse::<i64>() {
+        Value::Int(n)
+    } else if let Ok(f) = s.parse::<f64>() {
+        Value::Float(f)
+    } else if let Ok(b) = s.parse::<bool>() {
+        Value::Bool(b)
+    } else {
+        Value::String(s.to_string())
     }
 }
 
@@ -231,12 +440,27 @@ pub enum Msg {
     FieldFormConstant(TextInputEvent),
     FieldFormToggleType,
 
+    // Conditional transform fields
+    FieldFormConditionSource(AutocompleteEvent),
+    FieldFormToggleConditionType,
+    FieldFormConditionValue(TextInputEvent),
+    FieldFormThenValue(TextInputEvent),
+    FieldFormElseValue(TextInputEvent),
+
+    // ValueMap transform fields
+    FieldFormValueMapSource(AutocompleteEvent),
+    FieldFormToggleFallback,
+    FieldFormValueMapDefault(TextInputEvent),
+    FieldFormAddMapping,
+    FieldFormRemoveMapping(usize),
+    FieldFormMappingSource(usize, TextInputEvent),
+    FieldFormMappingTarget(usize, TextInputEvent),
+
     // Delete confirmation
     ConfirmDelete,
     CancelDelete,
 
-    // Save
-    Save,
+    // Auto-save result
     SaveCompleted(Result<(), String>),
 
     // Navigation

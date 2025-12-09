@@ -33,14 +33,7 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
         render_editor(state, &source_env, &target_env, theme)
     };
 
-    // Title with dirty indicator
-    let title = if state.dirty {
-        format!("{} *", state.config_name)
-    } else {
-        state.config_name.clone()
-    };
-
-    let main_view = Element::panel(content).title(&title).build();
+    let main_view = Element::panel(content).title(&state.config_name).build();
     let mut view = LayeredView::new(main_view);
 
     // Entity modal
@@ -150,14 +143,6 @@ fn render_editor(state: &mut State, source_env: &str, target_env: &str, theme: &
         .on_press(Msg::Back)
         .build();
 
-    let save_btn = if state.dirty {
-        Element::button(FocusId::new("save-btn"), "Save")
-            .on_press(Msg::Save)
-            .build()
-    } else {
-        Element::button(FocusId::new("save-btn"), "Save").build()
-    };
-
     let preview_btn = Element::button(FocusId::new("preview-btn"), "Preview")
         .on_press(Msg::Preview)
         .build();
@@ -165,8 +150,6 @@ fn render_editor(state: &mut State, source_env: &str, target_env: &str, theme: &
     let button_row = RowBuilder::new()
         .add(back_btn, LayoutConstraint::Length(10))
         .add(Element::text(""), LayoutConstraint::Fill(1))
-        .add(save_btn, LayoutConstraint::Length(10))
-        .add(Element::text(""), LayoutConstraint::Length(1))
         .add(preview_btn, LayoutConstraint::Length(12))
         .build();
 
@@ -266,14 +249,9 @@ fn render_field_modal(
     fields_loading: bool,
     theme: &Theme,
 ) -> Element<Msg> {
-    let base_title = if is_edit { "Edit Field Mapping" } else { "Add Field Mapping" };
-    // Debug: show field counts in title
-    let title = format!(
-        "{} (src:{}, tgt:{})",
-        base_title,
-        source_fields.len(),
-        target_fields.len()
-    );
+    use super::state::{ConditionType, FallbackType};
+
+    let title = if is_edit { "Edit Field Mapping" } else { "Add Field Mapping" };
 
     // Target field autocomplete
     let target_options: Vec<String> = target_fields.iter().map(|f| f.logical_name.clone()).collect();
@@ -288,31 +266,29 @@ fn render_field_modal(
     .build();
     let target_panel = Element::panel(target_input).title("Target Field").build();
 
-    // Transform type toggle
-    let type_label = match form.transform_type {
-        TransformType::Copy => "Copy (Ctrl+T to toggle)",
-        TransformType::Constant => "Constant (Ctrl+T to toggle)",
-    };
+    // Transform type indicator
+    let type_label = format!("{} (Ctrl+T to cycle)", form.transform_type.label());
     let type_indicator = Element::styled_text(Line::from(vec![
         Span::styled("Transform: ", Style::default().fg(theme.text_tertiary)),
         Span::styled(type_label, Style::default().fg(theme.accent_primary)),
     ]))
     .build();
 
-    // Source path or constant value depending on type
-    let value_panel = match form.transform_type {
+    let source_options: Vec<String> = source_fields.iter().map(|f| f.logical_name.clone()).collect();
+
+    // Build transform-specific form section
+    let (transform_content, modal_height) = match form.transform_type {
         TransformType::Copy => {
-            let source_options: Vec<String> = source_fields.iter().map(|f| f.logical_name.clone()).collect();
             let input = Element::autocomplete(
                 FocusId::new("field-source"),
                 source_options,
                 form.source_path.value.clone(),
                 &mut form.source_path.state,
             )
-            .placeholder(if fields_loading { "Loading fields..." } else { "Type to search source fields..." })
+            .placeholder(if fields_loading { "Loading..." } else { "e.g., name or accountid.name" })
             .on_event(Msg::FieldFormSourcePath)
             .build();
-            Element::panel(input).title("Source Path").build()
+            (Element::panel(input).title("Source Field").build(), 18)
         }
         TransformType::Constant => {
             let input = Element::text_input(
@@ -320,10 +296,303 @@ fn render_field_modal(
                 &form.constant_value.value,
                 &mut form.constant_value.state,
             )
-            .placeholder("e.g., true, 42, or string")
+            .placeholder("e.g., true, 42, or string (empty = null)")
             .on_event(Msg::FieldFormConstant)
             .build();
-            Element::panel(input).title("Constant Value").build()
+            (Element::panel(input).title("Constant Value").build(), 18)
+        }
+        TransformType::Conditional => {
+            // Source field
+            let source_input = Element::autocomplete(
+                FocusId::new("cond-source"),
+                source_options,
+                form.condition_source.value.clone(),
+                &mut form.condition_source.state,
+            )
+            .placeholder(if fields_loading { "Loading..." } else { "Source field to check" })
+            .on_event(Msg::FieldFormConditionSource)
+            .build();
+            let source_panel = Element::panel(source_input).title("Source Field").build();
+
+            // Condition type indicator
+            let cond_label = format!("{} (Ctrl+C to cycle)", form.condition_type.label());
+            let cond_indicator = Element::styled_text(Line::from(vec![
+                Span::styled("Condition: ", Style::default().fg(theme.text_tertiary)),
+                Span::styled(cond_label, Style::default().fg(theme.accent_secondary)),
+            ])).build();
+
+            // Condition value (only for equals/not equals)
+            let cond_value_panel = if form.condition_type.needs_value() {
+                let value_input = Element::text_input(
+                    FocusId::new("cond-value"),
+                    &form.condition_value.value,
+                    &mut form.condition_value.state,
+                )
+                .placeholder("Compare value")
+                .on_event(Msg::FieldFormConditionValue)
+                .build();
+                Some(Element::panel(value_input).title("Compare To").build())
+            } else {
+                None
+            };
+
+            // Then/else values
+            let then_input = Element::text_input(
+                FocusId::new("cond-then"),
+                &form.then_value.value,
+                &mut form.then_value.state,
+            )
+            .placeholder("Value if true")
+            .on_event(Msg::FieldFormThenValue)
+            .build();
+            let then_panel = Element::panel(then_input).title("Then Value").build();
+
+            let else_input = Element::text_input(
+                FocusId::new("cond-else"),
+                &form.else_value.value,
+                &mut form.else_value.state,
+            )
+            .placeholder("Value if false")
+            .on_event(Msg::FieldFormElseValue)
+            .build();
+            let else_panel = Element::panel(else_input).title("Else Value").build();
+
+            let values_row = RowBuilder::new()
+                .add(then_panel, LayoutConstraint::Fill(1))
+                .add(Element::text(""), LayoutConstraint::Length(1))
+                .add(else_panel, LayoutConstraint::Fill(1))
+                .build();
+
+            let mut col = ColumnBuilder::new()
+                .add(source_panel, LayoutConstraint::Length(3))
+                .add(cond_indicator, LayoutConstraint::Length(1));
+
+            if let Some(value_panel) = cond_value_panel {
+                col = col.add(value_panel, LayoutConstraint::Length(3));
+            }
+
+            let content = col
+                .add(values_row, LayoutConstraint::Length(3))
+                .spacing(1)
+                .build();
+
+            let height = if form.condition_type.needs_value() { 24 } else { 20 };
+            (content, height)
+        }
+        TransformType::ValueMap => {
+            // Source field
+            let source_input = Element::autocomplete(
+                FocusId::new("map-source"),
+                source_options,
+                form.value_map_source.value.clone(),
+                &mut form.value_map_source.state,
+            )
+            .placeholder(if fields_loading { "Loading..." } else { "Source field to map" })
+            .on_event(Msg::FieldFormValueMapSource)
+            .build();
+            let source_panel = Element::panel(source_input).title("Source Field").build();
+
+            // Fallback indicator
+            let fallback_label = format!("{} (Ctrl+F to cycle)", form.value_map_fallback.label());
+            let fallback_indicator = Element::styled_text(Line::from(vec![
+                Span::styled("Fallback: ", Style::default().fg(theme.text_tertiary)),
+                Span::styled(fallback_label, Style::default().fg(theme.accent_secondary)),
+            ])).build();
+
+            // Default value panel (only for Default fallback)
+            let default_panel = if form.value_map_fallback == FallbackType::Default {
+                let default_input = Element::text_input(
+                    FocusId::new("map-default"),
+                    &form.value_map_default.value,
+                    &mut form.value_map_default.state,
+                )
+                .placeholder("Default value when no mapping matches")
+                .on_event(Msg::FieldFormValueMapDefault)
+                .build();
+                Some(Element::panel(default_input).title("Default Value").build())
+            } else {
+                None
+            };
+
+            // Mappings header + add button
+            let add_btn = Element::button(FocusId::new("map-add"), "+ Add")
+                .on_press(Msg::FieldFormAddMapping)
+                .build();
+            let mappings_header = RowBuilder::new()
+                .add(Element::styled_text(Line::from(vec![
+                    Span::styled("Mappings:", Style::default().fg(theme.text_secondary)),
+                ])).build(), LayoutConstraint::Fill(1))
+                .add(add_btn, LayoutConstraint::Length(10))
+                .build();
+
+            // Mapping entries (show up to 4 in view)
+            // Note: Using individual event handlers to avoid closure capture issues
+            let mut mappings_col = ColumnBuilder::new();
+            let entries_len = form.value_map_entries.len();
+
+            // Entry 0
+            if entries_len > 0 {
+                let entry = &mut form.value_map_entries[0];
+                let src_input = Element::text_input(
+                    FocusId::new("map-src-0"),
+                    &entry.source_value.value,
+                    &mut entry.source_value.state,
+                )
+                .placeholder("Source")
+                .on_event(|e| Msg::FieldFormMappingSource(0, e))
+                .build();
+
+                let tgt_input = Element::text_input(
+                    FocusId::new("map-tgt-0"),
+                    &entry.target_value.value,
+                    &mut entry.target_value.state,
+                )
+                .placeholder("Target")
+                .on_event(|e| Msg::FieldFormMappingTarget(0, e))
+                .build();
+
+                let del_btn = Element::button(FocusId::new("map-del-0"), "×")
+                    .on_press(Msg::FieldFormRemoveMapping(0))
+                    .build();
+
+                let entry_row = RowBuilder::new()
+                    .add(src_input, LayoutConstraint::Fill(1))
+                    .add(Element::text(" → "), LayoutConstraint::Length(4))
+                    .add(tgt_input, LayoutConstraint::Fill(1))
+                    .add(del_btn, LayoutConstraint::Length(5))
+                    .build();
+                mappings_col = mappings_col.add(entry_row, LayoutConstraint::Length(3));
+            }
+
+            // Entry 1
+            if entries_len > 1 {
+                let entry = &mut form.value_map_entries[1];
+                let src_input = Element::text_input(
+                    FocusId::new("map-src-1"),
+                    &entry.source_value.value,
+                    &mut entry.source_value.state,
+                )
+                .placeholder("Source")
+                .on_event(|e| Msg::FieldFormMappingSource(1, e))
+                .build();
+
+                let tgt_input = Element::text_input(
+                    FocusId::new("map-tgt-1"),
+                    &entry.target_value.value,
+                    &mut entry.target_value.state,
+                )
+                .placeholder("Target")
+                .on_event(|e| Msg::FieldFormMappingTarget(1, e))
+                .build();
+
+                let del_btn = Element::button(FocusId::new("map-del-1"), "×")
+                    .on_press(Msg::FieldFormRemoveMapping(1))
+                    .build();
+
+                let entry_row = RowBuilder::new()
+                    .add(src_input, LayoutConstraint::Fill(1))
+                    .add(Element::text(" → "), LayoutConstraint::Length(4))
+                    .add(tgt_input, LayoutConstraint::Fill(1))
+                    .add(del_btn, LayoutConstraint::Length(5))
+                    .build();
+                mappings_col = mappings_col.add(entry_row, LayoutConstraint::Length(3));
+            }
+
+            // Entry 2
+            if entries_len > 2 {
+                let entry = &mut form.value_map_entries[2];
+                let src_input = Element::text_input(
+                    FocusId::new("map-src-2"),
+                    &entry.source_value.value,
+                    &mut entry.source_value.state,
+                )
+                .placeholder("Source")
+                .on_event(|e| Msg::FieldFormMappingSource(2, e))
+                .build();
+
+                let tgt_input = Element::text_input(
+                    FocusId::new("map-tgt-2"),
+                    &entry.target_value.value,
+                    &mut entry.target_value.state,
+                )
+                .placeholder("Target")
+                .on_event(|e| Msg::FieldFormMappingTarget(2, e))
+                .build();
+
+                let del_btn = Element::button(FocusId::new("map-del-2"), "×")
+                    .on_press(Msg::FieldFormRemoveMapping(2))
+                    .build();
+
+                let entry_row = RowBuilder::new()
+                    .add(src_input, LayoutConstraint::Fill(1))
+                    .add(Element::text(" → "), LayoutConstraint::Length(4))
+                    .add(tgt_input, LayoutConstraint::Fill(1))
+                    .add(del_btn, LayoutConstraint::Length(5))
+                    .build();
+                mappings_col = mappings_col.add(entry_row, LayoutConstraint::Length(3));
+            }
+
+            // Entry 3
+            if entries_len > 3 {
+                let entry = &mut form.value_map_entries[3];
+                let src_input = Element::text_input(
+                    FocusId::new("map-src-3"),
+                    &entry.source_value.value,
+                    &mut entry.source_value.state,
+                )
+                .placeholder("Source")
+                .on_event(|e| Msg::FieldFormMappingSource(3, e))
+                .build();
+
+                let tgt_input = Element::text_input(
+                    FocusId::new("map-tgt-3"),
+                    &entry.target_value.value,
+                    &mut entry.target_value.state,
+                )
+                .placeholder("Target")
+                .on_event(|e| Msg::FieldFormMappingTarget(3, e))
+                .build();
+
+                let del_btn = Element::button(FocusId::new("map-del-3"), "×")
+                    .on_press(Msg::FieldFormRemoveMapping(3))
+                    .build();
+
+                let entry_row = RowBuilder::new()
+                    .add(src_input, LayoutConstraint::Fill(1))
+                    .add(Element::text(" → "), LayoutConstraint::Length(4))
+                    .add(tgt_input, LayoutConstraint::Fill(1))
+                    .add(del_btn, LayoutConstraint::Length(5))
+                    .build();
+                mappings_col = mappings_col.add(entry_row, LayoutConstraint::Length(3));
+            }
+
+            if form.value_map_entries.len() > 4 {
+                let more_text = format!("... and {} more", form.value_map_entries.len() - 4);
+                mappings_col = mappings_col.add(
+                    Element::styled_text(Line::from(vec![
+                        Span::styled(more_text, Style::default().fg(theme.text_tertiary)),
+                    ])).build(),
+                    LayoutConstraint::Length(1),
+                );
+            }
+
+            let mut col = ColumnBuilder::new()
+                .add(source_panel, LayoutConstraint::Length(3))
+                .add(fallback_indicator, LayoutConstraint::Length(1));
+
+            if let Some(panel) = default_panel {
+                col = col.add(panel, LayoutConstraint::Length(3));
+            }
+
+            let content = col
+                .add(mappings_header, LayoutConstraint::Length(1))
+                .add(mappings_col.build(), LayoutConstraint::Fill(1))
+                .spacing(1)
+                .build();
+
+            let base_height = if form.value_map_fallback == FallbackType::Default { 24 } else { 20 };
+            let height = base_height + (form.value_map_entries.len().min(4) * 3) as u16;
+            (content, height.min(40))
         }
     };
 
@@ -349,16 +618,15 @@ fn render_field_modal(
     let form_content = ColumnBuilder::new()
         .add(target_panel, LayoutConstraint::Length(3))
         .add(type_indicator, LayoutConstraint::Length(1))
-        .add(value_panel, LayoutConstraint::Length(3))
-        .add(Element::text(""), LayoutConstraint::Fill(1))
+        .add(transform_content, LayoutConstraint::Fill(1))
         .add(button_row, LayoutConstraint::Length(3))
         .spacing(1)
         .build();
 
     Element::panel(Element::container(form_content).padding(1).build())
-        .title(&title)
-        .width(60)
-        .height(18)
+        .title(title)
+        .width(70)
+        .height(modal_height)
         .build()
 }
 
@@ -374,11 +642,22 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
     } else if state.show_field_modal {
         subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseFieldModal));
         subs.push(Subscription::keyboard(KeyCode::Enter, "Save", Msg::SaveField));
-        subs.push(Subscription::ctrl_key(KeyCode::Char('t'), "Toggle type", Msg::FieldFormToggleType));
+        subs.push(Subscription::ctrl_key(KeyCode::Char('t'), "Cycle transform type", Msg::FieldFormToggleType));
+
+        // Transform-specific shortcuts
+        match state.field_form.transform_type {
+            TransformType::Conditional => {
+                subs.push(Subscription::ctrl_key(KeyCode::Char('c'), "Cycle condition", Msg::FieldFormToggleConditionType));
+            }
+            TransformType::ValueMap => {
+                subs.push(Subscription::ctrl_key(KeyCode::Char('f'), "Cycle fallback", Msg::FieldFormToggleFallback));
+                subs.push(Subscription::ctrl_key(KeyCode::Char('a'), "Add mapping", Msg::FieldFormAddMapping));
+            }
+            _ => {}
+        }
     } else {
         // Main view subscriptions
         subs.push(Subscription::keyboard(KeyCode::Char('a'), "Add entity", Msg::AddEntity));
-        subs.push(Subscription::keyboard(KeyCode::Char('s'), "Save", Msg::Save));
         subs.push(Subscription::keyboard(KeyCode::Esc, "Back", Msg::Back));
 
         // Context-sensitive actions based on selection
