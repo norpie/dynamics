@@ -4,5 +4,7 @@
 //! environments using configurable field mappings and transforms.
 
 pub mod types;
+pub mod transform;
 
 pub use types::*;
+pub use transform::{TransformEngine, TransformContext, TransformError};
