@@ -2,6 +2,7 @@ use crossterm::event::KeyCode;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
+use crate::api::FieldMetadata;
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::modals::ConfirmationModal;
 use crate::tui::resource::Resource;
@@ -66,8 +67,26 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
 
     // Field modal
     if state.show_field_modal {
+        let source_fields = match &state.source_fields {
+            Resource::Success(f) => f.as_slice(),
+            _ => &[],
+        };
+        let target_fields = match &state.target_fields {
+            Resource::Success(f) => f.as_slice(),
+            _ => &[],
+        };
+        let fields_loading = matches!(&state.source_fields, Resource::Loading)
+            || matches!(&state.target_fields, Resource::Loading);
+
         view = view.with_app_modal(
-            render_field_modal(&mut state.field_form, state.editing_field.map(|(_, f)| f != usize::MAX).unwrap_or(false), theme),
+            render_field_modal(
+                &mut state.field_form,
+                state.editing_field.map(|(_, f)| f != usize::MAX).unwrap_or(false),
+                source_fields,
+                target_fields,
+                fields_loading,
+                theme,
+            ),
             Alignment::Center,
         );
     }
@@ -242,25 +261,37 @@ fn render_entity_modal(
 fn render_field_modal(
     form: &mut super::state::FieldMappingForm,
     is_edit: bool,
+    source_fields: &[FieldMetadata],
+    target_fields: &[FieldMetadata],
+    fields_loading: bool,
     theme: &Theme,
 ) -> Element<Msg> {
-    let title = if is_edit { "Edit Field Mapping" } else { "Add Field Mapping" };
+    let base_title = if is_edit { "Edit Field Mapping" } else { "Add Field Mapping" };
+    // Debug: show field counts in title
+    let title = format!(
+        "{} (src:{}, tgt:{})",
+        base_title,
+        source_fields.len(),
+        target_fields.len()
+    );
 
-    // Target field input
-    let target_input = Element::text_input(
+    // Target field autocomplete
+    let target_options: Vec<String> = target_fields.iter().map(|f| f.logical_name.clone()).collect();
+    let target_input = Element::autocomplete(
         FocusId::new("field-target"),
-        &form.target_field.value,
+        target_options,
+        form.target_field.value.clone(),
         &mut form.target_field.state,
     )
-    .placeholder("e.g., name")
+    .placeholder(if fields_loading { "Loading fields..." } else { "Type to search target fields..." })
     .on_event(Msg::FieldFormTarget)
     .build();
     let target_panel = Element::panel(target_input).title("Target Field").build();
 
     // Transform type toggle
     let type_label = match form.transform_type {
-        TransformType::Copy => "Copy (press Tab to toggle)",
-        TransformType::Constant => "Constant (press Tab to toggle)",
+        TransformType::Copy => "Copy (Ctrl+T to toggle)",
+        TransformType::Constant => "Constant (Ctrl+T to toggle)",
     };
     let type_indicator = Element::styled_text(Line::from(vec![
         Span::styled("Transform: ", Style::default().fg(theme.text_tertiary)),
@@ -271,12 +302,14 @@ fn render_field_modal(
     // Source path or constant value depending on type
     let value_panel = match form.transform_type {
         TransformType::Copy => {
-            let input = Element::text_input(
+            let source_options: Vec<String> = source_fields.iter().map(|f| f.logical_name.clone()).collect();
+            let input = Element::autocomplete(
                 FocusId::new("field-source"),
-                &form.source_path.value,
+                source_options,
+                form.source_path.value.clone(),
                 &mut form.source_path.state,
             )
-            .placeholder("e.g., name or accountid.name")
+            .placeholder(if fields_loading { "Loading fields..." } else { "Type to search source fields..." })
             .on_event(Msg::FieldFormSourcePath)
             .build();
             Element::panel(input).title("Source Path").build()
@@ -323,8 +356,8 @@ fn render_field_modal(
         .build();
 
     Element::panel(Element::container(form_content).padding(1).build())
-        .title(title)
-        .width(55)
+        .title(&title)
+        .width(60)
         .height(18)
         .build()
 }
@@ -341,7 +374,7 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
     } else if state.show_field_modal {
         subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseFieldModal));
         subs.push(Subscription::keyboard(KeyCode::Enter, "Save", Msg::SaveField));
-        subs.push(Subscription::keyboard(KeyCode::Tab, "Toggle type", Msg::FieldFormToggleType));
+        subs.push(Subscription::ctrl_key(KeyCode::Char('t'), "Toggle type", Msg::FieldFormToggleType));
     } else {
         // Main view subscriptions
         subs.push(Subscription::keyboard(KeyCode::Char('a'), "Add entity", Msg::AddEntity));

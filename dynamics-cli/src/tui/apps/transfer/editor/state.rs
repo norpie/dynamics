@@ -2,6 +2,7 @@ use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, Transform};
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField};
 use crate::tui::widgets::events::{TreeEvent, AutocompleteEvent, TextInputEvent};
+use crate::api::FieldMetadata;
 
 /// Parameters to initialize the editor
 #[derive(Clone, Debug)]
@@ -38,6 +39,14 @@ pub struct State {
     pub field_form: FieldMappingForm,
     pub editing_field: Option<(usize, usize)>, // (entity_idx, field_idx)
 
+    // Field metadata for autocomplete (loaded when opening field modal)
+    pub source_fields: Resource<Vec<FieldMetadata>>,
+    pub target_fields: Resource<Vec<FieldMetadata>>,
+    pub current_field_entity_idx: Option<usize>, // Which entity mapping the fields are for
+
+    // Pending field modal open (entity_idx, field_idx) - None field_idx means "add new"
+    pub pending_field_modal: Option<(usize, Option<usize>)>,
+
     // Delete confirmation
     pub show_delete_confirm: bool,
     pub delete_target: Option<DeleteTarget>,
@@ -58,6 +67,10 @@ impl Default for State {
             show_field_modal: false,
             field_form: FieldMappingForm::default(),
             editing_field: None,
+            source_fields: Resource::NotAsked,
+            target_fields: Resource::NotAsked,
+            current_field_entity_idx: None,
+            pending_field_modal: None,
             show_delete_confirm: false,
             delete_target: None,
         }
@@ -105,9 +118,9 @@ impl EntityMappingForm {
 
 #[derive(Clone, Default)]
 pub struct FieldMappingForm {
-    pub target_field: TextInputField,
+    pub target_field: AutocompleteField,
     pub transform_type: TransformType,
-    pub source_path: TextInputField,
+    pub source_path: AutocompleteField,
     pub constant_value: TextInputField,
 }
 
@@ -190,6 +203,8 @@ pub enum Msg {
     ConfigLoaded(Result<TransferConfig, String>),
     SourceEntitiesLoaded(Result<Vec<String>, String>),
     TargetEntitiesLoaded(Result<Vec<String>, String>),
+    SourceFieldsLoaded(Result<Vec<FieldMetadata>, String>),
+    TargetFieldsLoaded(Result<Vec<FieldMetadata>, String>),
 
     // Tree navigation
     TreeEvent(TreeEvent),
@@ -211,8 +226,8 @@ pub enum Msg {
     DeleteField(usize, usize),
     CloseFieldModal,
     SaveField,
-    FieldFormTarget(TextInputEvent),
-    FieldFormSourcePath(TextInputEvent),
+    FieldFormTarget(AutocompleteEvent),
+    FieldFormSourcePath(AutocompleteEvent),
     FieldFormConstant(TextInputEvent),
     FieldFormToggleType,
 

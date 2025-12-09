@@ -5,6 +5,7 @@ use crate::tui::resource::Resource;
 use crate::tui::widgets::TreeState;
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
+use crate::api::FieldMetadata;
 use super::state::{DeleteTarget, EditorParams, EntityMappingForm, FieldMappingForm, Msg, State, TransformType};
 use super::view;
 
@@ -31,6 +32,10 @@ impl App for MappingEditorApp {
             show_field_modal: false,
             field_form: FieldMappingForm::default(),
             editing_field: None,
+            source_fields: Resource::NotAsked,
+            target_fields: Resource::NotAsked,
+            current_field_entity_idx: None,
+            pending_field_modal: None,
             show_delete_confirm: false,
             delete_target: None,
         };
@@ -86,6 +91,17 @@ impl App for MappingEditorApp {
                     Ok(entities) => Resource::Success(entities),
                     Err(e) => Resource::Failure(e),
                 };
+
+                // Auto-select first entity if tree has items but no selection
+                if state.tree_state.selected().is_none() {
+                    if let Resource::Success(config) = &state.config {
+                        if !config.entity_mappings.is_empty() {
+                            // Select first entity
+                            state.tree_state.select(Some("entity_0".to_string()));
+                        }
+                    }
+                }
+
                 // Set focus when returning from loading screen
                 Command::set_focus(FocusId::new("mapping-tree"))
             }
@@ -96,6 +112,24 @@ impl App for MappingEditorApp {
                     Err(e) => Resource::Failure(e),
                 };
                 Command::None
+            }
+
+            Msg::SourceFieldsLoaded(result) => {
+                state.source_fields = match result {
+                    Ok(fields) => Resource::Success(fields),
+                    Err(e) => Resource::Failure(e),
+                };
+                // Check if we should open the field modal now
+                try_open_pending_field_modal(state)
+            }
+
+            Msg::TargetFieldsLoaded(result) => {
+                state.target_fields = match result {
+                    Ok(fields) => Resource::Success(fields),
+                    Err(e) => Resource::Failure(e),
+                };
+                // Check if we should open the field modal now
+                try_open_pending_field_modal(state)
             }
 
             Msg::TreeEvent(event) => {
@@ -194,28 +228,122 @@ impl App for MappingEditorApp {
 
             // Field modal
             Msg::AddField(entity_idx) => {
-                state.show_field_modal = true;
-                state.editing_field = None;
-                state.field_form = FieldMappingForm::default();
-
-                // Store entity_idx for saving
-                if let Resource::Success(_) = &state.config {
-                    state.editing_field = Some((entity_idx, usize::MAX)); // MAX indicates "add new"
+                // Check if fields already loaded for this entity
+                if state.current_field_entity_idx == Some(entity_idx)
+                    && matches!(&state.source_fields, Resource::Success(_))
+                    && matches!(&state.target_fields, Resource::Success(_))
+                {
+                    // Fields already loaded - open modal immediately
+                    state.show_field_modal = true;
+                    state.editing_field = Some((entity_idx, usize::MAX));
+                    state.field_form = FieldMappingForm::default();
+                    return Command::set_focus(FocusId::new("field-target"));
                 }
 
-                Command::set_focus(FocusId::new("field-target"))
+                // Need to load fields first - extract entity info
+                let entity_info = if let Resource::Success(config) = &state.config {
+                    config.entity_mappings.get(entity_idx).map(|e| {
+                        (
+                            config.source_env.clone(),
+                            config.target_env.clone(),
+                            e.source_entity.clone(),
+                            e.target_entity.clone(),
+                        )
+                    })
+                } else {
+                    None
+                };
+
+                if let Some((source_env, target_env, source_entity, target_entity)) = entity_info {
+                    // Store pending modal open
+                    state.pending_field_modal = Some((entity_idx, None));
+                    state.current_field_entity_idx = Some(entity_idx);
+                    state.source_fields = Resource::Loading;
+                    state.target_fields = Resource::Loading;
+
+                    // Use loading screen for field metadata fetch
+                    return Command::perform_parallel()
+                        .add_task(
+                            format!("Loading fields from {}", source_entity),
+                            load_entity_fields(source_env.clone(), source_entity),
+                        )
+                        .add_task(
+                            format!("Loading fields from {}", target_entity),
+                            load_entity_fields(target_env.clone(), target_entity),
+                        )
+                        .with_title("Loading Field Metadata")
+                        .on_complete(AppId::TransferMappingEditor)
+                        .build(|task_idx, result| {
+                            let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                            match task_idx {
+                                0 => Msg::SourceFieldsLoaded(*data),
+                                _ => Msg::TargetFieldsLoaded(*data),
+                            }
+                        });
+                }
+                Command::None
             }
 
             Msg::EditField(entity_idx, field_idx) => {
-                if let Resource::Success(config) = &state.config {
-                    if let Some(entity) = config.entity_mappings.get(entity_idx) {
-                        if let Some(mapping) = entity.field_mappings.get(field_idx) {
-                            state.show_field_modal = true;
-                            state.editing_field = Some((entity_idx, field_idx));
-                            state.field_form = FieldMappingForm::from_mapping(mapping);
-                            return Command::set_focus(FocusId::new("field-target"));
+                // Check if fields already loaded for this entity
+                if state.current_field_entity_idx == Some(entity_idx)
+                    && matches!(&state.source_fields, Resource::Success(_))
+                    && matches!(&state.target_fields, Resource::Success(_))
+                {
+                    // Fields already loaded - open modal immediately
+                    if let Resource::Success(config) = &state.config {
+                        if let Some(entity) = config.entity_mappings.get(entity_idx) {
+                            if let Some(mapping) = entity.field_mappings.get(field_idx) {
+                                state.show_field_modal = true;
+                                state.editing_field = Some((entity_idx, field_idx));
+                                state.field_form = FieldMappingForm::from_mapping(mapping);
+                                return Command::set_focus(FocusId::new("field-target"));
+                            }
                         }
                     }
+                    return Command::None;
+                }
+
+                // Need to load fields first - extract entity info
+                let entity_info = if let Resource::Success(config) = &state.config {
+                    config.entity_mappings.get(entity_idx).map(|e| {
+                        (
+                            config.source_env.clone(),
+                            config.target_env.clone(),
+                            e.source_entity.clone(),
+                            e.target_entity.clone(),
+                        )
+                    })
+                } else {
+                    None
+                };
+
+                if let Some((source_env, target_env, source_entity, target_entity)) = entity_info {
+                    // Store pending modal open with field index
+                    state.pending_field_modal = Some((entity_idx, Some(field_idx)));
+                    state.current_field_entity_idx = Some(entity_idx);
+                    state.source_fields = Resource::Loading;
+                    state.target_fields = Resource::Loading;
+
+                    // Use loading screen for field metadata fetch
+                    return Command::perform_parallel()
+                        .add_task(
+                            format!("Loading fields from {}", source_entity),
+                            load_entity_fields(source_env.clone(), source_entity),
+                        )
+                        .add_task(
+                            format!("Loading fields from {}", target_entity),
+                            load_entity_fields(target_env.clone(), target_entity),
+                        )
+                        .with_title("Loading Field Metadata")
+                        .on_complete(AppId::TransferMappingEditor)
+                        .build(|task_idx, result| {
+                            let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                            match task_idx {
+                                0 => Msg::SourceFieldsLoaded(*data),
+                                _ => Msg::TargetFieldsLoaded(*data),
+                            }
+                        });
                 }
                 Command::None
             }
@@ -261,12 +389,20 @@ impl App for MappingEditorApp {
             }
 
             Msg::FieldFormTarget(event) => {
-                state.field_form.target_field.handle_event(event, Some(100));
+                let options: Vec<String> = match &state.target_fields {
+                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
+                    _ => vec![],
+                };
+                state.field_form.target_field.handle_event::<Msg>(event, &options);
                 Command::None
             }
 
             Msg::FieldFormSourcePath(event) => {
-                state.field_form.source_path.handle_event(event, Some(200));
+                let options: Vec<String> = match &state.source_fields {
+                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
+                    _ => vec![],
+                };
+                state.field_form.source_path.handle_event::<Msg>(event, &options);
                 Command::None
             }
 
@@ -418,4 +554,93 @@ async fn load_entities_for_env(env_name: String) -> Result<Vec<String>, String> 
     let _ = config.set_entity_cache(&env_name, entities.clone()).await;
 
     Ok(entities)
+}
+
+/// Try to open the field modal if fields are loaded and there's a pending open
+fn try_open_pending_field_modal(state: &mut State) -> Command<Msg> {
+    // Check if both fields are loaded
+    let fields_loaded = matches!(&state.source_fields, Resource::Success(_))
+        && matches!(&state.target_fields, Resource::Success(_));
+
+    if !fields_loaded {
+        return Command::None;
+    }
+
+    // Check if there's a pending modal to open
+    let pending = state.pending_field_modal.take();
+    if let Some((entity_idx, field_idx_opt)) = pending {
+        match field_idx_opt {
+            None => {
+                // Add new field
+                state.show_field_modal = true;
+                state.editing_field = Some((entity_idx, usize::MAX));
+                state.field_form = FieldMappingForm::default();
+                return Command::set_focus(FocusId::new("field-target"));
+            }
+            Some(field_idx) => {
+                // Edit existing field
+                if let Resource::Success(config) = &state.config {
+                    if let Some(entity) = config.entity_mappings.get(entity_idx) {
+                        if let Some(mapping) = entity.field_mappings.get(field_idx) {
+                            state.show_field_modal = true;
+                            state.editing_field = Some((entity_idx, field_idx));
+                            state.field_form = FieldMappingForm::from_mapping(mapping);
+                            return Command::set_focus(FocusId::new("field-target"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Command::None
+}
+
+/// Load field metadata for a specific entity (with caching)
+async fn load_entity_fields(env_name: String, entity_name: String) -> Result<Vec<FieldMetadata>, String> {
+    log::info!("Loading fields for entity '{}' from env '{}'", entity_name, env_name);
+
+    let config = crate::global_config();
+    let manager = crate::client_manager();
+
+    // Try cache first (24 hours)
+    match config.get_entity_metadata_cache(&env_name, &entity_name, 24).await {
+        Ok(Some(cached)) => {
+            log::info!("Cache hit: {} fields for '{}'", cached.fields.len(), entity_name);
+            return Ok(cached.fields);
+        }
+        _ => {
+            log::info!("Cache miss for '{}'", entity_name);
+        }
+    }
+
+    // Cache miss - fetch from API
+    let client = manager
+        .get_client(&env_name)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to get client for {}: {}", env_name, e);
+            format!("Failed to get client for {}: {}", env_name, e)
+        })?;
+
+    let fields = client
+        .fetch_entity_fields(&entity_name)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to fetch fields for {}: {}", entity_name, e);
+            format!("Failed to fetch fields for {}: {}", entity_name, e)
+        })?;
+
+    log::info!("Fetched {} fields for '{}'", fields.len(), entity_name);
+
+    // Cache for future use
+    let metadata = crate::api::EntityMetadata {
+        fields: fields.clone(),
+        relationships: vec![],
+        views: vec![],
+        forms: vec![],
+    };
+    let _ = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await;
+
+    Ok(fields)
 }
