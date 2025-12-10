@@ -1,14 +1,16 @@
 //! View rendering for the Transfer Preview app
 
 use crossterm::event::KeyCode;
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::tui::element::ColumnBuilder;
+use crate::transfer::{RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
+use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::resource::Resource;
+use crate::tui::widgets::{ListEvent, ListItem};
 use crate::tui::{Alignment, Element, LayeredView, LayoutConstraint, Subscription, Theme};
 
-use super::state::{Msg, PreviewModal, State};
+use super::state::{Msg, PreviewModal, RecordFilter, State};
 
 /// Render the preview app view
 pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
@@ -83,7 +85,7 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
 /// Render the main preview content when data is loaded
 fn render_preview(
     state: &State,
-    resolved: &crate::transfer::ResolvedTransfer,
+    resolved: &ResolvedTransfer,
     theme: &Theme,
 ) -> Element<Msg> {
     if resolved.entities.is_empty() {
@@ -117,25 +119,240 @@ fn render_preview(
     ]))
     .build();
 
-    // Filter info
+    // Filter info with count
+    let filtered_count = get_filtered_records(entity, state.filter).len();
     let filter_info = Element::styled_text(Line::from(vec![
         Span::styled("Filter: ", Style::default().fg(theme.text_secondary)),
         Span::styled(state.filter.display_name(), Style::default().fg(theme.accent_primary)),
+        Span::styled(
+            format!(" ({} shown)", filtered_count),
+            Style::default().fg(theme.text_secondary),
+        ),
         Span::raw(" | Press [f] to cycle"),
     ]))
     .build();
 
-    // Placeholder for table (will be implemented in Chunk 4)
-    let table_placeholder = Element::text(
-        "Table view will be implemented in Chunk 4. Records will appear here."
-    );
+    // Table header
+    let header = render_table_header(entity, theme);
+
+    // Table content (list of records)
+    let table = render_record_table(state, entity, theme);
 
     ColumnBuilder::new()
         .add(summary, LayoutConstraint::Length(1))
         .add(filter_info, LayoutConstraint::Length(1))
         .add(Element::text(""), LayoutConstraint::Length(1))
-        .add(table_placeholder, LayoutConstraint::Fill(1))
+        .add(header, LayoutConstraint::Length(1))
+        .add(table, LayoutConstraint::Fill(1))
         .build()
+}
+
+/// Get records filtered by the current filter
+fn get_filtered_records<'a>(entity: &'a ResolvedEntity, filter: RecordFilter) -> Vec<&'a ResolvedRecord> {
+    entity
+        .records
+        .iter()
+        .filter(|r| filter.matches(r.action))
+        .collect()
+}
+
+/// Render table header row
+fn render_table_header(entity: &ResolvedEntity, theme: &Theme) -> Element<Msg> {
+    let header_style = Style::default()
+        .fg(theme.text_secondary)
+        .add_modifier(Modifier::BOLD);
+
+    // Build header columns: Action | Source ID | field1 | field2 | ...
+    let mut header_parts = vec![
+        Span::styled(format!("{:<10}", "Action"), header_style),
+        Span::raw(" │ "),
+        Span::styled(format!("{:<12}", "Source ID"), header_style),
+    ];
+
+    // Add field columns (limit to first 5 fields to fit screen)
+    let max_fields = 5;
+    for field in entity.field_names.iter().take(max_fields) {
+        header_parts.push(Span::raw(" │ "));
+        header_parts.push(Span::styled(
+            format!("{:<15}", truncate_str(field, 15)),
+            header_style,
+        ));
+    }
+
+    if entity.field_names.len() > max_fields {
+        header_parts.push(Span::raw(" │ "));
+        header_parts.push(Span::styled("...", header_style));
+    }
+
+    Element::styled_text(Line::from(header_parts))
+        .background(Style::default().bg(theme.bg_surface))
+        .build()
+}
+
+/// Render the record table as a list
+fn render_record_table(state: &State, entity: &ResolvedEntity, theme: &Theme) -> Element<Msg> {
+    let filtered_records = get_filtered_records(entity, state.filter);
+
+    if filtered_records.is_empty() {
+        return Element::styled_text(Line::from(vec![
+            Span::styled("No records match the current filter.", Style::default().fg(theme.text_secondary)),
+        ]))
+        .build();
+    }
+
+    // Create list items from filtered records
+    let items: Vec<RecordListItem> = filtered_records
+        .iter()
+        .map(|record| RecordListItem {
+            record: (*record).clone(),
+            field_names: entity.field_names.clone(),
+            is_dirty: entity.is_dirty(record.source_id),
+            theme: theme.clone(),
+        })
+        .collect();
+
+    Element::list(
+        FocusId::new("record-table"),
+        &items,
+        &state.list_state,
+        theme,
+    )
+    .on_navigate(|key| Msg::ListEvent(ListEvent::Navigate(key)))
+    .on_activate(|_idx| Msg::ViewDetails)
+    .on_render(|_height| Msg::ListEvent(ListEvent::Navigate(KeyCode::Null)))
+    .build()
+}
+
+/// A list item representing a single record row
+struct RecordListItem {
+    record: ResolvedRecord,
+    field_names: Vec<String>,
+    is_dirty: bool,
+    theme: Theme,
+}
+
+impl ListItem for RecordListItem {
+    type Msg = Msg;
+
+    fn to_element(&self, is_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+        let base_style = self.get_row_style(is_selected);
+
+        // Build the row: Action | Source ID (truncated) | field values
+        let mut spans = vec![
+            self.action_span(),
+            Span::styled(" │ ", base_style),
+            self.source_id_span(base_style),
+        ];
+
+        // Add field values (limit to first 5)
+        let max_fields = 5;
+        for field in self.field_names.iter().take(max_fields) {
+            spans.push(Span::styled(" │ ", base_style));
+            spans.push(self.field_value_span(field, base_style));
+        }
+
+        if self.field_names.len() > max_fields {
+            spans.push(Span::styled(" │ ...", base_style));
+        }
+
+        // For error records, append the error message
+        if self.record.action == RecordAction::Error {
+            if let Some(ref err) = self.record.error {
+                spans.push(Span::styled(
+                    format!(" ⚠ {}", truncate_str(err, 40)),
+                    Style::default().fg(self.theme.accent_error),
+                ));
+            }
+        }
+
+        Element::styled_text(Line::from(spans))
+            .background(if is_selected {
+                Style::default().bg(self.theme.bg_surface)
+            } else {
+                Style::default()
+            })
+            .build()
+    }
+}
+
+impl RecordListItem {
+    /// Get the base style for this row based on action type
+    fn get_row_style(&self, is_selected: bool) -> Style {
+        let bg = if is_selected {
+            self.theme.bg_surface
+        } else {
+            self.theme.bg_base
+        };
+
+        match self.record.action {
+            RecordAction::Upsert => Style::default().fg(self.theme.text_primary).bg(bg),
+            RecordAction::NoChange => Style::default().fg(self.theme.text_tertiary).bg(bg),
+            RecordAction::Skip => Style::default()
+                .fg(self.theme.accent_warning)
+                .add_modifier(Modifier::DIM)
+                .bg(bg),
+            RecordAction::Error => Style::default().fg(self.theme.accent_error).bg(bg),
+        }
+    }
+
+    /// Render the action column with appropriate color
+    fn action_span(&self) -> Span<'static> {
+        let (text, color) = match self.record.action {
+            RecordAction::Upsert => ("upsert    ", self.theme.accent_success),
+            RecordAction::NoChange => ("nochange  ", self.theme.text_tertiary),
+            RecordAction::Skip => ("skip      ", self.theme.accent_warning),
+            RecordAction::Error => ("error     ", self.theme.accent_error),
+        };
+        Span::styled(text.to_string(), Style::default().fg(color))
+    }
+
+    /// Render the source ID column (truncated UUID)
+    fn source_id_span(&self, base_style: Style) -> Span<'static> {
+        let short_id = format!("{:.12}", self.record.source_id.to_string());
+        Span::styled(short_id, base_style)
+    }
+
+    /// Render a field value column
+    fn field_value_span(&self, field: &str, base_style: Style) -> Span<'static> {
+        let value_str = self
+            .record
+            .fields
+            .get(field)
+            .map(|v| format_value(v))
+            .unwrap_or_else(|| "(null)".to_string());
+
+        Span::styled(
+            format!("{:<15}", truncate_str(&value_str, 15)),
+            base_style,
+        )
+    }
+}
+
+/// Format a Value for display in the table
+fn format_value(value: &Value) -> String {
+    match value {
+        Value::Null => "(null)".to_string(),
+        Value::String(s) => s.clone(),
+        Value::Int(n) => n.to_string(),
+        Value::Float(f) => format!("{:.2}", f),
+        Value::Bool(b) => b.to_string(),
+        Value::DateTime(dt) => dt.format("%Y-%m-%d").to_string(),
+        Value::Guid(g) => format!("{:.8}...", g),
+        Value::OptionSet(n) => n.to_string(),
+        Value::Dynamic(dv) => format!("{:?}", dv),
+    }
+}
+
+/// Truncate a string to max length with ellipsis (UTF-8 safe)
+fn truncate_str(s: &str, max_len: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_len {
+        s.to_string()
+    } else {
+        // Take max_len - 1 chars and append ellipsis
+        let truncated: String = s.chars().take(max_len - 1).collect();
+        format!("{}…", truncated)
+    }
 }
 
 // Placeholder modal renderers - will be implemented in later chunks

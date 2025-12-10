@@ -93,6 +93,36 @@ impl Transform {
             Transform::ValueMap { source_path, .. } => vec![source_path.base_field()],
         }
     }
+
+    /// Get expand specifications for lookup traversals
+    /// Returns Vec<(lookup_field, target_field)> for building $expand clauses
+    /// e.g., "accountid.name" returns Some(("accountid", "name"))
+    pub fn expand_specs(&self) -> Vec<(&str, &str)> {
+        match self {
+            Transform::Copy { source_path } => {
+                if let Some(target) = source_path.lookup_field() {
+                    vec![(source_path.base_field(), target)]
+                } else {
+                    vec![]
+                }
+            }
+            Transform::Constant { .. } => vec![],
+            Transform::Conditional { source_path, .. } => {
+                if let Some(target) = source_path.lookup_field() {
+                    vec![(source_path.base_field(), target)]
+                } else {
+                    vec![]
+                }
+            }
+            Transform::ValueMap { source_path, .. } => {
+                if let Some(target) = source_path.lookup_field() {
+                    vec![(source_path.base_field(), target)]
+                } else {
+                    vec![]
+                }
+            }
+        }
+    }
 }
 
 /// A path to a field, optionally traversing a lookup relationship

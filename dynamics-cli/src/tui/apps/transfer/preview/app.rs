@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 
 use crate::config::repository::transfer::get_transfer_config;
-use crate::transfer::{ResolvedTransfer, TransferConfig, TransformEngine};
+use crate::transfer::{RecordAction, ResolvedTransfer, TransferConfig, TransformEngine};
 use crate::tui::resource::Resource;
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
-use super::state::{Msg, PreviewParams, State};
+use super::state::{Msg, PreviewParams, RecordFilter, State};
 use super::view;
 
 /// Transfer Preview App - shows resolved records before execution
@@ -66,11 +66,41 @@ impl App for TransferPreviewApp {
                             source_fields.sort();
                             source_fields.dedup();
 
-                            log::info!("[{}] Source fetch will select {} fields", entity, source_fields.len());
+                            // Collect expand specifications for lookup traversals
+                            // Group by lookup field to combine selects: accountid($select=name,email)
+                            let mut expand_map: std::collections::HashMap<String, Vec<String>> =
+                                std::collections::HashMap::new();
+                            for fm in &mapping.field_mappings {
+                                for (lookup_field, target_field) in fm.transform.expand_specs() {
+                                    expand_map
+                                        .entry(lookup_field.to_string())
+                                        .or_default()
+                                        .push(target_field.to_string());
+                                }
+                            }
+                            // Build expand strings: "lookupfield($select=field1,field2)"
+                            let expands: Vec<String> = expand_map
+                                .into_iter()
+                                .map(|(lookup, mut fields)| {
+                                    fields.sort();
+                                    fields.dedup();
+                                    format!("{}($select={})", lookup, fields.join(","))
+                                })
+                                .collect();
+
+                            log::info!(
+                                "[{}] Source fetch will select {} fields, expand {} lookups",
+                                entity,
+                                source_fields.len(),
+                                expands.len()
+                            );
+                            if !expands.is_empty() {
+                                log::info!("[{}] Expands: {:?}", entity, expands);
+                            }
 
                             builder = builder.add_task_with_progress(
                                 format!("Source: {}", entity),
-                                move |progress| fetch_entity_records(env, entity, true, source_fields, Some(progress)),
+                                move |progress| fetch_entity_records(env, entity, true, source_fields, expands, Some(progress)),
                             );
                         }
 
@@ -91,9 +121,12 @@ impl App for TransferPreviewApp {
 
                             log::info!("[{}] Target fetch will select {} fields", entity, target_fields.len());
 
+                            // Target fetch doesn't need expands - we compare final values
+                            let no_expands: Vec<String> = vec![];
+
                             builder = builder.add_task_with_progress(
                                 format!("Target: {}", entity),
-                                move |progress| fetch_entity_records(env, entity, false, target_fields, Some(progress)),
+                                move |progress| fetch_entity_records(env, entity, false, target_fields, no_expands, Some(progress)),
                             );
                         }
 
@@ -190,15 +223,20 @@ impl App for TransferPreviewApp {
 
             // Navigation within table
             Msg::ListEvent(event) => {
-                // TODO (Chunk 4): Pass real item count and visible height
+                // Count filtered records for proper navigation bounds
                 let item_count = if let Resource::Success(resolved) = &state.resolved {
                     resolved.entities.get(state.current_entity_idx)
-                        .map(|e| e.records.len())
+                        .map(|e| {
+                            // Count only records matching current filter
+                            e.records.iter()
+                                .filter(|r| state.filter.matches(r.action))
+                                .count()
+                        })
                         .unwrap_or(0)
                 } else {
                     0
                 };
-                let visible_height = 20; // Placeholder until table is implemented
+                let visible_height = 20; // Will be updated by on_render
                 state.list_state.handle_event(event, item_count, visible_height);
                 Command::None
             }
@@ -394,7 +432,8 @@ async fn fetch_entity_records(
     env_name: String,
     entity_name: String,
     is_source: bool,
-    fields: Vec<String>, // Fields to select (for performance)
+    fields: Vec<String>,  // Fields to select (for performance)
+    expands: Vec<String>, // Expand clauses for lookup traversals
     progress: Option<crate::tui::command::ProgressSender>,
 ) -> Result<(String, bool, Vec<serde_json::Value>), String> {
     use crate::api::pluralization::pluralize_entity_name;
@@ -450,6 +489,12 @@ async fn fetch_entity_records(
     if !fields.is_empty() {
         let field_refs: Vec<&str> = fields.iter().map(|s| s.as_str()).collect();
         builder = builder.select(&field_refs);
+    }
+    // Add $expand for lookup traversals
+    if !expands.is_empty() {
+        let expand_refs: Vec<&str> = expands.iter().map(|s| s.as_str()).collect();
+        builder = builder.expand(&expand_refs);
+        log::info!("[{}] Query will expand: {:?}", entity_name, expands);
     }
     let query = builder.build();
 
