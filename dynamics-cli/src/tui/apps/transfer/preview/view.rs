@@ -10,6 +10,7 @@ use crate::tui::resource::Resource;
 use crate::tui::widgets::{ListEvent, ListItem, TextInputEvent};
 use crate::tui::{Alignment, Element, LayeredView, LayoutConstraint, Subscription, Theme};
 
+use super::modals;
 use super::state::{Msg, PreviewModal, RecordFilter, State};
 
 /// Render the preview app view
@@ -38,11 +39,32 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
     // Render modals
     if let Some(modal) = &state.active_modal {
         let modal_element = match modal {
-            PreviewModal::RecordDetails { record_idx } => {
-                render_record_details_placeholder(*record_idx, theme)
-            }
-            PreviewModal::EditRecord { record_idx } => {
-                render_edit_record_placeholder(*record_idx, theme)
+            PreviewModal::RecordDetails { record_idx } | PreviewModal::EditRecord { record_idx } => {
+                // Both RecordDetails and EditRecord use the same modal with different modes
+                if let (Some(detail_state), Resource::Success(resolved)) = (&state.record_detail_state, &state.resolved) {
+                    if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                        // Get the actual record from filtered list
+                        let filtered: Vec<_> = entity.records.iter()
+                            .filter(|r| state.filter.matches(r.action))
+                            .filter(|r| {
+                                let query = state.search_field.value().to_lowercase();
+                                if query.is_empty() { return true; }
+                                if r.source_id.to_string().to_lowercase().contains(&query) { return true; }
+                                r.fields.values().any(|v| format_value(v).to_lowercase().contains(&query))
+                            })
+                            .collect();
+
+                        if let Some(record) = filtered.get(*record_idx) {
+                            modals::record_details::render(detail_state, record, theme)
+                        } else {
+                            render_record_details_placeholder(*record_idx, theme)
+                        }
+                    } else {
+                        render_record_details_placeholder(*record_idx, theme)
+                    }
+                } else {
+                    render_record_details_placeholder(*record_idx, theme)
+                }
             }
             PreviewModal::BulkActions => {
                 render_bulk_actions_placeholder(theme)
@@ -440,14 +462,44 @@ fn render_import_confirm_placeholder(path: &str, conflicts: &[String], theme: &T
 pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
     let mut subs = vec![];
 
-    // Modal-specific subscriptions
+    // Record details modal subscriptions
+    if let Some(ref detail) = state.record_detail_state {
+        if detail.editing {
+            if detail.editing_field {
+                // Actively editing a field value - text input captures most keys
+                subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel field edit", Msg::CancelFieldEdit));
+                subs.push(Subscription::keyboard(KeyCode::Enter, "Finish editing", Msg::FinishFieldEdit));
+                subs.push(Subscription::keyboard(KeyCode::Tab, "Finish and next", Msg::FinishFieldEdit));
+            } else {
+                // Edit mode - navigating fields
+                subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel edits", Msg::CancelRecordEdits));
+                subs.push(Subscription::ctrl_key(KeyCode::Char('s'), "Save", Msg::SaveRecordEdits));
+                subs.push(Subscription::keyboard(KeyCode::Up, "Previous field", Msg::RecordDetailFieldNavigate(KeyCode::Up)));
+                subs.push(Subscription::keyboard(KeyCode::Down, "Next field", Msg::RecordDetailFieldNavigate(KeyCode::Down)));
+                subs.push(Subscription::keyboard(KeyCode::Enter, "Edit field value", Msg::StartFieldEdit));
+
+                // Action cycling with number keys
+                subs.push(Subscription::keyboard(KeyCode::Char('1'), "Set Create", Msg::RecordDetailActionChanged(RecordAction::Create)));
+                subs.push(Subscription::keyboard(KeyCode::Char('2'), "Set Update", Msg::RecordDetailActionChanged(RecordAction::Update)));
+                subs.push(Subscription::keyboard(KeyCode::Char('3'), "Set Skip", Msg::RecordDetailActionChanged(RecordAction::Skip)));
+                subs.push(Subscription::keyboard(KeyCode::Char('4'), "Set NoChange", Msg::RecordDetailActionChanged(RecordAction::NoChange)));
+            }
+        } else {
+            // View mode subscriptions
+            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseModal));
+            subs.push(Subscription::keyboard(KeyCode::Char('e'), "Edit", Msg::ToggleEditMode));
+            subs.push(Subscription::keyboard(KeyCode::Enter, "Edit", Msg::ToggleEditMode));
+        }
+        return subs;
+    }
+
+    // Other modal subscriptions (bulk actions, export, import)
     if state.active_modal.is_some() {
-        subs.push(Subscription::keyboard(KeyCode::Esc, "Close", Msg::CloseModal));
+        subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseModal));
         return subs;
     }
 
     // Main view subscriptions
-    subs.push(Subscription::keyboard(KeyCode::Esc, "Back to editor", Msg::Back));
 
     // Entity navigation
     subs.push(Subscription::keyboard(KeyCode::Tab, "Next entity", Msg::NextEntity));

@@ -10,7 +10,7 @@ use crate::transfer::{RecordAction, ResolvedTransfer, TransferConfig, TransformE
 use crate::tui::resource::Resource;
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
-use super::state::{Msg, PreviewParams, RecordFilter, State};
+use super::state::{Msg, PreviewParams, RecordDetailState, RecordFilter, State};
 use super::view;
 
 /// Transfer Preview App - shows resolved records before execution
@@ -318,25 +318,243 @@ impl App for TransferPreviewApp {
 
             Msg::ViewDetails => {
                 if let Some(idx) = state.list_state.selected() {
-                    state.active_modal = Some(super::state::PreviewModal::RecordDetails {
-                        record_idx: idx,
-                    });
+                    if let Resource::Success(resolved) = &state.resolved {
+                        if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                            // Get filtered records to find the actual record
+                            let filtered: Vec<_> = entity.records.iter()
+                                .filter(|r| state.filter.matches(r.action))
+                                .filter(|r| {
+                                    let query = state.search_field.value().to_lowercase();
+                                    if query.is_empty() { return true; }
+                                    if r.source_id.to_string().to_lowercase().contains(&query) { return true; }
+                                    r.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                })
+                                .collect();
+
+                            if let Some(record) = filtered.get(idx) {
+                                state.record_detail_state = Some(RecordDetailState::new(
+                                    idx,
+                                    record.action,
+                                    &entity.field_names,
+                                    &record.fields,
+                                ));
+                                state.active_modal = Some(super::state::PreviewModal::RecordDetails {
+                                    record_idx: idx,
+                                });
+                            }
+                        }
+                    }
                 }
                 Command::None
             }
 
             Msg::EditRecord => {
                 if let Some(idx) = state.list_state.selected() {
-                    state.active_modal = Some(super::state::PreviewModal::EditRecord {
-                        record_idx: idx,
-                    });
+                    if let Resource::Success(resolved) = &state.resolved {
+                        if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                            let filtered: Vec<_> = entity.records.iter()
+                                .filter(|r| state.filter.matches(r.action))
+                                .filter(|r| {
+                                    let query = state.search_field.value().to_lowercase();
+                                    if query.is_empty() { return true; }
+                                    if r.source_id.to_string().to_lowercase().contains(&query) { return true; }
+                                    r.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                })
+                                .collect();
+
+                            if let Some(record) = filtered.get(idx) {
+                                let mut detail_state = RecordDetailState::new(
+                                    idx,
+                                    record.action,
+                                    &entity.field_names,
+                                    &record.fields,
+                                );
+                                detail_state.editing = true; // Start in edit mode
+                                state.record_detail_state = Some(detail_state);
+                                state.active_modal = Some(super::state::PreviewModal::RecordDetails {
+                                    record_idx: idx,
+                                });
+                            }
+                        }
+                    }
                 }
                 Command::None
             }
 
             Msg::SaveRecord => {
-                // TODO (Chunk 7): Implement record save
                 state.active_modal = None;
+                state.record_detail_state = None;
+                Command::None
+            }
+
+            // Record details modal handlers
+            Msg::ToggleEditMode => {
+                if let Some(ref mut detail) = state.record_detail_state {
+                    detail.editing = !detail.editing;
+                }
+                Command::None
+            }
+
+            Msg::RecordDetailActionChanged(action) => {
+                if let Some(ref mut detail) = state.record_detail_state {
+                    detail.current_action = action;
+                }
+                Command::None
+            }
+
+            Msg::RecordDetailFieldNavigate(key) => {
+                if let Some(ref mut detail) = state.record_detail_state {
+                    // Only navigate when not actively editing a field
+                    if !detail.editing_field {
+                        let field_count = detail.fields.len();
+                        if field_count > 0 {
+                            match key {
+                                crossterm::event::KeyCode::Up => {
+                                    if detail.focused_field_idx > 0 {
+                                        detail.focused_field_idx -= 1;
+                                    }
+                                }
+                                crossterm::event::KeyCode::Down => {
+                                    if detail.focused_field_idx + 1 < field_count {
+                                        detail.focused_field_idx += 1;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                Command::None
+            }
+
+            Msg::StartFieldEdit => {
+                if let Some(ref mut detail) = state.record_detail_state {
+                    if detail.editing && !detail.editing_field {
+                        detail.editing_field = true;
+                    }
+                }
+                Command::None
+            }
+
+            Msg::FocusedFieldInput(event) => {
+                if let Some(ref mut detail) = state.record_detail_state {
+                    if detail.editing_field {
+                        if let Some(field) = detail.fields.get_mut(detail.focused_field_idx) {
+                            field.input.handle_event(event, None);
+                            field.update_dirty();
+                        }
+                    }
+                }
+                Command::None
+            }
+
+            Msg::FinishFieldEdit => {
+                if let Some(ref mut detail) = state.record_detail_state {
+                    if detail.editing_field {
+                        detail.editing_field = false;
+                        // Move to next field
+                        if detail.focused_field_idx + 1 < detail.fields.len() {
+                            detail.focused_field_idx += 1;
+                        }
+                    }
+                }
+                Command::None
+            }
+
+            Msg::CancelFieldEdit => {
+                if let Some(ref mut detail) = state.record_detail_state {
+                    if detail.editing_field {
+                        // Reset field to original value
+                        if let Some(field) = detail.fields.get_mut(detail.focused_field_idx) {
+                            field.reset();
+                        }
+                        detail.editing_field = false;
+                    }
+                }
+                Command::None
+            }
+
+            Msg::SaveRecordEdits => {
+                // Apply changes to the resolved record
+                if let Some(ref detail) = state.record_detail_state {
+                    if let Resource::Success(ref mut resolved) = state.resolved {
+                        if let Some(entity) = resolved.entities.get_mut(state.current_entity_idx) {
+                            // Find the actual record by filtering the same way
+                            let filter = state.filter;
+                            let query = state.search_field.value().to_lowercase();
+                            let record_idx = detail.record_idx;
+
+                            // First pass: find the record's source_id
+                            let mut match_idx = 0;
+                            let mut target_source_id = None;
+                            for record in &entity.records {
+                                if !filter.matches(record.action) {
+                                    continue;
+                                }
+                                let matches_search = if query.is_empty() {
+                                    true
+                                } else if record.source_id.to_string().to_lowercase().contains(&query) {
+                                    true
+                                } else {
+                                    record.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                };
+                                if !matches_search {
+                                    continue;
+                                }
+
+                                if match_idx == record_idx {
+                                    target_source_id = Some(record.source_id);
+                                    break;
+                                }
+                                match_idx += 1;
+                            }
+
+                            // Second pass: apply changes to the found record
+                            if let Some(source_id) = target_source_id {
+                                // Find and update the record
+                                if let Some(record) = entity.records.iter_mut().find(|r| r.source_id == source_id) {
+                                    // Apply action change
+                                    if detail.current_action != detail.original_action {
+                                        record.action = detail.current_action;
+                                        if detail.current_action != RecordAction::Error {
+                                            record.error = None;
+                                        }
+                                    }
+
+                                    // Apply field changes
+                                    for field_state in &detail.fields {
+                                        if field_state.is_dirty {
+                                            let new_value = field_state.parse_value();
+                                            record.fields.insert(field_state.field_name.clone(), new_value);
+                                        }
+                                    }
+                                }
+
+                                // Mark as dirty in entity
+                                entity.mark_dirty(source_id);
+                            }
+                        }
+                    }
+                }
+
+                state.active_modal = None;
+                state.record_detail_state = None;
+                Command::None
+            }
+
+            Msg::CancelRecordEdits => {
+                // Just close without saving
+                if let Some(ref mut detail) = state.record_detail_state {
+                    if detail.editing {
+                        // If in edit mode, switch back to view mode and reset
+                        detail.reset_all();
+                        detail.editing = false;
+                    } else {
+                        // If in view mode, close the modal
+                        state.active_modal = None;
+                        state.record_detail_state = None;
+                    }
+                }
                 Command::None
             }
 
@@ -391,6 +609,7 @@ impl App for TransferPreviewApp {
             // Modal
             Msg::CloseModal => {
                 state.active_modal = None;
+                state.record_detail_state = None;
                 Command::None
             }
 
