@@ -33,26 +33,7 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
         }
     };
 
-    // Build header with env info
-    let header = Element::styled_text(Line::from(vec![
-        Span::styled("Source: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(state.source_env.clone(), Style::default().fg(theme.accent_primary)),
-        Span::raw(" → "),
-        Span::styled("Target: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(state.target_env.clone(), Style::default().fg(theme.accent_primary)),
-    ]))
-    .build();
-
-    let main_content = ColumnBuilder::new()
-        .add(header, LayoutConstraint::Length(1))
-        .add(content, LayoutConstraint::Fill(1))
-        .build();
-
-    let main_view = Element::panel(main_content)
-        .title(&format!("Preview: {}", state.config_name))
-        .build();
-
-    let mut view = LayeredView::new(main_view);
+    let mut view = LayeredView::new(content);
 
     // Render modals
     if let Some(modal) = &state.active_modal {
