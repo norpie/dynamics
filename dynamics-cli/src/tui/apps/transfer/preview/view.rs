@@ -189,37 +189,65 @@ fn render_table_header(entity: &ResolvedEntity, theme: &Theme) -> Element<Msg> {
         .build()
 }
 
-/// Render the record table as a list
+/// Render the record table as a list with virtual scrolling
 fn render_record_table(state: &State, entity: &ResolvedEntity, theme: &Theme) -> Element<Msg> {
     let filtered_records = get_filtered_records(entity, state.filter);
+    let total_count = filtered_records.len();
 
-    if filtered_records.is_empty() {
+    if total_count == 0 {
         return Element::styled_text(Line::from(vec![
             Span::styled("No records match the current filter.", Style::default().fg(theme.text_secondary)),
         ]))
         .build();
     }
 
-    // Create list items from filtered records
-    let items: Vec<RecordListItem> = filtered_records
+    // Virtual scrolling: only create items for visible range
+    // No buffer needed - the scroll_off in ListState handles keeping selection visible
+    let scroll_offset = state.list_state.scroll_offset();
+    let viewport = state.viewport_height;
+
+    let start_idx = scroll_offset;
+    let end_idx = (scroll_offset + viewport).min(total_count);
+
+    // Create list items ONLY for visible range
+    let visible_items: Vec<RecordListItem> = filtered_records[start_idx..end_idx]
         .iter()
-        .map(|record| RecordListItem {
-            record: (*record).clone(),
-            field_names: entity.field_names.clone(),
-            is_dirty: entity.is_dirty(record.source_id),
-            theme: theme.clone(),
+        .enumerate()
+        .map(|(i, record)| {
+            let global_idx = start_idx + i;
+            RecordListItem {
+                record: (*record).clone(),
+                field_names: entity.field_names.clone(),
+                is_dirty: entity.is_dirty(record.source_id),
+                theme: theme.clone(),
+                global_index: global_idx,
+            }
         })
         .collect();
 
+    // Selection index relative to our slice
+    let adjusted_selected = state.list_state.selected().and_then(|sel| {
+        if sel >= start_idx && sel < end_idx {
+            Some(sel - start_idx)
+        } else {
+            None
+        }
+    });
+
+    // Create a windowed list state - scroll_offset is 0 because we already sliced
+    let mut windowed_state = crate::tui::widgets::ListState::new().with_scroll_off(0);
+    windowed_state.select(adjusted_selected);
+
     Element::list(
         FocusId::new("record-table"),
-        &items,
-        &state.list_state,
+        &visible_items,
+        &windowed_state,
         theme,
     )
     .on_navigate(|key| Msg::ListEvent(ListEvent::Navigate(key)))
     .on_activate(|_idx| Msg::ViewDetails)
-    .on_render(|_height| Msg::ListEvent(ListEvent::Navigate(KeyCode::Null)))
+    .on_render(Msg::ViewportHeightChanged)
+    // scroll_offset is 0 - we've already sliced to the exact visible range
     .build()
 }
 
@@ -229,6 +257,7 @@ struct RecordListItem {
     field_names: Vec<String>,
     is_dirty: bool,
     theme: Theme,
+    global_index: usize, // Index in the full filtered list (for virtual scrolling)
 }
 
 impl ListItem for RecordListItem {

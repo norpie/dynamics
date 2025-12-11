@@ -46,6 +46,12 @@ impl<Msg> ListBuilder<Msg> {
         self
     }
 
+    /// Override the scroll offset (useful for virtual scrolling)
+    pub fn scroll_offset(mut self, offset: usize) -> Self {
+        self.scroll_offset = offset;
+        self
+    }
+
     pub fn build(self) -> Element<Msg> {
         Element::List {
             id: self.id,

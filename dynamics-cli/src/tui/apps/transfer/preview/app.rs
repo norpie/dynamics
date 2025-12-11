@@ -236,8 +236,13 @@ impl App for TransferPreviewApp {
                 } else {
                     0
                 };
-                let visible_height = 20; // Will be updated by on_render
-                state.list_state.handle_event(event, item_count, visible_height);
+                state.list_state.handle_event(event, item_count, state.viewport_height);
+                Command::None
+            }
+
+            // Viewport height changed (for virtual scrolling)
+            Msg::ViewportHeightChanged(height) => {
+                state.viewport_height = height;
                 Command::None
             }
 

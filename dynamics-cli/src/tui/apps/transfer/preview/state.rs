@@ -45,6 +45,8 @@ pub struct State {
     pub horizontal_scroll: usize,
     /// Currently active modal
     pub active_modal: Option<PreviewModal>,
+    /// Viewport height for virtual scrolling (updated by on_render)
+    pub viewport_height: usize,
 }
 
 impl Default for State {
@@ -64,6 +66,7 @@ impl Default for State {
             list_state: ListState::with_selection(),
             horizontal_scroll: 0,
             active_modal: None,
+            viewport_height: 50, // Reasonable default until on_render provides actual value
         }
     }
 }
@@ -153,6 +156,7 @@ pub enum Msg {
 
     // Navigation
     ListEvent(crate::tui::widgets::ListEvent),
+    ViewportHeightChanged(usize), // For virtual scrolling
     NextEntity,
     PrevEntity,
     SelectEntity(usize),
