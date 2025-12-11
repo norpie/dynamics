@@ -2,6 +2,9 @@
 
 use std::collections::HashMap;
 
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
+
 use crate::config::repository::transfer::get_transfer_config;
 use crate::transfer::{RecordAction, ResolvedTransfer, TransferConfig, TransformEngine};
 use crate::tui::resource::Resource;
@@ -226,11 +229,23 @@ impl App for TransferPreviewApp {
             Msg::ListEvent(event) => {
                 // Count filtered records for proper navigation bounds
                 let item_count = if let Resource::Success(resolved) = &state.resolved {
+                    let query = state.search_field.value().to_lowercase();
                     resolved.entities.get(state.current_entity_idx)
                         .map(|e| {
-                            // Count only records matching current filter
+                            // Count only records matching current filter and search
                             e.records.iter()
                                 .filter(|r| state.filter.matches(r.action))
+                                .filter(|r| {
+                                    if query.is_empty() {
+                                        return true;
+                                    }
+                                    if r.source_id.to_string().to_lowercase().contains(&query) {
+                                        return true;
+                                    }
+                                    r.fields.values().any(|v| {
+                                        format!("{:?}", v).to_lowercase().contains(&query)
+                                    })
+                                })
                                 .count()
                         })
                         .unwrap_or(0)
@@ -289,8 +304,9 @@ impl App for TransferPreviewApp {
             }
 
             Msg::SearchChanged(event) => {
-                // TODO: Implement search handling
-                let _ = event;
+                state.search_field.handle_event(event, None);
+                // Reset list selection when search changes
+                state.list_state = crate::tui::widgets::ListState::with_selection();
                 Command::None
             }
 
@@ -402,6 +418,70 @@ impl App for TransferPreviewApp {
 
     fn title() -> &'static str {
         "Transfer Preview"
+    }
+
+    fn status(state: &State) -> Option<Line<'static>> {
+        let theme = &crate::global_runtime_config().theme;
+
+        match &state.resolved {
+            Resource::NotAsked => None,
+            Resource::Loading => Some(Line::from(vec![
+                Span::styled("Loading...", Style::default().fg(theme.text_secondary)),
+            ])),
+            Resource::Failure(err) => Some(Line::from(vec![
+                Span::styled("Error: ", Style::default().fg(theme.accent_error)),
+                Span::styled(err.clone(), Style::default().fg(theme.text_primary)),
+            ])),
+            Resource::Success(resolved) => {
+                if resolved.entities.is_empty() {
+                    return Some(Line::from("No entities"));
+                }
+
+                let entity = &resolved.entities[state.current_entity_idx];
+                let filtered_count = entity.records.iter()
+                    .filter(|r| state.filter.matches(r.action))
+                    .filter(|r| {
+                        let query = state.search_field.value().to_lowercase();
+                        if query.is_empty() {
+                            return true;
+                        }
+                        // Search in source_id and field values
+                        if r.source_id.to_string().to_lowercase().contains(&query) {
+                            return true;
+                        }
+                        r.fields.values().any(|v| {
+                            format!("{:?}", v).to_lowercase().contains(&query)
+                        })
+                    })
+                    .count();
+
+                Some(Line::from(vec![
+                    Span::styled(entity.entity_name.clone(), Style::default().fg(theme.accent_primary)),
+                    Span::styled(
+                        format!(" ({}/{})", state.current_entity_idx + 1, resolved.entities.len()),
+                        Style::default().fg(theme.text_secondary),
+                    ),
+                    Span::raw(" | "),
+                    Span::styled(format!("{}", entity.create_count()), Style::default().fg(theme.accent_success)),
+                    Span::styled(" create".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::raw(" "),
+                    Span::styled(format!("{}", entity.update_count()), Style::default().fg(theme.accent_secondary)),
+                    Span::styled(" update".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::raw(" "),
+                    Span::styled(format!("{}", entity.nochange_count()), Style::default().fg(theme.text_tertiary)),
+                    Span::styled(" unchanged".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::raw(" "),
+                    Span::styled(format!("{}", entity.skip_count()), Style::default().fg(theme.accent_warning)),
+                    Span::styled(" skip".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::raw(" "),
+                    Span::styled(format!("{}", entity.error_count()), Style::default().fg(theme.accent_error)),
+                    Span::styled(" error".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::raw(" | "),
+                    Span::styled(state.filter.display_name().to_string(), Style::default().fg(theme.accent_primary)),
+                    Span::styled(format!(" ({})", filtered_count), Style::default().fg(theme.text_secondary)),
+                ]))
+            }
+        }
     }
 
     fn on_resume(state: &mut State) -> Command<Msg> {

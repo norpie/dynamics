@@ -2,7 +2,7 @@
 
 use crate::transfer::{ResolvedTransfer, RecordAction};
 use crate::tui::resource::Resource;
-use crate::tui::widgets::ListState;
+use crate::tui::widgets::{ListState, TextInputField};
 
 /// Parameters passed when starting the preview app
 #[derive(Clone, Default)]
@@ -37,8 +37,8 @@ pub struct State {
     pub current_entity_idx: usize,
     /// Filter for record actions
     pub filter: RecordFilter,
-    /// Search query
-    pub search_query: String,
+    /// Search input field
+    pub search_field: TextInputField,
     /// List state for record table
     pub list_state: ListState,
     /// Horizontal scroll offset for wide tables
@@ -62,7 +62,7 @@ impl Default for State {
             resolved: Resource::NotAsked,
             current_entity_idx: 0,
             filter: RecordFilter::All,
-            search_query: String::new(),
+            search_field: TextInputField::new(),
             list_state: ListState::with_selection(),
             horizontal_scroll: 0,
             active_modal: None,

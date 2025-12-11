@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use crate::transfer::{RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::resource::Resource;
-use crate::tui::widgets::{ListEvent, ListItem};
+use crate::tui::widgets::{ListEvent, ListItem, TextInputEvent};
 use crate::tui::{Alignment, Element, LayeredView, LayoutConstraint, Subscription, Theme};
 
 use super::state::{Msg, PreviewModal, RecordFilter, State};
@@ -94,46 +94,19 @@ fn render_preview(
 
     let entity = &resolved.entities[state.current_entity_idx];
 
-    // Summary line - use owned strings
-    let entity_name = entity.entity_name.clone();
-    let position = format!(" ({} of {}) | ", state.current_entity_idx + 1, resolved.entities.len());
-    let total = format!("{} total", entity.records.len());
-    let create = format!("{} create", entity.create_count());
-    let update = format!("{} update", entity.update_count());
-    let nochange = format!("{} nochange", entity.nochange_count());
-    let skip = format!("{} skip", entity.skip_count());
-    let error = format!("{} error", entity.error_count());
-
-    let summary = Element::styled_text(Line::from(vec![
-        Span::styled("Entity: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(entity_name, Style::default().fg(theme.accent_primary)),
-        Span::raw(position),
-        Span::styled(total, Style::default().fg(theme.text_primary)),
-        Span::raw(" | "),
-        Span::styled(create, Style::default().fg(theme.accent_success)),
-        Span::raw(" | "),
-        Span::styled(update, Style::default().fg(theme.accent_secondary)),
-        Span::raw(" | "),
-        Span::styled(nochange, Style::default().fg(theme.text_secondary)),
-        Span::raw(" | "),
-        Span::styled(skip, Style::default().fg(theme.accent_warning)),
-        Span::raw(" | "),
-        Span::styled(error, Style::default().fg(theme.accent_error)),
-    ]))
+    // Search input panel
+    let search_input = Element::text_input(
+        FocusId::new("search-input"),
+        state.search_field.value(),
+        &state.search_field.state,
+    )
+    .on_event(|e| Msg::SearchChanged(e))
+    .placeholder("Search records...")
     .build();
 
-    // Filter info with count
-    let filtered_count = get_filtered_records(entity, state.filter).len();
-    let filter_info = Element::styled_text(Line::from(vec![
-        Span::styled("Filter: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(state.filter.display_name(), Style::default().fg(theme.accent_primary)),
-        Span::styled(
-            format!(" ({} shown)", filtered_count),
-            Style::default().fg(theme.text_secondary),
-        ),
-        Span::raw(" | Press [f] to cycle"),
-    ]))
-    .build();
+    let search_panel = Element::panel(search_input)
+        .title("Search")
+        .build();
 
     // Table header
     let header = render_table_header(entity, theme);
@@ -141,21 +114,42 @@ fn render_preview(
     // Table content (list of records)
     let table = render_record_table(state, entity, theme);
 
-    ColumnBuilder::new()
-        .add(summary, LayoutConstraint::Length(1))
-        .add(filter_info, LayoutConstraint::Length(1))
-        .add(Element::text(""), LayoutConstraint::Length(1))
+    // Table panel wrapping header + records
+    let table_content = ColumnBuilder::new()
         .add(header, LayoutConstraint::Length(1))
         .add(table, LayoutConstraint::Fill(1))
+        .build();
+
+    let table_panel = Element::panel(table_content)
+        .title("Records")
+        .build();
+
+    ColumnBuilder::new()
+        .add(search_panel, LayoutConstraint::Length(3))
+        .add(table_panel, LayoutConstraint::Fill(1))
         .build()
 }
 
-/// Get records filtered by the current filter
-fn get_filtered_records<'a>(entity: &'a ResolvedEntity, filter: RecordFilter) -> Vec<&'a ResolvedRecord> {
+/// Get records filtered by the current filter and search query
+fn get_filtered_records<'a>(entity: &'a ResolvedEntity, filter: RecordFilter, search_query: &str) -> Vec<&'a ResolvedRecord> {
+    let query = search_query.to_lowercase();
     entity
         .records
         .iter()
         .filter(|r| filter.matches(r.action))
+        .filter(|r| {
+            if query.is_empty() {
+                return true;
+            }
+            // Search in source_id
+            if r.source_id.to_string().to_lowercase().contains(&query) {
+                return true;
+            }
+            // Search in field values
+            r.fields.values().any(|v| {
+                format_value(v).to_lowercase().contains(&query)
+            })
+        })
         .collect()
 }
 
@@ -194,12 +188,12 @@ fn render_table_header(entity: &ResolvedEntity, theme: &Theme) -> Element<Msg> {
 
 /// Render the record table as a list with virtual scrolling
 fn render_record_table(state: &State, entity: &ResolvedEntity, theme: &Theme) -> Element<Msg> {
-    let filtered_records = get_filtered_records(entity, state.filter);
+    let filtered_records = get_filtered_records(entity, state.filter, state.search_field.value());
     let total_count = filtered_records.len();
 
     if total_count == 0 {
         return Element::styled_text(Line::from(vec![
-            Span::styled("No records match the current filter.", Style::default().fg(theme.text_secondary)),
+            Span::styled("No records match the current filter or search.", Style::default().fg(theme.text_secondary)),
         ]))
         .build();
     }
