@@ -180,12 +180,12 @@ impl App for TransferPreviewApp {
             // Data loading - Step 3: Run transform after returning from loading screen
             Msg::RunTransform => {
                 if let Some(config) = state.config.take() {
-                    // Build primary keys map
-                    let primary_keys: HashMap<String, String> = config
-                        .entity_mappings
-                        .iter()
-                        .map(|m| (m.source_entity.clone(), format!("{}id", m.source_entity)))
-                        .collect();
+                    // Build primary keys map for both source and target entities
+                    let mut primary_keys: HashMap<String, String> = HashMap::new();
+                    for m in &config.entity_mappings {
+                        primary_keys.insert(m.source_entity.clone(), format!("{}id", m.source_entity));
+                        primary_keys.insert(m.target_entity.clone(), format!("{}id", m.target_entity));
+                    }
 
                     // Run transform
                     let resolved = TransformEngine::transform_all(
@@ -196,9 +196,10 @@ impl App for TransferPreviewApp {
                     );
 
                     log::info!(
-                        "Transform complete: {} records ({} upsert, {} nochange, {} skip, {} error)",
+                        "Transform complete: {} records ({} create, {} update, {} nochange, {} skip, {} error)",
                         resolved.total_records(),
-                        resolved.upsert_count(),
+                        resolved.create_count(),
+                        resolved.update_count(),
                         resolved.nochange_count(),
                         resolved.skip_count(),
                         resolved.error_count()

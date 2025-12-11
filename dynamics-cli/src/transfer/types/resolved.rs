@@ -54,9 +54,14 @@ impl ResolvedTransfer {
             .count()
     }
 
-    /// Get total upsert count (records ready to queue)
-    pub fn upsert_count(&self) -> usize {
-        self.count_by_action(RecordAction::Upsert)
+    /// Get total create count (new records to insert)
+    pub fn create_count(&self) -> usize {
+        self.count_by_action(RecordAction::Create)
+    }
+
+    /// Get total update count (existing records to modify)
+    pub fn update_count(&self) -> usize {
+        self.count_by_action(RecordAction::Update)
     }
 
     /// Get total no-change count (records that match target)
@@ -142,9 +147,14 @@ impl ResolvedEntity {
         self.records.iter().filter(|r| r.action == action).count()
     }
 
-    /// Get upsert count
-    pub fn upsert_count(&self) -> usize {
-        self.count_by_action(RecordAction::Upsert)
+    /// Get create count (new records)
+    pub fn create_count(&self) -> usize {
+        self.count_by_action(RecordAction::Create)
+    }
+
+    /// Get update count (existing records to modify)
+    pub fn update_count(&self) -> usize {
+        self.count_by_action(RecordAction::Update)
     }
 
     /// Get no-change count
@@ -216,10 +226,20 @@ pub struct ResolvedRecord {
 }
 
 impl ResolvedRecord {
-    /// Create a new resolved record ready for upsert
-    pub fn upsert(source_id: Uuid, fields: HashMap<String, Value>) -> Self {
+    /// Create a new record to be created in target (doesn't exist yet)
+    pub fn create(source_id: Uuid, fields: HashMap<String, Value>) -> Self {
         ResolvedRecord {
-            action: RecordAction::Upsert,
+            action: RecordAction::Create,
+            source_id,
+            fields,
+            error: None,
+        }
+    }
+
+    /// Create a new record to be updated in target (exists but differs)
+    pub fn update(source_id: Uuid, fields: HashMap<String, Value>) -> Self {
+        ResolvedRecord {
+            action: RecordAction::Update,
             source_id,
             fields,
             error: None,
@@ -270,9 +290,14 @@ impl ResolvedRecord {
         }
     }
 
-    /// Check if this record is ready for upsert
-    pub fn is_upsert(&self) -> bool {
-        self.action == RecordAction::Upsert
+    /// Check if this record will be created
+    pub fn is_create(&self) -> bool {
+        self.action == RecordAction::Create
+    }
+
+    /// Check if this record will be updated
+    pub fn is_update(&self) -> bool {
+        self.action == RecordAction::Update
     }
 
     /// Check if this record has no changes
@@ -306,9 +331,15 @@ impl ResolvedRecord {
         self.error = None;
     }
 
-    /// Mark as upsert (clears error)
-    pub fn mark_upsert(&mut self) {
-        self.action = RecordAction::Upsert;
+    /// Mark as create (clears error)
+    pub fn mark_create(&mut self) {
+        self.action = RecordAction::Create;
+        self.error = None;
+    }
+
+    /// Mark as update (clears error)
+    pub fn mark_update(&mut self) {
+        self.action = RecordAction::Update;
         self.error = None;
     }
 
@@ -325,8 +356,10 @@ impl ResolvedRecord {
 /// Action to take for a resolved record
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RecordAction {
-    /// Ready to upsert to target
-    Upsert,
+    /// Create new record in target (doesn't exist yet)
+    Create,
+    /// Update existing record in target (exists but differs)
+    Update,
     /// No changes needed (target already matches)
     NoChange,
     /// Skipped by user
@@ -338,7 +371,8 @@ pub enum RecordAction {
 impl std::fmt::Display for RecordAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RecordAction::Upsert => write!(f, "upsert"),
+            RecordAction::Create => write!(f, "create"),
+            RecordAction::Update => write!(f, "update"),
             RecordAction::NoChange => write!(f, "nochange"),
             RecordAction::Skip => write!(f, "skip"),
             RecordAction::Error => write!(f, "error"),
@@ -348,7 +382,7 @@ impl std::fmt::Display for RecordAction {
 
 impl Default for RecordAction {
     fn default() -> Self {
-        RecordAction::Upsert
+        RecordAction::Create
     }
 }
 
@@ -359,12 +393,13 @@ mod tests {
     #[test]
     fn test_resolved_entity_counts() {
         let mut entity = ResolvedEntity::new("account", 1, "accountid");
-        entity.add_record(ResolvedRecord::upsert(Uuid::new_v4(), HashMap::new()));
-        entity.add_record(ResolvedRecord::upsert(Uuid::new_v4(), HashMap::new()));
+        entity.add_record(ResolvedRecord::create(Uuid::new_v4(), HashMap::new()));
+        entity.add_record(ResolvedRecord::update(Uuid::new_v4(), HashMap::new()));
         entity.add_record(ResolvedRecord::skip(Uuid::new_v4(), HashMap::new()));
         entity.add_record(ResolvedRecord::error(Uuid::new_v4(), "test error"));
 
-        assert_eq!(entity.upsert_count(), 2);
+        assert_eq!(entity.create_count(), 1);
+        assert_eq!(entity.update_count(), 1);
         assert_eq!(entity.skip_count(), 1);
         assert_eq!(entity.error_count(), 1);
     }
@@ -374,18 +409,19 @@ mod tests {
         let mut transfer = ResolvedTransfer::new("test", "dev", "prod");
 
         let mut accounts = ResolvedEntity::new("account", 1, "accountid");
-        accounts.add_record(ResolvedRecord::upsert(Uuid::new_v4(), HashMap::new()));
-        accounts.add_record(ResolvedRecord::upsert(Uuid::new_v4(), HashMap::new()));
+        accounts.add_record(ResolvedRecord::create(Uuid::new_v4(), HashMap::new()));
+        accounts.add_record(ResolvedRecord::update(Uuid::new_v4(), HashMap::new()));
 
         let mut contacts = ResolvedEntity::new("contact", 2, "contactid");
-        contacts.add_record(ResolvedRecord::upsert(Uuid::new_v4(), HashMap::new()));
+        contacts.add_record(ResolvedRecord::create(Uuid::new_v4(), HashMap::new()));
         contacts.add_record(ResolvedRecord::error(Uuid::new_v4(), "error"));
 
         transfer.add_entity(accounts);
         transfer.add_entity(contacts);
 
         assert_eq!(transfer.total_records(), 4);
-        assert_eq!(transfer.upsert_count(), 3);
+        assert_eq!(transfer.create_count(), 2);
+        assert_eq!(transfer.update_count(), 1);
         assert_eq!(transfer.error_count(), 1);
         assert!(transfer.has_errors());
     }
@@ -394,7 +430,7 @@ mod tests {
     fn test_dirty_tracking() {
         let mut entity = ResolvedEntity::new("account", 1, "accountid");
         let id = Uuid::new_v4();
-        entity.add_record(ResolvedRecord::upsert(id, HashMap::new()));
+        entity.add_record(ResolvedRecord::create(id, HashMap::new()));
 
         assert!(!entity.is_dirty(id));
         entity.mark_dirty(id);

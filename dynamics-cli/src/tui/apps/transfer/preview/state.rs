@@ -76,7 +76,8 @@ impl Default for State {
 pub enum RecordFilter {
     #[default]
     All,
-    Upsert,
+    Create,
+    Update,
     NoChange,
     Skip,
     Error,
@@ -87,7 +88,8 @@ impl RecordFilter {
     pub fn display_name(&self) -> &'static str {
         match self {
             RecordFilter::All => "All",
-            RecordFilter::Upsert => "Upsert",
+            RecordFilter::Create => "Create",
+            RecordFilter::Update => "Update",
             RecordFilter::NoChange => "No Change",
             RecordFilter::Skip => "Skip",
             RecordFilter::Error => "Error",
@@ -98,7 +100,8 @@ impl RecordFilter {
     pub fn matches(&self, action: RecordAction) -> bool {
         match self {
             RecordFilter::All => true,
-            RecordFilter::Upsert => action == RecordAction::Upsert,
+            RecordFilter::Create => action == RecordAction::Create,
+            RecordFilter::Update => action == RecordAction::Update,
             RecordFilter::NoChange => action == RecordAction::NoChange,
             RecordFilter::Skip => action == RecordAction::Skip,
             RecordFilter::Error => action == RecordAction::Error,
@@ -109,7 +112,8 @@ impl RecordFilter {
     pub fn all_variants() -> &'static [RecordFilter] {
         &[
             RecordFilter::All,
-            RecordFilter::Upsert,
+            RecordFilter::Create,
+            RecordFilter::Update,
             RecordFilter::NoChange,
             RecordFilter::Skip,
             RecordFilter::Error,
@@ -119,8 +123,9 @@ impl RecordFilter {
     /// Cycle to next filter
     pub fn next(&self) -> Self {
         match self {
-            RecordFilter::All => RecordFilter::Upsert,
-            RecordFilter::Upsert => RecordFilter::NoChange,
+            RecordFilter::All => RecordFilter::Create,
+            RecordFilter::Create => RecordFilter::Update,
+            RecordFilter::Update => RecordFilter::NoChange,
             RecordFilter::NoChange => RecordFilter::Skip,
             RecordFilter::Skip => RecordFilter::Error,
             RecordFilter::Error => RecordFilter::All,
@@ -197,7 +202,7 @@ pub enum Msg {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BulkAction {
     MarkSkip,
-    MarkUpsert,
+    UnmarkSkip,
     ResetToOriginal,
 }
 
@@ -205,7 +210,7 @@ impl BulkAction {
     pub fn display_name(&self) -> &'static str {
         match self {
             BulkAction::MarkSkip => "Mark as Skip",
-            BulkAction::MarkUpsert => "Mark as Upsert",
+            BulkAction::UnmarkSkip => "Unmark Skip (restore)",
             BulkAction::ResetToOriginal => "Reset to Original",
         }
     }

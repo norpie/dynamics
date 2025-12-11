@@ -181,11 +181,12 @@ fn get_cell_string(row: &[Data], col: usize) -> Option<String> {
 
 fn parse_action(s: &str) -> RecordAction {
     match s.trim().to_lowercase().as_str() {
-        "upsert" => RecordAction::Upsert,
+        "create" => RecordAction::Create,
+        "update" => RecordAction::Update,
         "nochange" => RecordAction::NoChange,
         "skip" => RecordAction::Skip,
         "error" => RecordAction::Error,
-        _ => RecordAction::Upsert, // Default
+        _ => RecordAction::Create, // Default to Create for unknown/legacy values
     }
 }
 

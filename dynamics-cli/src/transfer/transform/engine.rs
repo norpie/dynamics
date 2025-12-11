@@ -26,8 +26,10 @@ impl std::fmt::Display for TransformError {
 /// Context for transform operations (future: could hold caches, etc.)
 #[derive(Debug, Default)]
 pub struct TransformContext {
-    /// Primary key field name for the current entity
-    pub primary_key_field: String,
+    /// Primary key field name for source records
+    pub source_pk_field: String,
+    /// Primary key field name for target records
+    pub target_pk_field: String,
 }
 
 /// Transform engine for applying mappings to source records
@@ -61,13 +63,19 @@ impl TransformEngine {
                 .map(|v| v.as_slice())
                 .unwrap_or(&[]);
 
-            let pk_field = primary_keys
+            let source_pk = primary_keys
                 .get(&entity_mapping.source_entity)
                 .cloned()
                 .unwrap_or_else(|| format!("{}id", entity_mapping.source_entity));
 
+            let target_pk = primary_keys
+                .get(&entity_mapping.target_entity)
+                .cloned()
+                .unwrap_or_else(|| format!("{}id", entity_mapping.target_entity));
+
             let ctx = TransformContext {
-                primary_key_field: pk_field,
+                source_pk_field: source_pk,
+                target_pk_field: target_pk,
             };
 
             let resolved_entity =
@@ -88,7 +96,7 @@ impl TransformEngine {
         let mut resolved = ResolvedEntity::new(
             &mapping.target_entity,
             mapping.priority,
-            &ctx.primary_key_field,
+            &ctx.target_pk_field,
         );
 
         // Collect field names from mappings
@@ -103,11 +111,30 @@ impl TransformEngine {
         let target_index: HashMap<String, &serde_json::Value> = target_records
             .iter()
             .filter_map(|r| {
-                r.get(&ctx.primary_key_field)
+                r.get(&ctx.target_pk_field)
                     .and_then(|v| v.as_str())
                     .map(|id| (id.to_string(), r))
             })
             .collect();
+
+        log::debug!(
+            "Transform entity '{}': {} source records, {} target records, {} indexed by target pk '{}'",
+            mapping.target_entity,
+            source_records.len(),
+            target_records.len(),
+            target_index.len(),
+            ctx.target_pk_field
+        );
+
+        // Debug: show sample IDs if there's a mismatch
+        if !source_records.is_empty() && !target_records.is_empty() && target_index.is_empty() {
+            if let Some(first_target) = target_records.first() {
+                log::warn!(
+                    "Target index is empty! Sample target record keys: {:?}",
+                    first_target.as_object().map(|o| o.keys().collect::<Vec<_>>())
+                );
+            }
+        }
 
         for record in source_records {
             let resolved_record = Self::transform_record(
@@ -131,9 +158,9 @@ impl TransformEngine {
         field_names: &[String],
         ctx: &TransformContext,
     ) -> ResolvedRecord {
-        // Extract source ID
+        // Extract source ID using source pk field
         let source_id_str = source
-            .get(&ctx.primary_key_field)
+            .get(&ctx.source_pk_field)
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
@@ -166,13 +193,39 @@ impl TransformEngine {
         }
 
         // Check if target record exists and compare
-        if let Some(target) = target_index.get(source_id_str) {
-            if Self::fields_match(&fields, target, field_names) {
-                return ResolvedRecord::nochange(source_id, fields);
+        let found_in_target = target_index.get(source_id_str);
+
+        // Log first few lookups to debug ID matching issues
+        static LOGGED_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let count = LOGGED_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if count < 5 {
+            log::debug!(
+                "Lookup #{}: source_id='{}', found_in_target={}, target_index_size={}",
+                count,
+                source_id_str,
+                found_in_target.is_some(),
+                target_index.len()
+            );
+            if !target_index.is_empty() && found_in_target.is_none() {
+                // Show a sample target key for comparison
+                if let Some(sample_key) = target_index.keys().next() {
+                    log::debug!("  Sample target key: '{}'", sample_key);
+                }
             }
         }
 
-        ResolvedRecord::upsert(source_id, fields)
+        if let Some(target) = found_in_target {
+            // Target exists - check if fields match
+            if Self::fields_match(&fields, target, field_names) {
+                return ResolvedRecord::nochange(source_id, fields);
+            } else {
+                // Target exists but fields differ → Update
+                return ResolvedRecord::update(source_id, fields);
+            }
+        }
+
+        // Target doesn't exist → Create
+        ResolvedRecord::create(source_id, fields)
     }
 
     /// Compare resolved fields against target record
@@ -243,12 +296,13 @@ mod tests {
 
     fn make_ctx() -> TransformContext {
         TransformContext {
-            primary_key_field: "accountid".to_string(),
+            source_pk_field: "accountid".to_string(),
+            target_pk_field: "accountid".to_string(),
         }
     }
 
     #[test]
-    fn test_transform_record_upsert_when_no_target() {
+    fn test_transform_record_create_when_no_target() {
         let source = json!({
             "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
             "name": "Contoso",
@@ -271,7 +325,7 @@ mod tests {
             &source, &mappings, &target_index, &field_names, &make_ctx()
         );
 
-        assert!(result.is_upsert());
+        assert!(result.is_create());
         assert_eq!(result.get_field("name"), Some(&Value::String("Contoso".into())));
         assert_eq!(result.get_field("was_migrated"), Some(&Value::Bool(true)));
     }
@@ -306,7 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn test_transform_record_upsert_when_target_differs() {
+    fn test_transform_record_update_when_target_differs() {
         let source = json!({
             "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
             "name": "Contoso Updated"
@@ -331,7 +385,7 @@ mod tests {
             &source, &mappings, &target_index, &field_names, &make_ctx()
         );
 
-        assert!(result.is_upsert());
+        assert!(result.is_update());
     }
 
     #[test]
@@ -376,7 +430,7 @@ mod tests {
         ];
 
         // Target has Contoso with same name -> NoChange
-        // Target doesn't have Fabrikam -> Upsert
+        // Target doesn't have Fabrikam -> Create
         let target_records = vec![
             json!({
                 "accountid": "a1b2c3d4-0000-0000-0000-000000000001",
@@ -403,7 +457,7 @@ mod tests {
         assert_eq!(result.entity_name, "account");
         assert_eq!(result.records.len(), 2);
         assert_eq!(result.nochange_count(), 1);
-        assert_eq!(result.upsert_count(), 1);
+        assert_eq!(result.create_count(), 1);
     }
 
     #[test]
@@ -443,7 +497,7 @@ mod tests {
         assert_eq!(result.config_name, "test-migration");
         assert_eq!(result.entities.len(), 1);
         assert_eq!(result.total_records(), 1);
-        assert_eq!(result.upsert_count(), 1);
+        assert_eq!(result.create_count(), 1);
     }
 
     #[test]

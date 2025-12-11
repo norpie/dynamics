@@ -98,7 +98,8 @@ fn render_preview(
     let entity_name = entity.entity_name.clone();
     let position = format!(" ({} of {}) | ", state.current_entity_idx + 1, resolved.entities.len());
     let total = format!("{} total", entity.records.len());
-    let upsert = format!("{} upsert", entity.upsert_count());
+    let create = format!("{} create", entity.create_count());
+    let update = format!("{} update", entity.update_count());
     let nochange = format!("{} nochange", entity.nochange_count());
     let skip = format!("{} skip", entity.skip_count());
     let error = format!("{} error", entity.error_count());
@@ -109,7 +110,9 @@ fn render_preview(
         Span::raw(position),
         Span::styled(total, Style::default().fg(theme.text_primary)),
         Span::raw(" | "),
-        Span::styled(upsert, Style::default().fg(theme.accent_success)),
+        Span::styled(create, Style::default().fg(theme.accent_success)),
+        Span::raw(" | "),
+        Span::styled(update, Style::default().fg(theme.accent_secondary)),
         Span::raw(" | "),
         Span::styled(nochange, Style::default().fg(theme.text_secondary)),
         Span::raw(" | "),
@@ -314,7 +317,8 @@ impl RecordListItem {
         };
 
         match self.record.action {
-            RecordAction::Upsert => Style::default().fg(self.theme.text_primary).bg(bg),
+            RecordAction::Create => Style::default().fg(self.theme.text_primary).bg(bg),
+            RecordAction::Update => Style::default().fg(self.theme.text_primary).bg(bg),
             RecordAction::NoChange => Style::default().fg(self.theme.text_tertiary).bg(bg),
             RecordAction::Skip => Style::default()
                 .fg(self.theme.accent_warning)
@@ -327,7 +331,8 @@ impl RecordListItem {
     /// Render the action column with appropriate color
     fn action_span(&self) -> Span<'static> {
         let (text, color) = match self.record.action {
-            RecordAction::Upsert => ("upsert    ", self.theme.accent_success),
+            RecordAction::Create => ("create    ", self.theme.accent_success),
+            RecordAction::Update => ("update    ", self.theme.accent_secondary),
             RecordAction::NoChange => ("nochange  ", self.theme.text_tertiary),
             RecordAction::Skip => ("skip      ", self.theme.accent_warning),
             RecordAction::Error => ("error     ", self.theme.accent_error),

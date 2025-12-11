@@ -4,7 +4,7 @@ use crate::api::operations::{Operation, Operations};
 use crate::transfer::{RecordAction, ResolvedEntity, ResolvedTransfer};
 use crate::tui::apps::queue::models::{QueueItem, QueueMetadata};
 
-/// Base priority for transfer upserts
+/// Base priority for transfer operations
 const BASE_PRIORITY: u8 = 64;
 
 /// Options for building queue items
@@ -17,7 +17,7 @@ pub struct QueueBuildOptions {
 /// Build queue items from a resolved transfer
 ///
 /// Returns one QueueItem per entity (or multiple if batch_size is set).
-/// Only records with `RecordAction::Upsert` are included.
+/// Only records with `RecordAction::Create` or `RecordAction::Update` are included.
 pub fn build_queue_items(
     transfer: &ResolvedTransfer,
     options: &QueueBuildOptions,
@@ -37,29 +37,35 @@ fn build_entity_queue_items(
     transfer: &ResolvedTransfer,
     options: &QueueBuildOptions,
 ) -> Vec<QueueItem> {
-    let upsert_records: Vec<_> = entity
+    let actionable_records: Vec<_> = entity
         .records
         .iter()
-        .filter(|r| r.action == RecordAction::Upsert)
+        .filter(|r| r.action == RecordAction::Create || r.action == RecordAction::Update)
         .collect();
 
-    if upsert_records.is_empty() {
+    if actionable_records.is_empty() {
         return Vec::new();
     }
 
     // Calculate priority: base + entity priority (capped at 127)
     let priority = BASE_PRIORITY.saturating_add(entity.priority as u8).min(127);
 
-    // Build operations
-    let operations: Vec<Operation> = upsert_records
+    // Build operations - use create() for Create records, update() for Update records
+    let operations: Vec<Operation> = actionable_records
         .iter()
         .map(|record| {
-            Operation::upsert(
-                &entity.entity_name,
-                &entity.primary_key_field,
-                record.source_id.to_string(),
-                record.to_json(),
-            )
+            match record.action {
+                RecordAction::Create => Operation::create(
+                    &entity.entity_name,
+                    record.to_json(),
+                ),
+                RecordAction::Update => Operation::update(
+                    &entity.entity_name,
+                    record.source_id.to_string(),
+                    record.to_json(),
+                ),
+                _ => unreachable!("filtered to only Create/Update"),
+            }
         })
         .collect();
 
@@ -75,7 +81,7 @@ fn build_entity_queue_items(
                 let ops = Operations::from_operations(chunk.to_vec());
                 let metadata = QueueMetadata {
                     source: "Transfer".to_string(),
-                    entity_type: format!("upsert: {}", entity.entity_name),
+                    entity_type: format!("sync: {}", entity.entity_name),
                     description: format!(
                         "{} batch {}/{} ({} records)",
                         transfer.config_name,
@@ -94,12 +100,12 @@ fn build_entity_queue_items(
         let ops = Operations::from_operations(operations);
         let metadata = QueueMetadata {
             source: "Transfer".to_string(),
-            entity_type: format!("upsert: {}", entity.entity_name),
+            entity_type: format!("sync: {}", entity.entity_name),
             description: format!(
                 "{}: {} ({} records)",
                 transfer.config_name,
                 entity.entity_name,
-                upsert_records.len()
+                actionable_records.len()
             ),
             row_number: None,
             environment_name: transfer.target_env.clone(),
@@ -120,11 +126,11 @@ mod tests {
 
         // Entity 1: accounts (priority 1)
         let mut accounts = ResolvedEntity::new("accounts", 1, "accountid");
-        accounts.add_record(ResolvedRecord::upsert(
+        accounts.add_record(ResolvedRecord::create(
             Uuid::new_v4(),
             HashMap::from([("name".to_string(), Value::String("Contoso".to_string()))]),
         ));
-        accounts.add_record(ResolvedRecord::upsert(
+        accounts.add_record(ResolvedRecord::update(
             Uuid::new_v4(),
             HashMap::from([("name".to_string(), Value::String("Fabrikam".to_string()))]),
         ));
@@ -132,7 +138,7 @@ mod tests {
 
         // Entity 2: contacts (priority 2)
         let mut contacts = ResolvedEntity::new("contacts", 2, "contactid");
-        contacts.add_record(ResolvedRecord::upsert(
+        contacts.add_record(ResolvedRecord::create(
             Uuid::new_v4(),
             HashMap::from([("fullname".to_string(), Value::String("John Doe".to_string()))]),
         ));
@@ -151,8 +157,8 @@ mod tests {
         let items = build_queue_items(&transfer, &options);
 
         assert_eq!(items.len(), 2);
-        assert_eq!(items[0].operations.len(), 2); // 2 upserts, 1 skip excluded
-        assert_eq!(items[1].operations.len(), 1); // 1 upsert, 1 error excluded
+        assert_eq!(items[0].operations.len(), 2); // 1 create + 1 update, skip excluded
+        assert_eq!(items[1].operations.len(), 1); // 1 create, error excluded
     }
 
     #[test]
@@ -176,7 +182,7 @@ mod tests {
         let items = build_queue_items(&transfer, &options);
 
         assert_eq!(items[0].metadata.source, "Transfer");
-        assert_eq!(items[0].metadata.entity_type, "upsert: accounts");
+        assert_eq!(items[0].metadata.entity_type, "sync: accounts");
         assert_eq!(items[0].metadata.environment_name, "prod");
         assert!(items[0].metadata.description.contains("test-config"));
     }
@@ -186,12 +192,20 @@ mod tests {
         let mut transfer = ResolvedTransfer::new("test", "dev", "prod");
         let mut entity = ResolvedEntity::new("accounts", 1, "accountid");
 
-        // Add 5 records
+        // Add 5 records (mix of creates and updates)
         for i in 0..5 {
-            entity.add_record(ResolvedRecord::upsert(
-                Uuid::new_v4(),
-                HashMap::from([("name".to_string(), Value::String(format!("Account {}", i)))]),
-            ));
+            let record = if i % 2 == 0 {
+                ResolvedRecord::create(
+                    Uuid::new_v4(),
+                    HashMap::from([("name".to_string(), Value::String(format!("Account {}", i)))]),
+                )
+            } else {
+                ResolvedRecord::update(
+                    Uuid::new_v4(),
+                    HashMap::from([("name".to_string(), Value::String(format!("Account {}", i)))]),
+                )
+            };
+            entity.add_record(record);
         }
         transfer.add_entity(entity);
 
