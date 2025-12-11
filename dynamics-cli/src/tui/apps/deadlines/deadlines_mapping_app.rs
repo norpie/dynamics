@@ -919,7 +919,7 @@ struct Warning(String);
 impl crate::tui::widgets::ListItem for Warning {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_hovered: bool) -> Element<Msg> {
+    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Msg> {
         let theme = &crate::global_runtime_config().theme;
         let (fg_color, bg_style) = if is_selected {
             (theme.accent_primary, Some(Style::default().bg(theme.bg_surface)))

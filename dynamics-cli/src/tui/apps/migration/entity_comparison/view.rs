@@ -885,7 +885,7 @@ pub fn render_import_results_modal(state: &mut State) -> Element<Msg> {
     impl ListItem for ImportResultLine {
         type Msg = Msg;
 
-        fn to_element(&self, _is_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+        fn to_element(&self, _is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
             Element::styled_text(Line::from(Span::styled(self.text.clone(), self.style))).build()
         }
     }
@@ -1102,7 +1102,7 @@ pub fn render_ignore_modal(state: &mut State) -> Element<Msg> {
     impl ListItem for IgnoredItemLine {
         type Msg = Msg;
 
-        fn to_element(&self, is_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+        fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
             let style = if is_selected {
                 self.style.bg(crate::global_runtime_config().theme.bg_surface)
             } else {

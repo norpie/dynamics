@@ -18,7 +18,7 @@ pub struct PrefixMappingItem<Msg> {
 impl<Msg: Clone> ListItem for PrefixMappingItem<Msg> {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
         let display = format!("{} → {}", self.source_prefix, self.target_prefix);
 

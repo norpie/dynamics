@@ -27,6 +27,16 @@ pub enum ListEvent {
     Navigate(KeyCode),
     /// Item selected (Enter or click)
     Select,
+    /// Toggle multi-selection on current item (Space key)
+    ToggleMultiSelect,
+    /// Select all visible items (Ctrl+A)
+    SelectAll,
+    /// Clear all multi-selections (Ctrl+D or Esc)
+    ClearMultiSelection,
+    /// Extend selection up (Shift+Up)
+    ExtendSelectionUp,
+    /// Extend selection down (Shift+Down)
+    ExtendSelectionDown,
 }
 
 /// Event type for Tree widget

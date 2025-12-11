@@ -26,7 +26,7 @@ struct EnvListItem {
 impl ListItem for EnvListItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(&self, is_focused: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         // Show selection state for this specific list

@@ -1,4 +1,5 @@
 use crossterm::event::KeyCode;
+use std::collections::HashSet;
 use crate::tui::{Element, Theme};
 
 /// Trait for items that can be displayed in a list
@@ -6,7 +7,10 @@ pub trait ListItem {
     type Msg: Clone;
 
     /// Render this item as an Element
-    fn to_element(&self, is_selected: bool, is_hovered: bool) -> Element<Self::Msg>;
+    /// is_selected: whether this item is the primary/anchor selection (cursor position)
+    /// is_multi_selected: whether this item is in the multi-selection set
+    /// is_hovered: whether the mouse is hovering over this item
+    fn to_element(&self, is_selected: bool, is_multi_selected: bool, is_hovered: bool) -> Element<Self::Msg>;
 
     /// Optional: height in lines (default 1)
     fn height(&self) -> u16 {
@@ -22,6 +26,10 @@ pub struct ListState {
     scroll_off: usize, // Rows from edge before scrolling (like vim scrolloff)
     wrap_around: bool, // Wrap to bottom/top when reaching edges
     viewport_height: Option<usize>, // Last known viewport height from renderer
+
+    // Multi-selection support
+    multi_selected: HashSet<usize>, // Additional selected indices
+    anchor_selection: Option<usize>, // Anchor for range selection (Shift+Arrow)
 }
 
 impl Default for ListState {
@@ -39,6 +47,8 @@ impl ListState {
             scroll_off: 3,
             wrap_around: true,
             viewport_height: None,
+            multi_selected: HashSet::new(),
+            anchor_selection: None,
         }
     }
 
@@ -50,6 +60,8 @@ impl ListState {
             scroll_off: 3,
             wrap_around: true,
             viewport_height: None,
+            multi_selected: HashSet::new(),
+            anchor_selection: None,
         }
     }
 
@@ -235,6 +247,136 @@ impl ListState {
         }
     }
 
+    // === Multi-selection methods ===
+
+    /// Toggle multi-selection for a specific index (Space key)
+    /// If the index is currently multi-selected, remove it. Otherwise, add it.
+    pub fn toggle_multi_select(&mut self, index: usize) {
+        if self.multi_selected.contains(&index) {
+            self.multi_selected.remove(&index);
+        } else {
+            self.multi_selected.insert(index);
+            // Set anchor for range selection
+            self.anchor_selection = Some(index);
+        }
+    }
+
+    /// Toggle multi-selection for the currently selected item
+    pub fn toggle_multi_select_current(&mut self) {
+        if let Some(current) = self.selected {
+            self.toggle_multi_select(current);
+        }
+    }
+
+    /// Select range from anchor to end_index (Shift+Arrow)
+    /// Adds all indices between anchor and end to multi_selected
+    pub fn select_range(&mut self, end_index: usize, item_count: usize) {
+        let anchor = self.anchor_selection.or(self.selected);
+
+        if let Some(anchor) = anchor {
+            let (from, to) = if anchor <= end_index {
+                (anchor, end_index)
+            } else {
+                (end_index, anchor)
+            };
+
+            // Add all indices in range to multi_selected
+            for idx in from..=to.min(item_count.saturating_sub(1)) {
+                self.multi_selected.insert(idx);
+            }
+        }
+
+        // Update anchor to end position
+        self.anchor_selection = Some(end_index);
+    }
+
+    /// Extend selection up (Shift+Up) - select range to previous item
+    pub fn extend_selection_up(&mut self, item_count: usize, visible_height: usize) {
+        if let Some(current) = self.selected {
+            if current > 0 {
+                let target = current - 1;
+                self.select_range(target, item_count);
+                self.selected = Some(target);
+                self.update_scroll(visible_height, item_count);
+            }
+        }
+    }
+
+    /// Extend selection down (Shift+Down) - select range to next item
+    pub fn extend_selection_down(&mut self, item_count: usize, visible_height: usize) {
+        if let Some(current) = self.selected {
+            if current + 1 < item_count {
+                let target = current + 1;
+                self.select_range(target, item_count);
+                self.selected = Some(target);
+                self.update_scroll(visible_height, item_count);
+            }
+        }
+    }
+
+    /// Clear all multi-selections (Ctrl+D or Esc)
+    pub fn clear_multi_selection(&mut self) {
+        self.multi_selected.clear();
+        self.anchor_selection = None;
+    }
+
+    /// Select all items (Ctrl+A)
+    pub fn select_all(&mut self, item_count: usize) {
+        self.multi_selected = (0..item_count).collect();
+        self.anchor_selection = Some(0);
+    }
+
+    /// Get all selected indices (primary selection + multi-selected)
+    /// Returns a Vec with all unique selected indices
+    pub fn all_selected(&self) -> Vec<usize> {
+        let mut result = Vec::new();
+
+        // Add primary selection first (if not in multi_selected)
+        if let Some(primary) = self.selected {
+            if !self.multi_selected.contains(&primary) {
+                result.push(primary);
+            }
+        }
+
+        // Add all multi-selected indices (sorted for consistency)
+        let mut multi: Vec<_> = self.multi_selected.iter().copied().collect();
+        multi.sort();
+        result.extend(multi);
+
+        result
+    }
+
+    /// Check if an index is in the multi-selection set
+    pub fn is_multi_selected(&self, index: usize) -> bool {
+        self.multi_selected.contains(&index)
+    }
+
+    /// Get count of multi-selected items (excludes primary selection)
+    pub fn multi_select_count(&self) -> usize {
+        self.multi_selected.len()
+    }
+
+    /// Get total selection count (primary + multi-selected, deduplicated)
+    pub fn total_selection_count(&self) -> usize {
+        let mut count = self.multi_selected.len();
+
+        // Add 1 if primary selection exists and is not in multi_selected
+        if let Some(primary) = self.selected {
+            if !self.multi_selected.contains(&primary) {
+                count += 1;
+            }
+        }
+
+        count
+    }
+
+    /// Check if multi-selection is active (any items selected beyond primary)
+    pub fn has_multi_selection(&self) -> bool {
+        !self.multi_selected.is_empty()
+    }
+
+    // === End multi-selection methods ===
+
     /// Handle list event (unified event pattern)
     /// Returns Some(selected_index) on Select event, None otherwise
     pub fn handle_event(&mut self, event: crate::tui::widgets::events::ListEvent, item_count: usize, visible_height: usize) -> Option<usize> {
@@ -246,6 +388,26 @@ impl ListState {
                 None
             }
             ListEvent::Select => self.selected,
+            ListEvent::ToggleMultiSelect => {
+                self.toggle_multi_select_current();
+                None
+            }
+            ListEvent::SelectAll => {
+                self.select_all(item_count);
+                None
+            }
+            ListEvent::ClearMultiSelection => {
+                self.clear_multi_selection();
+                None
+            }
+            ListEvent::ExtendSelectionUp => {
+                self.extend_selection_up(item_count, visible_height);
+                None
+            }
+            ListEvent::ExtendSelectionDown => {
+                self.extend_selection_down(item_count, visible_height);
+                None
+            }
         }
     }
 }

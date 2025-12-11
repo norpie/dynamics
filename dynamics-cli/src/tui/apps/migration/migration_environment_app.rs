@@ -23,7 +23,7 @@ pub struct MigrationEnvironment {
 impl ListItem for MigrationEnvironment {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_hovered: bool) -> Element<Msg> {
+    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Msg> {
         use ratatui::text::{Line, Span};
         use ratatui::style::Style;
 

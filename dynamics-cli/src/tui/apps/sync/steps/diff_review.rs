@@ -30,7 +30,7 @@ struct EntityPlanItem {
 impl ListItem for EntityPlanItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(&self, is_focused: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         let category_symbol = self.category.symbol();
@@ -70,7 +70,7 @@ struct FieldDiffItem {
 impl ListItem for FieldDiffItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(&self, is_focused: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         let icon = match &self.status {
@@ -324,7 +324,7 @@ struct DataRecordItem {
 impl ListItem for DataRecordItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(&self, is_focused: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         // Truncate name if too long

@@ -553,7 +553,8 @@ impl<Msg> Element<Msg> {
             .enumerate()
             .map(|(i, item)| {
                 let is_selected = state.selected() == Some(i);
-                item.to_element(is_selected, false)
+                let is_multi_selected = state.is_multi_selected(i);
+                item.to_element(is_selected, is_multi_selected, false)
             })
             .collect();
 

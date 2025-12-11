@@ -32,7 +32,7 @@ enum SummaryStyle {
 impl ListItem for SummaryItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_focused: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(&self, is_focused: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         let text = format!("{}: {}", self.label, self.value);

@@ -263,7 +263,7 @@ struct RecordListItem {
 impl ListItem for RecordListItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let base_style = self.get_row_style(is_selected);
 
         // Build the row: Action | Source ID (truncated) | field values
