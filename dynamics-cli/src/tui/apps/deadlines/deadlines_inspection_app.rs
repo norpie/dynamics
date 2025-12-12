@@ -32,7 +32,7 @@ impl ListItem for RecordListItem {
         };
 
         // Extract name from direct fields
-        let name_field = if self.entity_type == "cgk_deadline" { "cgk_deadlinename" } else { "nrq_name" };
+        let name_field = if self.entity_type == "cgk_deadline" { "cgk_deadlinename" } else { "nrq_deadlinename" };
         let name = self.record.direct_fields.get(name_field)
             .map(|s| s.as_str())
             .unwrap_or("<No Name>");
@@ -371,7 +371,7 @@ impl App for DeadlinesInspectionApp {
         };
 
         let detail_title = if let Some(record) = state.transformed_records.get(state.selected_record_idx) {
-            let name_field = if state.entity_type == "cgk_deadline" { "cgk_deadlinename" } else { "nrq_name" };
+            let name_field = if state.entity_type == "cgk_deadline" { "cgk_deadlinename" } else { "nrq_deadlinename" };
             let name = record.direct_fields.get(name_field)
                 .map(|s| s.as_str())
                 .unwrap_or("<No Name>");

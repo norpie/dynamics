@@ -236,10 +236,10 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             required: false,
         },
 
-        // Deadline name
+        // Deadline name (raw value goes to nrq_deadlinename, nrq_name is generated with date/time)
         FieldMapping {
             excel_column: "Deadline*".to_string(),
-            dynamics_field: "nrq_name".to_string(),
+            dynamics_field: "nrq_deadlinename".to_string(),
             field_type: FieldType::Direct,
             required: false,
         },

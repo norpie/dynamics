@@ -44,6 +44,26 @@ impl TransformedDeadline {
             payload[field] = json!(value);
         }
 
+        // NRQ: Generate nrq_name field (formatted as "Deadline - Date Time")
+        if entity_type == "nrq_deadline" {
+            if let Some(deadline_name) = self.direct_fields.get("nrq_deadlinename") {
+                let mut name_parts = vec![deadline_name.clone()];
+
+                // Add formatted date/time if available
+                if let Some(date) = self.deadline_date {
+                    let date_str = date.format("%d/%m/%Y").to_string();
+                    let time_str = if let Some(time) = self.deadline_time {
+                        time.format("%H:%M").to_string()
+                    } else {
+                        "12:00".to_string()
+                    };
+                    name_parts.push(format!("{} {}", date_str, time_str));
+                }
+
+                payload["nrq_name"] = json!(name_parts.join(" - "));
+            }
+        }
+
         // 1a. Picklist fields (integer values)
         for (field, value) in &self.picklist_fields {
             payload[field] = json!(value);
