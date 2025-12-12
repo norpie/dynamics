@@ -375,6 +375,26 @@ impl ListState {
         !self.multi_selected.is_empty()
     }
 
+    /// Set multi-selection indices directly (for windowed/virtual scrolling)
+    pub fn set_multi_selected(&mut self, indices: HashSet<usize>) {
+        self.multi_selected = indices;
+    }
+
+    /// Create a windowed copy of multi-selection state, mapping global indices to windowed indices
+    /// global_start is the start index of the window in the full list
+    pub fn windowed_multi_selection(&self, global_start: usize, window_size: usize) -> HashSet<usize> {
+        self.multi_selected
+            .iter()
+            .filter_map(|&global_idx| {
+                if global_idx >= global_start && global_idx < global_start + window_size {
+                    Some(global_idx - global_start)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     // === End multi-selection methods ===
 
     /// Handle list event (unified event pattern)

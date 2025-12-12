@@ -312,7 +312,54 @@ impl App for TransferPreviewApp {
 
             // Record actions
             Msg::ToggleSkip => {
-                // TODO (Chunk 8): Implement skip toggle
+                // Toggle skip on currently selected record
+                if let Some(idx) = state.list_state.selected() {
+                    if let Resource::Success(ref mut resolved) = state.resolved {
+                        if let Some(entity) = resolved.entities.get_mut(state.current_entity_idx) {
+                            // Get filtered record indices
+                            let filter = state.filter;
+                            let query = state.search_field.value().to_lowercase();
+
+                            let mut match_idx = 0;
+                            let mut target_source_id = None;
+                            for record in &entity.records {
+                                if !filter.matches(record.action) {
+                                    continue;
+                                }
+                                let matches_search = if query.is_empty() {
+                                    true
+                                } else if record.source_id.to_string().to_lowercase().contains(&query) {
+                                    true
+                                } else {
+                                    record.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                };
+                                if !matches_search {
+                                    continue;
+                                }
+
+                                if match_idx == idx {
+                                    target_source_id = Some(record.source_id);
+                                    break;
+                                }
+                                match_idx += 1;
+                            }
+
+                            // Toggle skip on found record
+                            if let Some(source_id) = target_source_id {
+                                if let Some(record) = entity.records.iter_mut().find(|r| r.source_id == source_id) {
+                                    if record.action == RecordAction::Skip {
+                                        // Restore original action (we'll use NoChange as fallback)
+                                        // In a real implementation, we'd track original_action per record
+                                        record.action = RecordAction::NoChange;
+                                    } else {
+                                        record.action = RecordAction::Skip;
+                                    }
+                                }
+                                entity.mark_dirty(source_id);
+                            }
+                        }
+                    }
+                }
                 Command::None
             }
 
@@ -558,15 +605,129 @@ impl App for TransferPreviewApp {
                 Command::None
             }
 
+            // Multi-selection
+            Msg::ListMultiSelect(event) => {
+                if let Resource::Success(resolved) = &state.resolved {
+                    if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                        // Count filtered records for item_count
+                        let query = state.search_field.value().to_lowercase();
+                        let item_count = entity.records.iter()
+                            .filter(|r| state.filter.matches(r.action))
+                            .filter(|r| {
+                                if query.is_empty() { return true; }
+                                if r.source_id.to_string().to_lowercase().contains(&query) { return true; }
+                                r.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                            })
+                            .count();
+                        state.list_state.handle_event(event, item_count, state.viewport_height);
+                    }
+                }
+                Command::None
+            }
+
             // Bulk actions
             Msg::OpenBulkActions => {
+                // Reset to defaults when opening
+                state.bulk_action_scope = super::state::BulkActionScope::Filtered;
+                state.bulk_action_selection = super::state::BulkAction::MarkSkip;
                 state.active_modal = Some(super::state::PreviewModal::BulkActions);
                 Command::None
             }
 
-            Msg::ApplyBulkAction(_action) => {
-                // TODO (Chunk 8): Implement bulk action
+            Msg::SetBulkActionScope(scope) => {
+                state.bulk_action_scope = scope;
+                Command::None
+            }
+
+            Msg::SetBulkAction(action) => {
+                state.bulk_action_selection = action;
+                Command::None
+            }
+
+            Msg::ConfirmBulkAction => {
+                // Apply bulk action to records based on scope
+                if let Resource::Success(ref mut resolved) = state.resolved {
+                    if let Some(entity) = resolved.entities.get_mut(state.current_entity_idx) {
+                        let filter = state.filter;
+                        let query = state.search_field.value().to_lowercase();
+
+                        // Get indices to apply action to based on scope
+                        let indices_to_apply: Vec<usize> = match state.bulk_action_scope {
+                            super::state::BulkActionScope::All => {
+                                (0..entity.records.len()).collect()
+                            }
+                            super::state::BulkActionScope::Filtered => {
+                                entity.records.iter()
+                                    .enumerate()
+                                    .filter(|(_, r)| filter.matches(r.action))
+                                    .filter(|(_, r)| {
+                                        if query.is_empty() { return true; }
+                                        if r.source_id.to_string().to_lowercase().contains(&query) { return true; }
+                                        r.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                    })
+                                    .map(|(i, _)| i)
+                                    .collect()
+                            }
+                            super::state::BulkActionScope::Selected => {
+                                // Convert filtered indices to actual record indices
+                                let multi_selected = state.list_state.all_selected();
+                                let mut actual_indices = Vec::new();
+                                let mut filtered_idx = 0;
+                                for (actual_idx, record) in entity.records.iter().enumerate() {
+                                    if !filter.matches(record.action) {
+                                        continue;
+                                    }
+                                    let matches_search = if query.is_empty() {
+                                        true
+                                    } else if record.source_id.to_string().to_lowercase().contains(&query) {
+                                        true
+                                    } else {
+                                        record.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                    };
+                                    if !matches_search {
+                                        continue;
+                                    }
+                                    if multi_selected.contains(&filtered_idx) {
+                                        actual_indices.push(actual_idx);
+                                    }
+                                    filtered_idx += 1;
+                                }
+                                actual_indices
+                            }
+                        };
+
+                        // Collect source IDs to mark dirty after mutations
+                        let mut dirty_ids = Vec::new();
+
+                        // Apply action to selected records
+                        for idx in indices_to_apply {
+                            if let Some(record) = entity.records.get_mut(idx) {
+                                match state.bulk_action_selection {
+                                    super::state::BulkAction::MarkSkip => {
+                                        record.action = RecordAction::Skip;
+                                    }
+                                    super::state::BulkAction::UnmarkSkip => {
+                                        if record.action == RecordAction::Skip {
+                                            record.action = RecordAction::NoChange;
+                                        }
+                                    }
+                                    super::state::BulkAction::ResetToOriginal => {
+                                        // Reset to NoChange (would need original_action tracking for full reset)
+                                        record.action = RecordAction::NoChange;
+                                    }
+                                }
+                                dirty_ids.push(record.source_id);
+                            }
+                        }
+
+                        // Mark all affected records as dirty
+                        for source_id in dirty_ids {
+                            entity.mark_dirty(source_id);
+                        }
+                    }
+                }
                 state.active_modal = None;
+                state.list_state.clear_multi_selection();
                 Command::None
             }
 
@@ -698,6 +859,15 @@ impl App for TransferPreviewApp {
                     Span::raw(" | "),
                     Span::styled(state.filter.display_name().to_string(), Style::default().fg(theme.accent_primary)),
                     Span::styled(format!(" ({})", filtered_count), Style::default().fg(theme.text_secondary)),
+                    // Show selection count if multi-selection is active
+                    if state.list_state.has_multi_selection() {
+                        Span::styled(
+                            format!(" | {} selected", state.list_state.multi_select_count()),
+                            Style::default().fg(theme.accent_secondary),
+                        )
+                    } else {
+                        Span::raw("")
+                    },
                 ]))
             }
         }

@@ -11,7 +11,7 @@ use crate::tui::widgets::{ListEvent, ListItem, TextInputEvent};
 use crate::tui::{Alignment, Element, LayeredView, LayoutConstraint, Subscription, Theme};
 
 use super::modals;
-use super::state::{Msg, PreviewModal, RecordFilter, State};
+use super::state::{BulkAction, BulkActionScope, Msg, PreviewModal, RecordFilter, State};
 
 /// Render the preview app view
 pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
@@ -67,7 +67,7 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
                 }
             }
             PreviewModal::BulkActions => {
-                render_bulk_actions_placeholder(theme)
+                modals::bulk_actions::render(state, theme)
             }
             PreviewModal::ExportExcel => {
                 render_export_placeholder(theme)
@@ -162,8 +162,9 @@ fn render_table_header(entity: &ResolvedEntity, theme: &Theme) -> Element<Msg> {
         .fg(theme.text_secondary)
         .add_modifier(Modifier::BOLD);
 
-    // Build header columns: Action | Source ID | field1 | field2 | ...
+    // Build header columns: [checkbox] Action | Source ID | field1 | field2 | ...
     let mut header_parts = vec![
+        Span::styled("    ", header_style), // Space for checkbox [✓] or [ ]
         Span::styled(format!("{:<10}", "Action"), header_style),
         Span::raw(" │ "),
         Span::styled(format!("{:<12}", "Source ID"), header_style),
@@ -235,8 +236,11 @@ fn render_record_table(state: &State, entity: &ResolvedEntity, theme: &Theme) ->
     });
 
     // Create a windowed list state - scroll_offset is 0 because we already sliced
+    // Map multi-selection indices from global to windowed space
+    let windowed_multi = state.list_state.windowed_multi_selection(start_idx, end_idx - start_idx);
     let mut windowed_state = crate::tui::widgets::ListState::new().with_scroll_off(0);
     windowed_state.select(adjusted_selected);
+    windowed_state.set_multi_selected(windowed_multi);
 
     Element::list(
         FocusId::new("record-table"),
@@ -263,11 +267,18 @@ struct RecordListItem {
 impl ListItem for RecordListItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(&self, is_selected: bool, is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let base_style = self.get_row_style(is_selected);
 
-        // Build the row: Action | Source ID (truncated) | field values
+        // Build the row: [checkbox] Action | Source ID (truncated) | field values
+        let checkbox = if is_multi_selected {
+            Span::styled("[✓] ", Style::default().fg(self.theme.accent_primary))
+        } else {
+            Span::styled("[ ] ", Style::default().fg(self.theme.text_tertiary))
+        };
+
         let mut spans = vec![
+            checkbox,
             self.action_span(),
             Span::styled(" │ ", base_style),
             self.source_id_span(base_style),
@@ -493,7 +504,27 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
         return subs;
     }
 
-    // Other modal subscriptions (bulk actions, export, import)
+    // Bulk actions modal subscriptions
+    if let Some(PreviewModal::BulkActions) = &state.active_modal {
+        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseModal));
+        subs.push(Subscription::keyboard(KeyCode::Enter, "Apply", Msg::ConfirmBulkAction));
+
+        // Scope selection (1/2/3)
+        subs.push(Subscription::keyboard(KeyCode::Char('1'), "Filtered scope", Msg::SetBulkActionScope(BulkActionScope::Filtered)));
+        subs.push(Subscription::keyboard(KeyCode::Char('2'), "All scope", Msg::SetBulkActionScope(BulkActionScope::All)));
+        if state.list_state.has_multi_selection() {
+            subs.push(Subscription::keyboard(KeyCode::Char('3'), "Selected scope", Msg::SetBulkActionScope(BulkActionScope::Selected)));
+        }
+
+        // Action selection (a/b/c)
+        subs.push(Subscription::keyboard(KeyCode::Char('a'), "Mark Skip", Msg::SetBulkAction(BulkAction::MarkSkip)));
+        subs.push(Subscription::keyboard(KeyCode::Char('b'), "Unmark Skip", Msg::SetBulkAction(BulkAction::UnmarkSkip)));
+        subs.push(Subscription::keyboard(KeyCode::Char('c'), "Reset to Original", Msg::SetBulkAction(BulkAction::ResetToOriginal)));
+
+        return subs;
+    }
+
+    // Other modal subscriptions (export, import)
     if state.active_modal.is_some() {
         subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseModal));
         return subs;
@@ -512,6 +543,13 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
     subs.push(Subscription::keyboard(KeyCode::Enter, "View details", Msg::ViewDetails));
     subs.push(Subscription::keyboard(KeyCode::Char('e'), "Edit record", Msg::EditRecord));
     subs.push(Subscription::keyboard(KeyCode::Char('s'), "Toggle skip", Msg::ToggleSkip));
+
+    // Multi-selection
+    subs.push(Subscription::keyboard(KeyCode::Char(' '), "Toggle selection", Msg::ListMultiSelect(ListEvent::ToggleMultiSelect)));
+    subs.push(Subscription::keyboard(KeyCode::Char('*'), "Select all", Msg::ListMultiSelect(ListEvent::SelectAll)));
+    subs.push(Subscription::keyboard(KeyCode::Char('-'), "Clear selection", Msg::ListMultiSelect(ListEvent::ClearMultiSelection)));
+    subs.push(Subscription::shift_key(KeyCode::Up, "Extend selection up", Msg::ListMultiSelect(ListEvent::ExtendSelectionUp)));
+    subs.push(Subscription::shift_key(KeyCode::Down, "Extend selection down", Msg::ListMultiSelect(ListEvent::ExtendSelectionDown)));
 
     // Bulk actions
     subs.push(Subscription::keyboard(KeyCode::Char('b'), "Bulk actions", Msg::OpenBulkActions));

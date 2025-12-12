@@ -227,6 +227,10 @@ pub struct State {
     pub viewport_height: usize,
     /// State for the record details/edit modal (when open)
     pub record_detail_state: Option<RecordDetailState>,
+    /// Bulk action modal - selected scope
+    pub bulk_action_scope: BulkActionScope,
+    /// Bulk action modal - selected action
+    pub bulk_action_selection: BulkAction,
 }
 
 impl Default for State {
@@ -248,6 +252,8 @@ impl Default for State {
             active_modal: None,
             viewport_height: 50, // Reasonable default until on_render provides actual value
             record_detail_state: None,
+            bulk_action_scope: BulkActionScope::default(),
+            bulk_action_selection: BulkAction::default(),
         }
     }
 }
@@ -369,9 +375,14 @@ pub enum Msg {
     SaveRecordEdits,
     CancelRecordEdits,
 
+    // Multi-selection
+    ListMultiSelect(crate::tui::widgets::ListEvent),
+
     // Bulk actions
     OpenBulkActions,
-    ApplyBulkAction(BulkAction),
+    SetBulkActionScope(BulkActionScope),
+    SetBulkAction(BulkAction),
+    ConfirmBulkAction,
 
     // Excel
     ExportExcel,
@@ -391,8 +402,9 @@ pub enum Msg {
 }
 
 /// Bulk action types
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BulkAction {
+    #[default]
     MarkSkip,
     UnmarkSkip,
     ResetToOriginal,
@@ -404,6 +416,34 @@ impl BulkAction {
             BulkAction::MarkSkip => "Mark as Skip",
             BulkAction::UnmarkSkip => "Unmark Skip (restore)",
             BulkAction::ResetToOriginal => "Reset to Original",
+        }
+    }
+
+    /// Get all variants for iteration
+    pub fn all_variants() -> &'static [BulkAction] {
+        &[
+            BulkAction::MarkSkip,
+            BulkAction::UnmarkSkip,
+            BulkAction::ResetToOriginal,
+        ]
+    }
+}
+
+/// Scope for bulk actions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BulkActionScope {
+    #[default]
+    Filtered,   // Apply to all filtered records
+    All,        // Apply to all records in entity
+    Selected,   // Apply to multi-selected records only
+}
+
+impl BulkActionScope {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            BulkActionScope::Filtered => "Filtered",
+            BulkActionScope::All => "All",
+            BulkActionScope::Selected => "Selected",
         }
     }
 }
