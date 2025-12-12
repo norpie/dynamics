@@ -493,6 +493,17 @@ impl Renderer {
                 render_progress_bar(frame, element, area, theme);
             }
 
+            Element::Checkbox {
+                id,
+                label,
+                checked,
+                on_toggle,
+                on_focus,
+                on_blur,
+            } => {
+                render_checkbox(frame, registry, focus_registry, focused_id, id, label, *checked, on_toggle, on_focus, on_blur, area, inside_panel);
+            }
+
             // Primitives are handled at the top of the function
             Element::None | Element::Text { .. } | Element::StyledText { .. } => {
                 unreachable!("Primitives should be handled before the match statement")
@@ -626,6 +637,11 @@ impl Renderer {
                 }
                 (max_w.min(max_width), max_h.min(max_height))
             }
+            Element::Checkbox { label, .. } => {
+                // Checkbox: [x] Label + borders = label + 6 width, 3 height
+                let width = (label.len() as u16 + 6).min(max_width);
+                (width, 3)
+            }
         }
     }
 
@@ -688,6 +704,11 @@ impl Renderer {
             Element::ProgressBar { .. } => {
                 // Progress bar: full width, 1 line height
                 (container.width, 1)
+            }
+            Element::Checkbox { label, .. } => {
+                // Checkbox: [x] Label + borders
+                let width = (label.len() as u16 + 6).min(container.width);
+                (width, 3)
             }
             _ => {
                 // Default: 50% of container

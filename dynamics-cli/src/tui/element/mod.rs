@@ -296,6 +296,16 @@ pub enum Element<Msg> {
         show_count: bool,
         width: Option<u16>,
     },
+
+    /// Interactive checkbox (toggle on/off)
+    Checkbox {
+        id: FocusId,
+        label: String,
+        checked: bool,
+        on_toggle: Option<Msg>,
+        on_focus: Option<Msg>,
+        on_blur: Option<Msg>,
+    },
 }
 
 impl<Msg> Element<Msg> {
@@ -340,6 +350,18 @@ impl<Msg> Element<Msg> {
             on_focus: None,
             on_blur: None,
             style: None,
+        }
+    }
+
+    /// Create a checkbox element
+    pub fn checkbox(id: impl Into<FocusId>, label: impl Into<String>, checked: bool) -> CheckboxBuilder<Msg> {
+        CheckboxBuilder {
+            id: id.into(),
+            label: label.into(),
+            checked,
+            on_toggle: None,
+            on_focus: None,
+            on_blur: None,
         }
     }
 
@@ -497,6 +519,7 @@ impl<Msg> Element<Msg> {
             Element::FileBrowser { .. } => LayoutConstraint::Fill(1),  // Fill available space like List
             Element::ColorPicker { .. } => LayoutConstraint::Length(9),  // 3 sliders + hex + labels
             Element::ProgressBar { .. } => LayoutConstraint::Length(1),  // Single line
+            Element::Checkbox { .. } => LayoutConstraint::Length(3),  // [x] Label + borders
         }
     }
 

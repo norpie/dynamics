@@ -1,6 +1,7 @@
 // Builder modules
 mod styled_text;
 mod button;
+mod checkbox;
 mod column;
 mod row;
 mod container;
@@ -20,6 +21,7 @@ mod progress_bar;
 // Re-export builders
 pub use styled_text::StyledTextBuilder;
 pub use button::ButtonBuilder;
+pub use checkbox::CheckboxBuilder;
 pub use column::ColumnBuilder;
 pub use row::RowBuilder;
 pub use container::ContainerBuilder;

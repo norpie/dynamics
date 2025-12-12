@@ -14,6 +14,7 @@ pub struct State {
     selected_file: Option<PathBuf>,
     available_sheets: Resource<Vec<String>>,
     sheet_selector: SelectField,
+    board_of_directors_import: bool,
 }
 
 impl State {
@@ -33,6 +34,7 @@ impl State {
             selected_file: None,
             available_sheets: Resource::NotAsked,
             sheet_selector: SelectField::new(),
+            board_of_directors_import: false,
         }
     }
 }
@@ -51,6 +53,7 @@ pub enum Msg {
     DirectoryEntered(PathBuf),
     Navigate(KeyCode),
     SheetSelectorEvent(SelectEvent),
+    ToggleBoardOfDirectors,
     ConfirmSelection,
     Back,
     SetViewportHeight(usize),
@@ -174,6 +177,10 @@ impl App for DeadlinesFileSelectApp {
                     Command::None
                 }
             }
+            Msg::ToggleBoardOfDirectors => {
+                state.board_of_directors_import = !state.board_of_directors_import;
+                Command::None
+            }
             Msg::ConfirmSelection => {
                 if let (Some(file_path), Resource::Success(_sheets)) = (&state.selected_file, &state.available_sheets) {
                     if let Some(sheet_name) = state.sheet_selector.value() {
@@ -183,6 +190,7 @@ impl App for DeadlinesFileSelectApp {
                                 super::models::MappingParams {
                                     file_path: file_path.clone(),
                                     sheet_name: sheet_name.to_string(),
+                                    board_of_directors_import: state.board_of_directors_import,
                                 }
                             ),
                             Command::quit_self(),
@@ -224,7 +232,7 @@ impl App for DeadlinesFileSelectApp {
             .title(format!("Select Excel File - {}", state.file_browser_state.current_path().display()))
             .build();
 
-        // Sheet selector panel
+        // Sheet selector panel content
         let sheet_content = match &state.available_sheets {
             Resource::NotAsked => {
                 Element::styled_text(Line::from(vec![
@@ -260,29 +268,54 @@ impl App for DeadlinesFileSelectApp {
                     ])).build() => Length(1),
                     spacer!() => Length(1),
                     selector_panel => Length(3),
-                    spacer!() => Fill(1),
-                    row![
-                        Element::button("back-button", "Back")
-                            .on_press(Msg::Back)
-                            .build(),
-                        spacer!(),
-                        Element::button("continue-button", "Continue")
-                            .on_press(Msg::ConfirmSelection)
-                            .build(),
-                    ] => Length(3)
                 ]
             }
         };
 
         let sheet_panel = Element::panel(sheet_content)
             .title("Sheet Selection")
-            .height(9)
             .build();
+
+        // Board of Directors checkbox (only visible when sheets are loaded)
+        let has_sheets = matches!(state.available_sheets, Resource::Success(_));
+        let checkbox_panel = if has_sheets {
+            let checkbox = Element::checkbox("board-of-directors-checkbox", "Enable", state.board_of_directors_import)
+                .on_toggle(Msg::ToggleBoardOfDirectors)
+                .build();
+            Element::panel(checkbox)
+                .title("Board of Directors Import")
+                .build()
+        } else {
+            Element::None
+        };
+
+        // Button row (only enabled when sheets are loaded)
+        let button_row = if has_sheets {
+            row![
+                Element::button("back-button", "Back")
+                    .on_press(Msg::Back)
+                    .build(),
+                spacer!(),
+                Element::button("continue-button", "Continue")
+                    .on_press(Msg::ConfirmSelection)
+                    .build(),
+            ]
+        } else {
+            row![
+                Element::button("back-button", "Back")
+                    .on_press(Msg::Back)
+                    .build(),
+                spacer!(),
+                Element::button("continue-button", "Continue").build(),
+            ]
+        };
 
         // Main layout
         let main_content = col![
-            browser_panel,
-            sheet_panel,
+            browser_panel => Fill(1),
+            sheet_panel => Length(7),
+            checkbox_panel => Length(if has_sheets { 5 } else { 0 }),
+            button_row => Length(3),
         ];
 
         let outer_panel = Element::panel(main_content)

@@ -3,6 +3,8 @@
 pub struct MappingParams {
     pub file_path: std::path::PathBuf,
     pub sheet_name: String,
+    /// If true, this import is specifically for Board of Directors meetings (NRQ only)
+    pub board_of_directors_import: bool,
 }
 
 impl Default for MappingParams {
@@ -10,6 +12,7 @@ impl Default for MappingParams {
         Self {
             file_path: std::path::PathBuf::new(),
             sheet_name: String::new(),
+            board_of_directors_import: false,
         }
     }
 }

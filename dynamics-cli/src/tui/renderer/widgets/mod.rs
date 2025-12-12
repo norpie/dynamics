@@ -2,6 +2,7 @@
 pub mod primitives;
 pub mod layout;
 pub mod button;
+pub mod checkbox;
 pub mod list;
 pub mod tree;
 pub mod table_tree;
@@ -19,6 +20,7 @@ pub mod progress_bar;
 pub use primitives::{render_primitive, is_primitive};
 pub use layout::{calculate_constraints, render_column, render_row, render_container};
 pub use button::render_button;
+pub use checkbox::render_checkbox;
 pub use list::{render_list, render_file_browser};
 pub use tree::render_tree;
 pub use table_tree::render_table_tree;
