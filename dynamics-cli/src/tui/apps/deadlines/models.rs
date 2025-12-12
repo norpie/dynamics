@@ -58,6 +58,9 @@ pub struct TransformedDeadline {
     /// Picklist field values (field_name -> integer value)
     pub picklist_fields: std::collections::HashMap<String, i32>,
 
+    /// Boolean field values (field_name -> bool)
+    pub boolean_fields: std::collections::HashMap<String, bool>,
+
     /// Parsed deadline date (cgk_date or nrq_date)
     pub deadline_date: Option<chrono::NaiveDate>,
 
@@ -86,6 +89,7 @@ impl TransformedDeadline {
             checkbox_relationships: std::collections::HashMap::new(),
             custom_junction_records: Vec::new(),
             picklist_fields: std::collections::HashMap::new(),
+            boolean_fields: std::collections::HashMap::new(),
             deadline_date: None,
             deadline_time: None,
             commission_date: None,

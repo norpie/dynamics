@@ -49,7 +49,12 @@ impl TransformedDeadline {
             payload[field] = json!(value);
         }
 
-        // 1b. Generate cgk_name field (formatted as "Deadline - Date Time")
+        // 1b. Boolean fields
+        for (field, value) in &self.boolean_fields {
+            payload[field] = json!(value);
+        }
+
+        // 1c. Generate cgk_name field (formatted as "Deadline - Date Time")
         if entity_type == "cgk_deadline" {
             if let Some(deadline_name) = self.direct_fields.get("cgk_deadlinename") {
                 let mut name_parts = vec![deadline_name.clone()];

@@ -817,6 +817,27 @@ fn process_row(
                             }
                         }
                     }
+                    field_mappings::FieldType::Boolean { true_value, false_value } => {
+                        // Boolean field - map string to true/false
+                        let trimmed_value = cell_value.trim();
+
+                        if trimmed_value.eq_ignore_ascii_case(true_value) {
+                            transformed.boolean_fields.insert(
+                                mapping.dynamics_field.clone(),
+                                true
+                            );
+                        } else if trimmed_value.eq_ignore_ascii_case(false_value) {
+                            transformed.boolean_fields.insert(
+                                mapping.dynamics_field.clone(),
+                                false
+                            );
+                        } else if !trimmed_value.is_empty() {
+                            transformed.warnings.push(format!(
+                                "Invalid boolean value in '{}': '{}'. Expected '{}' or '{}'",
+                                mapping.excel_column, trimmed_value, true_value, false_value
+                            ));
+                        }
+                    }
                     field_mappings::FieldType::Checkbox => {
                         // Checkboxes are handled separately below
                     }

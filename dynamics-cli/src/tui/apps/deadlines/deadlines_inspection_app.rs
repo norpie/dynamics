@@ -494,6 +494,24 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
         builder = builder.add(spacer!(), Length(1));
     }
 
+    // Boolean fields section
+    if !record.boolean_fields.is_empty() {
+        builder = builder.add(Element::styled_text(Line::from(vec![
+            Span::styled("✓ Boolean Fields", Style::default().fg(theme.accent_secondary).bold())
+        ])).build(), Length(1));
+
+        for (key, value) in &record.boolean_fields {
+            let display_value = if *value { "true" } else { "false" };
+            let color = if *value { theme.accent_success } else { theme.text_tertiary };
+
+            builder = builder.add(Element::styled_text(Line::from(vec![
+                Span::styled(format!("  {}: ", key), Style::default().fg(theme.text_tertiary)),
+                Span::styled(display_value, Style::default().fg(color)),
+            ])).build(), Length(1));
+        }
+        builder = builder.add(spacer!(), Length(1));
+    }
+
     // Lookup fields section
     if !record.lookup_fields.is_empty() {
         builder = builder.add(Element::styled_text(Line::from(vec![

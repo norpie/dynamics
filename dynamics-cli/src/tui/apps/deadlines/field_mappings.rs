@@ -61,6 +61,8 @@ pub enum FieldType {
     Checkbox,
     /// Picklist field - maps label to integer value
     Picklist { options: HashMap<String, i32> },
+    /// Boolean field - maps string values to true/false
+    Boolean { true_value: String, false_value: String },
     /// Custom junction entity - for relationships that use a separate entity instead of N:N
     /// Used when the junction has additional fields (e.g., nrq_deadlinesupport)
     CustomJunction {
@@ -322,6 +324,17 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             required: false,
         },
 
+        // Commission meeting in person (Online of Fysiek)
+        FieldMapping {
+            excel_column: "Online of Fysiek".to_string(),
+            dynamics_field: "nrq_committeemeetinginperson".to_string(),
+            field_type: FieldType::Boolean {
+                true_value: "Fysiek".to_string(),
+                false_value: "Online".to_string(),
+            },
+            required: false,
+        },
+
         // Support Type - picklist field (NRQ uses nrq_supporttypeoptionset with different values)
         FieldMapping {
             excel_column: "Support Type".to_string(),
@@ -416,6 +429,6 @@ mod tests {
     #[test]
     fn test_nrq_mappings_count() {
         let mappings = get_nrq_mappings();
-        assert_eq!(mappings.len(), 14); // 14 non-checkbox fields (includes commission date/time + Type)
+        assert_eq!(mappings.len(), 15); // 15 non-checkbox fields (includes commission date/time + Type + Online of Fysiek)
     }
 }
