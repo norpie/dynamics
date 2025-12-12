@@ -477,8 +477,12 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
         for (key, value) in &record.picklist_fields {
             // Map value back to label for display
             let display_value = match *value {
+                // CGK values
                 806150000 => "Automatische steun (806150000)",
                 806150001 => "Selectieve steun (806150001)",
+                // NRQ values
+                875810000 => "Automatische steun (875810000)",
+                875810001 => "Selectieve steun (875810001)",
                 _ => "Unknown",
             };
 

@@ -511,20 +511,20 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
     log::debug!("Found header row at index {}", header_row_idx);
     log::debug!("Headers: {:?}", headers);
 
-    // Find "Raad van Bestuur" column index
-    let rvb_idx = headers.iter().position(|h| h.to_lowercase().contains("raad") && h.to_lowercase().contains("bestuur"));
+    // Find "Type" column - checkbox columns start after this
+    let type_idx = headers.iter().position(|h| h.to_uppercase() == "TYPE");
 
-    if rvb_idx.is_none() {
-        state.warnings.push(Warning("Could not find 'Raad van Bestuur' column".to_string()));
+    if type_idx.is_none() {
+        state.warnings.push(Warning("Could not find 'Type' column to determine checkbox boundary".to_string()));
         return Command::None;
     }
 
-    let rvb_idx = rvb_idx.unwrap();
-    log::debug!("Found 'Raad van Bestuur' at column index {}", rvb_idx);
+    let type_idx = type_idx.unwrap();
+    log::debug!("Found 'Type' at column index {}", type_idx);
 
-    // All columns after RvB are checkbox columns, except "OPM" and "IGNORE"
+    // All columns after "Type" are checkbox columns, except "OPM" and "IGNORE"
     let checkbox_columns: Vec<String> = headers.iter()
-        .skip(rvb_idx + 1)
+        .skip(type_idx + 1)
         .filter(|h| {
             let h_upper = h.to_uppercase();
             !h.is_empty() && h_upper != "OPM" && h_upper != "IGNORE"

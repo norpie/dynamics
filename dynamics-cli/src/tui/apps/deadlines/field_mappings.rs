@@ -32,6 +32,7 @@ pub const LOOKUP_ENTITIES_NRQ: &[&str] = &[
     "nrq_subcategory",             // Checkbox: Subcategory
     "nrq_flemishshare",            // Checkbox: Flemish share
     "nrq_boardofdirectorsmeeting", // Lookup: Board meeting (separate entity)
+    "nrq_type",                    // Lookup: Type (NRQ only)
 ];
 
 /// Get the list of entities to cache based on detected deadline entity type
@@ -295,6 +296,16 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             required: false,
         },
 
+        // Type - lookup to nrq_type (NRQ only, not supported in CGK)
+        FieldMapping {
+            excel_column: "Type".to_string(),
+            dynamics_field: "nrq_TypeId".to_string(),
+            field_type: FieldType::Lookup {
+                target_entity: "nrq_type".to_string(),
+            },
+            required: false,
+        },
+
         // Commission meeting date (NRQ has this too, unlike what was previously assumed)
         FieldMapping {
             excel_column: "Datum Commissievergadering".to_string(),
@@ -405,6 +416,6 @@ mod tests {
     #[test]
     fn test_nrq_mappings_count() {
         let mappings = get_nrq_mappings();
-        assert_eq!(mappings.len(), 13); // 13 non-checkbox fields (includes commission date/time)
+        assert_eq!(mappings.len(), 14); // 14 non-checkbox fields (includes commission date/time + Type)
     }
 }
