@@ -71,6 +71,20 @@ pub fn validate_constant_value(value: &str, target_type: &FieldType, is_required
             }
         }
 
+        FieldType::MultiSelectOptionSet => {
+            // Comma-separated list of integers (option values)
+            let parts: Vec<&str> = trimmed.split(',').map(|s| s.trim()).collect();
+            for part in parts {
+                if part.is_empty() {
+                    continue;
+                }
+                if part.parse::<i64>().is_err() {
+                    return ValidationResult::Error(format!("'{}' is not a valid integer in multi-select", part));
+                }
+            }
+            ValidationResult::Valid
+        }
+
         FieldType::Decimal | FieldType::Money => {
             match trimmed.parse::<f64>() {
                 Ok(_) => ValidationResult::Valid,

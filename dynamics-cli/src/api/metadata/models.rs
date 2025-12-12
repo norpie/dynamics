@@ -24,6 +24,7 @@ pub enum FieldType {
     DateTime,
     Lookup,
     OptionSet,
+    MultiSelectOptionSet,
     Money,
     Memo,
     UniqueIdentifier,

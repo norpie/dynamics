@@ -1086,6 +1086,16 @@ impl DynamicsClient {
                         "Money" => super::metadata::FieldType::Money,
                         "Memo" => super::metadata::FieldType::Memo,
                         "Uniqueidentifier" => super::metadata::FieldType::UniqueIdentifier,
+                        "Virtual" => {
+                            // Check AttributeTypeName.Value to distinguish MultiSelectPicklist
+                            // from computed virtual fields (like *name, *yominame)
+                            let type_name = attr["AttributeTypeName"]["Value"].as_str().unwrap_or("Virtual");
+                            if type_name == "MultiSelectPicklistType" {
+                                super::metadata::FieldType::MultiSelectOptionSet
+                            } else {
+                                super::metadata::FieldType::Other("Virtual".to_string())
+                            }
+                        },
                         other => super::metadata::FieldType::Other(other.to_string()),
                     };
 

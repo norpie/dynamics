@@ -130,6 +130,7 @@ pub fn format_field_type(field_type: &FieldType) -> String {
         FieldType::DateTime => "DateTime".to_string(),
         FieldType::Lookup => "Lookup".to_string(),
         FieldType::OptionSet => "OptionSet".to_string(),
+        FieldType::MultiSelectOptionSet => "MultiSelectOptionSet".to_string(),
         FieldType::Money => "Money".to_string(),
         FieldType::Memo => "Memo".to_string(),
         FieldType::UniqueIdentifier => "UniqueIdentifier".to_string(),
