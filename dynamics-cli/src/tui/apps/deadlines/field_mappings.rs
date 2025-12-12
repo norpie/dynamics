@@ -247,7 +247,7 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
         // Project manager
         FieldMapping {
             excel_column: "Projectbeheerder".to_string(),
-            dynamics_field: "nrq_projectmanagerid".to_string(),
+            dynamics_field: "nrq_ProjectManagerId".to_string(),
             field_type: FieldType::Lookup {
                 target_entity: "systemuser".to_string(),
             },
@@ -301,7 +301,7 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
         // Type - lookup to nrq_type (NRQ only, not supported in CGK)
         FieldMapping {
             excel_column: "Type".to_string(),
-            dynamics_field: "nrq_TypeId".to_string(),
+            dynamics_field: "nrq_TypeID".to_string(),
             field_type: FieldType::Lookup {
                 target_entity: "nrq_type".to_string(),
             },
