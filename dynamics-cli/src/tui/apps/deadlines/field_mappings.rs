@@ -398,6 +398,8 @@ pub fn get_constant_fields(entity_name: &str) -> HashMap<String, serde_json::Val
         "nrq_deadline" => {
             let mut fields = HashMap::new();
             fields.insert("nrq_vafvalidated".to_string(), json!(true));
+            fields.insert("nrq_publishdeadlineonvafbe".to_string(), json!(false));
+            fields.insert("nrq_canbepublished".to_string(), json!(true));
             fields
         }
         _ => unreachable!("Unknown entity type: {}", entity_name),
