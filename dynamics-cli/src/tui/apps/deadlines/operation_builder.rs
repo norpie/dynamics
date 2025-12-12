@@ -93,21 +93,23 @@ impl TransformedDeadline {
             }
         }
 
-        // 4. Commission date/time (only for CGK deadlines)
-        if entity_type == "cgk_deadline" {
-            if let Some(date) = self.commission_date {
-                let commission_field = "cgk_datumcommissievergadering";
+        // 4. Commission date/time (CGK and NRQ both support this)
+        if let Some(date) = self.commission_date {
+            let commission_field = if entity_type == "cgk_deadline" {
+                "cgk_datumcommissievergadering"
+            } else {
+                "nrq_committeemeetingdate"
+            };
 
-                if let Some(time) = self.commission_time {
-                    // Combine date + time, convert Brussels → UTC
-                    if let Ok(datetime_str) = combine_brussels_datetime_to_iso(date, Some(time)) {
-                        payload[commission_field] = json!(datetime_str);
-                    }
-                } else {
-                    // Date-only (no time) - use 12:00 Brussels as default
-                    if let Ok(datetime_str) = combine_brussels_datetime_to_iso(date, None) {
-                        payload[commission_field] = json!(datetime_str);
-                    }
+            if let Some(time) = self.commission_time {
+                // Combine date + time, convert Brussels → UTC
+                if let Ok(datetime_str) = combine_brussels_datetime_to_iso(date, Some(time)) {
+                    payload[commission_field] = json!(datetime_str);
+                }
+            } else {
+                // Date-only (no time) - use 12:00 Brussels as default
+                if let Ok(datetime_str) = combine_brussels_datetime_to_iso(date, None) {
+                    payload[commission_field] = json!(datetime_str);
                 }
             }
         }
@@ -146,8 +148,9 @@ pub fn get_junction_entity_name(entity_type: &str, relationship_name: &str) -> S
         }
     } else if entity_type == "nrq_deadline" {
         // NRQ: Complex pattern with capitalization - nrq_Deadline_nrq_{Entity}_nrq_{FinalEntity}
+        // NOTE: nrq_support is NOT here - it uses a custom junction entity (nrq_deadlinesupport)
+        // and is handled separately via custom_junction_records
         match relationship_name {
-            "nrq_deadline_nrq_support" => "nrq_Deadline_nrq_Support_nrq_Support".to_string(),
             "nrq_deadline_nrq_category" => "nrq_Deadline_nrq_Category_nrq_Category".to_string(),
             "nrq_deadline_nrq_subcategory" => "nrq_Deadline_nrq_Subcategory_nrq_Subcategory".to_string(),
             "nrq_deadline_nrq_flemishshare" => "nrq_Deadline_nrq_Flemishshare_nrq_Flemish".to_string(),
@@ -259,13 +262,18 @@ mod tests {
 
     #[test]
     fn test_nrq_junction_names() {
-        assert_eq!(
-            get_junction_entity_name("nrq_deadline", "nrq_deadline_nrq_support"),
-            "nrq_Deadline_nrq_Support_nrq_Support"
-        );
+        // NOTE: nrq_support uses custom junction entity (nrq_deadlinesupport), not N:N
         assert_eq!(
             get_junction_entity_name("nrq_deadline", "nrq_deadline_nrq_category"),
             "nrq_Deadline_nrq_Category_nrq_Category"
+        );
+        assert_eq!(
+            get_junction_entity_name("nrq_deadline", "nrq_deadline_nrq_subcategory"),
+            "nrq_Deadline_nrq_Subcategory_nrq_Subcategory"
+        );
+        assert_eq!(
+            get_junction_entity_name("nrq_deadline", "nrq_deadline_nrq_flemishshare"),
+            "nrq_Deadline_nrq_Flemishshare_nrq_Flemish"
         );
     }
 

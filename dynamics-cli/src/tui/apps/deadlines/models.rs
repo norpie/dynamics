@@ -14,6 +14,23 @@ impl Default for MappingParams {
     }
 }
 
+/// Record for a custom junction entity (e.g., nrq_deadlinesupport)
+#[derive(Clone, Debug)]
+pub struct CustomJunctionRecord {
+    /// The junction entity name (e.g., "nrq_deadlinesupport")
+    pub junction_entity: String,
+    /// The lookup field on the junction that points to the main entity (e.g., "nrq_deadlineid")
+    pub main_entity_field: String,
+    /// The lookup field on the junction that points to the related entity (e.g., "nrq_supportid")
+    pub related_entity_field: String,
+    /// The related entity name (e.g., "nrq_support")
+    pub related_entity: String,
+    /// The GUID of the related record
+    pub related_id: String,
+    /// The name/label used to find the related record (e.g., the Excel column header)
+    pub related_name: String,
+}
+
 /// A single transformed record ready for API creation
 #[derive(Clone, Debug)]
 pub struct TransformedDeadline {
@@ -31,6 +48,10 @@ pub struct TransformedDeadline {
     /// Value = Vec of GUIDs for checked items
     pub checkbox_relationships: std::collections::HashMap<String, Vec<String>>,
 
+    /// Custom junction records for relationships that use separate entities
+    /// (e.g., nrq_deadlinesupport instead of a simple N:N)
+    pub custom_junction_records: Vec<CustomJunctionRecord>,
+
     /// Picklist field values (field_name -> integer value)
     pub picklist_fields: std::collections::HashMap<String, i32>,
 
@@ -40,10 +61,10 @@ pub struct TransformedDeadline {
     /// Parsed deadline time - combined with deadline_date
     pub deadline_time: Option<chrono::NaiveTime>,
 
-    /// Parsed commission date (cgk_datumcommissievergadering - CGK only)
+    /// Parsed commission date (cgk_datumcommissievergadering or nrq_committeemeetingdate)
     pub commission_date: Option<chrono::NaiveDate>,
 
-    /// Parsed commission time - combined with commission_date (CGK only)
+    /// Parsed commission time - combined with commission_date
     pub commission_time: Option<chrono::NaiveTime>,
 
     /// OPM column notes (if any)
@@ -60,6 +81,7 @@ impl TransformedDeadline {
             direct_fields: std::collections::HashMap::new(),
             lookup_fields: std::collections::HashMap::new(),
             checkbox_relationships: std::collections::HashMap::new(),
+            custom_junction_records: Vec::new(),
             picklist_fields: std::collections::HashMap::new(),
             deadline_date: None,
             deadline_time: None,

@@ -60,6 +60,18 @@ pub enum FieldType {
     Checkbox,
     /// Picklist field - maps label to integer value
     Picklist { options: HashMap<String, i32> },
+    /// Custom junction entity - for relationships that use a separate entity instead of N:N
+    /// Used when the junction has additional fields (e.g., nrq_deadlinesupport)
+    CustomJunction {
+        /// The junction entity name (e.g., "nrq_deadlinesupport")
+        junction_entity: String,
+        /// The lookup field on the junction that points to the main entity (e.g., "nrq_deadlineid")
+        main_entity_field: String,
+        /// The lookup field on the junction that points to the related entity (e.g., "nrq_supportid")
+        related_entity_field: String,
+        /// The related entity name for lookups (e.g., "nrq_support")
+        related_entity: String,
+    },
 }
 
 /// Single field mapping from Excel column to Dynamics field
@@ -283,15 +295,33 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             required: false,
         },
 
-        // Support Type - picklist field
+        // Commission meeting date (NRQ has this too, unlike what was previously assumed)
+        FieldMapping {
+            excel_column: "Datum Commissievergadering".to_string(),
+            dynamics_field: "nrq_committeemeetingdate".to_string(),
+            field_type: FieldType::Date,
+            required: false,
+        },
+
+        // Commission meeting time (combined into nrq_committeemeetingdate)
+        FieldMapping {
+            excel_column: "Uur Commissie".to_string(),
+            dynamics_field: "nrq_committeemeetingdate".to_string(),
+            field_type: FieldType::Time,
+            required: false,
+        },
+
+        // Support Type - picklist field (NRQ uses nrq_supporttypeoptionset with different values)
         FieldMapping {
             excel_column: "Support Type".to_string(),
-            dynamics_field: "vaf_support_type".to_string(),
+            dynamics_field: "nrq_supporttypeoptionset".to_string(),
             field_type: FieldType::Picklist {
                 options: {
                     let mut map = HashMap::new();
-                    map.insert("Automatische steun".to_string(), 806150000);
-                    map.insert("Selectieve steun".to_string(), 806150001);
+                    map.insert("Automatische steun".to_string(), 875810000);
+                    map.insert("Automatic Support".to_string(), 875810000);
+                    map.insert("Selectieve steun".to_string(), 875810001);
+                    map.insert("Selective Support".to_string(), 875810001);
                     map
                 },
             },
@@ -342,8 +372,9 @@ pub fn get_constant_fields(entity_name: &str) -> HashMap<String, serde_json::Val
             fields
         }
         "nrq_deadline" => {
-            // No constant fields for NRQ deadlines
-            HashMap::new()
+            let mut fields = HashMap::new();
+            fields.insert("nrq_vafvalidated".to_string(), json!(true));
+            fields
         }
         _ => unreachable!("Unknown entity type: {}", entity_name),
     }
@@ -374,6 +405,6 @@ mod tests {
     #[test]
     fn test_nrq_mappings_count() {
         let mappings = get_nrq_mappings();
-        assert_eq!(mappings.len(), 11); // 11 non-checkbox fields (includes Domein* and Pillar fallback + Support Type)
+        assert_eq!(mappings.len(), 13); // 13 non-checkbox fields (includes commission date/time)
     }
 }

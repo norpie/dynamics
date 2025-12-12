@@ -96,6 +96,7 @@ fn parse_time(value: &str) -> Result<chrono::NaiveTime, String> {
 }
 
 /// Get checkbox relationship names for an entity type
+/// NOTE: NRQ support uses a custom junction entity (nrq_deadlinesupport) and is handled separately
 fn get_checkbox_relationship_names(entity_type: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
 
@@ -105,7 +106,8 @@ fn get_checkbox_relationship_names(entity_type: &str) -> HashMap<String, String>
         map.insert("cgk_length".to_string(), "cgk_deadline_cgk_length".to_string());
         map.insert("cgk_flemishshare".to_string(), "cgk_deadline_cgk_flemishshare".to_string());
     } else if entity_type == "nrq_deadline" {
-        map.insert("nrq_support".to_string(), "nrq_deadline_nrq_support".to_string());
+        // NOTE: nrq_support is NOT here - it uses a custom junction entity (nrq_deadlinesupport)
+        // and is handled separately via resolve_custom_junction_checkboxes()
         map.insert("nrq_category".to_string(), "nrq_deadline_nrq_category".to_string());
         map.insert("nrq_subcategory".to_string(), "nrq_deadline_nrq_subcategory".to_string());
         map.insert("nrq_flemishshare".to_string(), "nrq_deadline_nrq_flemishshare".to_string());
@@ -120,11 +122,23 @@ fn find_checkbox_id(
     entity_name: &str,
     header: &str,
 ) -> Option<String> {
+    find_checkbox_id_and_name(cache, entity_name, header).map(|(id, _name)| id)
+}
+
+/// Find checkbox ID and matched name by matching header name against entity records
+/// Returns (id, matched_name) where matched_name is the canonical name from Dynamics
+fn find_checkbox_id_and_name(
+    cache: &HashMap<String, Vec<serde_json::Value>>,
+    entity_name: &str,
+    header: &str,
+) -> Option<(String, String)> {
     if let Some(records) = cache.get(entity_name) {
         for record in records {
             if let Some(name) = extract_name_from_record_with_entity(record, Some(entity_name)) {
                 if name.trim().to_lowercase() == header.trim().to_lowercase() {
-                    return extract_id_from_record(record, entity_name);
+                    if let Some(id) = extract_id_from_record(record, entity_name) {
+                        return Some((id, name));
+                    }
                 }
             }
         }
@@ -133,6 +147,7 @@ fn find_checkbox_id(
 }
 
 /// Resolve checked checkbox values to their IDs and relationship names
+/// NOTE: For NRQ, support checkboxes are handled separately via resolve_custom_junction_checkboxes()
 fn resolve_checkboxes(
     cache: &HashMap<String, Vec<serde_json::Value>>,
     entity_type: &str,
@@ -147,12 +162,22 @@ fn resolve_checkboxes(
     let relationship_map = get_checkbox_relationship_names(entity_type);
 
     // Checkbox entity types to check
-    let checkbox_entities = vec![
-        format!("{}support", entity_prefix),
-        format!("{}category", entity_prefix),
-        if entity_prefix == "cgk_" { "cgk_length".to_string() } else { "nrq_subcategory".to_string() },
-        format!("{}flemishshare", entity_prefix),
-    ];
+    // NOTE: For NRQ, nrq_support is NOT included here - it uses a custom junction entity
+    let checkbox_entities: Vec<String> = if entity_type == "cgk_deadline" {
+        vec![
+            "cgk_support".to_string(),
+            "cgk_category".to_string(),
+            "cgk_length".to_string(),
+            "cgk_flemishshare".to_string(),
+        ]
+    } else {
+        // NRQ: nrq_support is handled separately via custom junction
+        vec![
+            "nrq_category".to_string(),
+            "nrq_subcategory".to_string(),
+            "nrq_flemishshare".to_string(),
+        ]
+    };
 
     // Process columns after RvB
     for (col_idx, header) in headers.iter().enumerate().skip(rvb_idx + 1) {
@@ -178,6 +203,55 @@ fn resolve_checkboxes(
                         }
                         break;
                     }
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Resolve custom junction checkboxes (e.g., nrq_deadlinesupport for NRQ)
+/// Returns a vector of CustomJunctionRecord for entities that use custom junction tables
+fn resolve_custom_junction_checkboxes(
+    cache: &HashMap<String, Vec<serde_json::Value>>,
+    entity_type: &str,
+    headers: &[String],
+    row: &[calamine::Data],
+    rvb_idx: usize,
+) -> Vec<super::models::CustomJunctionRecord> {
+    use super::models::CustomJunctionRecord;
+
+    let mut result = Vec::new();
+
+    // Only NRQ deadlines use custom junction for support
+    if entity_type != "nrq_deadline" {
+        return result;
+    }
+
+    // Process columns after RvB looking for nrq_support matches
+    for (col_idx, header) in headers.iter().enumerate().skip(rvb_idx + 1) {
+        // Skip empty headers, OPM column, and IGNORE column
+        let header_upper = header.to_uppercase();
+        if header.is_empty() || header_upper == "OPM" || header_upper == "IGNORE" {
+            continue;
+        }
+
+        if let Some(cell) = row.get(col_idx) {
+            let cell_value = cell.to_string().trim().to_lowercase();
+
+            // Check if checkbox is checked
+            if cell_value == "x" || cell_value == "1" || cell_value == "true" || cell_value == "yes" {
+                // Try to find matching nrq_support record
+                if let Some((id, matched_name)) = find_checkbox_id_and_name(cache, "nrq_support", header) {
+                    result.push(CustomJunctionRecord {
+                        junction_entity: "nrq_deadlinesupport".to_string(),
+                        main_entity_field: "nrq_deadlineid".to_string(),
+                        related_entity_field: "nrq_supportid".to_string(),
+                        related_entity: "nrq_support".to_string(),
+                        related_id: id,
+                        related_name: matched_name,
+                    });
                 }
             }
         }
@@ -746,6 +820,9 @@ fn process_row(
                     field_mappings::FieldType::Checkbox => {
                         // Checkboxes are handled separately below
                     }
+                    field_mappings::FieldType::CustomJunction { .. } => {
+                        // Custom junction checkboxes are handled separately via resolve_custom_junction_checkboxes()
+                    }
                 }
             } else {
                 // Cell not found in row
@@ -781,6 +858,16 @@ fn process_row(
             rvb_idx,
         );
         transformed.checkbox_relationships = checkbox_relationships;
+
+        // Resolve custom junction checkboxes (e.g., nrq_deadlinesupport for NRQ)
+        let custom_junction_records = resolve_custom_junction_checkboxes(
+            &state.entity_data_cache,
+            entity_type,
+            headers,
+            row,
+            rvb_idx,
+        );
+        transformed.custom_junction_records = custom_junction_records;
     }
 
     transformed

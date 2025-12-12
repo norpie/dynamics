@@ -255,15 +255,23 @@ impl App for DeadlinesInspectionApp {
                         log::debug!("Deadline #{} created with GUID: {}", idx + 1, created_guid);
 
                         // Generate AssociateRef operations for N:N relationships
-                        let association_ops = build_association_operations(
+                        let mut all_ops = build_association_operations(
                             &created_guid,
                             &state.entity_type,
                             &record.checkbox_relationships
                         );
 
-                        if !association_ops.is_empty() {
+                        // Generate Create operations for custom junction entities (e.g., nrq_deadlinesupport)
+                        let custom_junction_ops = build_custom_junction_operations(
+                            &created_guid,
+                            &state.entity_type,
+                            &record.custom_junction_records,
+                        );
+                        all_ops.extend(custom_junction_ops);
+
+                        if !all_ops.is_empty() {
                             // Accumulate associations for later batching
-                            state.pending_associations.insert(created_guid.clone(), association_ops);
+                            state.pending_associations.insert(created_guid.clone(), all_ops);
                         }
                     }
 
@@ -568,6 +576,48 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
         builder = builder.add(spacer!(), Length(1));
     }
 
+    // Custom junction records section (e.g., nrq_deadlinesupport)
+    if !record.custom_junction_records.is_empty() {
+        builder = builder.add(Element::styled_text(Line::from(vec![
+            Span::styled("🔗 Custom Junction Records", Style::default().fg(theme.accent_secondary).bold())
+        ])).build(), Length(1));
+
+        // Group by junction entity
+        let mut by_entity: std::collections::HashMap<&str, Vec<&super::models::CustomJunctionRecord>> = std::collections::HashMap::new();
+        for rec in &record.custom_junction_records {
+            by_entity.entry(&rec.junction_entity).or_default().push(rec);
+        }
+
+        for (junction_entity, records) in &by_entity {
+            builder = builder.add(Element::styled_text(Line::from(vec![
+                Span::styled(format!("  {}: ", junction_entity), Style::default().fg(theme.text_tertiary)),
+                Span::styled(format!("{} items", records.len()), Style::default().fg(theme.accent_muted)),
+            ])).build(), Length(1));
+
+            // Show first few related IDs
+            for (idx, rec) in records.iter().take(3).enumerate() {
+                let truncated = if rec.related_id.len() > 16 {
+                    format!("{}...", &rec.related_id[..16])
+                } else {
+                    rec.related_id.clone()
+                };
+
+                builder = builder.add(Element::styled_text(Line::from(vec![
+                    Span::styled(format!("    {}: ", idx + 1), Style::default().fg(theme.border_secondary)),
+                    Span::styled(format!("{} → ", rec.related_entity), Style::default().fg(theme.text_tertiary)),
+                    Span::styled(truncated, Style::default().fg(theme.accent_success)),
+                ])).build(), Length(1));
+            }
+
+            if records.len() > 3 {
+                builder = builder.add(Element::styled_text(Line::from(vec![
+                    Span::styled(format!("    ... and {} more", records.len() - 3), Style::default().fg(theme.border_secondary).italic()),
+                ])).build(), Length(1));
+            }
+        }
+        builder = builder.add(spacer!(), Length(1));
+    }
+
     // Warnings section
     builder = builder.add(Element::styled_text(Line::from(vec![
         Span::styled(
@@ -726,6 +776,59 @@ fn build_association_operations(
                 target_ref,
             });
         }
+    }
+
+    operations
+}
+
+/// Build Create operations for custom junction entities (e.g., nrq_deadlinesupport)
+/// These are separate entities that link deadline to related records, with additional fields
+fn build_custom_junction_operations(
+    entity_guid: &str,
+    entity_type: &str,
+    custom_junction_records: &[super::models::CustomJunctionRecord],
+) -> Vec<crate::api::operations::Operation> {
+    use crate::api::operations::Operation;
+    use crate::api::pluralization::pluralize_entity_name;
+    use serde_json::json;
+
+    let mut operations = Vec::new();
+    let main_entity_set = pluralize_entity_name(entity_type);
+
+    for record in custom_junction_records {
+        let junction_entity_set = pluralize_entity_name(&record.junction_entity);
+        let related_entity_set = pluralize_entity_name(&record.related_entity);
+
+        // Build payload with lookups to main entity and related entity
+        let mut payload = serde_json::Map::new();
+
+        // Main entity lookup (e.g., nrq_deadlineid@odata.bind)
+        let main_bind_field = format!("{}@odata.bind", record.main_entity_field);
+        payload.insert(
+            main_bind_field,
+            json!(format!("/{}({})", main_entity_set, entity_guid))
+        );
+
+        // Related entity lookup (e.g., nrq_supportid@odata.bind)
+        let related_bind_field = format!("{}@odata.bind", record.related_entity_field);
+        payload.insert(
+            related_bind_field,
+            json!(format!("/{}({})", related_entity_set, record.related_id))
+        );
+
+        // Add entity-specific fields for nrq_deadlinesupport
+        if record.junction_entity == "nrq_deadlinesupport" {
+            // Name field = the matched support name from Dynamics
+            payload.insert("nrq_name".to_string(), json!(record.related_name));
+            // Constants
+            payload.insert("nrq_enablehearing".to_string(), json!(false));
+            payload.insert("nrq_enablereporter".to_string(), json!(true));
+        }
+
+        operations.push(Operation::Create {
+            entity: junction_entity_set,
+            data: serde_json::Value::Object(payload),
+        });
     }
 
     operations
