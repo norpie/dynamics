@@ -70,7 +70,7 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
                 modals::bulk_actions::render(state, theme)
             }
             PreviewModal::ExportExcel => {
-                render_export_placeholder(theme)
+                modals::export::render(state, theme)
             }
             PreviewModal::ImportExcel => {
                 render_import_placeholder(theme)
@@ -435,16 +435,6 @@ fn render_bulk_actions_placeholder(theme: &Theme) -> Element<Msg> {
         .build()
 }
 
-fn render_export_placeholder(theme: &Theme) -> Element<Msg> {
-    let content = Element::text("Export to Excel\n\nPress Esc to close.");
-
-    Element::panel(content)
-        .title("Export Excel")
-        .width(60)
-        .height(20)
-        .build()
-}
-
 fn render_import_placeholder(theme: &Theme) -> Element<Msg> {
     let content = Element::text("Import from Excel\n\nPress Esc to close.");
 
@@ -524,7 +514,18 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
         return subs;
     }
 
-    // Other modal subscriptions (export, import)
+    // Export modal subscriptions
+    if let Some(PreviewModal::ExportExcel) = &state.active_modal {
+        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseModal));
+        subs.push(Subscription::keyboard(KeyCode::Up, "Navigate up", Msg::ExportFileNavigate(KeyCode::Up)));
+        subs.push(Subscription::keyboard(KeyCode::Down, "Navigate down", Msg::ExportFileNavigate(KeyCode::Down)));
+        subs.push(Subscription::keyboard(KeyCode::Enter, "Enter directory / Confirm", Msg::ExportFileNavigate(KeyCode::Enter)));
+        subs.push(Subscription::keyboard(KeyCode::Backspace, "Go up directory", Msg::ExportFileNavigate(KeyCode::Backspace)));
+        subs.push(Subscription::ctrl_key(KeyCode::Enter, "Export", Msg::ConfirmExport));
+        return subs;
+    }
+
+    // Other modal subscriptions (import)
     if state.active_modal.is_some() {
         subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseModal));
         return subs;

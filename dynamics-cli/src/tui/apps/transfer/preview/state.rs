@@ -1,8 +1,12 @@
 //! State and messages for the Transfer Preview app
 
+use std::path::PathBuf;
+
+use crossterm::event::KeyCode;
+
 use crate::transfer::{ResolvedTransfer, RecordAction, Value};
 use crate::tui::resource::Resource;
-use crate::tui::widgets::{ListState, TextInputField, TextInputEvent};
+use crate::tui::widgets::{FileBrowserState, ListState, TextInputField, TextInputEvent};
 
 /// Parameters passed when starting the preview app
 #[derive(Clone, Default)]
@@ -231,6 +235,10 @@ pub struct State {
     pub bulk_action_scope: BulkActionScope,
     /// Bulk action modal - selected action
     pub bulk_action_selection: BulkAction,
+    /// Export modal - file browser for directory selection
+    pub export_file_browser: FileBrowserState,
+    /// Export modal - filename input
+    pub export_filename: TextInputField,
 }
 
 impl Default for State {
@@ -254,8 +262,26 @@ impl Default for State {
             record_detail_state: None,
             bulk_action_scope: BulkActionScope::default(),
             bulk_action_selection: BulkAction::default(),
+            export_file_browser: FileBrowserState::new(get_default_export_dir()),
+            export_filename: TextInputField::new(),
         }
     }
+}
+
+/// Get the default export directory (~/.config/dynamics-cli/exports/)
+/// Creates the directory if it doesn't exist
+fn get_default_export_dir() -> PathBuf {
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("dynamics-cli")
+        .join("exports");
+
+    // Create directory if it doesn't exist
+    if !config_dir.exists() {
+        let _ = std::fs::create_dir_all(&config_dir);
+    }
+
+    config_dir
 }
 
 /// Filter for record actions in the table
@@ -384,10 +410,16 @@ pub enum Msg {
     SetBulkAction(BulkAction),
     ConfirmBulkAction,
 
-    // Excel
+    // Excel export
     ExportExcel,
-    ImportExcel,
+    ExportFileNavigate(KeyCode),
+    ExportFilenameChanged(TextInputEvent),
+    ExportSetViewportHeight(usize),
+    ConfirmExport,
     ExportCompleted(Result<String, String>),
+
+    // Excel import
+    ImportExcel,
     ImportCompleted(Result<ResolvedTransfer, String>),
 
     // Refresh

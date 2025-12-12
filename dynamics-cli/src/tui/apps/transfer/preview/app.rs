@@ -731,9 +731,112 @@ impl App for TransferPreviewApp {
                 Command::None
             }
 
-            // Excel
+            // Excel export
             Msg::ExportExcel => {
-                // TODO (Chunk 9): Implement Excel export
+                // Initialize export modal with current entity name as default filename
+                if let Resource::Success(resolved) = &state.resolved {
+                    if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                        // Set default filename based on entity name
+                        let default_filename = format!("{}_resolved.xlsx", entity.entity_name);
+                        state.export_filename.set_value(default_filename);
+
+                        // Set filter to show directories only (for navigation)
+                        // But also show .xlsx files so user can see existing exports
+                        state.export_file_browser.set_filter(|entry| {
+                            entry.is_dir || entry.name.to_lowercase().ends_with(".xlsx")
+                        });
+
+                        // Refresh to apply filter
+                        let _ = state.export_file_browser.refresh();
+
+                        state.active_modal = Some(super::state::PreviewModal::ExportExcel);
+                        return Command::set_focus(crate::tui::FocusId::new("export-file-browser"));
+                    }
+                }
+                Command::None
+            }
+
+            Msg::ExportFileNavigate(key) => {
+                use crate::tui::widgets::{FileBrowserEvent, FileBrowserAction};
+
+                match key {
+                    crossterm::event::KeyCode::Up => {
+                        state.export_file_browser.navigate_up();
+                    }
+                    crossterm::event::KeyCode::Down => {
+                        state.export_file_browser.navigate_down();
+                    }
+                    crossterm::event::KeyCode::Enter => {
+                        // Enter directory if selected, otherwise do nothing (we select directory, not file)
+                        if let Some(action) = state.export_file_browser.handle_event(FileBrowserEvent::Activate) {
+                            match action {
+                                FileBrowserAction::DirectoryEntered(_) => {
+                                    // Directory changed, stay in modal
+                                }
+                                FileBrowserAction::FileSelected(_) => {
+                                    // User selected existing file - could overwrite or ignore
+                                    // For now, just update filename field
+                                    if let Some(entry) = state.export_file_browser.selected_entry() {
+                                        if !entry.is_dir {
+                                            state.export_filename.set_value(entry.name.clone());
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    crossterm::event::KeyCode::Backspace => {
+                        // Go up one directory
+                        let _ = state.export_file_browser.handle_event(FileBrowserEvent::GoUp);
+                    }
+                    _ => {
+                        state.export_file_browser.handle_navigation_key(key);
+                    }
+                }
+                Command::None
+            }
+
+            Msg::ExportFilenameChanged(event) => {
+                state.export_filename.handle_event(event, None);
+                Command::None
+            }
+
+            Msg::ExportSetViewportHeight(height) => {
+                let item_count = state.export_file_browser.entries().len();
+                let list_state = state.export_file_browser.list_state_mut();
+                list_state.set_viewport_height(height);
+                list_state.update_scroll(height, item_count);
+                Command::None
+            }
+
+            Msg::ConfirmExport => {
+                // Get current entity and build export path
+                if let Resource::Success(resolved) = &state.resolved {
+                    if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                        let filename = state.export_filename.value().to_string();
+                        if filename.is_empty() {
+                            log::warn!("Export filename is empty");
+                            return Command::None;
+                        }
+
+                        let dir = state.export_file_browser.current_path().to_path_buf();
+                        let full_path = dir.join(&filename);
+
+                        // Clone entity for async task
+                        let entity_clone = entity.clone();
+                        let path_str = full_path.to_string_lossy().to_string();
+
+                        state.active_modal = None;
+
+                        return Command::perform(
+                            async move {
+                                export_entity_to_excel(entity_clone, path_str).await
+                            },
+                            Msg::ExportCompleted,
+                        );
+                    }
+                }
                 Command::None
             }
 
@@ -744,8 +847,14 @@ impl App for TransferPreviewApp {
 
             Msg::ExportCompleted(result) => {
                 match result {
-                    Ok(path) => log::info!("Exported to {}", path),
-                    Err(e) => log::error!("Export failed: {}", e),
+                    Ok(path) => {
+                        log::info!("✅ Exported to {}", path);
+                        // TODO: Could show a success notification here
+                    }
+                    Err(e) => {
+                        log::error!("❌ Export failed: {}", e);
+                        // TODO: Could show an error modal here
+                    }
                 }
                 Command::None
             }
@@ -1029,4 +1138,22 @@ async fn fetch_entity_records(
     );
 
     Ok((entity_name, is_source, all_records))
+}
+
+/// Export a ResolvedEntity to an Excel file
+async fn export_entity_to_excel(
+    entity: crate::transfer::ResolvedEntity,
+    path: String,
+) -> Result<String, String> {
+    use crate::transfer::excel::resolved::write_resolved_excel;
+
+    // The write function is synchronous, so we wrap it in spawn_blocking
+    let result = tokio::task::spawn_blocking(move || {
+        write_resolved_excel(&entity, &path)
+            .map(|_| path)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    result.map_err(|e| format!("Export failed: {}", e))
 }
