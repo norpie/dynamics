@@ -178,7 +178,7 @@ pub fn get_junction_entity_name(entity_type: &str, relationship_name: &str) -> S
         match relationship_name {
             "nrq_deadline_nrq_category" => "nrq_Deadline_nrq_Category_nrq_Category".to_string(),
             "nrq_deadline_nrq_subcategory" => "nrq_Deadline_nrq_Subcategory_nrq_Subcategory".to_string(),
-            "nrq_deadline_nrq_flemishshare" => "nrq_Deadline_nrq_Flemishshare_nrq_Flemish".to_string(),
+            "nrq_deadline_nrq_flemishshare" => "nrq_Deadline_nrq_FlemishShare_nrq_Flemish".to_string(),
             _ => {
                 log::warn!("Unknown NRQ relationship '{}', using fallback pattern", relationship_name);
                 // Extract entity name and capitalize
@@ -298,7 +298,7 @@ mod tests {
         );
         assert_eq!(
             get_junction_entity_name("nrq_deadline", "nrq_deadline_nrq_flemishshare"),
-            "nrq_Deadline_nrq_Flemishshare_nrq_Flemish"
+            "nrq_Deadline_nrq_FlemishShare_nrq_Flemish"
         );
     }
 

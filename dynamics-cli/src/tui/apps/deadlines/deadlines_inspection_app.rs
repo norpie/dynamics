@@ -788,8 +788,8 @@ fn build_association_operations(
         let related_entity_set = pluralize_entity_name(&related_entity);
 
         for related_id in related_ids {
-            // Relative URI - batch builder will convert to absolute
-            let target_ref = format!("/api/data/v9.2/{}({})", related_entity_set, related_id);
+            // Relative URI for @odata.id binding
+            let target_ref = format!("/{}({})", related_entity_set, related_id);
 
             operations.push(Operation::AssociateRef {
                 entity: entity_set.clone(),

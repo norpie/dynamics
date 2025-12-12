@@ -63,6 +63,12 @@ fn resolve_lookup(
     None
 }
 
+/// Sanitize field values from Excel
+/// - Replaces `: ` with ` - ` (colons cause issues in SharePoint paths)
+fn sanitize_field_value(value: &str) -> String {
+    value.replace(": ", " - ")
+}
+
 /// Parse a time value and return NaiveTime
 fn parse_time(value: &str) -> Result<chrono::NaiveTime, String> {
     // Try parsing as Excel time fraction (0.0 to 1.0)
@@ -246,8 +252,8 @@ fn resolve_custom_junction_checkboxes(
                 if let Some((id, matched_name)) = find_checkbox_id_and_name(cache, "nrq_support", header) {
                     result.push(CustomJunctionRecord {
                         junction_entity: "nrq_deadlinesupport".to_string(),
-                        main_entity_field: "nrq_deadlineid".to_string(),
-                        related_entity_field: "nrq_supportid".to_string(),
+                        main_entity_field: "nrq_DeadlineId".to_string(),
+                        related_entity_field: "nrq_SupportId".to_string(),
                         related_entity: "nrq_support".to_string(),
                         related_id: id,
                         related_name: matched_name,
@@ -697,7 +703,7 @@ fn process_row(
 
     // Determine field name prefixes
     let date_field = if entity_type == "cgk_deadline" { "cgk_date" } else { "nrq_deadlinedate" };
-    let commission_date_field = "cgk_datumcommissievergadering"; // Only used for CGK
+    let commission_date_field = if entity_type == "cgk_deadline" { "cgk_datumcommissievergadering" } else { "nrq_committeemeetingdate" };
 
     // Process each mapped field
     for mapping in mappings {
@@ -781,10 +787,11 @@ fn process_row(
                         }
                     }
                     field_mappings::FieldType::Direct => {
-                        // Direct field - copy value as-is
+                        // Direct field - sanitize and copy value
+                        let sanitized_value = sanitize_field_value(&cell_value);
                         transformed.direct_fields.insert(
                             mapping.dynamics_field.clone(),
-                            cell_value.clone()
+                            sanitized_value
                         );
                     }
                     field_mappings::FieldType::Picklist { options } => {
