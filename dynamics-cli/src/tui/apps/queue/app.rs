@@ -16,7 +16,7 @@ use ratatui::text::Line;
 use std::collections::{HashSet, VecDeque};
 use super::models::{QueueItem, QueueFilter, SortMode, OperationStatus, QueueResult};
 use super::tree_nodes::QueueTreeNode;
-use super::commands::{save_settings_command, execute_next_if_available};
+use super::commands::{save_settings_command, execute_next_if_available, execute_up_to_max};
 use super::utils::estimate_remaining_time;
 use super::views::{build_details_panel, build_clear_confirm_modal, build_delete_confirm_modal, build_interruption_warning_modal};
 
@@ -294,7 +294,7 @@ impl App for OperationQueueApp {
 
                 let save_cmd = save_settings_command(state);
                 let exec_cmd = if state.auto_play {
-                    execute_next_if_available(state)
+                    execute_up_to_max(state)
                 } else {
                     Command::None
                 };
@@ -684,8 +684,9 @@ impl App for OperationQueueApp {
                 }
 
                 // Continue if auto-play (will be false if we just paused due to failure)
+                // Use execute_up_to_max to fill available slots at current priority tier
                 let next_cmd = if state.auto_play {
-                    execute_next_if_available(state)
+                    execute_up_to_max(state)
                 } else {
                     Command::None
                 };

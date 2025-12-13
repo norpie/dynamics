@@ -3,7 +3,6 @@
 use crate::tui::command::Command;
 use super::app::{State, Msg};
 use super::models::{OperationStatus, QueueResult};
-use std::collections::HashSet;
 
 /// Helper function to save queue settings to database
 /// Note: auto_play is NOT persisted (always starts paused)
@@ -30,20 +29,58 @@ pub fn save_settings_command(state: &State) -> Command<Msg> {
     )
 }
 
-/// Helper function to execute the next available operation
+/// Find the current priority tier (minimum priority among Pending or Running items).
+/// We must complete all items at a priority level before starting items at higher priorities
+/// because higher priority numbers may have dependencies on lower ones.
+fn current_priority_tier(state: &State) -> Option<u8> {
+    state.queue_items.iter()
+        .filter(|i| i.status == OperationStatus::Pending || i.status == OperationStatus::Running)
+        .map(|i| i.priority)
+        .min()
+}
+
+/// Execute multiple items at the current priority tier, up to max_concurrent.
+/// This is the main entry point for starting queue execution.
+pub fn execute_up_to_max(state: &mut State) -> Command<Msg> {
+    let mut commands = Vec::new();
+
+    while state.currently_running.len() < state.max_concurrent {
+        match execute_next_if_available(state) {
+            Command::None => break,
+            cmd => commands.push(cmd),
+        }
+    }
+
+    if commands.is_empty() {
+        Command::None
+    } else if commands.len() == 1 {
+        commands.pop().unwrap()
+    } else {
+        Command::Batch(commands)
+    }
+}
+
+/// Helper function to execute the next available operation at the current priority tier.
+/// Only starts items at the minimum priority level among Pending+Running items,
+/// ensuring dependency ordering is respected.
 pub fn execute_next_if_available(state: &mut State) -> Command<Msg> {
     // Check if we can run more
     if state.currently_running.len() >= state.max_concurrent {
         return Command::None;
     }
 
-    // Find next pending (not paused) item by priority
+    // Find the current priority tier (min priority among Pending or Running)
+    let Some(current_tier) = current_priority_tier(state) else {
+        return Command::None;
+    };
+
+    // Find next pending item AT the current tier only
     let next = state
         .queue_items
         .iter()
-        .filter(|item| item.status == OperationStatus::Pending)
-        .min_by_key(|item| item.priority)
-        .map(|item| item.id.clone());
+        .filter(|item| item.status == OperationStatus::Pending && item.priority == current_tier)
+        .map(|item| item.id.clone())
+        .next();
 
     if let Some(id) = next {
         // Mark as running immediately and set start time
