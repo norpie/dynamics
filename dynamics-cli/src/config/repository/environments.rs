@@ -23,10 +23,17 @@ pub async fn insert(pool: &SqlitePool, environment: ApiEnvironment) -> Result<()
         );
     }
 
+    // Use ON CONFLICT DO UPDATE instead of INSERT OR REPLACE
+    // INSERT OR REPLACE does DELETE + INSERT, which triggers ON DELETE CASCADE
+    // and wipes out transfer_configs referencing this environment
     sqlx::query(
         r#"
-        INSERT OR REPLACE INTO environments (name, host, credentials_ref, updated_at)
+        INSERT INTO environments (name, host, credentials_ref, updated_at)
         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(name) DO UPDATE SET
+            host = excluded.host,
+            credentials_ref = excluded.credentials_ref,
+            updated_at = CURRENT_TIMESTAMP
         "#,
     )
     .bind(&environment.name)
