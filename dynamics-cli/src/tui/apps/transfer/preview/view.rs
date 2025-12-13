@@ -4,7 +4,7 @@ use crossterm::event::KeyCode;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::transfer::{RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
+use crate::transfer::{LookupBindingContext, RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{ListEvent, ListItem, TextInputEvent};
@@ -55,7 +55,7 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
                             .collect();
 
                         if let Some(record) = filtered.get(*record_idx) {
-                            modals::record_details::render(detail_state, record, theme)
+                            modals::record_details::render(detail_state, record, entity.lookup_context.as_ref(), theme)
                         } else {
                             render_record_details_placeholder(*record_idx, theme)
                         }
@@ -229,6 +229,7 @@ fn render_record_table(state: &State, entity: &ResolvedEntity, theme: &Theme) ->
                 is_dirty: entity.is_dirty(record.source_id),
                 theme: theme.clone(),
                 global_index: global_idx,
+                lookup_context: entity.lookup_context.clone(),
             }
         })
         .collect();
@@ -269,6 +270,7 @@ struct RecordListItem {
     is_dirty: bool,
     theme: Theme,
     global_index: usize, // Index in the full filtered list (for virtual scrolling)
+    lookup_context: Option<LookupBindingContext>, // For showing lookup bind indicators
 }
 
 impl ListItem for RecordListItem {
@@ -363,10 +365,44 @@ impl RecordListItem {
 
     /// Render a field value column
     fn field_value_span(&self, field: &str, base_style: Style) -> Span<'static> {
-        let value_str = self
-            .record
-            .fields
-            .get(field)
+        let value = self.record.fields.get(field);
+
+        // Check if this field is a lookup that will be bound
+        let is_bound_lookup = self.lookup_context.as_ref().map_or(false, |ctx| ctx.is_lookup(field));
+
+        // For bound lookups with GUID values, show a special indicator
+        if is_bound_lookup {
+            if let Some(Value::Guid(guid)) = value {
+                // Get the target entity set name for display
+                let target = self.lookup_context.as_ref()
+                    .and_then(|ctx| ctx.get(field))
+                    .map(|info| info.target_entity_set.as_str())
+                    .unwrap_or("?");
+
+                // Show as "→entity(guid...)" to indicate it will be bound
+                let display = format!("→{}({:.6})", target, guid);
+                return Span::styled(
+                    format!("{:<15}", truncate_str(&display, 15)),
+                    Style::default().fg(self.theme.accent_secondary),
+                );
+            } else if let Some(Value::String(s)) = value {
+                // Check if it's a GUID string
+                if uuid::Uuid::parse_str(s).is_ok() {
+                    let target = self.lookup_context.as_ref()
+                        .and_then(|ctx| ctx.get(field))
+                        .map(|info| info.target_entity_set.as_str())
+                        .unwrap_or("?");
+
+                    let display = format!("→{}({:.6})", target, s);
+                    return Span::styled(
+                        format!("{:<15}", truncate_str(&display, 15)),
+                        Style::default().fg(self.theme.accent_secondary),
+                    );
+                }
+            }
+        }
+
+        let value_str = value
             .map(|v| format_value(v))
             .unwrap_or_else(|| "(null)".to_string());
 

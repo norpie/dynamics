@@ -3,7 +3,7 @@
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::transfer::{RecordAction, ResolvedRecord};
+use crate::transfer::{LookupBindingContext, RecordAction, ResolvedRecord};
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::widgets::TextInputEvent;
 use crate::tui::{Element, LayoutConstraint, Theme};
@@ -14,12 +14,13 @@ use super::super::state::{Msg, RecordDetailState};
 pub fn render(
     state: &RecordDetailState,
     record: &ResolvedRecord,
+    lookup_context: Option<&LookupBindingContext>,
     theme: &Theme,
 ) -> Element<Msg> {
     let content = if state.editing {
-        render_edit_mode(state, record, theme)
+        render_edit_mode(state, record, lookup_context, theme)
     } else {
-        render_view_mode(state, record, theme)
+        render_view_mode(state, record, lookup_context, theme)
     };
 
     let title = if state.editing {
@@ -39,6 +40,7 @@ pub fn render(
 fn render_view_mode(
     state: &RecordDetailState,
     record: &ResolvedRecord,
+    lookup_context: Option<&LookupBindingContext>,
     theme: &Theme,
 ) -> Element<Msg> {
     // Source ID row
@@ -59,7 +61,7 @@ fn render_view_mode(
     .build();
 
     // Fields section
-    let fields_content = render_fields_view(state, theme);
+    let fields_content = render_fields_view(state, lookup_context, theme);
     let fields_panel = Element::panel(fields_content)
         .title("Fields")
         .build();
@@ -94,6 +96,7 @@ fn render_view_mode(
 fn render_edit_mode(
     state: &RecordDetailState,
     record: &ResolvedRecord,
+    lookup_context: Option<&LookupBindingContext>,
     theme: &Theme,
 ) -> Element<Msg> {
     // Source ID row (read-only)
@@ -107,7 +110,7 @@ fn render_edit_mode(
     let action_row = render_action_selector(state, theme);
 
     // Fields section (editable)
-    let fields_content = render_fields_edit(state, theme);
+    let fields_content = render_fields_edit(state, lookup_context, theme);
     let fields_title = if state.editing_field {
         "Fields - Enter: confirm, Esc: cancel"
     } else {
@@ -157,13 +160,26 @@ fn render_action_selector(state: &RecordDetailState, theme: &Theme) -> Element<M
 }
 
 /// Render fields in view mode (read-only)
-fn render_fields_view(state: &RecordDetailState, theme: &Theme) -> Element<Msg> {
+fn render_fields_view(
+    state: &RecordDetailState,
+    lookup_context: Option<&LookupBindingContext>,
+    theme: &Theme,
+) -> Element<Msg> {
     let field_rows: Vec<Element<Msg>> = state
         .fields
         .iter()
         .map(|field| {
+            let is_lookup = lookup_context.map_or(false, |ctx| ctx.is_lookup(&field.field_name));
+            let lookup_target = lookup_context
+                .and_then(|ctx| ctx.get(&field.field_name))
+                .map(|info| info.target_entity_set.as_str());
+
             let value_display = if field.input.value().is_empty() {
                 "(null)".to_string()
+            } else if is_lookup && is_guid_string(field.input.value()) {
+                // Show lookup binding indicator
+                let target = lookup_target.unwrap_or("?");
+                format!("→ {}({})", target, truncate_str(field.input.value(), 20))
             } else {
                 field.input.value().to_string()
             };
@@ -174,6 +190,13 @@ fn render_fields_view(state: &RecordDetailState, theme: &Theme) -> Element<Msg> 
                 Span::raw("")
             };
 
+            // Use different color for lookup-bound fields
+            let value_style = if is_lookup && is_guid_string(field.input.value()) {
+                Style::default().fg(theme.accent_secondary)
+            } else {
+                Style::default().fg(theme.text_primary)
+            };
+
             Element::styled_text(Line::from(vec![
                 Span::styled(
                     format!("{:<20}", truncate_str(&field.field_name, 20)),
@@ -182,7 +205,7 @@ fn render_fields_view(state: &RecordDetailState, theme: &Theme) -> Element<Msg> 
                 Span::raw(" │ "),
                 Span::styled(
                     truncate_str(&value_display, 40),
-                    Style::default().fg(theme.text_primary),
+                    value_style,
                 ),
                 dirty_indicator,
             ]))
@@ -205,16 +228,24 @@ fn render_fields_view(state: &RecordDetailState, theme: &Theme) -> Element<Msg> 
 /// - Navigate with Up/Down arrows
 /// - Press Enter to edit the focused field
 /// - When editing, type to change value, Enter/Tab to confirm, Esc to cancel
-fn render_fields_edit(state: &RecordDetailState, theme: &Theme) -> Element<Msg> {
+fn render_fields_edit(
+    state: &RecordDetailState,
+    lookup_context: Option<&LookupBindingContext>,
+    theme: &Theme,
+) -> Element<Msg> {
     let mut builder = ColumnBuilder::new();
 
     for (idx, field) in state.fields.iter().enumerate() {
         let is_focused = idx == state.focused_field_idx;
         let is_editing = is_focused && state.editing_field;
+        let is_lookup = lookup_context.map_or(false, |ctx| ctx.is_lookup(&field.field_name));
+        let lookup_target = lookup_context
+            .and_then(|ctx| ctx.get(&field.field_name))
+            .map(|info| info.target_entity_set.as_str());
 
         let dirty_indicator = if field.is_dirty { " *" } else { "" };
 
-        // Label with focus indicator
+        // Label with focus indicator and lookup hint
         let label_style = if is_focused {
             Style::default().fg(theme.accent_primary).add_modifier(Modifier::BOLD)
         } else {
@@ -223,10 +254,17 @@ fn render_fields_edit(state: &RecordDetailState, theme: &Theme) -> Element<Msg> 
 
         let focus_indicator = if is_focused { "> " } else { "  " };
 
+        // Add lookup indicator to label if it's a lookup field
+        let field_label = if is_lookup {
+            format!("{}→", truncate_str(&field.field_name, 17))
+        } else {
+            truncate_str(&field.field_name, 18)
+        };
+
         let label = Element::styled_text(Line::from(vec![
             Span::raw(focus_indicator),
             Span::styled(
-                format!("{:<18}", truncate_str(&field.field_name, 18)),
+                format!("{:<18}", field_label),
                 label_style,
             ),
             Span::raw(" │ "),
@@ -235,13 +273,20 @@ fn render_fields_edit(state: &RecordDetailState, theme: &Theme) -> Element<Msg> 
 
         if is_editing {
             // Show text input for the actively edited field
+            let placeholder = if is_lookup {
+                let target = lookup_target.unwrap_or("entity");
+                format!("GUID (→ {})", target)
+            } else {
+                "(empty)".to_string()
+            };
+
             let input = Element::text_input(
                 FocusId::new("field-edit-input"),
                 field.input.value(),
                 &field.input.state,
             )
             .on_event(focused_field_input_handler)
-            .placeholder("(empty)")
+            .placeholder(&placeholder)
             .build();
 
             let dirty_span = Element::styled_text(Line::from(vec![
@@ -260,12 +305,21 @@ fn render_fields_edit(state: &RecordDetailState, theme: &Theme) -> Element<Msg> 
             // Show value as text
             let value_display = if field.input.value().is_empty() {
                 "(null)".to_string()
+            } else if is_lookup && is_guid_string(field.input.value()) {
+                let target = lookup_target.unwrap_or("?");
+                format!("→ {}({})", target, truncate_str(field.input.value(), 20))
             } else {
                 field.input.value().to_string()
             };
 
             let value_style = if is_focused {
-                Style::default().fg(theme.text_primary).add_modifier(Modifier::BOLD)
+                if is_lookup && is_guid_string(field.input.value()) {
+                    Style::default().fg(theme.accent_secondary).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(theme.text_primary).add_modifier(Modifier::BOLD)
+                }
+            } else if is_lookup && is_guid_string(field.input.value()) {
+                Style::default().fg(theme.accent_secondary)
             } else {
                 Style::default().fg(theme.text_primary)
             };
@@ -273,7 +327,7 @@ fn render_fields_edit(state: &RecordDetailState, theme: &Theme) -> Element<Msg> 
             let row = Element::styled_text(Line::from(vec![
                 Span::raw(focus_indicator),
                 Span::styled(
-                    format!("{:<18}", truncate_str(&field.field_name, 18)),
+                    format!("{:<18}", field_label),
                     label_style,
                 ),
                 Span::raw(" │ "),
@@ -361,4 +415,9 @@ fn truncate_str(s: &str, max_len: usize) -> String {
         let truncated: String = s.chars().take(max_len - 1).collect();
         format!("{}…", truncated)
     }
+}
+
+/// Check if a string is a valid GUID
+fn is_guid_string(s: &str) -> bool {
+    uuid::Uuid::parse_str(s).is_ok()
 }
