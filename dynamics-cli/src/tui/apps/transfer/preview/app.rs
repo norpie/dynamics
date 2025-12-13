@@ -386,6 +386,11 @@ impl App for TransferPreviewApp {
 
                     // Build lookup context for each entity (only for mapped fields)
                     for entity in &mut resolved.entities {
+                        // Set entity_set_name for API calls (OData requires EntitySetName, not LogicalName)
+                        if let Some(entity_set) = state.entity_set_map.get(&entity.entity_name) {
+                            entity.set_entity_set_name(entity_set.clone());
+                        }
+
                         // Get the mapped target fields for this entity
                         let mapped_fields: std::collections::HashSet<&str> = config
                             .entity_mappings

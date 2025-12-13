@@ -118,6 +118,10 @@ pub struct ResolvedEntity {
     /// Not serialized - rebuilt from metadata when needed
     #[serde(skip)]
     pub lookup_context: Option<LookupBindingContext>,
+    /// Entity set name for API calls (e.g., "cgk_requests" vs logical name "cgk_request")
+    /// Not serialized - set from metadata when building queue items
+    #[serde(skip)]
+    pub entity_set_name: Option<String>,
 }
 
 impl ResolvedEntity {
@@ -135,12 +139,18 @@ impl ResolvedEntity {
             records: Vec::new(),
             dirty_record_ids: HashSet::new(),
             lookup_context: None,
+            entity_set_name: None,
         }
     }
 
     /// Set the lookup binding context
     pub fn set_lookup_context(&mut self, ctx: LookupBindingContext) {
         self.lookup_context = Some(ctx);
+    }
+
+    /// Set the entity set name for API calls
+    pub fn set_entity_set_name(&mut self, name: String) {
+        self.entity_set_name = Some(name);
     }
 
     /// Add a resolved record

@@ -183,14 +183,19 @@ fn build_phase_queue_items(
 
     // Build operations with @odata.bind for lookup fields
     let lookup_ctx = entity.lookup_context.as_ref();
+    // Use entity_set_name for API calls (required by OData), fallback to entity_name
+    let entity_set = entity
+        .entity_set_name
+        .as_ref()
+        .unwrap_or(&entity.entity_name);
     let operations: Vec<Operation> = records
         .iter()
         .map(|record| {
             let payload = prepare_payload(record, lookup_ctx);
             match phase {
-                Phase::Create => Operation::create(&entity.entity_name, payload),
+                Phase::Create => Operation::create(entity_set, payload),
                 Phase::Update => Operation::update(
-                    &entity.entity_name,
+                    entity_set,
                     record.source_id.to_string(),
                     payload,
                 ),
