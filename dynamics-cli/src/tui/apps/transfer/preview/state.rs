@@ -205,13 +205,15 @@ pub struct State {
     pub source_env: String,
     /// Target environment name
     pub target_env: String,
-    /// Loaded transfer config (needed for transform step)
+    /// Loaded transfer config (kept for refresh)
     pub config: Option<crate::transfer::TransferConfig>,
     /// Number of pending fetch tasks
     pub pending_fetches: usize,
-    /// Accumulated source records by entity name
+    /// Whether we're currently refreshing (vs initial load)
+    pub is_refreshing: bool,
+    /// Accumulated source records by entity name (kept for refresh comparison)
     pub source_data: std::collections::HashMap<String, Vec<serde_json::Value>>,
-    /// Accumulated target records by entity name
+    /// Accumulated target records by entity name (kept for refresh comparison)
     pub target_data: std::collections::HashMap<String, Vec<serde_json::Value>>,
     /// Resolved transfer data (loaded async)
     pub resolved: Resource<ResolvedTransfer>,
@@ -253,6 +255,7 @@ impl Default for State {
             target_env: String::new(),
             config: None,
             pending_fetches: 0,
+            is_refreshing: false,
             source_data: std::collections::HashMap::new(),
             target_data: std::collections::HashMap::new(),
             resolved: Resource::NotAsked,

@@ -103,7 +103,7 @@ impl App for TransferPreviewApp {
 
                             builder = builder.add_task_with_progress(
                                 format!("Source: {}", entity),
-                                move |progress| fetch_entity_records(env, entity, true, source_fields, expands, Some(progress)),
+                                move |progress| fetch_entity_records(env, entity, true, source_fields, expands, Some(progress), false), // use cache
                             );
                         }
 
@@ -129,7 +129,7 @@ impl App for TransferPreviewApp {
 
                             builder = builder.add_task_with_progress(
                                 format!("Target: {}", entity),
-                                move |progress| fetch_entity_records(env, entity, false, target_fields, no_expands, Some(progress)),
+                                move |progress| fetch_entity_records(env, entity, false, target_fields, no_expands, Some(progress), false), // use cache
                             );
                         }
 
@@ -182,7 +182,7 @@ impl App for TransferPreviewApp {
 
             // Data loading - Step 3: Run transform after returning from loading screen
             Msg::RunTransform => {
-                if let Some(config) = state.config.take() {
+                if let Some(ref config) = state.config {
                     // Build primary keys map for both source and target entities
                     let mut primary_keys: HashMap<String, String> = HashMap::new();
                     for m in &config.entity_mappings {
@@ -191,12 +191,21 @@ impl App for TransferPreviewApp {
                     }
 
                     // Run transform
-                    let resolved = TransformEngine::transform_all(
-                        &config,
+                    let mut resolved = TransformEngine::transform_all(
+                        config,
                         &state.source_data,
                         &state.target_data,
                         &primary_keys,
                     );
+
+                    // If refreshing, merge dirty records from previous state
+                    if state.is_refreshing {
+                        if let Resource::Success(ref old_resolved) = state.resolved {
+                            merge_dirty_records(&mut resolved, old_resolved);
+                            log::info!("Merged dirty records from previous state");
+                        }
+                        state.is_refreshing = false;
+                    }
 
                     log::info!(
                         "Transform complete: {} records ({} create, {} update, {} nochange, {} skip, {} error)",
@@ -208,9 +217,8 @@ impl App for TransferPreviewApp {
                         resolved.error_count()
                     );
 
-                    // Clear accumulated data
-                    state.source_data.clear();
-                    state.target_data.clear();
+                    // Keep source_data and target_data for future refresh comparisons
+                    // (Previously cleared here, but we need them for refresh)
 
                     state.resolved = Resource::Success(resolved);
                 }
@@ -993,10 +1001,106 @@ impl App for TransferPreviewApp {
                 Command::None
             }
 
-            // Refresh
+            // Refresh - re-fetch data and re-run transforms
             Msg::Refresh => {
-                // TODO (Chunk 11): Re-run transform
-                Command::None
+                // Only refresh if we have a config and are not already loading
+                let config = match &state.config {
+                    Some(c) => c.clone(),
+                    None => return Command::None,
+                };
+
+                if matches!(state.resolved, Resource::Loading) {
+                    log::warn!("Already loading, ignoring refresh");
+                    return Command::None;
+                }
+
+                log::info!("Starting refresh...");
+                state.is_refreshing = true;
+
+                // Clear accumulated data for new fetch
+                state.source_data.clear();
+                state.target_data.clear();
+
+                // Build parallel fetch tasks (same as ConfigLoaded but uses existing config)
+                let mut builder = Command::perform_parallel()
+                    .with_title("Refreshing Records");
+
+                let num_entities = config.entity_mappings.len();
+
+                // Add source fetch tasks
+                for mapping in &config.entity_mappings {
+                    let entity = mapping.source_entity.clone();
+                    let env = config.source_env.clone();
+
+                    // Collect source fields from transforms + primary key
+                    let mut source_fields: Vec<String> = mapping
+                        .field_mappings
+                        .iter()
+                        .flat_map(|fm| fm.transform.source_fields())
+                        .map(|s| s.to_string())
+                        .collect();
+                    source_fields.push(format!("{}id", entity));
+                    source_fields.sort();
+                    source_fields.dedup();
+
+                    // Collect expand specifications for lookup traversals
+                    let mut expand_map: std::collections::HashMap<String, Vec<String>> =
+                        std::collections::HashMap::new();
+                    for fm in &mapping.field_mappings {
+                        for (lookup_field, target_field) in fm.transform.expand_specs() {
+                            expand_map
+                                .entry(lookup_field.to_string())
+                                .or_default()
+                                .push(target_field.to_string());
+                        }
+                    }
+                    let expands: Vec<String> = expand_map
+                        .into_iter()
+                        .map(|(lookup, mut fields)| {
+                            fields.sort();
+                            fields.dedup();
+                            format!("{}($select={})", lookup, fields.join(","))
+                        })
+                        .collect();
+
+                    builder = builder.add_task_with_progress(
+                        format!("Source: {}", entity),
+                        move |progress| fetch_entity_records(env, entity, true, source_fields, expands, Some(progress), true), // force refresh
+                    );
+                }
+
+                // Add target fetch tasks
+                for mapping in &config.entity_mappings {
+                    let entity = mapping.target_entity.clone();
+                    let env = config.target_env.clone();
+
+                    let mut target_fields: Vec<String> = mapping
+                        .field_mappings
+                        .iter()
+                        .map(|fm| fm.target_field.clone())
+                        .collect();
+                    target_fields.push(format!("{}id", entity));
+                    target_fields.sort();
+                    target_fields.dedup();
+
+                    let no_expands: Vec<String> = vec![];
+
+                    builder = builder.add_task_with_progress(
+                        format!("Target: {}", entity),
+                        move |progress| fetch_entity_records(env, entity, false, target_fields, no_expands, Some(progress), true), // force refresh
+                    );
+                }
+
+                state.pending_fetches = num_entities * 2;
+
+                builder
+                    .on_complete(AppId::TransferPreview)
+                    .build(|_task_idx, result| {
+                        let data = result
+                            .downcast::<Result<(String, bool, Vec<serde_json::Value>), String>>()
+                            .unwrap();
+                        Msg::FetchResult(*data)
+                    })
             }
 
             // Modal
@@ -1135,6 +1239,9 @@ async fn load_config(config_name: String) -> Result<TransferConfig, String> {
 
 /// Fetch all records for an entity from an environment
 /// Returns (entity_name, is_source, records)
+///
+/// If `force_refresh` is false, checks SQLite cache first (1 hour TTL).
+/// Always saves fetched data to cache after API call.
 async fn fetch_entity_records(
     env_name: String,
     entity_name: String,
@@ -1142,9 +1249,42 @@ async fn fetch_entity_records(
     fields: Vec<String>,  // Fields to select (for performance)
     expands: Vec<String>, // Expand clauses for lookup traversals
     progress: Option<crate::tui::command::ProgressSender>,
+    force_refresh: bool,  // If true, bypass cache and fetch fresh
 ) -> Result<(String, bool, Vec<serde_json::Value>), String> {
     use crate::api::pluralization::pluralize_entity_name;
     use crate::api::query::QueryBuilder;
+
+    let config = crate::global_config();
+
+    // Check cache first (1 hour TTL) unless force_refresh
+    if !force_refresh {
+        if let Some(ref tx) = progress {
+            let _ = tx.send("Checking cache...".to_string());
+        }
+
+        match config.get_entity_data_cache(&env_name, &entity_name, 1).await {
+            Ok(Some(cached_data)) => {
+                log::info!(
+                    "✅ Using cached data for {} from {} ({} records)",
+                    entity_name,
+                    env_name,
+                    cached_data.len()
+                );
+                if let Some(ref tx) = progress {
+                    let _ = tx.send(format!("{} (cached)", cached_data.len()));
+                }
+                return Ok((entity_name, is_source, cached_data));
+            }
+            Ok(None) => {
+                log::info!("[{}] No valid cache, fetching from API", entity_name);
+            }
+            Err(e) => {
+                log::warn!("[{}] Cache check failed, fetching from API: {}", entity_name, e);
+            }
+        }
+    } else {
+        log::info!("[{}] Force refresh - bypassing cache", entity_name);
+    }
 
     let manager = crate::client_manager();
     let client = manager
@@ -1260,6 +1400,13 @@ async fn fetch_entity_records(
         total_time.as_millis()
     );
 
+    // Save to cache for future use
+    if let Err(e) = config.set_entity_data_cache(&env_name, &entity_name, &all_records).await {
+        log::warn!("[{}] Failed to cache data: {}", entity_name, e);
+    } else {
+        log::info!("[{}] Cached {} records", entity_name, all_records.len());
+    }
+
     Ok((entity_name, is_source, all_records))
 }
 
@@ -1334,4 +1481,60 @@ async fn apply_import(
     .map_err(|e| format!("Task failed: {}", e))?;
 
     result
+}
+
+/// Merge dirty records from old resolved state into new resolved state.
+/// Dirty records preserve their user-edited action and field values.
+fn merge_dirty_records(new_resolved: &mut ResolvedTransfer, old_resolved: &ResolvedTransfer) {
+    for (new_entity, old_entity) in new_resolved.entities.iter_mut().zip(old_resolved.entities.iter()) {
+        // Skip if entity names don't match (shouldn't happen, but be safe)
+        if new_entity.entity_name != old_entity.entity_name {
+            log::warn!(
+                "Entity mismatch during merge: {} vs {}",
+                new_entity.entity_name,
+                old_entity.entity_name
+            );
+            continue;
+        }
+
+        let mut dirty_count = 0;
+
+        // For each dirty record in the old entity, find and update in new entity
+        for old_record in &old_entity.records {
+            if !old_entity.is_dirty(old_record.source_id) {
+                continue;
+            }
+
+            // Find matching record in new entity by source_id
+            if let Some(new_record) = new_entity.records.iter_mut().find(|r| r.source_id == old_record.source_id) {
+                // Preserve user edits: copy action and field values from old record
+                new_record.action = old_record.action;
+                new_record.error = old_record.error.clone();
+
+                // Copy all field values from old record
+                for (field_name, field_value) in &old_record.fields {
+                    new_record.fields.insert(field_name.clone(), field_value.clone());
+                }
+
+                // Mark as dirty in new entity
+                new_entity.mark_dirty(old_record.source_id);
+                dirty_count += 1;
+            } else {
+                // Record was in old but not in new - it might have been deleted from source
+                log::info!(
+                    "[{}] Dirty record {} not found in refreshed data (may have been deleted)",
+                    new_entity.entity_name,
+                    old_record.source_id
+                );
+            }
+        }
+
+        if dirty_count > 0 {
+            log::info!(
+                "[{}] Preserved {} dirty records during refresh",
+                new_entity.entity_name,
+                dirty_count
+            );
+        }
+    }
 }
