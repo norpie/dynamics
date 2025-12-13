@@ -754,9 +754,7 @@ async fn load_entity_fields(env_name: String, entity_name: String) -> Result<Vec
     // Cache for future use
     let metadata = crate::api::EntityMetadata {
         fields: fields.clone(),
-        relationships: vec![],
-        views: vec![],
-        forms: vec![],
+        ..Default::default()
     };
     let _ = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await;
 

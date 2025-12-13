@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::lookup::LookupBindingContext;
 use super::Value;
 
 /// A fully resolved transfer ready for queue/execution
@@ -113,6 +114,10 @@ pub struct ResolvedEntity {
     /// Set of record IDs that have been manually edited
     #[serde(default)]
     pub dirty_record_ids: HashSet<Uuid>,
+    /// Lookup binding context for @odata.bind generation
+    /// Not serialized - rebuilt from metadata when needed
+    #[serde(skip)]
+    pub lookup_context: Option<LookupBindingContext>,
 }
 
 impl ResolvedEntity {
@@ -129,7 +134,13 @@ impl ResolvedEntity {
             field_names: Vec::new(),
             records: Vec::new(),
             dirty_record_ids: HashSet::new(),
+            lookup_context: None,
         }
+    }
+
+    /// Set the lookup binding context
+    pub fn set_lookup_context(&mut self, ctx: LookupBindingContext) {
+        self.lookup_context = Some(ctx);
     }
 
     /// Add a resolved record

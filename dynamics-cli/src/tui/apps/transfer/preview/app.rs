@@ -5,8 +5,9 @@ use std::collections::HashMap;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
+use crate::api::metadata::FieldMetadata;
 use crate::config::repository::transfer::get_transfer_config;
-use crate::transfer::{RecordAction, ResolvedTransfer, TransferConfig, TransformEngine};
+use crate::transfer::{LookupBindingContext, RecordAction, ResolvedTransfer, TransferConfig, TransformEngine};
 use crate::tui::resource::Resource;
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
@@ -43,107 +44,47 @@ impl App for TransferPreviewApp {
 
     fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         match msg {
-            // Data loading - Step 1: Config loaded, now fetch records
+            // Data loading - Step 1: Config loaded, now fetch source metadata first
             Msg::ConfigLoaded(result) => {
                 match result {
                     Ok(config) => {
-                        // Build parallel fetch tasks for loading screen
+                        // Get unique source entities that need metadata
+                        let source_entities: Vec<String> = config
+                            .entity_mappings
+                            .iter()
+                            .map(|m| m.source_entity.clone())
+                            .collect::<std::collections::HashSet<_>>()
+                            .into_iter()
+                            .collect();
+
+                        state.pending_source_metadata_fetches = source_entities.len();
+                        state.config = Some(config.clone());
+
+                        log::info!(
+                            "Fetching source metadata for {} entities before records",
+                            source_entities.len()
+                        );
+
+                        // Build parallel fetch tasks for source metadata
                         let mut builder = Command::perform_parallel()
-                            .with_title("Fetching Records");
+                            .with_title("Fetching Source Metadata");
 
-                        let num_entities = config.entity_mappings.len();
-
-                        // Add source fetch tasks with progress reporting
-                        for mapping in &config.entity_mappings {
-                            let entity = mapping.source_entity.clone();
+                        for entity in source_entities {
                             let env = config.source_env.clone();
-
-                            // Collect source fields from transforms + primary key
-                            let mut source_fields: Vec<String> = mapping
-                                .field_mappings
-                                .iter()
-                                .flat_map(|fm| fm.transform.source_fields())
-                                .map(|s| s.to_string())
-                                .collect();
-                            source_fields.push(format!("{}id", entity)); // Primary key
-                            source_fields.sort();
-                            source_fields.dedup();
-
-                            // Collect expand specifications for lookup traversals
-                            // Group by lookup field to combine selects: accountid($select=name,email)
-                            let mut expand_map: std::collections::HashMap<String, Vec<String>> =
-                                std::collections::HashMap::new();
-                            for fm in &mapping.field_mappings {
-                                for (lookup_field, target_field) in fm.transform.expand_specs() {
-                                    expand_map
-                                        .entry(lookup_field.to_string())
-                                        .or_default()
-                                        .push(target_field.to_string());
-                                }
-                            }
-                            // Build expand strings: "lookupfield($select=field1,field2)"
-                            let expands: Vec<String> = expand_map
-                                .into_iter()
-                                .map(|(lookup, mut fields)| {
-                                    fields.sort();
-                                    fields.dedup();
-                                    format!("{}($select={})", lookup, fields.join(","))
-                                })
-                                .collect();
-
-                            log::info!(
-                                "[{}] Source fetch will select {} fields, expand {} lookups",
-                                entity,
-                                source_fields.len(),
-                                expands.len()
-                            );
-                            if !expands.is_empty() {
-                                log::info!("[{}] Expands: {:?}", entity, expands);
-                            }
-
-                            builder = builder.add_task_with_progress(
-                                format!("Source: {}", entity),
-                                move |progress| fetch_entity_records(env, entity, true, source_fields, expands, Some(progress), false), // use cache
+                            let e = entity.clone();
+                            builder = builder.add_task(
+                                format!("Metadata: {}", e),
+                                fetch_source_metadata(env, e),
                             );
                         }
-
-                        // Add target fetch tasks with progress reporting
-                        for mapping in &config.entity_mappings {
-                            let entity = mapping.target_entity.clone();
-                            let env = config.target_env.clone();
-
-                            // Collect target fields + primary key
-                            let mut target_fields: Vec<String> = mapping
-                                .field_mappings
-                                .iter()
-                                .map(|fm| fm.target_field.clone())
-                                .collect();
-                            target_fields.push(format!("{}id", entity)); // Primary key
-                            target_fields.sort();
-                            target_fields.dedup();
-
-                            log::info!("[{}] Target fetch will select {} fields", entity, target_fields.len());
-
-                            // Target fetch doesn't need expands - we compare final values
-                            let no_expands: Vec<String> = vec![];
-
-                            builder = builder.add_task_with_progress(
-                                format!("Target: {}", entity),
-                                move |progress| fetch_entity_records(env, entity, false, target_fields, no_expands, Some(progress), false), // use cache
-                            );
-                        }
-
-                        // Track how many fetches we're waiting for (source + target for each entity)
-                        state.pending_fetches = num_entities * 2;
-                        state.config = Some(config);
 
                         builder
                             .on_complete(AppId::TransferPreview)
                             .build(|_task_idx, result| {
                                 let data = result
-                                    .downcast::<Result<(String, bool, Vec<serde_json::Value>), String>>()
+                                    .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>), String>>()
                                     .unwrap();
-                                Msg::FetchResult(*data)
+                                Msg::SourceMetadataResult(*data)
                             })
                     }
                     Err(e) => {
@@ -153,7 +94,156 @@ impl App for TransferPreviewApp {
                 }
             }
 
-            // Data loading - Step 2: Each fetch result comes in individually
+            // Data loading - Step 1b: Source metadata loaded, accumulate and trigger record fetch
+            Msg::SourceMetadataResult(result) => {
+                match result {
+                    Ok((entity_name, fields)) => {
+                        log::info!(
+                            "[{}] Source metadata loaded: {} fields ({} lookups)",
+                            entity_name,
+                            fields.len(),
+                            fields.iter().filter(|f| f.related_entity.is_some()).count()
+                        );
+                        state.source_metadata.insert(entity_name, fields);
+                        state.pending_source_metadata_fetches = state.pending_source_metadata_fetches.saturating_sub(1);
+
+                        if state.pending_source_metadata_fetches == 0 {
+                            log::info!("All source metadata loaded, triggering record fetch");
+                            // Trigger record fetch now that we have source metadata
+                            return Command::perform(async { () }, |_| Msg::FetchRecords);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to fetch source metadata: {}", e);
+                        state.resolved = Resource::Failure(e);
+                        state.pending_source_metadata_fetches = 0;
+                    }
+                }
+                Command::None
+            }
+
+            // Data loading - Step 2: Fetch records (after source metadata is loaded)
+            Msg::FetchRecords => {
+                if let Some(ref config) = state.config {
+                    // Build parallel fetch tasks for loading screen
+                    let mut builder = Command::perform_parallel()
+                        .with_title("Fetching Records");
+
+                    let num_entities = config.entity_mappings.len();
+
+                    // Add source fetch tasks with progress reporting
+                    for mapping in &config.entity_mappings {
+                        let entity = mapping.source_entity.clone();
+                        let env = config.source_env.clone();
+
+                        // Collect source fields from transforms + primary key
+                        let mut source_fields: Vec<String> = mapping
+                            .field_mappings
+                            .iter()
+                            .flat_map(|fm| fm.transform.source_fields())
+                            .map(|s| s.to_string())
+                            .collect();
+                        source_fields.push(format!("{}id", entity)); // Primary key
+
+                        // Add _fieldname_value for lookup fields (from source metadata)
+                        if let Some(fields) = state.source_metadata.get(&mapping.source_entity) {
+                            let lookup_fields: std::collections::HashSet<&str> = fields
+                                .iter()
+                                .filter(|f| f.related_entity.is_some())
+                                .map(|f| f.logical_name.as_str())
+                                .collect();
+
+                            let lookup_value_fields: Vec<String> = source_fields
+                                .iter()
+                                .filter(|f| lookup_fields.contains(f.as_str()))
+                                .map(|f| format!("_{}_value", f))
+                                .collect();
+                            source_fields.extend(lookup_value_fields);
+                        }
+
+                        source_fields.sort();
+                        source_fields.dedup();
+
+                        // Collect expand specifications for lookup traversals
+                        // Group by lookup field to combine selects: accountid($select=name,email)
+                        let mut expand_map: std::collections::HashMap<String, Vec<String>> =
+                            std::collections::HashMap::new();
+                        for fm in &mapping.field_mappings {
+                            for (lookup_field, target_field) in fm.transform.expand_specs() {
+                                expand_map
+                                    .entry(lookup_field.to_string())
+                                    .or_default()
+                                    .push(target_field.to_string());
+                            }
+                        }
+                        // Build expand strings: "lookupfield($select=field1,field2)"
+                        let expands: Vec<String> = expand_map
+                            .into_iter()
+                            .map(|(lookup, mut fields)| {
+                                fields.sort();
+                                fields.dedup();
+                                format!("{}($select={})", lookup, fields.join(","))
+                            })
+                            .collect();
+
+                        log::info!(
+                            "[{}] Source fetch will select {} fields, expand {} lookups",
+                            entity,
+                            source_fields.len(),
+                            expands.len()
+                        );
+                        if !expands.is_empty() {
+                            log::info!("[{}] Expands: {:?}", entity, expands);
+                        }
+
+                        builder = builder.add_task_with_progress(
+                            format!("Source: {}", entity),
+                            move |progress| fetch_entity_records(env, entity, true, source_fields, expands, Some(progress), false), // use cache
+                        );
+                    }
+
+                    // Add target fetch tasks with progress reporting
+                    for mapping in &config.entity_mappings {
+                        let entity = mapping.target_entity.clone();
+                        let env = config.target_env.clone();
+
+                        // Collect target fields + primary key
+                        let mut target_fields: Vec<String> = mapping
+                            .field_mappings
+                            .iter()
+                            .map(|fm| fm.target_field.clone())
+                            .collect();
+                        target_fields.push(format!("{}id", entity)); // Primary key
+                        target_fields.sort();
+                        target_fields.dedup();
+
+                        log::info!("[{}] Target fetch will select {} fields", entity, target_fields.len());
+
+                        // Target fetch doesn't need expands - we compare final values
+                        let no_expands: Vec<String> = vec![];
+
+                        builder = builder.add_task_with_progress(
+                            format!("Target: {}", entity),
+                            move |progress| fetch_entity_records(env, entity, false, target_fields, no_expands, Some(progress), false), // use cache
+                        );
+                    }
+
+                    // Track how many fetches we're waiting for (source + target for each entity)
+                    state.pending_fetches = num_entities * 2;
+
+                    return builder
+                        .on_complete(AppId::TransferPreview)
+                        .build(|_task_idx, result| {
+                            let data = result
+                                .downcast::<Result<(String, bool, Vec<serde_json::Value>), String>>()
+                                .unwrap();
+                            Msg::FetchResult(*data)
+                        });
+                }
+                Command::None
+            }
+
+            // Data loading - Step 3: Each fetch result comes in individually
             Msg::FetchResult(result) => {
                 match result {
                     Ok((entity_name, is_source, records)) => {
@@ -180,9 +270,105 @@ impl App for TransferPreviewApp {
                 Command::None
             }
 
-            // Data loading - Step 3: Run transform after returning from loading screen
+            // Data loading - Step 4: Run transform after returning from loading screen
             Msg::RunTransform => {
                 if let Some(ref config) = state.config {
+                    // Check if we need to fetch metadata for target entities
+                    let missing_target_metadata: Vec<String> = config
+                        .entity_mappings
+                        .iter()
+                        .map(|m| m.target_entity.clone())
+                        .filter(|e| !state.target_metadata.contains_key(e))
+                        .collect();
+
+                    if !missing_target_metadata.is_empty() {
+                        // Need to fetch target entity metadata first
+                        log::info!(
+                            "Fetching metadata for {} target entities",
+                            missing_target_metadata.len()
+                        );
+
+                        state.pending_metadata_fetches = missing_target_metadata.len();
+
+                        let target_env = config.target_env.clone();
+                        let mut builder = Command::perform_parallel()
+                            .with_title("Fetching Entity Metadata");
+
+                        for entity in missing_target_metadata {
+                            let env = target_env.clone();
+                            let e = entity.clone();
+                            builder = builder.add_task(
+                                format!("Metadata: {}", e),
+                                fetch_entity_metadata(env, e),
+                            );
+                        }
+
+                        return builder
+                            .on_complete(AppId::TransferPreview)
+                            .build(|_task_idx, result| {
+                                let data = result
+                                    .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String>>()
+                                    .unwrap();
+                                Msg::MetadataResult(*data)
+                            });
+                    }
+
+                    // Check if we need to fetch metadata for lookup target entities
+                    let mut missing_lookup_targets: Vec<String> = Vec::new();
+                    for mapping in &config.entity_mappings {
+                        let mapped_fields: std::collections::HashSet<&str> = mapping
+                            .field_mappings
+                            .iter()
+                            .map(|fm| fm.target_field.as_str())
+                            .collect();
+
+                        if let Some(fields) = state.target_metadata.get(&mapping.target_entity) {
+                            for field in fields {
+                                if mapped_fields.contains(field.logical_name.as_str()) {
+                                    if let Some(ref related) = field.related_entity {
+                                        if !state.entity_set_map.contains_key(related)
+                                            && !missing_lookup_targets.contains(related)
+                                        {
+                                            missing_lookup_targets.push(related.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !missing_lookup_targets.is_empty() {
+                        log::info!(
+                            "Fetching metadata for {} lookup targets",
+                            missing_lookup_targets.len()
+                        );
+
+                        state.pending_metadata_fetches = missing_lookup_targets.len();
+
+                        let target_env = config.target_env.clone();
+                        let mut builder = Command::perform_parallel()
+                            .with_title("Fetching Lookup Target Metadata");
+
+                        for entity in missing_lookup_targets {
+                            let env = target_env.clone();
+                            let e = entity.clone();
+                            builder = builder.add_task(
+                                format!("Metadata: {}", e),
+                                fetch_entity_metadata(env, e),
+                            );
+                        }
+
+                        return builder
+                            .on_complete(AppId::TransferPreview)
+                            .build(|_task_idx, result| {
+                                let data = result
+                                    .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String>>()
+                                    .unwrap();
+                                Msg::MetadataResult(*data)
+                            });
+                    }
+
+                    // All metadata loaded - proceed with transform
                     // Build primary keys map for both source and target entities
                     let mut primary_keys: HashMap<String, String> = HashMap::new();
                     for m in &config.entity_mappings {
@@ -197,6 +383,55 @@ impl App for TransferPreviewApp {
                         &state.target_data,
                         &primary_keys,
                     );
+
+                    // Build lookup context for each entity (only for mapped fields)
+                    for entity in &mut resolved.entities {
+                        // Get the mapped target fields for this entity
+                        let mapped_fields: std::collections::HashSet<&str> = config
+                            .entity_mappings
+                            .iter()
+                            .find(|m| m.target_entity == entity.entity_name)
+                            .map(|m| {
+                                m.field_mappings
+                                    .iter()
+                                    .map(|fm| fm.target_field.as_str())
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        if let Some(all_fields) = state.target_metadata.get(&entity.entity_name) {
+                            // Filter to only include mapped fields
+                            let fields_to_use: Vec<_> = all_fields
+                                .iter()
+                                .filter(|f| mapped_fields.contains(f.logical_name.as_str()))
+                                .cloned()
+                                .collect();
+
+                            match LookupBindingContext::from_field_metadata(&fields_to_use, &state.entity_set_map) {
+                                Ok(ctx) => {
+                                    log::info!(
+                                        "[{}] Built lookup context with {} lookup fields (from {} mapped fields)",
+                                        entity.entity_name,
+                                        ctx.lookups.len(),
+                                        fields_to_use.len()
+                                    );
+                                    entity.set_lookup_context(ctx);
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "[{}] Failed to build lookup context: {}",
+                                        entity.entity_name,
+                                        e
+                                    );
+                                    state.resolved = Resource::Failure(format!(
+                                        "Failed to build lookup context for {}: {}",
+                                        entity.entity_name, e
+                                    ));
+                                    return Command::None;
+                                }
+                            }
+                        }
+                    }
 
                     // If refreshing, merge dirty records from previous state
                     if state.is_refreshing {
@@ -221,6 +456,37 @@ impl App for TransferPreviewApp {
                     // (Previously cleared here, but we need them for refresh)
 
                     state.resolved = Resource::Success(resolved);
+                }
+                Command::None
+            }
+
+            // Data loading - Step 3b: Metadata result (called for each entity after LoadingScreen completes)
+            Msg::MetadataResult(result) => {
+                match result {
+                    Ok((entity_name, fields, entity_set)) => {
+                        log::info!(
+                            "[{}] Metadata loaded: {} fields, entity_set={}",
+                            entity_name,
+                            fields.len(),
+                            entity_set
+                        );
+                        state.target_metadata.insert(entity_name.clone(), fields.clone());
+                        state.entity_set_map.insert(entity_name, entity_set);
+
+                        // Track pending results - we get one MetadataResult per task from perform_parallel
+                        state.pending_metadata_fetches = state.pending_metadata_fetches.saturating_sub(1);
+
+                        // When all results processed, trigger RunTransform to check for more metadata needs
+                        if state.pending_metadata_fetches == 0 {
+                            // Let RunTransform handle checking for lookup targets
+                            return Command::perform(async { () }, |_| Msg::RunTransform);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Metadata fetch failed: {}", e);
+                        state.resolved = Resource::Failure(format!("Failed to fetch metadata: {}", e));
+                        state.pending_metadata_fetches = 0;
+                    }
                 }
                 Command::None
             }
@@ -1040,6 +1306,23 @@ impl App for TransferPreviewApp {
                         .map(|s| s.to_string())
                         .collect();
                     source_fields.push(format!("{}id", entity));
+
+                    // Add _fieldname_value for lookup fields (from source metadata)
+                    if let Some(fields) = state.source_metadata.get(&mapping.source_entity) {
+                        let lookup_fields: std::collections::HashSet<&str> = fields
+                            .iter()
+                            .filter(|f| f.related_entity.is_some())
+                            .map(|f| f.logical_name.as_str())
+                            .collect();
+
+                        let lookup_value_fields: Vec<String> = source_fields
+                            .iter()
+                            .filter(|f| lookup_fields.contains(f.as_str()))
+                            .map(|f| format!("_{}_value", f))
+                            .collect();
+                        source_fields.extend(lookup_value_fields);
+                    }
+
                     source_fields.sort();
                     source_fields.dedup();
 
@@ -1542,6 +1825,138 @@ fn build_queue_items_from_resolved(resolved: &ResolvedTransfer) -> Vec<crate::tu
 
     let options = QueueBuildOptions::default();
     build_queue_items(resolved, &options)
+}
+
+/// Fetch source entity field metadata for lookup detection
+/// Returns (entity_name, field_metadata)
+/// Uses SQLite cache with 1 hour TTL
+async fn fetch_source_metadata(
+    env_name: String,
+    entity_name: String,
+) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>), String> {
+    log::debug!("[{}] fetch_source_metadata START for env={}", entity_name, env_name);
+
+    let config = crate::global_config();
+
+    // Check cache first (1 hour TTL)
+    match config.get_entity_metadata_cache(&env_name, &entity_name, 1).await {
+        Ok(Some(cached)) => {
+            log::info!(
+                "[{}] Using cached source metadata: {} fields",
+                entity_name,
+                cached.fields.len()
+            );
+            return Ok((entity_name, cached.fields));
+        }
+        Ok(None) => {
+            log::info!("[{}] No valid source cache, fetching from API", entity_name);
+        }
+        Err(e) => {
+            log::warn!("[{}] Cache check failed, fetching from API: {}", entity_name, e);
+        }
+    }
+
+    // Fetch from API
+    let manager = crate::client_manager();
+    let client = manager
+        .get_client(&env_name)
+        .await
+        .map_err(|e| format!("Failed to get client for {}: {}", env_name, e))?;
+
+    // Fetch field metadata
+    let fields = client
+        .fetch_entity_fields_alt(&entity_name)
+        .await
+        .map_err(|e| format!("Failed to fetch field metadata for {}: {}", entity_name, e))?;
+
+    log::info!(
+        "[{}] Fetched {} source fields",
+        entity_name,
+        fields.len()
+    );
+
+    // Save to cache
+    let metadata = crate::api::metadata::EntityMetadata {
+        fields: fields.clone(),
+        ..Default::default()
+    };
+    if let Err(e) = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await {
+        log::warn!("[{}] Failed to cache source metadata: {}", entity_name, e);
+    }
+
+    Ok((entity_name, fields))
+}
+
+/// Fetch entity metadata (fields + entity set name) for lookup binding
+/// Returns (entity_name, field_metadata, entity_set_name)
+/// Uses SQLite cache with 1 hour TTL
+async fn fetch_entity_metadata(
+    env_name: String,
+    entity_name: String,
+) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String> {
+    log::debug!("[{}] fetch_entity_metadata START for env={}", entity_name, env_name);
+
+    let config = crate::global_config();
+    log::debug!("[{}] Got global_config", entity_name);
+
+    // Check cache first (1 hour TTL)
+    log::debug!("[{}] Checking cache...", entity_name);
+    match config.get_entity_metadata_cache(&env_name, &entity_name, 1).await {
+        Ok(Some(cached)) if cached.entity_set_name.is_some() => {
+            let entity_set = cached.entity_set_name.unwrap();
+            log::info!(
+                "[{}] Using cached metadata: {} fields, entity_set={} (from cache)",
+                entity_name,
+                cached.fields.len(),
+                entity_set
+            );
+            return Ok((entity_name, cached.fields, entity_set));
+        }
+        Ok(_) => {
+            log::info!("[{}] No valid cache, fetching from API", entity_name);
+        }
+        Err(e) => {
+            log::warn!("[{}] Cache check failed, fetching from API: {}", entity_name, e);
+        }
+    }
+
+    // Fetch from API
+    let manager = crate::client_manager();
+    let client = manager
+        .get_client(&env_name)
+        .await
+        .map_err(|e| format!("Failed to get client for {}: {}", env_name, e))?;
+
+    // Fetch field metadata (includes schema_name for @odata.bind)
+    let fields = client
+        .fetch_entity_fields_alt(&entity_name)
+        .await
+        .map_err(|e| format!("Failed to fetch field metadata for {}: {}", entity_name, e))?;
+
+    // Fetch entity metadata info (includes entity_set_name)
+    let entity_info = client
+        .fetch_entity_metadata_info(&entity_name)
+        .await
+        .map_err(|e| format!("Failed to fetch entity info for {}: {}", entity_name, e))?;
+
+    log::info!(
+        "[{}] Fetched {} fields, entity_set={}",
+        entity_name,
+        fields.len(),
+        entity_info.entity_set_name
+    );
+
+    // Save to cache
+    let metadata = crate::api::metadata::EntityMetadata {
+        fields: fields.clone(),
+        entity_set_name: Some(entity_info.entity_set_name.clone()),
+        ..Default::default()
+    };
+    if let Err(e) = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await {
+        log::warn!("[{}] Failed to cache metadata: {}", entity_name, e);
+    }
+
+    Ok((entity_name, fields, entity_info.entity_set_name))
 }
 
 /// Merge dirty records from old resolved state into new resolved state.

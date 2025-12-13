@@ -7,6 +7,7 @@ use crate::transfer::{FieldPath, Value};
 /// For simple paths like "name", extracts record["name"]
 /// For lookup paths like "accountid.name", extracts record["accountid"]["name"]
 /// (assumes the lookup was $expanded in the query)
+/// For lookup value paths like "accountid", also checks "_accountid_value" (OData format)
 pub fn resolve_path(record: &serde_json::Value, path: &FieldPath) -> Value {
     let segments = path.segments();
 
@@ -16,10 +17,20 @@ pub fn resolve_path(record: &serde_json::Value, path: &FieldPath) -> Value {
 
     // Navigate through the path
     let mut current = record;
-    for segment in segments {
-        match current.get(segment) {
+    for (i, segment) in segments.iter().enumerate() {
+        match current.get(segment.as_str()) {
             Some(val) => current = val,
-            None => return Value::Null,
+            None => {
+                // For the first segment (base field), try OData lookup value format: _fieldname_value
+                // This handles cases where we're copying a lookup field's GUID value
+                if i == 0 && segments.len() == 1 {
+                    let value_field = format!("_{}_value", segment);
+                    if let Some(val) = record.get(&value_field) {
+                        return Value::from_json(val);
+                    }
+                }
+                return Value::Null;
+            }
         }
     }
 

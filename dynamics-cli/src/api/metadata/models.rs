@@ -126,6 +126,9 @@ pub struct EntityMetadata {
     pub relationships: Vec<RelationshipMetadata>,
     pub views: Vec<ViewMetadata>,
     pub forms: Vec<FormMetadata>,
+    /// Entity set name for OData URLs (e.g., "accounts", "contacts")
+    #[serde(default)]
+    pub entity_set_name: Option<String>,
 }
 
 impl Default for EntityMetadata {
@@ -135,6 +138,7 @@ impl Default for EntityMetadata {
             relationships: Vec::new(),
             views: Vec::new(),
             forms: Vec::new(),
+            entity_set_name: None,
         }
     }
 }

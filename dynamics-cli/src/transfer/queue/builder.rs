@@ -1,7 +1,9 @@
 //! Build QueueItems from ResolvedTransfer
 
+use std::collections::HashMap;
+
 use crate::api::operations::{Operation, Operations};
-use crate::transfer::{RecordAction, ResolvedEntity, ResolvedTransfer};
+use crate::transfer::{LookupBindingContext, RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
 use crate::tui::apps::queue::models::{QueueItem, QueueMetadata};
 
 /// Base priority for transfer operations (start low to maximize priority space)
@@ -9,6 +11,49 @@ const BASE_PRIORITY: u8 = 1;
 
 /// Default batch size (operations per queue item)
 const DEFAULT_BATCH_SIZE: usize = 50;
+
+/// Prepare a record's fields for API submission
+///
+/// Converts lookup fields to @odata.bind format when lookup context is available.
+/// Non-lookup fields pass through unchanged.
+fn prepare_payload(
+    record: &ResolvedRecord,
+    lookup_ctx: Option<&LookupBindingContext>,
+) -> serde_json::Value {
+    let mut obj = serde_json::Map::new();
+
+    for (field_name, value) in &record.fields {
+        // Check if this is a lookup field that needs @odata.bind
+        if let Some(ctx) = lookup_ctx {
+            if let Some(binding_info) = ctx.get(field_name) {
+                // Handle null lookup values - skip the field entirely
+                if matches!(value, Value::Null) {
+                    continue;
+                }
+
+                // Try to extract GUID from the value
+                let guid_str = match value {
+                    Value::Guid(guid) => Some(guid.to_string()),
+                    Value::String(s) if uuid::Uuid::parse_str(s).is_ok() => Some(s.clone()),
+                    _ => None,
+                };
+
+                if let Some(guid) = guid_str {
+                    let bind_key = format!("{}@odata.bind", binding_info.schema_name);
+                    let bind_value = format!("/{}({})", binding_info.target_entity_set, guid);
+                    obj.insert(bind_key, serde_json::Value::String(bind_value));
+                    continue;
+                }
+                // If value isn't a GUID, fall through to normal handling
+            }
+        }
+
+        // Not a lookup or no context - insert normally
+        obj.insert(field_name.clone(), value.to_json());
+    }
+
+    serde_json::Value::Object(obj)
+}
 
 /// Options for building queue items
 #[derive(Debug, Clone)]
@@ -136,16 +181,20 @@ fn build_phase_queue_items(
         .saturating_add(phase.priority_offset())
         .min(127);
 
-    // Build operations
+    // Build operations with @odata.bind for lookup fields
+    let lookup_ctx = entity.lookup_context.as_ref();
     let operations: Vec<Operation> = records
         .iter()
-        .map(|record| match phase {
-            Phase::Create => Operation::create(&entity.entity_name, record.to_json()),
-            Phase::Update => Operation::update(
-                &entity.entity_name,
-                record.source_id.to_string(),
-                record.to_json(),
-            ),
+        .map(|record| {
+            let payload = prepare_payload(record, lookup_ctx);
+            match phase {
+                Phase::Create => Operation::create(&entity.entity_name, payload),
+                Phase::Update => Operation::update(
+                    &entity.entity_name,
+                    record.source_id.to_string(),
+                    payload,
+                ),
+            }
         })
         .collect();
 

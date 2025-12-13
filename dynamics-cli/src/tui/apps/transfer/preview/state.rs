@@ -1,12 +1,26 @@
 //! State and messages for the Transfer Preview app
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crossterm::event::KeyCode;
 
-use crate::transfer::{ResolvedTransfer, RecordAction, Value};
+use crate::api::metadata::FieldMetadata;
+use crate::transfer::{LookupBindingContext, ResolvedTransfer, RecordAction, Value};
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{FileBrowserState, ListState, TextInputField, TextInputEvent};
+
+/// Lookup metadata for a single entity
+#[derive(Debug, Clone)]
+pub struct EntityLookupMetadata {
+    /// Field metadata for the target entity
+    pub fields: Vec<FieldMetadata>,
+    /// Entity set name (e.g., "accounts")
+    pub entity_set: String,
+}
+
+/// Result of building lookup contexts for all entities
+pub type LookupContextResult = Result<HashMap<String, LookupBindingContext>, String>;
 
 /// Parameters passed when starting the preview app
 #[derive(Clone, Default)]
@@ -209,12 +223,22 @@ pub struct State {
     pub config: Option<crate::transfer::TransferConfig>,
     /// Number of pending fetch tasks
     pub pending_fetches: usize,
+    /// Number of pending metadata fetch tasks
+    pub pending_metadata_fetches: usize,
+    /// Number of pending source metadata fetch tasks
+    pub pending_source_metadata_fetches: usize,
     /// Whether we're currently refreshing (vs initial load)
     pub is_refreshing: bool,
     /// Accumulated source records by entity name (kept for refresh comparison)
     pub source_data: std::collections::HashMap<String, Vec<serde_json::Value>>,
     /// Accumulated target records by entity name (kept for refresh comparison)
     pub target_data: std::collections::HashMap<String, Vec<serde_json::Value>>,
+    /// Source entity field metadata (for knowing which fields are lookups when fetching)
+    pub source_metadata: std::collections::HashMap<String, Vec<FieldMetadata>>,
+    /// Target entity field metadata (for lookup binding)
+    pub target_metadata: std::collections::HashMap<String, Vec<FieldMetadata>>,
+    /// Entity set names (entity_logical_name -> entity_set_name)
+    pub entity_set_map: std::collections::HashMap<String, String>,
     /// Resolved transfer data (loaded async)
     pub resolved: Resource<ResolvedTransfer>,
     /// Currently selected entity index
@@ -255,9 +279,14 @@ impl Default for State {
             target_env: String::new(),
             config: None,
             pending_fetches: 0,
+            pending_metadata_fetches: 0,
+            pending_source_metadata_fetches: 0,
             is_refreshing: false,
             source_data: std::collections::HashMap::new(),
             target_data: std::collections::HashMap::new(),
+            source_metadata: std::collections::HashMap::new(),
+            target_metadata: std::collections::HashMap::new(),
+            entity_set_map: std::collections::HashMap::new(),
             resolved: Resource::NotAsked,
             current_entity_idx: 0,
             filter: RecordFilter::All,
@@ -392,7 +421,10 @@ pub enum PreviewModal {
 pub enum Msg {
     // Data loading
     ConfigLoaded(Result<crate::transfer::TransferConfig, String>),
+    SourceMetadataResult(Result<(String, Vec<FieldMetadata>), String>), // (entity_name, fields) - for source lookup detection
+    FetchRecords, // Triggered after source metadata is loaded
     FetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
+    MetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, entity_set_name)
     RunTransform, // Triggered after loading screen returns
     ResolvedLoaded(Result<ResolvedTransfer, String>),
 
