@@ -961,6 +961,7 @@ impl DynamicsClient {
 
                 fields.push(super::metadata::FieldMetadata {
                     logical_name: field_name.to_string(),
+                    schema_name: None, // Not available in XML metadata
                     display_name: None,
                     field_type,
                     is_required,
@@ -1006,6 +1007,7 @@ impl DynamicsClient {
 
                 fields.push(super::metadata::FieldMetadata {
                     logical_name: field_name.to_string(),
+                    schema_name: None, // Not available in XML metadata
                     display_name: None,
                     field_type,
                     is_required: false,
@@ -1062,6 +1064,7 @@ impl DynamicsClient {
             let fields = attributes.iter()
                 .filter_map(|attr| {
                     let logical_name = attr["LogicalName"].as_str()?.to_string();
+                    let schema_name = attr["SchemaName"].as_str().map(|s| s.to_string());
                     let display_name = attr["DisplayName"]["UserLocalizedLabel"]["Label"].as_str()
                         .map(|s| s.to_string());
                     let is_required = attr["RequiredLevel"]["Value"].as_str() == Some("ApplicationRequired")
@@ -1110,6 +1113,7 @@ impl DynamicsClient {
 
                     Some(super::metadata::FieldMetadata {
                         logical_name,
+                        schema_name,
                         display_name,
                         field_type,
                         is_required,

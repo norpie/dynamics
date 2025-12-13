@@ -156,6 +156,7 @@ mod tests {
     fn make_lookup(name: &str, target: &str) -> FieldMetadata {
         FieldMetadata {
             logical_name: name.to_string(),
+            schema_name: None,
             display_name: Some(name.to_string()),
             field_type: FieldType::Lookup,
             is_required: false,
@@ -168,6 +169,7 @@ mod tests {
     fn make_string_field(name: &str) -> FieldMetadata {
         FieldMetadata {
             logical_name: name.to_string(),
+            schema_name: None,
             display_name: Some(name.to_string()),
             field_type: FieldType::String,
             is_required: false,

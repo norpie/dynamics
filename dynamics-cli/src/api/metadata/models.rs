@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldMetadata {
     pub logical_name: String,
+    /// Schema name with proper casing (e.g., "ParentCustomerId")
+    /// Used for @odata.bind annotations
+    pub schema_name: Option<String>,
     pub display_name: Option<String>,
     pub field_type: FieldType,
     pub is_required: bool,

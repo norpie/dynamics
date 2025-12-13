@@ -4,8 +4,10 @@ mod value;
 mod transform;
 mod config;
 mod resolved;
+mod lookup;
 
 pub use value::*;
 pub use transform::*;
 pub use config::*;
 pub use resolved::*;
+pub use lookup::*;

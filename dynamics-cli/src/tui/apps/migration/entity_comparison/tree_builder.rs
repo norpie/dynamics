@@ -340,6 +340,7 @@ fn build_views_tree(
                         // Use real field metadata with path-based ID
                         crate::api::metadata::FieldMetadata {
                             logical_name: column_path.clone(), // Use full path as ID for matching
+                            schema_name: real_field.schema_name.clone(),
                             display_name: real_field.display_name.clone(),
                             field_type: real_field.field_type.clone(),
                             is_required: real_field.is_required,
@@ -351,6 +352,7 @@ fn build_views_tree(
                         // Fallback to placeholder if field not found
                         crate::api::metadata::FieldMetadata {
                             logical_name: column_path.clone(),
+                            schema_name: None,
                             display_name: None,
                             field_type: FieldType::Other("Column".to_string()),
                             is_required: false,
@@ -495,6 +497,7 @@ fn build_forms_tree(
                                     // Use real field metadata with path-based ID
                                     crate::api::metadata::FieldMetadata {
                                         logical_name: field_path.clone(), // Use full path as ID for matching
+                                        schema_name: real_field.schema_name.clone(),
                                         display_name: Some(field.label.clone()), // Keep form's label
                                         field_type: real_field.field_type.clone(),
                                         is_required: field.required_level != "None",
@@ -506,6 +509,7 @@ fn build_forms_tree(
                                     // Fallback to placeholder if field not found
                                     crate::api::metadata::FieldMetadata {
                                         logical_name: field_path.clone(),
+                                        schema_name: None,
                                         display_name: Some(field.label.clone()),
                                         field_type: FieldType::Other("FormField".to_string()),
                                         is_required: field.required_level != "None",

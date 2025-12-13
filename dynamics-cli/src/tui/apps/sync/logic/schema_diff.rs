@@ -200,6 +200,7 @@ mod tests {
     fn make_field(name: &str, field_type: FieldType) -> FieldMetadata {
         FieldMetadata {
             logical_name: name.to_string(),
+            schema_name: None,
             display_name: Some(name.to_string()),
             field_type,
             is_required: false,
@@ -212,6 +213,7 @@ mod tests {
     fn make_lookup(name: &str, target: &str) -> FieldMetadata {
         FieldMetadata {
             logical_name: name.to_string(),
+            schema_name: None,
             display_name: Some(name.to_string()),
             field_type: FieldType::Lookup,
             is_required: false,
