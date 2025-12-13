@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::Value;
+use crate::transfer::transform::format::{FormatTemplate, NullHandling};
 
 /// A transform that produces a target field value from source data
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -37,6 +38,14 @@ pub enum Transform {
         mappings: Vec<(Value, Value)>,
         /// Fallback behavior when no mapping matches
         fallback: Fallback,
+    },
+    /// String formatting with interpolation
+    Format {
+        /// The format template with embedded expressions
+        template: FormatTemplate,
+        /// How to handle null values in expressions
+        #[serde(default)]
+        null_handling: NullHandling,
     },
 }
 
@@ -80,6 +89,15 @@ impl Transform {
             } => {
                 format!("map({}) [{} entries]", source_path, mappings.len())
             }
+            Transform::Format { template, .. } => {
+                // Show abbreviated template
+                let s = template.to_string();
+                if s.len() > 40 {
+                    format!("format(\"{}...\")", &s[..37])
+                } else {
+                    format!("format(\"{}\")", s)
+                }
+            }
         }
     }
 
@@ -91,6 +109,7 @@ impl Transform {
             Transform::Constant { .. } => vec![],
             Transform::Conditional { source_path, .. } => vec![source_path.base_field()],
             Transform::ValueMap { source_path, .. } => vec![source_path.base_field()],
+            Transform::Format { template, .. } => template.base_fields(),
         }
     }
 
@@ -121,7 +140,29 @@ impl Transform {
                     vec![]
                 }
             }
+            Transform::Format { template, .. } => template.expand_specs(),
         }
+    }
+
+    /// Create a format transform from a template string
+    pub fn format(template: &str) -> Result<Self, crate::transfer::transform::format::ParseError> {
+        let parsed = crate::transfer::transform::format::parse_template(template)?;
+        Ok(Transform::Format {
+            template: parsed,
+            null_handling: NullHandling::default(),
+        })
+    }
+
+    /// Create a format transform with custom null handling
+    pub fn format_with_null_handling(
+        template: &str,
+        null_handling: NullHandling,
+    ) -> Result<Self, crate::transfer::transform::format::ParseError> {
+        let parsed = crate::transfer::transform::format::parse_template(template)?;
+        Ok(Transform::Format {
+            template: parsed,
+            null_handling,
+        })
     }
 }
 

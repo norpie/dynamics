@@ -3,6 +3,7 @@
 mod path;
 mod apply;
 mod engine;
+pub mod format;
 
 pub use path::resolve_path;
 pub use apply::apply_transform;

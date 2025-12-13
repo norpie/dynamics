@@ -144,6 +144,10 @@ pub struct FieldMappingForm {
     pub value_map_default: TextInputField,
     pub value_map_entries: Vec<ValueMapEntry>,
     pub value_map_selected: Option<usize>,
+
+    // Format transform fields
+    pub format_template: TextInputField,
+    pub format_null_handling: NullHandlingType,
 }
 
 #[derive(Clone, Default)]
@@ -159,6 +163,7 @@ pub enum TransformType {
     Constant,
     Conditional,
     ValueMap,
+    Format,
 }
 
 impl TransformType {
@@ -167,7 +172,8 @@ impl TransformType {
             TransformType::Copy => TransformType::Constant,
             TransformType::Constant => TransformType::Conditional,
             TransformType::Conditional => TransformType::ValueMap,
-            TransformType::ValueMap => TransformType::Copy,
+            TransformType::ValueMap => TransformType::Format,
+            TransformType::Format => TransformType::Copy,
         }
     }
 
@@ -177,6 +183,33 @@ impl TransformType {
             TransformType::Constant => "Constant",
             TransformType::Conditional => "Conditional",
             TransformType::ValueMap => "Value Map",
+            TransformType::Format => "Format",
+        }
+    }
+}
+
+#[derive(Clone, Default, PartialEq, Copy)]
+pub enum NullHandlingType {
+    #[default]
+    Error,
+    Empty,
+    Zero,
+}
+
+impl NullHandlingType {
+    pub fn next(&self) -> Self {
+        match self {
+            NullHandlingType::Error => NullHandlingType::Empty,
+            NullHandlingType::Empty => NullHandlingType::Zero,
+            NullHandlingType::Zero => NullHandlingType::Error,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            NullHandlingType::Error => "Error",
+            NullHandlingType::Empty => "Empty",
+            NullHandlingType::Zero => "Zero",
         }
     }
 }
@@ -258,6 +291,7 @@ impl FieldMappingForm {
                 !self.value_map_source.value.trim().is_empty()
                     && !self.value_map_entries.is_empty()
             }
+            TransformType::Format => !self.format_template.value.trim().is_empty(),
         };
         target_valid && transform_valid
     }
@@ -391,6 +425,19 @@ impl FieldMappingForm {
                     }
                 }
             }
+
+            TransformType::Format => {
+                let template = self.format_template.value.trim();
+                if template.is_empty() {
+                    validation.transform_error = Some("Template is required".into());
+                    return validation;
+                }
+
+                // Try to parse the template to validate syntax
+                if let Err(e) = crate::transfer::transform::format::parse_template(template) {
+                    validation.transform_error = Some(format!("Invalid template: {}", e));
+                }
+            }
         }
 
         validation
@@ -520,6 +567,16 @@ impl FieldMappingForm {
                     }
                 }).collect();
             }
+            Transform::Format { template, null_handling } => {
+                use crate::transfer::transform::format::NullHandling;
+                form.transform_type = TransformType::Format;
+                form.format_template.value = template.to_string();
+                form.format_null_handling = match null_handling {
+                    NullHandling::Error => NullHandlingType::Error,
+                    NullHandling::Empty => NullHandlingType::Empty,
+                    NullHandling::Zero => NullHandlingType::Zero,
+                };
+            }
         }
         form
     }
@@ -571,6 +628,18 @@ impl FieldMappingForm {
                     FallbackType::Null => Fallback::Null,
                 };
                 Transform::ValueMap { source_path, mappings, fallback }
+            }
+            TransformType::Format => {
+                use crate::transfer::transform::format::NullHandling;
+                let template = crate::transfer::transform::format::parse_template(
+                    self.format_template.value.trim()
+                ).ok()?;
+                let null_handling = match self.format_null_handling {
+                    NullHandlingType::Error => NullHandling::Error,
+                    NullHandlingType::Empty => NullHandling::Empty,
+                    NullHandlingType::Zero => NullHandling::Zero,
+                };
+                Transform::Format { template, null_handling }
             }
         };
 
@@ -664,6 +733,10 @@ pub enum Msg {
     FieldFormRemoveMapping(usize),
     FieldFormMappingSource(usize, TextInputEvent),
     FieldFormMappingTarget(usize, TextInputEvent),
+
+    // Format transform fields
+    FieldFormFormatTemplate(TextInputEvent),
+    FieldFormToggleNullHandling,
 
     // Delete confirmation
     ConfirmDelete,

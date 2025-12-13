@@ -54,6 +54,14 @@ pub fn apply_transform(transform: &Transform, record: &serde_json::Value) -> Tra
             // No match found, apply fallback
             apply_fallback(fallback, source_value)
         }
+
+        Transform::Format {
+            template,
+            null_handling,
+        } => {
+            let result = super::format::evaluate(template, record, *null_handling)?;
+            Ok(Value::String(result))
+        }
     }
 }
 

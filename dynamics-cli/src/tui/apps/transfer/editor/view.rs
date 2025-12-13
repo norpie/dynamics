@@ -605,6 +605,40 @@ fn render_field_modal(
             let height = base_height + entries_height;
             (content, height.min(45))
         }
+        TransformType::Format => {
+            // Template input
+            let template_input = Element::text_input(
+                FocusId::new("format-template"),
+                &form.format_template.value,
+                &mut form.format_template.state,
+            )
+            .placeholder(r#"e.g., ${firstname} ${lastname} or ${price:,.2f}"#)
+            .on_event(Msg::FieldFormFormatTemplate)
+            .build();
+            let template_panel = Element::panel(template_input).title("Template").build();
+
+            // Null handling indicator
+            let null_label = format!("{} (Ctrl+N to cycle)", form.format_null_handling.label());
+            let null_indicator = Element::styled_text(Line::from(vec![
+                Span::styled("Null Handling: ", Style::default().fg(theme.text_tertiary)),
+                Span::styled(null_label, Style::default().fg(theme.accent_secondary)),
+            ])).build();
+
+            // Help text
+            let help_text = Element::styled_text(Line::from(vec![
+                Span::styled("Syntax: ", Style::default().fg(theme.text_tertiary)),
+                Span::raw("${field}, ${a + b}, ${cond ? then : else}, ${a ?? b}, ${val:,.2f}"),
+            ])).build();
+
+            let content = ColumnBuilder::new()
+                .add(template_panel, LayoutConstraint::Length(3))
+                .add(null_indicator, LayoutConstraint::Length(1))
+                .add(help_text, LayoutConstraint::Length(1))
+                .spacing(1)
+                .build();
+
+            (content, 20)
+        }
     };
 
     // Run validation
@@ -695,6 +729,9 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
             TransformType::ValueMap => {
                 subs.push(Subscription::ctrl_key(KeyCode::Char('f'), "Cycle fallback", Msg::FieldFormToggleFallback));
                 subs.push(Subscription::ctrl_key(KeyCode::Char('a'), "Add mapping", Msg::FieldFormAddMapping));
+            }
+            TransformType::Format => {
+                subs.push(Subscription::ctrl_key(KeyCode::Char('n'), "Cycle null handling", Msg::FieldFormToggleNullHandling));
             }
             _ => {}
         }

@@ -505,6 +505,17 @@ impl App for MappingEditorApp {
                 Command::None
             }
 
+            // Format transform fields
+            Msg::FieldFormFormatTemplate(event) => {
+                state.field_form.format_template.handle_event(event, Some(500));
+                Command::None
+            }
+
+            Msg::FieldFormToggleNullHandling => {
+                state.field_form.format_null_handling = state.field_form.format_null_handling.next();
+                Command::None
+            }
+
             // Delete confirmation
             Msg::ConfirmDelete => {
                 if let Some(target) = state.delete_target.take() {
