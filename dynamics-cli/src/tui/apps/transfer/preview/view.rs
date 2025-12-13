@@ -454,7 +454,6 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                 // Actively editing a field value - text input captures most keys
                 subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel field edit", Msg::CancelFieldEdit));
                 subs.push(Subscription::keyboard(KeyCode::Enter, "Finish editing", Msg::FinishFieldEdit));
-                subs.push(Subscription::keyboard(KeyCode::Tab, "Finish and next", Msg::FinishFieldEdit));
             } else {
                 // Edit mode - navigating fields
                 subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel edits", Msg::CancelRecordEdits));
@@ -542,9 +541,9 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
 
     // Main view subscriptions
 
-    // Entity navigation
-    subs.push(Subscription::keyboard(KeyCode::Tab, "Next entity", Msg::NextEntity));
-    subs.push(Subscription::shift_key(KeyCode::BackTab, "Previous entity", Msg::PrevEntity));
+    // Entity navigation (] and [ to cycle through entities)
+    subs.push(Subscription::keyboard(KeyCode::Char(']'), "Next entity", Msg::NextEntity));
+    subs.push(Subscription::keyboard(KeyCode::Char('['), "Previous entity", Msg::PrevEntity));
 
     // Filtering
     subs.push(Subscription::keyboard(KeyCode::Char('f'), "Cycle filter", Msg::CycleFilter));
