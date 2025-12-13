@@ -383,6 +383,8 @@ pub enum PreviewModal {
     ImportExcel,
     /// Confirm import with edit conflicts
     ImportConfirm { path: String, conflicts: Vec<String> },
+    /// Confirm sending to queue
+    SendToQueue,
 }
 
 /// Messages for the Transfer Preview app
@@ -458,7 +460,10 @@ pub enum Msg {
 
     // Navigation
     Back,
-    GoToExecute,
+
+    // Send to Queue
+    OpenSendToQueue,
+    ConfirmSendToQueue,
 }
 
 /// Bulk action types

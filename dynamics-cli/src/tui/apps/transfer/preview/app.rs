@@ -1115,9 +1115,62 @@ impl App for TransferPreviewApp {
                 Command::navigate_to(AppId::TransferMappingEditor)
             }
 
-            Msg::GoToExecute => {
-                // TODO (Chunk 12): Navigate to execute app
-                log::info!("Would navigate to execute");
+            // Send to Queue
+            Msg::OpenSendToQueue => {
+                // Check if there are errors - block if any exist
+                if let Resource::Success(ref resolved) = state.resolved {
+                    if resolved.error_count() > 0 {
+                        log::warn!(
+                            "Cannot send to queue: {} records have errors",
+                            resolved.error_count()
+                        );
+                        // Could show an error modal here, but for now just log
+                        return Command::None;
+                    }
+
+                    // Check if there's anything to send
+                    let actionable_count = resolved.create_count() + resolved.update_count();
+                    if actionable_count == 0 {
+                        log::info!("Nothing to send to queue (no creates or updates)");
+                        return Command::None;
+                    }
+
+                    state.active_modal = Some(super::state::PreviewModal::SendToQueue);
+                }
+                Command::None
+            }
+
+            Msg::ConfirmSendToQueue => {
+                if let Resource::Success(ref resolved) = state.resolved {
+                    state.active_modal = None;
+
+                    // Build queue items synchronously
+                    let queue_items = build_queue_items_from_resolved(resolved);
+
+                    if queue_items.is_empty() {
+                        log::info!("No operations to queue");
+                        return Command::None;
+                    }
+
+                    let total_ops: usize = queue_items.iter().map(|item| item.operations.len()).sum();
+                    log::info!("✅ Sending {} operations to queue", total_ops);
+
+                    // Serialize and publish via Command
+                    match serde_json::to_value(&queue_items) {
+                        Ok(queue_items_json) => {
+                            return Command::Batch(vec![
+                                Command::Publish {
+                                    topic: "queue:add_items".to_string(),
+                                    data: queue_items_json,
+                                },
+                                Command::navigate_to(AppId::OperationQueue),
+                            ]);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to serialize queue items: {}", e);
+                        }
+                    }
+                }
                 Command::None
             }
         }
@@ -1481,6 +1534,14 @@ async fn apply_import(
     .map_err(|e| format!("Task failed: {}", e))?;
 
     result
+}
+
+/// Build queue items from resolved transfer
+fn build_queue_items_from_resolved(resolved: &ResolvedTransfer) -> Vec<crate::tui::apps::queue::models::QueueItem> {
+    use crate::transfer::queue::{build_queue_items, QueueBuildOptions};
+
+    let options = QueueBuildOptions::default();
+    build_queue_items(resolved, &options)
 }
 
 /// Merge dirty records from old resolved state into new resolved state.

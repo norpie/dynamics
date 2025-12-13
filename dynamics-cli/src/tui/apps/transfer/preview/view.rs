@@ -78,6 +78,13 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
             PreviewModal::ImportConfirm { path, conflicts } => {
                 modals::import::render_confirmation(state, path, conflicts, theme)
             }
+            PreviewModal::SendToQueue => {
+                if let Resource::Success(ref resolved) = state.resolved {
+                    modals::send_to_queue::render(resolved, theme)
+                } else {
+                    Element::text("No data to send")
+                }
+            }
         };
         view = view.with_app_modal(modal_element, Alignment::Center);
     }
@@ -521,6 +528,12 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
         return subs;
     }
 
+    // Send to Queue modal subscriptions
+    if let Some(PreviewModal::SendToQueue) = &state.active_modal {
+        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseModal));
+        return subs;
+    }
+
     // Other modal subscriptions
     if state.active_modal.is_some() {
         subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseModal));
@@ -558,8 +571,8 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
     subs.push(Subscription::keyboard(KeyCode::Char('x'), "Export Excel", Msg::ExportExcel));
     subs.push(Subscription::keyboard(KeyCode::Char('i'), "Import Excel", Msg::ImportExcel));
 
-    // Navigation to execute
-    subs.push(Subscription::keyboard(KeyCode::Right, "Go to execute", Msg::GoToExecute));
+    // Send to Queue
+    subs.push(Subscription::keyboard(KeyCode::Char('q'), "Send to queue", Msg::OpenSendToQueue));
 
     subs
 }
