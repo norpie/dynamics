@@ -30,10 +30,7 @@ impl App for TransferConfigListApp {
             environments: Resource::NotAsked,
         };
 
-        let cmd = Command::batch(vec![
-            Command::perform(load_configs(), Msg::ConfigsLoaded),
-            Command::set_focus(FocusId::new("config-list")),
-        ]);
+        let cmd = Command::perform(load_configs(), Msg::ConfigsLoaded);
 
         (state, cmd)
     }
@@ -45,7 +42,8 @@ impl App for TransferConfigListApp {
                     Ok(configs) => Resource::Success(configs),
                     Err(e) => Resource::Failure(e),
                 };
-                Command::None
+                // Set focus to list once configs are loaded
+                Command::set_focus(FocusId::new("config-list"))
             }
 
             Msg::EnvironmentsLoaded(result) => {

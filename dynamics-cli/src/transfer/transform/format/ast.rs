@@ -11,7 +11,7 @@ pub struct FormatTemplate {
     /// The parts of the template (literals and expressions)
     pub parts: Vec<FormatPart>,
     /// The original template string (for display/debugging)
-    #[serde(skip)]
+    #[serde(default)]
     pub source: String,
 }
 
