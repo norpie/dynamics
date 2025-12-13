@@ -239,6 +239,10 @@ pub struct State {
     pub export_file_browser: FileBrowserState,
     /// Export modal - filename input
     pub export_filename: TextInputField,
+    /// Import modal - file browser for file selection
+    pub import_file_browser: FileBrowserState,
+    /// Import confirmation - pending edits to apply
+    pub pending_import: Option<PendingImport>,
 }
 
 impl Default for State {
@@ -264,8 +268,23 @@ impl Default for State {
             bulk_action_selection: BulkAction::default(),
             export_file_browser: FileBrowserState::new(get_default_export_dir()),
             export_filename: TextInputField::new(),
+            import_file_browser: FileBrowserState::new(get_default_export_dir()),
+            pending_import: None,
         }
     }
+}
+
+/// Pending import waiting for user confirmation
+#[derive(Clone)]
+pub struct PendingImport {
+    /// Path to the Excel file being imported
+    pub path: String,
+    /// Entity index this import applies to
+    pub entity_idx: usize,
+    /// Number of records that will be modified
+    pub edit_count: usize,
+    /// Source IDs of records with conflicts (dirty locally + changed in Excel)
+    pub conflicts: Vec<uuid::Uuid>,
 }
 
 /// Get the default export directory (~/.config/dynamics-cli/exports/)
@@ -420,7 +439,13 @@ pub enum Msg {
 
     // Excel import
     ImportExcel,
-    ImportCompleted(Result<ResolvedTransfer, String>),
+    ImportFileNavigate(KeyCode),
+    ImportSetViewportHeight(usize),
+    ImportFileSelected(std::path::PathBuf),
+    ImportPreviewLoaded(Result<PendingImport, String>),
+    ConfirmImport,
+    CancelImport,
+    ImportCompleted(Result<crate::transfer::ResolvedEntity, String>),
 
     // Refresh
     Refresh,

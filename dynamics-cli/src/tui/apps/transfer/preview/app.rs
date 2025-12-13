@@ -841,7 +841,124 @@ impl App for TransferPreviewApp {
             }
 
             Msg::ImportExcel => {
-                // TODO (Chunk 10): Implement Excel import
+                // Initialize import modal with file browser
+                state.import_file_browser.set_filter(|entry| {
+                    entry.is_dir || entry.name.to_lowercase().ends_with(".xlsx")
+                });
+                let _ = state.import_file_browser.refresh();
+                state.active_modal = Some(super::state::PreviewModal::ImportExcel);
+                Command::set_focus(crate::tui::FocusId::new("import-file-browser"))
+            }
+
+            Msg::ImportFileNavigate(key) => {
+                use crate::tui::widgets::{FileBrowserEvent, FileBrowserAction};
+
+                match key {
+                    crossterm::event::KeyCode::Up => {
+                        state.import_file_browser.navigate_up();
+                    }
+                    crossterm::event::KeyCode::Down => {
+                        state.import_file_browser.navigate_down();
+                    }
+                    crossterm::event::KeyCode::Enter => {
+                        if let Some(action) = state.import_file_browser.handle_event(FileBrowserEvent::Activate) {
+                            match action {
+                                FileBrowserAction::DirectoryEntered(_) => {
+                                    // Directory changed, stay in modal
+                                }
+                                FileBrowserAction::FileSelected(path) => {
+                                    // File selected - start import preview
+                                    return Command::perform(
+                                        async move { path },
+                                        Msg::ImportFileSelected,
+                                    );
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    crossterm::event::KeyCode::Backspace => {
+                        let _ = state.import_file_browser.handle_event(FileBrowserEvent::GoUp);
+                    }
+                    _ => {
+                        state.import_file_browser.handle_navigation_key(key);
+                    }
+                }
+                Command::None
+            }
+
+            Msg::ImportSetViewportHeight(height) => {
+                let item_count = state.import_file_browser.entries().len();
+                let list_state = state.import_file_browser.list_state_mut();
+                list_state.set_viewport_height(height);
+                list_state.update_scroll(height, item_count);
+                Command::None
+            }
+
+            Msg::ImportFileSelected(path) => {
+                // Load file and check for conflicts
+                if let Resource::Success(resolved) = &state.resolved {
+                    let entity_idx = state.current_entity_idx;
+                    if let Some(entity) = resolved.entities.get(entity_idx) {
+                        let entity_clone = entity.clone();
+                        let path_str = path.to_string_lossy().to_string();
+
+                        return Command::perform(
+                            async move {
+                                preview_import(entity_clone, entity_idx, path_str).await
+                            },
+                            Msg::ImportPreviewLoaded,
+                        );
+                    }
+                }
+                Command::None
+            }
+
+            Msg::ImportPreviewLoaded(result) => {
+                match result {
+                    Ok(pending) => {
+                        state.pending_import = Some(pending);
+                        state.active_modal = Some(super::state::PreviewModal::ImportConfirm {
+                            path: state.pending_import.as_ref().unwrap().path.clone(),
+                            conflicts: state.pending_import.as_ref().unwrap().conflicts.iter()
+                                .map(|id| id.to_string())
+                                .collect(),
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("❌ Import preview failed: {}", e);
+                        state.active_modal = None;
+                    }
+                }
+                Command::None
+            }
+
+            Msg::ConfirmImport => {
+                if let (Some(pending), Resource::Success(resolved)) = (&state.pending_import, &mut state.resolved) {
+                    if let Some(entity) = resolved.entities.get_mut(pending.entity_idx) {
+                        let entity_clone = entity.clone();
+                        let path = pending.path.clone();
+
+                        state.active_modal = None;
+                        state.pending_import = None;
+
+                        return Command::perform(
+                            async move {
+                                apply_import(entity_clone, path).await
+                            },
+                            |result| match result {
+                                Ok(updated_entity) => Msg::ImportCompleted(Ok(updated_entity)),
+                                Err(e) => Msg::ImportCompleted(Err(e)),
+                            },
+                        );
+                    }
+                }
+                Command::None
+            }
+
+            Msg::CancelImport => {
+                state.pending_import = None;
+                state.active_modal = None;
                 Command::None
             }
 
@@ -861,10 +978,16 @@ impl App for TransferPreviewApp {
 
             Msg::ImportCompleted(result) => {
                 match result {
-                    Ok(resolved) => {
-                        state.resolved = Resource::Success(resolved);
+                    Ok(updated_entity) => {
+                        // Replace the entity in the resolved transfer
+                        if let Resource::Success(resolved) = &mut state.resolved {
+                            if let Some(entity) = resolved.entities.get_mut(state.current_entity_idx) {
+                                *entity = updated_entity;
+                            }
+                        }
+                        log::info!("✅ Import completed successfully");
                     }
-                    Err(e) => log::error!("Import failed: {}", e),
+                    Err(e) => log::error!("❌ Import failed: {}", e),
                 }
                 state.active_modal = None;
                 Command::None
@@ -1156,4 +1279,59 @@ async fn export_entity_to_excel(
     .map_err(|e| format!("Task failed: {}", e))?;
 
     result.map_err(|e| format!("Export failed: {}", e))
+}
+
+/// Preview an import by reading the Excel file and detecting conflicts
+async fn preview_import(
+    entity: crate::transfer::ResolvedEntity,
+    entity_idx: usize,
+    path: String,
+) -> Result<super::state::PendingImport, String> {
+    use crate::transfer::excel::resolved::read_resolved_excel;
+
+    let path_clone = path.clone();
+
+    // Read the file and detect edits (synchronous, use spawn_blocking)
+    let result = tokio::task::spawn_blocking(move || {
+        // Clone entity to read edits without modifying
+        let mut temp_entity = entity.clone();
+        let edits = read_resolved_excel(&path_clone, &mut temp_entity)
+            .map_err(|e| format!("Failed to read Excel: {}", e))?;
+
+        // Detect conflicts: records that are dirty locally AND changed in Excel
+        let conflicts: Vec<uuid::Uuid> = edits.changed_records.keys()
+            .filter(|id| entity.is_dirty(**id))
+            .copied()
+            .collect();
+
+        Ok(super::state::PendingImport {
+            path: path_clone,
+            entity_idx,
+            edit_count: edits.changed_records.len(),
+            conflicts,
+        })
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    result
+}
+
+/// Apply an import by reading the Excel file and updating the entity
+async fn apply_import(
+    mut entity: crate::transfer::ResolvedEntity,
+    path: String,
+) -> Result<crate::transfer::ResolvedEntity, String> {
+    use crate::transfer::excel::resolved::read_resolved_excel;
+
+    // Apply edits (synchronous, use spawn_blocking)
+    let result = tokio::task::spawn_blocking(move || {
+        read_resolved_excel(&path, &mut entity)
+            .map_err(|e| format!("Failed to apply import: {}", e))?;
+        Ok(entity)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?;
+
+    result
 }

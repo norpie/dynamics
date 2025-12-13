@@ -2,7 +2,5 @@
 
 pub mod bulk_actions;
 pub mod export;
+pub mod import;
 pub mod record_details;
-
-// TODO: Uncomment as implemented
-// pub mod import_confirm;

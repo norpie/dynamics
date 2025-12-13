@@ -73,10 +73,10 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
                 modals::export::render(state, theme)
             }
             PreviewModal::ImportExcel => {
-                render_import_placeholder(theme)
+                modals::import::render_file_browser(state, theme)
             }
             PreviewModal::ImportConfirm { path, conflicts } => {
-                render_import_confirm_placeholder(path, conflicts, theme)
+                modals::import::render_confirmation(state, path, conflicts, theme)
             }
         };
         view = view.with_app_modal(modal_element, Alignment::Center);
@@ -435,29 +435,6 @@ fn render_bulk_actions_placeholder(theme: &Theme) -> Element<Msg> {
         .build()
 }
 
-fn render_import_placeholder(theme: &Theme) -> Element<Msg> {
-    let content = Element::text("Import from Excel\n\nPress Esc to close.");
-
-    Element::panel(content)
-        .title("Import Excel")
-        .width(60)
-        .height(20)
-        .build()
-}
-
-fn render_import_confirm_placeholder(path: &str, conflicts: &[String], theme: &Theme) -> Element<Msg> {
-    let content = Element::text(&format!(
-        "Import Confirmation\n\nPath: {}\nConflicts: {}\n\nPress Esc to close.",
-        path,
-        conflicts.len()
-    ));
-
-    Element::panel(content)
-        .title("Confirm Import")
-        .width(60)
-        .height(20)
-        .build()
-}
 
 /// Build subscriptions for keyboard shortcuts
 pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
@@ -525,7 +502,26 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
         return subs;
     }
 
-    // Other modal subscriptions (import)
+    // Import file browser modal subscriptions
+    if let Some(PreviewModal::ImportExcel) = &state.active_modal {
+        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseModal));
+        subs.push(Subscription::keyboard(KeyCode::Up, "Navigate up", Msg::ImportFileNavigate(KeyCode::Up)));
+        subs.push(Subscription::keyboard(KeyCode::Down, "Navigate down", Msg::ImportFileNavigate(KeyCode::Down)));
+        subs.push(Subscription::keyboard(KeyCode::Enter, "Select file / Enter directory", Msg::ImportFileNavigate(KeyCode::Enter)));
+        subs.push(Subscription::keyboard(KeyCode::Backspace, "Go up directory", Msg::ImportFileNavigate(KeyCode::Backspace)));
+        return subs;
+    }
+
+    // Import confirmation modal subscriptions
+    if let Some(PreviewModal::ImportConfirm { .. }) = &state.active_modal {
+        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CancelImport));
+        subs.push(Subscription::keyboard(KeyCode::Enter, "Confirm import", Msg::ConfirmImport));
+        subs.push(Subscription::keyboard(KeyCode::Char('y'), "Confirm import", Msg::ConfirmImport));
+        subs.push(Subscription::keyboard(KeyCode::Char('n'), "Cancel", Msg::CancelImport));
+        return subs;
+    }
+
+    // Other modal subscriptions
     if state.active_modal.is_some() {
         subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseModal));
         return subs;
