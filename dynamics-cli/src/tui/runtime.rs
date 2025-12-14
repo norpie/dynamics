@@ -98,8 +98,11 @@ pub struct Runtime<A: App> {
     /// Pending navigation request
     navigation_target: Option<AppId>,
 
-    /// Pending async commands
-    pending_async: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = A::Msg> + Send>>>,
+    /// Pending async commands - now using tokio spawn with channel
+    async_result_rx: tokio::sync::mpsc::UnboundedReceiver<A::Msg>,
+    async_result_tx: tokio::sync::mpsc::UnboundedSender<A::Msg>,
+    /// Count of pending async tasks (for logging)
+    pending_async_count: usize,
 
     /// Pending parallel coordination tasks (task_index, task_name)
     pending_parallel: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = (usize, String)> + Send>>>,
@@ -130,6 +133,7 @@ impl<A: App> Runtime<A> {
 
     pub fn with_params(params: A::InitParams) -> Self {
         let (state, init_command) = A::init(params);
+        let (async_result_tx, async_result_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let mut runtime = Self {
             state,
@@ -142,7 +146,9 @@ impl<A: App> Runtime<A> {
             timers: Vec::new(),
             last_hover_pos: None,
             navigation_target: None,
-            pending_async: Vec::new(),
+            async_result_rx,
+            async_result_tx,
+            pending_async_count: 0,
             pending_parallel: Vec::new(),
             pending_publishes: Vec::new(),
             pending_start_app: None,
@@ -306,37 +312,25 @@ impl<A: App> Runtime<A> {
 
         let poll_start = std::time::Instant::now();
 
-        // Create a dummy waker
-        let waker = futures::task::noop_waker();
-        let mut cx = Context::from_waker(&waker);
-
         // Log poll state
-        if !self.pending_async.is_empty() || !self.pending_parallel.is_empty() {
+        if self.pending_async_count > 0 || !self.pending_parallel.is_empty() {
             log::debug!(
                 "⏱️ poll_async: {} async, {} parallel tasks pending",
-                self.pending_async.len(),
+                self.pending_async_count,
                 self.pending_parallel.len()
             );
         }
 
-        // Poll regular async commands
-        let mut completed = Vec::new();
-        for (i, future) in self.pending_async.iter_mut().enumerate() {
-            let poll_result = future.as_mut().poll(&mut cx);
-            if let Poll::Ready(msg) = poll_result {
-                log::info!("⏱️ Async task {} completed", i);
-                completed.push((i, msg));
-            }
-        }
-
-        // Remove completed futures (in reverse order to maintain indices)
-        completed.sort_by(|a, b| b.0.cmp(&a.0));
-        let had_completions = !completed.is_empty();
-        for (i, msg) in completed {
-            self.pending_async.remove(i);
+        // Receive completed async results from spawned tasks
+        let mut had_completions = false;
+        while let Ok(msg) = self.async_result_rx.try_recv() {
+            self.pending_async_count = self.pending_async_count.saturating_sub(1);
+            log::debug!("⏱️ Async task completed, {} remaining", self.pending_async_count);
             let command = A::update(&mut self.state, msg);
             self.execute_command(command)?;
+            had_completions = true;
         }
+
         // Refresh subscriptions after async completions
         if had_completions {
             self.update_subscriptions();
@@ -358,7 +352,9 @@ impl<A: App> Runtime<A> {
             }
         }
 
-        // Poll parallel coordination tasks
+        // Poll parallel coordination tasks (these are short-lived coordination futures, not I/O)
+        let waker = futures::task::noop_waker();
+        let mut cx = Context::from_waker(&waker);
         let mut parallel_completed = Vec::new();
         for (i, future) in self.pending_parallel.iter_mut().enumerate() {
             let poll_result = future.as_mut().poll(&mut cx);
@@ -785,8 +781,13 @@ impl<A: App> Runtime<A> {
             }
 
             Command::Perform(future) => {
-                // Add to pending async commands
-                self.pending_async.push(future);
+                // Spawn on tokio runtime and send result through channel
+                let tx = self.async_result_tx.clone();
+                self.pending_async_count += 1;
+                tokio::spawn(async move {
+                    let msg = future.await;
+                    let _ = tx.send(msg);
+                });
                 Ok(true)
             }
 

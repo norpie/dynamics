@@ -94,11 +94,9 @@ pub fn execute_next_if_available(state: &mut State) -> Command<Msg> {
         let item_id_for_persist = id.clone();
         let persist_cmd = Command::perform(
             async move {
-                log::info!("Persisting Running status for item: {}", item_id_for_persist);
                 let result = crate::global_config().update_queue_item_status(&item_id_for_persist, OperationStatus::Running).await;
-                match &result {
-                    Ok(_) => log::info!("Successfully persisted Running status for item: {}", item_id_for_persist),
-                    Err(e) => log::error!("Failed to persist Running status: {}", e),
+                if let Err(e) = &result {
+                    log::error!("Failed to persist Running status for {}: {}", item_id_for_persist, e);
                 }
                 result.map_err(|e| format!("Failed to persist Running status: {}", e))
             },
@@ -119,11 +117,13 @@ pub fn execute_next_if_available(state: &mut State) -> Command<Msg> {
                 async move {
                     use crate::api::resilience::ResilienceConfig;
                     let start = std::time::Instant::now();
+                    let op_count = item.operations.len();
 
                     // Get client for this environment from global client manager
                     let client = match crate::client_manager().get_client(&item.metadata.environment_name).await {
                         Ok(client) => client,
                         Err(e) => {
+                            log::error!("Queue item {} - failed to get client: {}", item.id, e);
                             let duration_ms = start.elapsed().as_millis() as u64;
                             return (item.id.clone(), QueueResult {
                                 success: false,
@@ -135,7 +135,9 @@ pub fn execute_next_if_available(state: &mut State) -> Command<Msg> {
                     };
 
                     let resilience = ResilienceConfig::default();
+                    log::info!("Queue item {} - executing {} operations", item.id, op_count);
                     let result = item.operations.execute(&client, &resilience).await;
+                    log::info!("Queue item {} - completed in {:?}", item.id, start.elapsed());
                     let duration_ms = start.elapsed().as_millis() as u64;
 
                     let queue_result = match result {

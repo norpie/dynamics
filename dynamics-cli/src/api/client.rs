@@ -731,15 +731,7 @@ impl DynamicsClient {
         let content_type = batch_request.content_type().to_string();
         let body = batch_request.body().to_string();
 
-        log::debug!("Executing batch request with {} operations (correlation_id: {})", operations.len(), correlation_id);
-
-        // Log first 2000 chars of request body for debugging
-        let truncated_body = if body.len() > 2000 {
-            format!("{}... (truncated, total {} chars)", &body[..2000], body.len())
-        } else {
-            body.clone()
-        };
-        log::debug!("Batch request body:\n{}", truncated_body);
+        log::debug!("Batch request: {} operations (correlation_id: {})", operations.len(), correlation_id);
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let request_start = std::time::Instant::now();
@@ -758,7 +750,14 @@ impl DynamicsClient {
         let request_duration = request_start.elapsed();
         let status_code = response.status().as_u16();
 
-        log::debug!("Batch request completed: status={}, duration={:?}", status_code, request_duration);
+        // Warn if request took longer than expected
+        if request_duration.as_secs() > 60 {
+            log::warn!("⚠️ Batch request took {:.1}s - unusually slow! ({} ops, status={})",
+                request_duration.as_secs_f32(), operations.len(), status_code);
+        } else {
+            log::info!("Batch completed: {} ops in {:.1}s (status={})",
+                operations.len(), request_duration.as_secs_f32(), status_code);
+        }
 
         let response_text = response.text().await?;
 
