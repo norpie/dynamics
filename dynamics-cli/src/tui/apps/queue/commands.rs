@@ -84,11 +84,11 @@ pub fn execute_next_if_available(state: &mut State) -> Command<Msg> {
 
     if let Some(id) = next {
         // Mark as running immediately and set start time
-        if let Some(item) = state.queue_items.iter_mut().find(|i| i.id == id) {
+        state.mutate_item(&id, |item| {
             item.status = OperationStatus::Running;
             item.started_at = Some(std::time::Instant::now());
-            state.currently_running.insert(id.clone());
-        }
+        });
+        state.currently_running.insert(id.clone());
 
         // Persist Running status to database
         let item_id_for_persist = id.clone();

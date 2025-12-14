@@ -14,6 +14,7 @@ use crate::{col, row, use_constraints};
 use crate::api::resilience::ResilienceConfig;
 use ratatui::text::Line;
 use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
 use super::models::{QueueItem, QueueFilter, SortMode, OperationStatus, QueueResult};
 use super::tree_nodes::QueueTreeNode;
 use super::commands::{save_settings_command, execute_next_if_available, execute_up_to_max};
@@ -80,9 +81,13 @@ pub enum Msg {
 }
 
 pub struct State {
-    // Queue data
-    pub queue_items: Vec<QueueItem>,
+    // Queue data (Arc for cheap cloning when building tree nodes)
+    pub queue_items: Vec<Arc<QueueItem>>,
     pub tree_state: TreeState,
+
+    // Cached sorted indices (rebuilt only when queue/filter/sort changes)
+    cached_sorted_indices: Vec<usize>,
+    index_cache_valid: bool,
 
     // Execution state
     pub auto_play: bool,
@@ -112,6 +117,8 @@ impl Default for State {
         Self {
             queue_items: Vec::new(),
             tree_state: TreeState::with_selection(),
+            cached_sorted_indices: Vec::new(),
+            index_cache_valid: false,
             auto_play: false,
             max_concurrent: 3,
             currently_running: HashSet::new(),
@@ -124,6 +131,68 @@ impl Default for State {
             delete_confirm_modal: ModalState::Closed,
             interruption_warning_modal: ModalState::Closed,
             is_loading: true,
+        }
+    }
+}
+
+impl State {
+    /// Invalidate the index cache (call when queue_items/filter/sort change)
+    pub fn invalidate_index_cache(&mut self) {
+        self.index_cache_valid = false;
+    }
+
+    /// Rebuild index cache if invalid
+    fn rebuild_index_cache_if_needed(&mut self) {
+        if self.index_cache_valid {
+            return;
+        }
+
+        let mut filtered_indices: Vec<usize> = self
+            .queue_items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| self.filter.matches(item))
+            .map(|(idx, _)| idx)
+            .collect();
+
+        filtered_indices.sort_by(|&a, &b| {
+            let item_a = &self.queue_items[a];
+            let item_b = &self.queue_items[b];
+            match self.sort_mode {
+                SortMode::Priority => item_a.priority.cmp(&item_b.priority),
+                SortMode::Status => {
+                    format!("{:?}", item_a.status).cmp(&format!("{:?}", item_b.status))
+                }
+                SortMode::Source => item_a.metadata.source.cmp(&item_b.metadata.source),
+            }
+        });
+
+        self.cached_sorted_indices = filtered_indices;
+        self.index_cache_valid = true;
+    }
+
+    /// Build tree nodes from cached indices (called each frame - Arc::clone is O(1))
+    fn build_tree_nodes(&self) -> Vec<QueueTreeNode> {
+        self.cached_sorted_indices
+            .iter()
+            .filter_map(|&idx| self.queue_items.get(idx))
+            .map(|item| QueueTreeNode::from_arc(Arc::clone(item)))
+            .collect()
+    }
+
+    /// Mutate a queue item by id. Clones the inner data, applies mutation, replaces Arc.
+    /// Returns true if item was found and mutated.
+    pub fn mutate_item<F>(&mut self, id: &str, f: F) -> bool
+    where
+        F: FnOnce(&mut QueueItem),
+    {
+        if let Some(idx) = self.queue_items.iter().position(|item| item.id == id) {
+            let mut item = (*self.queue_items[idx]).clone();
+            f(&mut item);
+            self.queue_items[idx] = Arc::new(item);
+            true
+        } else {
+            false
         }
     }
 }
@@ -190,7 +259,8 @@ impl App for OperationQueueApp {
             Msg::StateLoaded(result) => {
                 match result {
                     Ok((queue_items, settings, interrupted_items)) => {
-                        state.queue_items = queue_items;
+                        state.queue_items = queue_items.into_iter().map(Arc::new).collect();
+                        state.invalidate_index_cache();
                         state.auto_play = false; // Always start paused on load
                         state.max_concurrent = settings.max_concurrent;
                         state.filter = settings.filter;
@@ -229,9 +299,11 @@ impl App for OperationQueueApp {
             }
 
             Msg::ClearInterruptionFlag(id) => {
-                if let Some(item) = state.queue_items.iter_mut().find(|i| i.id == id) {
+                if state.mutate_item(&id, |item| {
                     item.was_interrupted = false;
                     item.interrupted_at = None;
+                }) {
+                    state.invalidate_index_cache();
 
                     // Persist to database
                     let item_id = id.clone();
@@ -308,61 +380,84 @@ impl App for OperationQueueApp {
             }
 
             Msg::IncreasePriority(id) => {
-                if let Some(item) = state.queue_items.iter_mut().find(|i| i.id == id) {
-                    if item.priority > 0 {
-                        item.priority -= 1;
-                        let new_priority = item.priority;
-                        let item_id = id.clone();
-                        return Command::perform(
-                            async move {
-                                crate::global_config().update_queue_item_priority(&item_id, new_priority).await
-                                    .map_err(|e| format!("Failed to update priority: {}", e))
-                            },
-                            |result| {
-                                if let Err(err) = result {
-                                    Msg::PersistenceError(err)
-                                } else {
-                                    Msg::PersistenceError("".to_string())
-                                }
-                            }
-                        );
+                // First read current priority
+                let current = state.queue_items.iter().find(|i| i.id == id).map(|i| i.priority);
+                let new_priority = if let Some(p) = current {
+                    if p > 0 {
+                        state.mutate_item(&id, |item| item.priority -= 1);
+                        Some(p - 1)
+                    } else {
+                        None
                     }
+                } else {
+                    None
+                };
+
+                if let Some(priority) = new_priority {
+                    state.invalidate_index_cache();
+                    let item_id = id.clone();
+                    return Command::perform(
+                        async move {
+                            crate::global_config().update_queue_item_priority(&item_id, priority).await
+                                .map_err(|e| format!("Failed to update priority: {}", e))
+                        },
+                        |result| {
+                            if let Err(err) = result {
+                                Msg::PersistenceError(err)
+                            } else {
+                                Msg::PersistenceError("".to_string())
+                            }
+                        }
+                    );
                 }
                 Command::None
             }
 
             Msg::DecreasePriority(id) => {
-                if let Some(item) = state.queue_items.iter_mut().find(|i| i.id == id) {
-                    if item.priority < 255 {
-                        item.priority += 1;
-                        let new_priority = item.priority;
-                        let item_id = id.clone();
-                        return Command::perform(
-                            async move {
-                                crate::global_config().update_queue_item_priority(&item_id, new_priority).await
-                                    .map_err(|e| format!("Failed to update priority: {}", e))
-                            },
-                            |result| {
-                                if let Err(err) = result {
-                                    Msg::PersistenceError(err)
-                                } else {
-                                    Msg::PersistenceError("".to_string())
-                                }
-                            }
-                        );
+                // First read current priority
+                let current = state.queue_items.iter().find(|i| i.id == id).map(|i| i.priority);
+                let new_priority = if let Some(p) = current {
+                    if p < 255 {
+                        state.mutate_item(&id, |item| item.priority += 1);
+                        Some(p + 1)
+                    } else {
+                        None
                     }
+                } else {
+                    None
+                };
+
+                if let Some(priority) = new_priority {
+                    state.invalidate_index_cache();
+                    let item_id = id.clone();
+                    return Command::perform(
+                        async move {
+                            crate::global_config().update_queue_item_priority(&item_id, priority).await
+                                .map_err(|e| format!("Failed to update priority: {}", e))
+                        },
+                        |result| {
+                            if let Err(err) = result {
+                                Msg::PersistenceError(err)
+                            } else {
+                                Msg::PersistenceError("".to_string())
+                            }
+                        }
+                    );
                 }
                 Command::None
             }
 
             Msg::TogglePauseItem(id) => {
-                if let Some(item) = state.queue_items.iter_mut().find(|i| i.id == id) {
-                    let new_status = match item.status {
+                // Read current status
+                let current_status = state.queue_items.iter().find(|i| i.id == id).map(|i| i.status.clone());
+                if let Some(status) = current_status {
+                    let new_status = match status {
                         OperationStatus::Pending => OperationStatus::Paused,
                         OperationStatus::Paused => OperationStatus::Pending,
-                        _ => item.status.clone(),
+                        _ => status,
                     };
-                    item.status = new_status.clone();
+                    state.mutate_item(&id, |item| item.status = new_status.clone());
+                    state.invalidate_index_cache();
 
                     let item_id = id.clone();
                     return Command::perform(
@@ -384,6 +479,7 @@ impl App for OperationQueueApp {
 
             Msg::DeleteItem(id) => {
                 state.queue_items.retain(|item| item.id != id);
+                state.invalidate_index_cache();
                 state.tree_state.invalidate_cache();
 
                 Command::perform(
@@ -402,10 +498,12 @@ impl App for OperationQueueApp {
             }
 
             Msg::RetryItem(id) => {
-                if let Some(item) = state.queue_items.iter_mut().find(|i| i.id == id) {
+                if state.mutate_item(&id, |item| {
                     item.status = OperationStatus::Pending;
                     item.result = None;
                     item.started_at = None;
+                }) {
+                    state.invalidate_index_cache();
 
                     let item_id = id.clone();
                     let persist_cmd = Command::perform(
@@ -435,11 +533,12 @@ impl App for OperationQueueApp {
 
             Msg::StartExecution(id) => {
                 // Mark as running and set start time
-                if let Some(item) = state.queue_items.iter_mut().find(|i| i.id == id) {
+                state.mutate_item(&id, |item| {
                     item.status = OperationStatus::Running;
                     item.started_at = Some(std::time::Instant::now());
-                    state.currently_running.insert(id.clone());
-                }
+                });
+                state.currently_running.insert(id.clone());
+                state.invalidate_index_cache();
 
                 // Persist Running status to database
                 let item_id_for_persist = id.clone();
@@ -530,35 +629,28 @@ impl App for OperationQueueApp {
 
             Msg::ExecutionCompleted(id, result) => {
                 state.currently_running.remove(&id);
+                state.invalidate_index_cache();
 
                 let mut publish_cmd = Command::None;
                 let mut persist_cmd = Command::None;
 
-                if let Some(item) = state.queue_items.iter_mut().find(|i| i.id == id) {
-                    // Determine new status based on operation results
+                // First, read the item to compute new state
+                let item_data = state.queue_items.iter().find(|i| i.id == id).map(|item| {
                     let succeeded_count = result.operation_results.iter().filter(|r| r.success).count();
                     let failed_count = result.operation_results.iter().filter(|r| !r.success).count();
                     let total_count = result.operation_results.len();
 
-                    let new_status = if result.success {
-                        // All succeeded - clear any previous succeeded_indices
-                        item.succeeded_indices.clear();
-                        OperationStatus::Done
+                    let (new_status, new_succeeded_indices) = if result.success {
+                        (OperationStatus::Done, vec![])
                     } else if succeeded_count > 0 && failed_count > 0 {
-                        // Partial success - track which operations succeeded
-                        // Note: indices are relative to the operations that were executed
-                        // If this was a retry, we need to map back to original indices
                         let newly_succeeded: Vec<usize> = result.operation_results
                             .iter()
                             .enumerate()
                             .filter(|(_, r)| r.success)
                             .map(|(idx, _)| {
-                                // If we have previous succeeded indices, the current execution
-                                // was on a subset. We need to find the original index.
                                 if item.succeeded_indices.is_empty() {
                                     idx
                                 } else {
-                                    // Find the idx-th non-succeeded original index
                                     let mut original_idx = 0;
                                     let mut count = 0;
                                     for i in 0..item.operations.len() {
@@ -575,39 +667,45 @@ impl App for OperationQueueApp {
                             })
                             .collect();
 
-                        // Merge with existing succeeded indices
+                        let mut merged = item.succeeded_indices.clone();
                         for idx in newly_succeeded {
-                            if !item.succeeded_indices.contains(&idx) {
-                                item.succeeded_indices.push(idx);
+                            if !merged.contains(&idx) {
+                                merged.push(idx);
                             }
                         }
-                        item.succeeded_indices.sort();
-
-                        OperationStatus::PartiallyFailed
+                        merged.sort();
+                        (OperationStatus::PartiallyFailed, merged)
                     } else if total_count == 0 && result.error.is_some() {
-                        // Fatal error before any operations ran
-                        OperationStatus::Failed
+                        (OperationStatus::Failed, item.succeeded_indices.clone())
                     } else {
-                        // All operations failed
-                        OperationStatus::Failed
+                        (OperationStatus::Failed, item.succeeded_indices.clone())
                     };
 
-                    item.status = new_status.clone();
-                    item.result = Some(result.clone());
+                    (new_status, new_succeeded_indices, item.metadata.clone())
+                });
+
+                if let Some((new_status, new_succeeded_indices, metadata)) = item_data {
+                    // Now mutate the item
+                    let new_status_clone = new_status.clone();
+                    let new_succeeded_indices_clone = new_succeeded_indices.clone();
+                    let result_clone = result.clone();
+                    state.mutate_item(&id, move |item| {
+                        item.status = new_status_clone;
+                        item.result = Some(result_clone);
+                        item.succeeded_indices = new_succeeded_indices_clone;
+                    });
 
                     // Persist to database
                     let item_id = id.clone();
-                    let result_clone = result.clone();
-                    let succeeded_indices_clone = item.succeeded_indices.clone();
+                    let result_for_persist = result.clone();
                     persist_cmd = Command::perform(
                         async move {
                             let config = crate::global_config();
                             config.update_queue_item_status(&item_id, new_status).await
                                 .map_err(|e| format!("Failed to update status: {}", e))?;
-                            config.update_queue_item_result(&item_id, &result_clone).await
+                            config.update_queue_item_result(&item_id, &result_for_persist).await
                                 .map_err(|e| format!("Failed to update result: {}", e))?;
-                            // Persist succeeded indices for partial retry support
-                            config.update_queue_item_succeeded_indices(&item_id, &succeeded_indices_clone).await
+                            config.update_queue_item_succeeded_indices(&item_id, &new_succeeded_indices).await
                                 .map_err(|e| format!("Failed to update succeeded_indices: {}", e))?;
                             Ok(())
                         },
@@ -623,7 +721,6 @@ impl App for OperationQueueApp {
                     // Track completion time for successful operations
                     if result.success {
                         state.recent_completion_times.push_back(result.duration_ms);
-                        // Keep only last 10 completion times
                         if state.recent_completion_times.len() > 10 {
                             state.recent_completion_times.pop_front();
                         }
@@ -643,12 +740,10 @@ impl App for OperationQueueApp {
                             result.duration_ms
                         );
 
-                        // Log top-level error if present
                         if let Some(ref error) = result.error {
                             log::error!("  Error: {}", error);
                         }
 
-                        // Log individual operation failures
                         for (idx, op_result) in result.operation_results.iter().enumerate() {
                             if !op_result.success {
                                 log::error!(
@@ -669,7 +764,7 @@ impl App for OperationQueueApp {
                     let completion_data = serde_json::json!({
                         "id": id,
                         "result": result,
-                        "metadata": item.metadata,
+                        "metadata": metadata,
                     });
                     publish_cmd = Command::Publish {
                         topic: "queue:item_completed".to_string(),
@@ -696,12 +791,14 @@ impl App for OperationQueueApp {
 
             Msg::SetFilter(filter) => {
                 state.filter = filter;
+                state.invalidate_index_cache();
                 state.tree_state.invalidate_cache();
                 save_settings_command(state)
             }
 
             Msg::SetSortMode(sort_mode) => {
                 state.sort_mode = sort_mode;
+                state.invalidate_index_cache();
                 state.tree_state.invalidate_cache();
                 save_settings_command(state)
             }
@@ -749,6 +846,7 @@ impl App for OperationQueueApp {
                     let item_id = id.clone();
                     state.queue_items.retain(|item| &item.id != id);
                     state.selected_item_id = None; // Clear selection after delete
+                    state.invalidate_index_cache();
                     state.tree_state.select_and_scroll(None);
                     state.tree_state.invalidate_cache();
 
@@ -775,10 +873,15 @@ impl App for OperationQueueApp {
             }
 
             Msg::RetrySelected => {
-                if let Some(id) = &state.selected_item_id {
-                    if let Some(item) = state.queue_items.iter_mut().find(|i| &i.id == id) {
+                let id = state.selected_item_id.clone();
+                if let Some(id) = id {
+                    let found = state.mutate_item(&id, |item| {
                         item.status = OperationStatus::Pending;
                         item.result = None;
+                    });
+
+                    if found {
+                        state.invalidate_index_cache();
 
                         let item_id = id.clone();
                         let persist_cmd = Command::perform(
@@ -831,8 +934,9 @@ impl App for OperationQueueApp {
                     }
                 );
 
-                let mut items = items;
-                state.queue_items.append(&mut items);
+                let arc_items: Vec<Arc<QueueItem>> = items.into_iter().map(Arc::new).collect();
+                state.queue_items.extend(arc_items);
+                state.invalidate_index_cache();
                 state.tree_state.invalidate_cache();
 
                 // If queue was empty and we just added items, select the first one
@@ -859,6 +963,7 @@ impl App for OperationQueueApp {
                 state.clear_confirm_modal.close();
                 state.queue_items.clear();
                 state.selected_item_id = None;
+                state.invalidate_index_cache();
                 state.tree_state.select_and_scroll(None);
                 state.tree_state.invalidate_cache();
 
@@ -905,30 +1010,16 @@ impl App for OperationQueueApp {
     }
 
     fn view(state: &mut State) -> LayeredView<Msg> {
+        let view_start = std::time::Instant::now();
         use_constraints!();
         let theme = &crate::global_runtime_config().theme;
 
-        // Build tree nodes from filtered queue items
-        let mut filtered_items: Vec<QueueItem> = state
-            .queue_items
-            .iter()
-            .filter(|item| state.filter.matches(item))
-            .cloned()
-            .collect();
-
-        // Sort items
-        filtered_items.sort_by(|a, b| match state.sort_mode {
-            SortMode::Priority => a.priority.cmp(&b.priority),
-            SortMode::Status => {
-                format!("{:?}", a.status).cmp(&format!("{:?}", b.status))
-            }
-            SortMode::Source => a.metadata.source.cmp(&b.metadata.source),
-        });
-
-        let tree_nodes: Vec<QueueTreeNode> = filtered_items
-            .into_iter()
-            .map(QueueTreeNode::Parent)
-            .collect();
+        // Rebuild index cache if needed (only when data/filter/sort changes)
+        let cache_start = std::time::Instant::now();
+        state.rebuild_index_cache_if_needed();
+        // Build tree nodes fresh each frame (for live elapsed time updates)
+        let tree_nodes = state.build_tree_nodes();
+        let cache_elapsed = cache_start.elapsed();
 
         // Controls and stats row
         let play_button = if state.auto_play {
@@ -994,11 +1085,13 @@ impl App for OperationQueueApp {
         ];
 
         // Table tree
+        let element_build_start = std::time::Instant::now();
         let tree_widget = Element::table_tree("queue-tree", &tree_nodes, &mut state.tree_state)
             .on_event(Msg::TreeEvent)
             .on_select(Msg::NodeSelected)
             .on_render(Msg::ViewportHeight)
             .build();
+        let element_build_elapsed = element_build_start.elapsed();
 
         let tree = Element::panel(tree_widget)
             .title("Queue")
@@ -1034,6 +1127,17 @@ impl App for OperationQueueApp {
         if state.interruption_warning_modal.is_open() {
             let modal = build_interruption_warning_modal(state);
             view = view.with_app_modal(modal, Alignment::Center);
+        }
+
+        let total_elapsed = view_start.elapsed();
+        if total_elapsed.as_millis() > 5 {
+            log::warn!(
+                "PERF view(): total={}ms cache={}us element_build={}us items={}",
+                total_elapsed.as_millis(),
+                cache_elapsed.as_micros(),
+                element_build_elapsed.as_micros(),
+                state.queue_items.len()
+            );
         }
 
         view

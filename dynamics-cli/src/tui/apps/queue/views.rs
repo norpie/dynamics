@@ -9,6 +9,7 @@ use ratatui::text::{Line as RataLine, Span};
 use ratatui::prelude::Stylize;
 
 pub fn build_details_panel(state: &State, scroll_state: &ScrollableState) -> Element<Msg> {
+    let start = std::time::Instant::now();
     let theme = &crate::global_runtime_config().theme;
 
     // Check if selected ID is a child node (format: "parent_id_index")
@@ -63,6 +64,11 @@ pub fn build_details_panel(state: &State, scroll_state: &ScrollableState) -> Ele
     .on_navigate(Msg::DetailsScroll)
     .on_render(Msg::DetailsSetDimensions)
     .build();
+
+    let elapsed = start.elapsed();
+    if elapsed.as_micros() > 500 {
+        log::warn!("PERF build_details_panel: {}us", elapsed.as_micros());
+    }
 
     Element::panel(scrollable_content)
         .title("Details")

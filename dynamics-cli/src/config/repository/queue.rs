@@ -367,6 +367,7 @@ fn parse_queue_item_row(row: sqlx::sqlite::SqliteRow) -> Result<QueueItem> {
         was_interrupted,
         interrupted_at,
         succeeded_indices,
+        cached_columns: None, // Computed at render time
     })
 }
 

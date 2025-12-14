@@ -663,6 +663,8 @@ pub(crate) fn flatten_table_tree<T: TableTreeItem>(
     root_items: &[T],
     state: &mut TreeState,
 ) -> Vec<FlatTableNode> {
+    let start = std::time::Instant::now();
+
     // Rebuild metadata cache if invalid
     if !state.cache_valid {
         state.rebuild_metadata(root_items);
@@ -672,6 +674,12 @@ pub(crate) fn flatten_table_tree<T: TableTreeItem>(
     for item in root_items {
         flatten_table_recursive(item, state, 0, &mut result);
     }
+
+    let elapsed = start.elapsed();
+    if elapsed.as_micros() > 1000 {
+        log::warn!("PERF flatten_table_tree: {}us for {} items", elapsed.as_micros(), result.len());
+    }
+
     result
 }
 

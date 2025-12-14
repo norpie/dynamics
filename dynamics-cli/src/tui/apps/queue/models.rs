@@ -32,6 +32,9 @@ pub struct QueueItem {
     /// On retry, only operations NOT in this set will be executed
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub succeeded_indices: Vec<usize>,
+    /// Cached column data for rendering (to avoid recomputing every frame)
+    #[serde(skip)]
+    pub cached_columns: Option<Vec<String>>,
 }
 
 impl QueueItem {
@@ -48,7 +51,18 @@ impl QueueItem {
             was_interrupted: false,
             interrupted_at: None,
             succeeded_indices: Vec::new(),
+            cached_columns: None,
         }
+    }
+
+    /// Invalidate cached columns (call when item state changes)
+    pub fn invalidate_cache(&mut self) {
+        self.cached_columns = None;
+    }
+
+    /// Update cached columns
+    pub fn update_cache(&mut self, columns: Vec<String>) {
+        self.cached_columns = Some(columns);
     }
 
     /// Get the number of operations that still need to be executed
