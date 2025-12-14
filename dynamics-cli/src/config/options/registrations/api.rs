@@ -66,8 +66,8 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
     registry.register(
         OptionDefBuilder::new("api", "rate_limit.requests_per_minute")
             .display_name("Requests Per Minute")
-            .description("Maximum number of requests per minute (1-1000)")
-            .uint_type(90, Some(1), Some(1000))
+            .description("Maximum number of requests per minute (1-1200)")
+            .uint_type(600, Some(1), Some(1200))
             .build()?
     )?;
 
@@ -75,7 +75,32 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
         OptionDefBuilder::new("api", "rate_limit.burst_capacity")
             .display_name("Burst Capacity")
             .description("Number of requests that can burst above the rate limit (1-100)")
-            .uint_type(10, Some(1), Some(100))
+            .uint_type(30, Some(1), Some(100))
+            .build()?
+    )?;
+
+    // Concurrency options
+    registry.register(
+        OptionDefBuilder::new("api", "concurrency.enabled")
+            .display_name("Enable Concurrency Limiting")
+            .description("Limit the number of concurrent API requests to prevent exceeding Dataverse limits")
+            .bool_type(true)
+            .build()?
+    )?;
+
+    registry.register(
+        OptionDefBuilder::new("api", "concurrency.max_concurrent_requests")
+            .display_name("Max Concurrent Requests")
+            .description("Maximum number of concurrent HTTP requests to Dataverse (1-52)")
+            .uint_type(20, Some(1), Some(52))
+            .build()?
+    )?;
+
+    registry.register(
+        OptionDefBuilder::new("api", "concurrency.max_queue_items")
+            .display_name("Max Queue Items")
+            .description("Maximum number of queue items that can run concurrently (1-50)")
+            .uint_type(10, Some(1), Some(50))
             .build()?
     )?;
 
@@ -115,6 +140,6 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .build()?
     )?;
 
-    log::info!("Registered {} API options", 13);
+    log::info!("Registered {} API options", 16);
     Ok(())
 }

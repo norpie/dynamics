@@ -1,7 +1,7 @@
 use super::constants::{self, headers, methods};
 use super::operations::{Operation, OperationResult, BatchRequestBuilder, BatchResponseParser};
 use super::query::{Query, QueryResult, QueryResponse};
-use super::resilience::{RetryPolicy, RetryConfig, ResilienceConfig, RateLimiter, ApiLogger, OperationContext, OperationMetrics, MetricsCollector};
+use super::resilience::{RetryPolicy, RetryConfig, ResilienceConfig, RateLimiter, ConcurrencyLimiter, ApiLogger, OperationContext, OperationMetrics, MetricsCollector};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -14,6 +14,7 @@ pub struct DynamicsClient {
     access_token: String,
     retry_policy: RetryPolicy, // Default retry policy for backwards compatibility
     rate_limiter: RateLimiter, // Global rate limiter for this client instance
+    concurrency_limiter: ConcurrencyLimiter, // Global concurrency limiter for this client instance
     api_logger: ApiLogger, // Structured logger for operations
     metrics_collector: MetricsCollector, // Performance metrics collector
 }
@@ -53,15 +54,29 @@ pub struct ManyToManyRelationship {
 }
 
 impl DynamicsClient {
-    /// Apply rate limiting using the client's global rate limiter
-    async fn apply_rate_limiting(&self) -> anyhow::Result<()> {
+    /// Apply rate limiting and concurrency limiting using the client's global limiters
+    /// Returns an owned semaphore permit that must be held for the duration of the request
+    async fn apply_rate_limiting(&self) -> anyhow::Result<tokio::sync::OwnedSemaphorePermit> {
+        // First acquire concurrency permit (limits concurrent requests)
+        let permit = self.concurrency_limiter.acquire().await;
+        // Then apply rate limiting (limits request rate)
         self.rate_limiter.acquire().await;
-        Ok(())
+        Ok(permit)
     }
 
     /// Get rate limiter statistics for monitoring
     pub fn rate_limiter_stats(&self) -> crate::api::resilience::RateLimiterStats {
         self.rate_limiter.stats()
+    }
+
+    /// Get concurrency limiter statistics for monitoring
+    pub fn concurrency_limiter_stats(&self) -> crate::api::resilience::ConcurrencyStats {
+        self.concurrency_limiter.stats()
+    }
+
+    /// Get the maximum number of queue items that can run concurrently
+    pub fn max_queue_items(&self) -> usize {
+        self.concurrency_limiter.max_queue_items()
     }
 
     /// Get performance metrics snapshot
@@ -78,27 +93,31 @@ impl DynamicsClient {
             .build()
             .expect("Failed to build HTTP client");
 
+        let default_config = ResilienceConfig::default();
         Self {
             base_url,
             http_client,
             access_token,
             retry_policy: RetryPolicy::default(),
-            rate_limiter: RateLimiter::new(ResilienceConfig::default().rate_limit),
-            api_logger: ApiLogger::new(ResilienceConfig::default().monitoring),
-            metrics_collector: MetricsCollector::new(ResilienceConfig::default().monitoring),
+            rate_limiter: RateLimiter::new(default_config.rate_limit.clone()),
+            concurrency_limiter: ConcurrencyLimiter::new(default_config.concurrency.clone()),
+            api_logger: ApiLogger::new(default_config.monitoring.clone()),
+            metrics_collector: MetricsCollector::new(default_config.monitoring),
         }
     }
 
     /// Create a new client with custom HTTP client configuration
     pub fn with_custom_client(base_url: String, access_token: String, http_client: reqwest::Client) -> Self {
+        let default_config = ResilienceConfig::default();
         Self {
             base_url,
             http_client,
             access_token,
             retry_policy: RetryPolicy::default(),
-            rate_limiter: RateLimiter::new(ResilienceConfig::default().rate_limit),
-            api_logger: ApiLogger::new(ResilienceConfig::default().monitoring),
-            metrics_collector: MetricsCollector::new(ResilienceConfig::default().monitoring),
+            rate_limiter: RateLimiter::new(default_config.rate_limit.clone()),
+            concurrency_limiter: ConcurrencyLimiter::new(default_config.concurrency.clone()),
+            api_logger: ApiLogger::new(default_config.monitoring.clone()),
+            metrics_collector: MetricsCollector::new(default_config.monitoring),
         }
     }
 
@@ -113,14 +132,16 @@ impl DynamicsClient {
             .build()
             .expect("Failed to build HTTP client");
 
+        let default_config = ResilienceConfig::default();
         Self {
             base_url,
             http_client,
             access_token,
             retry_policy: RetryPolicy::new(retry_config),
-            rate_limiter: RateLimiter::new(ResilienceConfig::default().rate_limit),
-            api_logger: ApiLogger::new(ResilienceConfig::default().monitoring),
-            metrics_collector: MetricsCollector::new(ResilienceConfig::default().monitoring),
+            rate_limiter: RateLimiter::new(default_config.rate_limit.clone()),
+            concurrency_limiter: ConcurrencyLimiter::new(default_config.concurrency.clone()),
+            api_logger: ApiLogger::new(default_config.monitoring.clone()),
+            metrics_collector: MetricsCollector::new(default_config.monitoring),
         }
     }
 
@@ -197,7 +218,7 @@ impl DynamicsClient {
 
     /// Execute FetchXML query directly (for FQL compatibility)
     pub async fn execute_fetchxml(&self, entity_name: &str, fetchxml: &str) -> anyhow::Result<Value> {
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let encoded_fetchxml = urlencoding::encode(fetchxml);
 
@@ -244,7 +265,7 @@ impl DynamicsClient {
         navigation_property: &str,
         select_fields: Option<Vec<String>>,
     ) -> anyhow::Result<Value> {
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let mut url = format!("{}{}/{}({})/{}",
             self.base_url,
@@ -309,7 +330,7 @@ impl DynamicsClient {
     /// # Returns
     /// JSON response as `serde_json::Value`
     pub async fn execute_raw(&self, method: &str, endpoint: &str, data: Option<&str>) -> anyhow::Result<Value> {
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         // Build full URL
         let url = if endpoint.starts_with("http") {
@@ -399,7 +420,7 @@ impl DynamicsClient {
         let mut context = logger.start_operation("create", entity, &correlation_id);
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         // Log request details
         let mut request_headers = HashMap::new();
@@ -464,7 +485,7 @@ impl DynamicsClient {
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let response = retry_policy.execute(|| async {
@@ -494,7 +515,7 @@ impl DynamicsClient {
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let response = retry_policy.execute(|| async {
@@ -519,7 +540,7 @@ impl DynamicsClient {
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let response = retry_policy.execute(|| async {
@@ -550,7 +571,7 @@ impl DynamicsClient {
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let body = serde_json::json!({
             "@odata.id": target_ref
@@ -584,7 +605,7 @@ impl DynamicsClient {
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let response = retry_policy.execute(|| async {
@@ -613,7 +634,7 @@ impl DynamicsClient {
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let response = retry_policy.execute(|| async {
@@ -645,7 +666,7 @@ impl DynamicsClient {
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let response = retry_policy.execute(|| async {
@@ -673,7 +694,7 @@ impl DynamicsClient {
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let response = retry_policy.execute(|| async {
@@ -698,7 +719,7 @@ impl DynamicsClient {
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let response = retry_policy.execute(|| async {
@@ -721,7 +742,7 @@ impl DynamicsClient {
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         // Build the batch request using the proper builder
         let batch_request = BatchRequestBuilder::new(&self.base_url)
@@ -907,7 +928,7 @@ impl DynamicsClient {
         let metadata_url = format!("{}/{}/$metadata", self.base_url, constants::api_path());
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let response = self.retry_policy.execute(|| async {
             self.http_client
@@ -1042,7 +1063,7 @@ impl DynamicsClient {
         );
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let response = self.retry_policy.execute(|| async {
             self.http_client
@@ -1142,7 +1163,7 @@ impl DynamicsClient {
         );
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let response = self.retry_policy.execute(|| async {
             self.http_client
@@ -1268,7 +1289,7 @@ impl DynamicsClient {
         );
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let response = self.retry_policy.execute(|| async {
             self.http_client
@@ -1315,7 +1336,7 @@ impl DynamicsClient {
         );
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let response = self.retry_policy.execute(|| async {
             self.http_client
@@ -1364,7 +1385,7 @@ impl DynamicsClient {
         );
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let response = self.retry_policy.execute(|| async {
             self.http_client
@@ -1423,7 +1444,7 @@ impl DynamicsClient {
         );
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let response = self.retry_policy.execute(|| async {
             self.http_client
@@ -1492,7 +1513,7 @@ impl DynamicsClient {
         );
 
         // Apply rate limiting before making the request
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         let response = self.retry_policy.execute(|| async {
             self.http_client
@@ -1689,7 +1710,7 @@ impl DynamicsClient {
         entity_name: &str,
         record_id: &str,
     ) -> anyhow::Result<serde_json::Value> {
-        self.apply_rate_limiting().await?;
+        let _permit = self.apply_rate_limiting().await?;
 
         // Pluralize entity name for the endpoint
         let plural_entity = super::pluralization::pluralize_entity_name(entity_name);

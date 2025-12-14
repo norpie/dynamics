@@ -114,13 +114,15 @@ pub struct State {
 
 impl Default for State {
     fn default() -> Self {
+        // Use centralized resilience config default for max_concurrent
+        let default_max_concurrent = ResilienceConfig::default().concurrency.max_queue_items;
         Self {
             queue_items: Vec::new(),
             tree_state: TreeState::with_selection(),
             cached_sorted_indices: Vec::new(),
             index_cache_valid: false,
             auto_play: false,
-            max_concurrent: 3,
+            max_concurrent: default_max_concurrent,
             currently_running: HashSet::new(),
             recent_completion_times: VecDeque::with_capacity(10),
             filter: QueueFilter::All,
@@ -213,9 +215,14 @@ impl App for OperationQueueApp {
                 let mut queue_items = config.list_queue_items().await
                     .map_err(|e| format!("Failed to load queue items: {}", e))?;
 
-                // Load settings
-                let settings = config.get_queue_settings().await
+                // Load settings (filter/sort from queue settings, max_concurrent from resilience)
+                let mut settings = config.get_queue_settings().await
                     .map_err(|e| format!("Failed to load queue settings: {}", e))?;
+
+                // Override max_concurrent with centralized resilience config
+                let resilience = ResilienceConfig::load_from_options().await
+                    .unwrap_or_default();
+                settings.max_concurrent = resilience.concurrency.max_queue_items;
 
                 // Detect and handle interrupted items
                 let mut interrupted_items = Vec::new();

@@ -11,7 +11,19 @@ use std::time::Duration;
 pub struct ResilienceConfig {
     pub retry: RetryConfig,
     pub rate_limit: RateLimitConfig,
+    pub concurrency: ConcurrencyConfig,
     pub monitoring: MonitoringConfig,
+}
+
+/// Concurrency limiting configuration
+#[derive(Debug, Clone)]
+pub struct ConcurrencyConfig {
+    /// Maximum concurrent HTTP requests to the API
+    pub max_concurrent_requests: usize,
+    /// Maximum queue items that can run concurrently
+    pub max_queue_items: usize,
+    /// Whether concurrency limiting is enabled
+    pub enabled: bool,
 }
 
 /// Rate limiting configuration
@@ -45,6 +57,7 @@ impl Default for ResilienceConfig {
         Self {
             retry: RetryConfig::default(),
             rate_limit: RateLimitConfig::default(),
+            concurrency: ConcurrencyConfig::default(),
             monitoring: MonitoringConfig::default(),
         }
     }
@@ -53,8 +66,18 @@ impl Default for ResilienceConfig {
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
-            requests_per_minute: 90, // Conservative for Dynamics 365 (100/min limit)
-            burst_capacity: 10,      // Allow small bursts
+            requests_per_minute: 600, // Conservative (Dataverse allows 1200/min)
+            burst_capacity: 30,       // Allow moderate bursts
+            enabled: true,
+        }
+    }
+}
+
+impl Default for ConcurrencyConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_requests: 20, // Conservative (Dataverse allows 52)
+            max_queue_items: 10,         // Queue items running concurrently
             enabled: true,
         }
     }
@@ -82,8 +105,13 @@ impl ResilienceConfig {
         Self {
             retry: RetryConfig::conservative(),
             rate_limit: RateLimitConfig {
-                requests_per_minute: 60, // Very conservative
-                burst_capacity: 5,
+                requests_per_minute: 300, // Very conservative
+                burst_capacity: 15,
+                enabled: true,
+            },
+            concurrency: ConcurrencyConfig {
+                max_concurrent_requests: 10,
+                max_queue_items: 5,
                 enabled: true,
             },
             monitoring: MonitoringConfig {
@@ -100,8 +128,13 @@ impl ResilienceConfig {
         Self {
             retry: RetryConfig::aggressive(),
             rate_limit: RateLimitConfig {
-                requests_per_minute: 200, // Higher limits for dev
-                burst_capacity: 20,
+                requests_per_minute: 1000, // Higher limits for dev
+                burst_capacity: 50,
+                enabled: false, // Often disabled in dev
+            },
+            concurrency: ConcurrencyConfig {
+                max_concurrent_requests: 40,
+                max_queue_items: 20,
                 enabled: false, // Often disabled in dev
             },
             monitoring: MonitoringConfig {
@@ -126,6 +159,11 @@ impl ResilienceConfig {
             rate_limit: RateLimitConfig {
                 requests_per_minute: u32::MAX,
                 burst_capacity: u32::MAX,
+                enabled: false,
+            },
+            concurrency: ConcurrencyConfig {
+                max_concurrent_requests: usize::MAX,
+                max_queue_items: usize::MAX,
                 enabled: false,
             },
             monitoring: MonitoringConfig {
@@ -159,9 +197,17 @@ impl ResilienceConfig {
         let rate_limit_enabled = config.options.get_bool("api.rate_limit.enabled").await
             .unwrap_or(true);
         let requests_per_minute = config.options.get_uint("api.rate_limit.requests_per_minute").await
-            .unwrap_or(90) as u32;
+            .unwrap_or(600) as u32;
         let burst_capacity = config.options.get_uint("api.rate_limit.burst_capacity").await
-            .unwrap_or(10) as u32;
+            .unwrap_or(30) as u32;
+
+        // Load concurrency options
+        let concurrency_enabled = config.options.get_bool("api.concurrency.enabled").await
+            .unwrap_or(true);
+        let max_concurrent_requests = config.options.get_uint("api.concurrency.max_concurrent_requests").await
+            .unwrap_or(20) as usize;
+        let max_queue_items = config.options.get_uint("api.concurrency.max_queue_items").await
+            .unwrap_or(10) as usize;
 
         // Load monitoring options
         let correlation_ids = config.options.get_bool("api.monitoring.correlation_ids").await
@@ -194,6 +240,11 @@ impl ResilienceConfig {
                 requests_per_minute,
                 burst_capacity,
                 enabled: rate_limit_enabled,
+            },
+            concurrency: ConcurrencyConfig {
+                max_concurrent_requests,
+                max_queue_items,
+                enabled: concurrency_enabled,
             },
             monitoring: MonitoringConfig {
                 correlation_ids,
@@ -248,6 +299,30 @@ impl ResilienceConfigBuilder {
         self
     }
 
+    /// Configure concurrency limiting
+    pub fn concurrency_config(mut self, concurrency: ConcurrencyConfig) -> Self {
+        self.config.concurrency = concurrency;
+        self
+    }
+
+    /// Set max concurrent requests
+    pub fn max_concurrent_requests(mut self, max: usize) -> Self {
+        self.config.concurrency.max_concurrent_requests = max;
+        self
+    }
+
+    /// Set max queue items
+    pub fn max_queue_items(mut self, max: usize) -> Self {
+        self.config.concurrency.max_queue_items = max;
+        self
+    }
+
+    /// Enable/disable concurrency limiting
+    pub fn enable_concurrency_limiting(mut self, enabled: bool) -> Self {
+        self.config.concurrency.enabled = enabled;
+        self
+    }
+
     /// Configure monitoring
     pub fn monitoring_config(mut self, monitoring: MonitoringConfig) -> Self {
         self.config.monitoring = monitoring;
@@ -299,8 +374,11 @@ mod tests {
         let config = ResilienceConfig::default();
 
         assert_eq!(config.retry.max_attempts, 3);
-        assert_eq!(config.rate_limit.requests_per_minute, 90);
+        assert_eq!(config.rate_limit.requests_per_minute, 600);
         assert!(config.rate_limit.enabled);
+        assert_eq!(config.concurrency.max_concurrent_requests, 20);
+        assert_eq!(config.concurrency.max_queue_items, 10);
+        assert!(config.concurrency.enabled);
         assert!(config.monitoring.correlation_ids);
         assert!(config.monitoring.request_logging);
     }
@@ -310,8 +388,11 @@ mod tests {
         let config = ResilienceConfig::conservative();
 
         assert_eq!(config.retry.max_attempts, 2);
-        assert_eq!(config.rate_limit.requests_per_minute, 60);
+        assert_eq!(config.rate_limit.requests_per_minute, 300);
         assert!(config.rate_limit.enabled);
+        assert_eq!(config.concurrency.max_concurrent_requests, 10);
+        assert_eq!(config.concurrency.max_queue_items, 5);
+        assert!(config.concurrency.enabled);
     }
 
     #[test]
@@ -319,8 +400,10 @@ mod tests {
         let config = ResilienceConfig::development();
 
         assert_eq!(config.retry.max_attempts, 5);
-        assert_eq!(config.rate_limit.requests_per_minute, 200);
+        assert_eq!(config.rate_limit.requests_per_minute, 1000);
         assert!(!config.rate_limit.enabled); // Disabled in dev
+        assert_eq!(config.concurrency.max_concurrent_requests, 40);
+        assert!(!config.concurrency.enabled); // Disabled in dev
     }
 
     #[test]
@@ -329,6 +412,7 @@ mod tests {
 
         assert_eq!(config.retry.max_attempts, 1);
         assert!(!config.rate_limit.enabled);
+        assert!(!config.concurrency.enabled);
         assert!(!config.monitoring.correlation_ids);
         assert!(!config.monitoring.request_logging);
     }
@@ -339,6 +423,9 @@ mod tests {
             .max_retries(5)
             .requests_per_minute(120)
             .enable_rate_limiting(false)
+            .max_concurrent_requests(30)
+            .max_queue_items(15)
+            .enable_concurrency_limiting(true)
             .correlation_ids(true)
             .log_level(LogLevel::Debug)
             .build();
@@ -346,6 +433,9 @@ mod tests {
         assert_eq!(config.retry.max_attempts, 5);
         assert_eq!(config.rate_limit.requests_per_minute, 120);
         assert!(!config.rate_limit.enabled);
+        assert_eq!(config.concurrency.max_concurrent_requests, 30);
+        assert_eq!(config.concurrency.max_queue_items, 15);
+        assert!(config.concurrency.enabled);
         assert!(config.monitoring.correlation_ids);
     }
 }
