@@ -85,7 +85,8 @@ pub fn render_table_tree<Msg: Clone + Send + 'static>(
     let visible_height = area.height.saturating_sub(1) as usize;
 
     // Virtual scrolling: only render visible rows
-    let start_idx = scroll_offset;
+    // Bound start_idx to prevent panic when scroll_offset is stale (e.g., after clearing queue)
+    let start_idx = scroll_offset.min(flattened_nodes.len());
     let end_idx = (start_idx + visible_height).min(flattened_nodes.len());
 
     // Build table rows from flattened nodes
