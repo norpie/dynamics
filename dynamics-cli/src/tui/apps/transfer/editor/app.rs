@@ -1,5 +1,5 @@
 use crate::config::repository::transfer::{get_transfer_config, save_transfer_config};
-use crate::transfer::TransferConfig;
+use crate::transfer::{OrphanHandling, TransferConfig};
 use crate::tui::element::FocusId;
 use crate::tui::resource::Resource;
 use crate::tui::widgets::TreeState;
@@ -232,6 +232,13 @@ impl App for MappingEditorApp {
 
             Msg::EntityFormPriority(event) => {
                 state.entity_form.priority.handle_event(event, Some(10));
+                Command::None
+            }
+
+            Msg::EntityFormCycleOrphanHandling => {
+                let num_variants = OrphanHandling::all_variants().len();
+                state.entity_form.orphan_handling_idx =
+                    (state.entity_form.orphan_handling_idx + 1) % num_variants;
                 Command::None
             }
 

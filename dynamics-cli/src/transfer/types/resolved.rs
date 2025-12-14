@@ -70,6 +70,11 @@ impl ResolvedTransfer {
         self.count_by_action(RecordAction::NoChange)
     }
 
+    /// Get total target-only count (records in target but not source)
+    pub fn target_only_count(&self) -> usize {
+        self.count_by_action(RecordAction::TargetOnly)
+    }
+
     /// Get total skip count
     pub fn skip_count(&self) -> usize {
         self.count_by_action(RecordAction::Skip)
@@ -109,6 +114,9 @@ pub struct ResolvedEntity {
     pub primary_key_field: String,
     /// All field names in order (for table display)
     pub field_names: Vec<String>,
+    /// How to handle target-only records (from config)
+    #[serde(default)]
+    pub orphan_handling: super::OrphanHandling,
     /// Resolved records
     pub records: Vec<ResolvedRecord>,
     /// Set of record IDs that have been manually edited
@@ -136,11 +144,17 @@ impl ResolvedEntity {
             priority,
             primary_key_field: primary_key_field.into(),
             field_names: Vec::new(),
+            orphan_handling: super::OrphanHandling::default(),
             records: Vec::new(),
             dirty_record_ids: HashSet::new(),
             lookup_context: None,
             entity_set_name: None,
         }
+    }
+
+    /// Set the orphan handling mode
+    pub fn set_orphan_handling(&mut self, handling: super::OrphanHandling) {
+        self.orphan_handling = handling;
     }
 
     /// Set the lookup binding context
@@ -181,6 +195,11 @@ impl ResolvedEntity {
     /// Get no-change count
     pub fn nochange_count(&self) -> usize {
         self.count_by_action(RecordAction::NoChange)
+    }
+
+    /// Get target-only count (records in target but not source)
+    pub fn target_only_count(&self) -> usize {
+        self.count_by_action(RecordAction::TargetOnly)
     }
 
     /// Get skip count
@@ -311,6 +330,16 @@ impl ResolvedRecord {
         }
     }
 
+    /// Create a target-only record (exists in target but not source)
+    pub fn target_only(target_id: Uuid, fields: HashMap<String, Value>) -> Self {
+        ResolvedRecord {
+            action: RecordAction::TargetOnly,
+            source_id: target_id, // Using source_id field to store target ID
+            fields,
+            error: None,
+        }
+    }
+
     /// Check if this record will be created
     pub fn is_create(&self) -> bool {
         self.action == RecordAction::Create
@@ -324,6 +353,11 @@ impl ResolvedRecord {
     /// Check if this record has no changes
     pub fn is_nochange(&self) -> bool {
         self.action == RecordAction::NoChange
+    }
+
+    /// Check if this record exists only in target
+    pub fn is_target_only(&self) -> bool {
+        self.action == RecordAction::TargetOnly
     }
 
     /// Check if this record has an error
@@ -383,6 +417,8 @@ pub enum RecordAction {
     Update,
     /// No changes needed (target already matches)
     NoChange,
+    /// Record exists only in target (not in source) - action depends on OrphanHandling config
+    TargetOnly,
     /// Skipped by user
     Skip,
     /// Transform error (cannot proceed)
@@ -395,6 +431,7 @@ impl std::fmt::Display for RecordAction {
             RecordAction::Create => write!(f, "create"),
             RecordAction::Update => write!(f, "update"),
             RecordAction::NoChange => write!(f, "nochange"),
+            RecordAction::TargetOnly => write!(f, "target-only"),
             RecordAction::Skip => write!(f, "skip"),
             RecordAction::Error => write!(f, "error"),
         }

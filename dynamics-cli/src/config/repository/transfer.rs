@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use sqlx::{Row, SqlitePool};
 
 use crate::transfer::{
-    EntityMapping, FieldMapping, Transform, TransferConfig,
+    EntityMapping, FieldMapping, OrphanHandling, Transform, TransferConfig,
 };
 
 /// Summary of a transfer config (for listing)
@@ -72,7 +72,7 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
     // Get entity mappings
     let entity_rows = sqlx::query(
         r#"
-        SELECT id, source_entity, target_entity, priority
+        SELECT id, source_entity, target_entity, priority, orphan_handling
         FROM transfer_entity_mappings
         WHERE config_id = ?
         ORDER BY priority, source_entity
@@ -114,11 +114,20 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
             });
         }
 
+        // Parse orphan_handling from string
+        let orphan_handling_str: String = entity_row.try_get("orphan_handling")?;
+        let orphan_handling = match orphan_handling_str.as_str() {
+            "delete" => OrphanHandling::Delete,
+            "deactivate" => OrphanHandling::Deactivate,
+            _ => OrphanHandling::Ignore,
+        };
+
         entity_mappings.push(EntityMapping {
             id: Some(entity_id),
             source_entity: entity_row.try_get("source_entity")?,
             target_entity: entity_row.try_get("target_entity")?,
             priority: entity_row.try_get::<i64, _>("priority")? as u32,
+            orphan_handling,
             field_mappings,
         });
     }
@@ -183,16 +192,24 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
 
     // Insert entity mappings
     for entity in &config.entity_mappings {
+        // Serialize orphan_handling to string
+        let orphan_handling_str = match entity.orphan_handling {
+            OrphanHandling::Ignore => "ignore",
+            OrphanHandling::Delete => "delete",
+            OrphanHandling::Deactivate => "deactivate",
+        };
+
         let entity_result = sqlx::query(
             r#"
-            INSERT INTO transfer_entity_mappings (config_id, source_entity, target_entity, priority)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO transfer_entity_mappings (config_id, source_entity, target_entity, priority, orphan_handling)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(config_id)
         .bind(&entity.source_entity)
         .bind(&entity.target_entity)
         .bind(entity.priority as i64)
+        .bind(orphan_handling_str)
         .execute(&mut *tx)
         .await
         .context("Failed to insert entity mapping")?;

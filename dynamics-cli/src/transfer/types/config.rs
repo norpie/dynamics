@@ -4,6 +4,58 @@ use serde::{Deserialize, Serialize};
 
 use super::Transform;
 
+/// How to handle records that exist in target but not in source
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OrphanHandling {
+    /// Show in preview but take no action (default)
+    #[default]
+    Ignore,
+    /// Delete the record from target
+    Delete,
+    /// Deactivate the record (set statecode = 1)
+    Deactivate,
+}
+
+impl OrphanHandling {
+    /// Get display label for UI
+    pub fn label(&self) -> &'static str {
+        match self {
+            OrphanHandling::Ignore => "Ignore",
+            OrphanHandling::Delete => "Delete",
+            OrphanHandling::Deactivate => "Deactivate",
+        }
+    }
+
+    /// Get all variants for UI selection
+    pub fn all_variants() -> &'static [OrphanHandling] {
+        &[
+            OrphanHandling::Ignore,
+            OrphanHandling::Delete,
+            OrphanHandling::Deactivate,
+        ]
+    }
+
+    /// Convert from index (for UI selection)
+    pub fn from_index(idx: usize) -> Self {
+        match idx {
+            0 => OrphanHandling::Ignore,
+            1 => OrphanHandling::Delete,
+            2 => OrphanHandling::Deactivate,
+            _ => OrphanHandling::Ignore,
+        }
+    }
+
+    /// Convert to index (for UI selection)
+    pub fn to_index(&self) -> usize {
+        match self {
+            OrphanHandling::Ignore => 0,
+            OrphanHandling::Delete => 1,
+            OrphanHandling::Deactivate => 2,
+        }
+    }
+}
+
 /// Top-level transfer configuration
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TransferConfig {
@@ -84,6 +136,9 @@ pub struct EntityMapping {
     /// Execution priority (lower = runs first)
     /// Used to handle dependencies (e.g., accounts before contacts)
     pub priority: u32,
+    /// How to handle records that exist in target but not in source
+    #[serde(default)]
+    pub orphan_handling: OrphanHandling,
     /// Field mappings for this entity
     pub field_mappings: Vec<FieldMapping>,
 }
@@ -100,6 +155,7 @@ impl EntityMapping {
             source_entity: source_entity.into(),
             target_entity: target_entity.into(),
             priority,
+            orphan_handling: OrphanHandling::default(),
             field_mappings: Vec::new(),
         }
     }

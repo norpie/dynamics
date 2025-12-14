@@ -343,6 +343,7 @@ pub enum RecordFilter {
     Create,
     Update,
     NoChange,
+    TargetOnly,
     Skip,
     Error,
 }
@@ -355,6 +356,7 @@ impl RecordFilter {
             RecordFilter::Create => "Create",
             RecordFilter::Update => "Update",
             RecordFilter::NoChange => "No Change",
+            RecordFilter::TargetOnly => "Target Only",
             RecordFilter::Skip => "Skip",
             RecordFilter::Error => "Error",
         }
@@ -367,6 +369,7 @@ impl RecordFilter {
             RecordFilter::Create => action == RecordAction::Create,
             RecordFilter::Update => action == RecordAction::Update,
             RecordFilter::NoChange => action == RecordAction::NoChange,
+            RecordFilter::TargetOnly => action == RecordAction::TargetOnly,
             RecordFilter::Skip => action == RecordAction::Skip,
             RecordFilter::Error => action == RecordAction::Error,
         }
@@ -379,6 +382,7 @@ impl RecordFilter {
             RecordFilter::Create,
             RecordFilter::Update,
             RecordFilter::NoChange,
+            RecordFilter::TargetOnly,
             RecordFilter::Skip,
             RecordFilter::Error,
         ]
@@ -390,7 +394,8 @@ impl RecordFilter {
             RecordFilter::All => RecordFilter::Create,
             RecordFilter::Create => RecordFilter::Update,
             RecordFilter::Update => RecordFilter::NoChange,
-            RecordFilter::NoChange => RecordFilter::Skip,
+            RecordFilter::NoChange => RecordFilter::TargetOnly,
+            RecordFilter::TargetOnly => RecordFilter::Skip,
             RecordFilter::Skip => RecordFilter::Error,
             RecordFilter::Error => RecordFilter::All,
         }

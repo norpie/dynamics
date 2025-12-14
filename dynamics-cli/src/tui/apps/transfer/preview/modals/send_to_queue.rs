@@ -15,6 +15,7 @@ pub fn render(resolved: &ResolvedTransfer, theme: &Theme) -> Element<Msg> {
     let update_count = resolved.update_count();
     let skip_count = resolved.skip_count();
     let nochange_count = resolved.nochange_count();
+    let target_only_count = resolved.target_only_count();
     let total_actionable = create_count + update_count;
 
     // Summary by entity
@@ -69,8 +70,13 @@ pub fn render(resolved: &ResolvedTransfer, theme: &Theme) -> Element<Msg> {
         ),
         Span::raw(", "),
         Span::styled(
-            format!("Unchanged: {} records", nochange_count),
+            format!("Unchanged: {}", nochange_count),
             Style::default().fg(theme.text_tertiary),
+        ),
+        Span::raw(", "),
+        Span::styled(
+            format!("Target-only: {}", target_only_count),
+            Style::default().fg(theme.accent_primary),
         ),
     ]))
     .build();

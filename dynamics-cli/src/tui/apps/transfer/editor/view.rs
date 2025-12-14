@@ -3,6 +3,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::api::FieldMetadata;
+use crate::transfer::OrphanHandling;
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::modals::ConfirmationModal;
 use crate::tui::resource::Resource;
@@ -206,6 +207,16 @@ fn render_entity_modal(
     .build();
     let priority_panel = Element::panel(priority_input).title("Priority (lower = first)").build();
 
+    // Orphan handling button (click to cycle)
+    let current_orphan = OrphanHandling::from_index(form.orphan_handling_idx);
+    let orphan_btn_label = format!("Target-Only: {}", current_orphan.label());
+    let orphan_btn = Element::button(
+        FocusId::new("entity-orphan-handling"),
+        &orphan_btn_label,
+    )
+    .on_press(Msg::EntityFormCycleOrphanHandling)
+    .build();
+
     // Buttons
     let cancel_btn = Element::button(FocusId::new("entity-cancel"), "Cancel")
         .on_press(Msg::CloseEntityModal)
@@ -229,6 +240,7 @@ fn render_entity_modal(
         .add(source_panel, LayoutConstraint::Length(3))
         .add(target_panel, LayoutConstraint::Length(3))
         .add(priority_panel, LayoutConstraint::Length(3))
+        .add(orphan_btn, LayoutConstraint::Length(3))
         .add(Element::text(""), LayoutConstraint::Fill(1))
         .add(button_row, LayoutConstraint::Length(3))
         .spacing(1)
@@ -237,7 +249,7 @@ fn render_entity_modal(
     Element::panel(Element::container(form_content).padding(1).build())
         .title(title)
         .width(50)
-        .height(20)
+        .height(24)
         .build()
 }
 

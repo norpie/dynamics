@@ -73,6 +73,7 @@ fn format_action(action: &RecordAction) -> &'static str {
         RecordAction::Create => "create",
         RecordAction::Update => "update",
         RecordAction::NoChange => "nochange",
+        RecordAction::TargetOnly => "target-only",
         RecordAction::Skip => "skip",
         RecordAction::Error => "error",
     }

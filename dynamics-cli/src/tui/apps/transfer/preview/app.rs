@@ -448,11 +448,12 @@ impl App for TransferPreviewApp {
                     }
 
                     log::info!(
-                        "Transform complete: {} records ({} create, {} update, {} nochange, {} skip, {} error)",
+                        "Transform complete: {} records ({} create, {} update, {} nochange, {} target-only, {} skip, {} error)",
                         resolved.total_records(),
                         resolved.create_count(),
                         resolved.update_count(),
                         resolved.nochange_count(),
+                        resolved.target_only_count(),
                         resolved.skip_count(),
                         resolved.error_count()
                     );
@@ -1527,6 +1528,9 @@ impl App for TransferPreviewApp {
                     Span::raw(" "),
                     Span::styled(format!("{}", entity.nochange_count()), Style::default().fg(theme.text_tertiary)),
                     Span::styled(" unchanged".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::raw(" "),
+                    Span::styled(format!("{}", entity.target_only_count()), Style::default().fg(theme.accent_primary)),
+                    Span::styled(" target-only".to_string(), Style::default().fg(theme.text_secondary)),
                     Span::raw(" "),
                     Span::styled(format!("{}", entity.skip_count()), Style::default().fg(theme.accent_warning)),
                     Span::styled(" skip".to_string(), Style::default().fg(theme.text_secondary)),

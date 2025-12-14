@@ -337,6 +337,7 @@ impl RecordListItem {
             RecordAction::Create => Style::default().fg(self.theme.text_primary).bg(bg),
             RecordAction::Update => Style::default().fg(self.theme.text_primary).bg(bg),
             RecordAction::NoChange => Style::default().fg(self.theme.text_tertiary).bg(bg),
+            RecordAction::TargetOnly => Style::default().fg(self.theme.text_tertiary).bg(bg),
             RecordAction::Skip => Style::default()
                 .fg(self.theme.accent_warning)
                 .add_modifier(Modifier::DIM)
@@ -351,6 +352,7 @@ impl RecordListItem {
             RecordAction::Create => ("create    ", self.theme.accent_success),
             RecordAction::Update => ("update    ", self.theme.accent_secondary),
             RecordAction::NoChange => ("nochange  ", self.theme.text_tertiary),
+            RecordAction::TargetOnly => ("targetonly", self.theme.accent_primary),
             RecordAction::Skip => ("skip      ", self.theme.accent_warning),
             RecordAction::Error => ("error     ", self.theme.accent_error),
         };

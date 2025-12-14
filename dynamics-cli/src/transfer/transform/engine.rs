@@ -1,6 +1,6 @@
 //! Transform engine - orchestrates applying transforms to source records
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::transfer::{
@@ -98,6 +98,7 @@ impl TransformEngine {
             mapping.priority,
             &ctx.target_pk_field,
         );
+        resolved.set_orphan_handling(mapping.orphan_handling);
 
         // Collect field names from mappings
         let field_names: Vec<String> = mapping
@@ -136,6 +137,16 @@ impl TransformEngine {
             }
         }
 
+        // Build set of source IDs for target-only detection
+        let source_ids: HashSet<String> = source_records
+            .iter()
+            .filter_map(|r| {
+                r.get(&ctx.source_pk_field)
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
+            .collect();
+
         for record in source_records {
             let resolved_record = Self::transform_record(
                 record,
@@ -147,7 +158,37 @@ impl TransformEngine {
             resolved.add_record(resolved_record);
         }
 
+        // Find target-only records (exist in target but not in source)
+        for target in target_records {
+            let target_id_str = target
+                .get(&ctx.target_pk_field)
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            if !source_ids.contains(target_id_str) {
+                // This record exists only in target
+                let target_id = Uuid::parse_str(target_id_str).unwrap_or_else(|_| Uuid::new_v4());
+                let fields = Self::extract_fields_from_target(target, &field_names);
+                resolved.add_record(ResolvedRecord::target_only(target_id, fields));
+            }
+        }
+
         resolved
+    }
+
+    /// Extract field values from a target record for display
+    fn extract_fields_from_target(
+        target: &serde_json::Value,
+        field_names: &[String],
+    ) -> HashMap<String, Value> {
+        let mut fields = HashMap::new();
+        for field_name in field_names {
+            if let Some(json_value) = target.get(field_name) {
+                let value = Value::from_json(json_value);
+                fields.insert(field_name.clone(), value);
+            }
+        }
+        fields
     }
 
     /// Transform a single record and compare against target

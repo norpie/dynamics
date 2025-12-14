@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::api::operations::{Operation, Operations};
-use crate::transfer::{LookupBindingContext, RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
+use crate::transfer::{LookupBindingContext, OrphanHandling, RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
 use crate::tui::apps::queue::models::{QueueItem, QueueMetadata};
 
 /// Base priority for transfer operations (start low to maximize priority space)
@@ -99,13 +99,18 @@ pub fn build_queue_items(
 /// Phase of operation within an entity
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
+    /// Handle target-only records first (delete/deactivate)
+    TargetOnly,
+    /// Then create new records
     Create,
+    /// Finally update existing records
     Update,
 }
 
 impl Phase {
     fn label(&self) -> &'static str {
         match self {
+            Phase::TargetOnly => "target-only",
             Phase::Create => "create",
             Phase::Update => "update",
         }
@@ -113,8 +118,9 @@ impl Phase {
 
     fn priority_offset(&self) -> u8 {
         match self {
-            Phase::Create => 0,
-            Phase::Update => 1,
+            Phase::TargetOnly => 0,
+            Phase::Create => 1,
+            Phase::Update => 2,
         }
     }
 }
@@ -125,6 +131,24 @@ fn build_entity_queue_items(
     options: &QueueBuildOptions,
 ) -> Vec<QueueItem> {
     let mut items = Vec::new();
+
+    // Handle target-only records first (phase 0) - only if not ignoring
+    if entity.orphan_handling != OrphanHandling::Ignore {
+        let target_only: Vec<_> = entity
+            .records
+            .iter()
+            .filter(|r| r.action == RecordAction::TargetOnly)
+            .collect();
+
+        if !target_only.is_empty() {
+            items.extend(build_target_only_queue_items(
+                entity,
+                transfer,
+                &target_only,
+                options,
+            ));
+        }
+    }
 
     // Separate creates and updates
     let creates: Vec<_> = entity
@@ -172,12 +196,12 @@ fn build_phase_queue_items(
     }
 
     // Calculate priority:
-    // - Base priority (64)
-    // - + entity.priority * 2 (so each entity has room for create/update phases)
-    // - + phase offset (0 for create, 1 for update)
-    // This ensures: entity1.creates < entity1.updates < entity2.creates < entity2.updates
+    // - Base priority (1)
+    // - + entity.priority * 3 (so each entity has room for target-only/create/update phases)
+    // - + phase offset (0 for target-only, 1 for create, 2 for update)
+    // This ensures: entity1.target-only < entity1.creates < entity1.updates < entity2.target-only ...
     let priority = BASE_PRIORITY
-        .saturating_add((entity.priority as u8).saturating_mul(2))
+        .saturating_add((entity.priority as u8).saturating_mul(3))
         .saturating_add(phase.priority_offset())
         .min(127);
 
@@ -193,6 +217,11 @@ fn build_phase_queue_items(
         .map(|record| {
             let payload = prepare_payload(record, lookup_ctx);
             match phase {
+                Phase::TargetOnly => {
+                    // TargetOnly is handled separately by build_target_only_queue_items
+                    // This branch shouldn't be reached, but we handle it anyway
+                    Operation::delete(entity_set, record.source_id.to_string())
+                }
                 Phase::Create => Operation::create(entity_set, payload),
                 Phase::Update => Operation::update(
                     entity_set,
@@ -234,6 +263,111 @@ fn build_phase_queue_items(
                     transfer.config_name,
                     entity.entity_name,
                     phase.label(),
+                    i + 1,
+                    total_batches,
+                    chunk.len()
+                )
+            };
+
+            let metadata = QueueMetadata {
+                source: "Transfer".to_string(),
+                entity_type: format!("transfer: {}", entity.entity_name),
+                description,
+                row_number: None,
+                environment_name: transfer.target_env.clone(),
+            };
+
+            QueueItem::new(ops, metadata, priority)
+        })
+        .collect()
+}
+
+/// Build queue items for target-only records based on orphan_handling config
+fn build_target_only_queue_items(
+    entity: &ResolvedEntity,
+    transfer: &ResolvedTransfer,
+    records: &[&ResolvedRecord],
+    options: &QueueBuildOptions,
+) -> Vec<QueueItem> {
+    if records.is_empty() {
+        return Vec::new();
+    }
+
+    // Calculate priority (same as build_phase_queue_items but for phase 0)
+    let priority = BASE_PRIORITY
+        .saturating_add((entity.priority as u8).saturating_mul(3))
+        .saturating_add(Phase::TargetOnly.priority_offset())
+        .min(127);
+
+    // Use entity_set_name for API calls
+    let entity_set = entity
+        .entity_set_name
+        .as_ref()
+        .unwrap_or(&entity.entity_name);
+
+    // Build operations based on orphan_handling config
+    let operations: Vec<Operation> = records
+        .iter()
+        .map(|record| {
+            match entity.orphan_handling {
+                OrphanHandling::Ignore => {
+                    // Shouldn't happen - we filter these out earlier
+                    unreachable!("Ignore orphan_handling should not reach build_target_only_queue_items")
+                }
+                OrphanHandling::Delete => {
+                    Operation::delete(entity_set, record.source_id.to_string())
+                }
+                OrphanHandling::Deactivate => {
+                    // PATCH with statecode = 1 (inactive)
+                    let mut payload = serde_json::Map::new();
+                    payload.insert("statecode".to_string(), serde_json::Value::Number(1.into()));
+                    Operation::update(
+                        entity_set,
+                        record.source_id.to_string(),
+                        serde_json::Value::Object(payload),
+                    )
+                }
+            }
+        })
+        .collect();
+
+    // Determine batch size
+    let batch_size = if options.batch_size == 0 {
+        operations.len()
+    } else {
+        options.batch_size
+    };
+
+    // Split into batches
+    let chunks: Vec<_> = operations.chunks(batch_size).collect();
+    let total_batches = chunks.len();
+
+    let action_label = match entity.orphan_handling {
+        OrphanHandling::Delete => "delete",
+        OrphanHandling::Deactivate => "deactivate",
+        OrphanHandling::Ignore => "ignore",
+    };
+
+    chunks
+        .into_iter()
+        .enumerate()
+        .map(|(i, chunk)| {
+            let ops = Operations::from_operations(chunk.to_vec());
+
+            let description = if total_batches == 1 {
+                format!(
+                    "{}: {} {} ({} target-only records)",
+                    transfer.config_name,
+                    entity.entity_name,
+                    action_label,
+                    chunk.len()
+                )
+            } else {
+                format!(
+                    "{}: {} {} {}/{} ({} target-only records)",
+                    transfer.config_name,
+                    entity.entity_name,
+                    action_label,
                     i + 1,
                     total_batches,
                     chunk.len()

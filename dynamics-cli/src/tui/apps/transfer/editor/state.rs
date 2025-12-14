@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, Transform};
+use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OrphanHandling, Transform};
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField};
 use crate::tui::widgets::events::{TreeEvent, AutocompleteEvent, TextInputEvent};
@@ -92,6 +92,8 @@ pub struct EntityMappingForm {
     pub source_entity: AutocompleteField,
     pub target_entity: AutocompleteField,
     pub priority: TextInputField,
+    /// Index into OrphanHandling::all_variants() for select widget
+    pub orphan_handling_idx: usize,
 }
 
 impl EntityMappingForm {
@@ -106,6 +108,7 @@ impl EntityMappingForm {
         form.source_entity.value = mapping.source_entity.clone();
         form.target_entity.value = mapping.target_entity.clone();
         form.priority.value = mapping.priority.to_string();
+        form.orphan_handling_idx = mapping.orphan_handling.to_index();
         form
     }
 
@@ -115,6 +118,7 @@ impl EntityMappingForm {
             source_entity: self.source_entity.value.trim().to_string(),
             target_entity: self.target_entity.value.trim().to_string(),
             priority: self.priority.value.trim().parse().unwrap_or(0),
+            orphan_handling: OrphanHandling::from_index(self.orphan_handling_idx),
             field_mappings: vec![],
         }
     }
@@ -706,6 +710,7 @@ pub enum Msg {
     EntityFormSource(AutocompleteEvent),
     EntityFormTarget(AutocompleteEvent),
     EntityFormPriority(TextInputEvent),
+    EntityFormCycleOrphanHandling, // Cycle to next option
 
     // Field mapping actions
     AddField(usize), // entity_idx
