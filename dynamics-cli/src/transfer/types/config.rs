@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::Transform;
+use super::{Resolver, Transform};
 
 /// How to handle records that exist in target but not in source
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -68,6 +68,9 @@ pub struct TransferConfig {
     pub source_env: String,
     /// Target environment name
     pub target_env: String,
+    /// Resolvers for lookup field resolution
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolvers: Vec<Resolver>,
     /// Entity mappings
     pub entity_mappings: Vec<EntityMapping>,
 }
@@ -80,6 +83,7 @@ impl TransferConfig {
             name: name.into(),
             source_env: source_env.into(),
             target_env: target_env.into(),
+            resolvers: Vec::new(),
             entity_mappings: Vec::new(),
         }
     }
@@ -109,6 +113,59 @@ impl TransferConfig {
             .iter_mut()
             .find(|m| m.source_entity == source_entity)
     }
+
+    /// Add a resolver
+    pub fn add_resolver(&mut self, resolver: Resolver) {
+        self.resolvers.push(resolver);
+    }
+
+    /// Find a resolver by name
+    pub fn find_resolver(&self, name: &str) -> Option<&Resolver> {
+        self.resolvers.iter().find(|r| r.name == name)
+    }
+
+    /// Find a resolver by name (mutable)
+    pub fn find_resolver_mut(&mut self, name: &str) -> Option<&mut Resolver> {
+        self.resolvers.iter_mut().find(|r| r.name == name)
+    }
+
+    /// Remove a resolver by name, returns true if found and removed
+    pub fn remove_resolver(&mut self, name: &str) -> bool {
+        let len_before = self.resolvers.len();
+        self.resolvers.retain(|r| r.name != name);
+        self.resolvers.len() != len_before
+    }
+
+    /// Rename a resolver and update all references in field mappings
+    pub fn rename_resolver(&mut self, old_name: &str, new_name: &str) -> bool {
+        // Find and rename the resolver
+        let found = if let Some(resolver) = self.find_resolver_mut(old_name) {
+            resolver.name = new_name.to_string();
+            true
+        } else {
+            false
+        };
+
+        if found {
+            // Update all references in field mappings
+            for entity_mapping in &mut self.entity_mappings {
+                for field_mapping in &mut entity_mapping.field_mappings {
+                    if let super::Transform::Copy { resolver, .. } = &mut field_mapping.transform {
+                        if resolver.as_deref() == Some(old_name) {
+                            *resolver = Some(new_name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        found
+    }
+
+    /// Check if a resolver name is unique (not already used)
+    pub fn is_resolver_name_unique(&self, name: &str) -> bool {
+        !self.resolvers.iter().any(|r| r.name == name)
+    }
 }
 
 impl Default for TransferConfig {
@@ -118,6 +175,7 @@ impl Default for TransferConfig {
             name: String::new(),
             source_env: String::new(),
             target_env: String::new(),
+            resolvers: Vec::new(),
             entity_mappings: Vec::new(),
         }
     }
@@ -220,6 +278,7 @@ impl FieldMapping {
             field.clone(),
             Transform::Copy {
                 source_path: super::FieldPath::simple(field),
+                resolver: None,
             },
         )
     }
@@ -230,6 +289,22 @@ impl FieldMapping {
             target_field,
             Transform::Copy {
                 source_path: super::FieldPath::simple(source_field),
+                resolver: None,
+            },
+        )
+    }
+
+    /// Create a copy mapping with a resolver
+    pub fn copy_with_resolver(
+        target_field: impl Into<String>,
+        source_field: impl Into<String>,
+        resolver_name: impl Into<String>,
+    ) -> Self {
+        FieldMapping::new(
+            target_field,
+            Transform::Copy {
+                source_path: super::FieldPath::simple(source_field),
+                resolver: Some(resolver_name.into()),
             },
         )
     }

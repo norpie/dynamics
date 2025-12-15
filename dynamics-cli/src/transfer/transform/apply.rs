@@ -11,9 +11,13 @@ use super::path::resolve_path;
 pub type TransformResult = Result<Value, String>;
 
 /// Apply a transform to a source record
+///
+/// Note: Resolver-based transforms are handled separately in the transform engine,
+/// not here. This function only handles the basic transform logic.
 pub fn apply_transform(transform: &Transform, record: &serde_json::Value) -> TransformResult {
     match transform {
-        Transform::Copy { source_path } => {
+        Transform::Copy { source_path, .. } => {
+            // Note: resolver handling is done in the transform engine, not here
             let value = resolve_path(record, source_path);
             Ok(value)
         }
@@ -114,6 +118,7 @@ mod tests {
         let record = json!({"name": "Contoso", "revenue": 500000});
         let transform = Transform::Copy {
             source_path: FieldPath::simple("name"),
+            resolver: None,
         };
 
         let result = apply_transform(&transform, &record).unwrap();

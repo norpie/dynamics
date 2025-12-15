@@ -137,6 +137,7 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
         name: config_row.try_get("name")?,
         source_env: config_row.try_get("source_env")?,
         target_env: config_row.try_get("target_env")?,
+        resolvers: Vec::new(), // TODO: Load from database in Phase 4
         entity_mappings,
     }))
 }

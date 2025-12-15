@@ -247,6 +247,7 @@ async fn create_config(name: String, source_env: String, target_env: String) -> 
         name: name.clone(),
         source_env,
         target_env,
+        resolvers: vec![],
         entity_mappings: vec![],
     };
 

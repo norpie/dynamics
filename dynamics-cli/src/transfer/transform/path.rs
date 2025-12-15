@@ -92,4 +92,83 @@ mod tests {
         let value = resolve_path(&record, &path);
         assert_eq!(value, Value::Null);
     }
+
+    #[test]
+    fn test_resolve_three_level_path() {
+        let record = json!({
+            "userid": {
+                "contactid": {
+                    "emailaddress1": "user@example.com"
+                }
+            }
+        });
+
+        let path = FieldPath::parse("userid.contactid.emailaddress1").unwrap();
+        let value = resolve_path(&record, &path);
+        assert_eq!(value, Value::String("user@example.com".into()));
+    }
+
+    #[test]
+    fn test_resolve_four_level_path() {
+        let record = json!({
+            "userid": {
+                "contactid": {
+                    "parentcustomerid": {
+                        "name": "Acme Corp"
+                    }
+                }
+            }
+        });
+
+        let path = FieldPath::parse("userid.contactid.parentcustomerid.name").unwrap();
+        let value = resolve_path(&record, &path);
+        assert_eq!(value, Value::String("Acme Corp".into()));
+    }
+
+    #[test]
+    fn test_resolve_null_at_second_level() {
+        let record = json!({
+            "userid": {
+                "contactid": null
+            }
+        });
+
+        let path = FieldPath::parse("userid.contactid.emailaddress1").unwrap();
+        let value = resolve_path(&record, &path);
+        assert_eq!(value, Value::Null);
+    }
+
+    #[test]
+    fn test_resolve_null_at_third_level() {
+        let record = json!({
+            "userid": {
+                "contactid": {
+                    "parentcustomerid": null
+                }
+            }
+        });
+
+        let path = FieldPath::parse("userid.contactid.parentcustomerid.name").unwrap();
+        let value = resolve_path(&record, &path);
+        assert_eq!(value, Value::Null);
+    }
+
+    #[test]
+    fn test_resolve_missing_at_any_level() {
+        let record = json!({
+            "userid": {
+                "fullname": "John"
+            }
+        });
+
+        // Missing at second level
+        let path = FieldPath::parse("userid.contactid.email").unwrap();
+        let value = resolve_path(&record, &path);
+        assert_eq!(value, Value::Null);
+
+        // Missing at first level
+        let path = FieldPath::parse("ownerid.name").unwrap();
+        let value = resolve_path(&record, &path);
+        assert_eq!(value, Value::Null);
+    }
 }

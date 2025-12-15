@@ -131,6 +131,8 @@ pub struct FieldMappingForm {
 
     // Copy transform fields
     pub source_path: AutocompleteField,
+    /// Resolver name for Copy transform (None = direct copy)
+    pub resolver_name: Option<String>,
 
     // Constant transform fields
     pub constant_value: TextInputField,
@@ -522,9 +524,10 @@ impl FieldMappingForm {
         form.target_field.value = mapping.target_field.clone();
 
         match &mapping.transform {
-            Transform::Copy { source_path } => {
+            Transform::Copy { source_path, resolver } => {
                 form.transform_type = TransformType::Copy;
                 form.source_path.value = source_path.to_string();
+                form.resolver_name = resolver.clone();
             }
             Transform::Constant { value } => {
                 form.transform_type = TransformType::Constant;
@@ -593,7 +596,10 @@ impl FieldMappingForm {
         let transform = match self.transform_type {
             TransformType::Copy => {
                 let path = FieldPath::parse(self.source_path.value.trim()).ok()?;
-                Transform::Copy { source_path: path }
+                Transform::Copy {
+                    source_path: path,
+                    resolver: self.resolver_name.clone(),
+                }
             }
             TransformType::Constant => {
                 let value = parse_value(self.constant_value.value.trim());

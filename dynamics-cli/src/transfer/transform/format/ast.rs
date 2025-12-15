@@ -50,10 +50,23 @@ impl FormatTemplate {
     }
 
     /// Get expand specs for lookup traversals
+    ///
+    /// NOTE: This only returns the first level of nesting. For deep paths,
+    /// use `lookup_paths()` with `ExpandTree` instead.
+    #[deprecated(note = "Use lookup_paths() with ExpandTree for nested paths")]
     pub fn expand_specs(&self) -> Vec<(&str, &str)> {
         self.field_paths()
             .iter()
             .filter_map(|p| p.lookup_field().map(|lf| (p.base_field(), lf)))
+            .collect()
+    }
+
+    /// Get all lookup paths that require $expand clauses
+    /// Returns full FieldPath references for use with ExpandTree
+    pub fn lookup_paths(&self) -> Vec<&FieldPath> {
+        self.field_paths()
+            .into_iter()
+            .filter(|p| p.is_lookup_traversal())
             .collect()
     }
 }

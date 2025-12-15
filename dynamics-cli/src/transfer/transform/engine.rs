@@ -332,7 +332,7 @@ impl TransformEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transfer::{FieldPath, Transform};
+    use crate::transfer::{FieldPath, OrphanHandling, Transform};
     use serde_json::json;
 
     fn make_ctx() -> TransformContext {
@@ -353,6 +353,7 @@ mod tests {
         let mappings = vec![
             FieldMapping::new("name", Transform::Copy {
                 source_path: FieldPath::simple("name"),
+                resolver: None,
             }),
             FieldMapping::new("was_migrated", Transform::Constant {
                 value: Value::Bool(true),
@@ -386,6 +387,7 @@ mod tests {
         let mappings = vec![
             FieldMapping::new("name", Transform::Copy {
                 source_path: FieldPath::simple("name"),
+                resolver: None,
             }),
         ];
 
@@ -415,6 +417,7 @@ mod tests {
         let mappings = vec![
             FieldMapping::new("name", Transform::Copy {
                 source_path: FieldPath::simple("name"),
+                resolver: None,
             }),
         ];
 
@@ -484,9 +487,11 @@ mod tests {
             source_entity: "account".to_string(),
             target_entity: "account".to_string(),
             priority: 1,
+            orphan_handling: OrphanHandling::default(),
             field_mappings: vec![
                 FieldMapping::new("name", Transform::Copy {
                     source_path: FieldPath::simple("name"),
+                    resolver: None,
                 }),
             ],
         };
@@ -508,15 +513,18 @@ mod tests {
             name: "test-migration".to_string(),
             source_env: "dev".to_string(),
             target_env: "prod".to_string(),
+            resolvers: Vec::new(),
             entity_mappings: vec![
                 EntityMapping {
                     id: None,
                     source_entity: "account".to_string(),
                     target_entity: "account".to_string(),
                     priority: 1,
+                    orphan_handling: OrphanHandling::default(),
                     field_mappings: vec![
                         FieldMapping::new("name", Transform::Copy {
                             source_path: FieldPath::simple("name"),
+                            resolver: None,
                         }),
                     ],
                 },

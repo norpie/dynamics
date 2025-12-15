@@ -9,10 +9,15 @@ use crate::transfer::transform::format::{FormatTemplate, NullHandling};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Transform {
-    /// Direct field copy, optionally traversing a lookup
+    /// Direct field copy, optionally traversing a lookup and/or using a resolver
     Copy {
         /// Source field path (e.g., "name" or "accountid.name")
         source_path: FieldPath,
+        /// Optional resolver name to use for lookup field resolution
+        /// When set, the source value is matched against the resolver's match_field
+        /// to find the target record GUID instead of copying directly
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolver: Option<String>,
     },
     /// Static constant value
     Constant {
@@ -54,6 +59,15 @@ impl Transform {
     pub fn copy(source_field: &str) -> Result<Self, FieldPathError> {
         Ok(Transform::Copy {
             source_path: FieldPath::parse(source_field)?,
+            resolver: None,
+        })
+    }
+
+    /// Create a copy transform with a resolver
+    pub fn copy_with_resolver(source_field: &str, resolver_name: &str) -> Result<Self, FieldPathError> {
+        Ok(Transform::Copy {
+            source_path: FieldPath::parse(source_field)?,
+            resolver: Some(resolver_name.to_string()),
         })
     }
 
@@ -65,8 +79,12 @@ impl Transform {
     /// Get a human-readable description of this transform
     pub fn describe(&self) -> String {
         match self {
-            Transform::Copy { source_path } => {
-                format!("copy({})", source_path)
+            Transform::Copy { source_path, resolver } => {
+                if let Some(resolver_name) = resolver {
+                    format!("copy({}) -> {}", source_path, resolver_name)
+                } else {
+                    format!("copy({})", source_path)
+                }
             }
             Transform::Constant { value } => {
                 format!("constant({})", value)
@@ -105,7 +123,7 @@ impl Transform {
     /// Returns the base field name (first segment of path)
     pub fn source_fields(&self) -> Vec<&str> {
         match self {
-            Transform::Copy { source_path } => vec![source_path.base_field()],
+            Transform::Copy { source_path, .. } => vec![source_path.base_field()],
             Transform::Constant { .. } => vec![],
             Transform::Conditional { source_path, .. } => vec![source_path.base_field()],
             Transform::ValueMap { source_path, .. } => vec![source_path.base_field()],
@@ -116,9 +134,14 @@ impl Transform {
     /// Get expand specifications for lookup traversals
     /// Returns Vec<(lookup_field, target_field)> for building $expand clauses
     /// e.g., "accountid.name" returns Some(("accountid", "name"))
+    ///
+    /// NOTE: This only returns the first level of nesting. For deep paths,
+    /// use `lookup_paths()` with `ExpandTree` instead.
+    #[deprecated(note = "Use lookup_paths() with ExpandTree for nested paths")]
+    #[allow(deprecated)]
     pub fn expand_specs(&self) -> Vec<(&str, &str)> {
         match self {
-            Transform::Copy { source_path } => {
+            Transform::Copy { source_path, .. } => {
                 if let Some(target) = source_path.lookup_field() {
                     vec![(source_path.base_field(), target)]
                 } else {
@@ -140,7 +163,38 @@ impl Transform {
                     vec![]
                 }
             }
+            #[allow(deprecated)]
             Transform::Format { template, .. } => template.expand_specs(),
+        }
+    }
+
+    /// Get all lookup paths that require $expand clauses
+    /// Returns full FieldPath references for use with ExpandTree
+    pub fn lookup_paths(&self) -> Vec<&FieldPath> {
+        match self {
+            Transform::Copy { source_path, .. } => {
+                if source_path.is_lookup_traversal() {
+                    vec![source_path]
+                } else {
+                    vec![]
+                }
+            }
+            Transform::Constant { .. } => vec![],
+            Transform::Conditional { source_path, .. } => {
+                if source_path.is_lookup_traversal() {
+                    vec![source_path]
+                } else {
+                    vec![]
+                }
+            }
+            Transform::ValueMap { source_path, .. } => {
+                if source_path.is_lookup_traversal() {
+                    vec![source_path]
+                } else {
+                    vec![]
+                }
+            }
+            Transform::Format { template, .. } => template.lookup_paths(),
         }
     }
 
@@ -166,16 +220,18 @@ impl Transform {
     }
 }
 
-/// A path to a field, optionally traversing a lookup relationship
+/// A path to a field, optionally traversing lookup relationships
 ///
 /// Examples:
 /// - "name" -> single field
-/// - "accountid.name" -> lookup traversal (accountid lookup -> name field)
+/// - "accountid.name" -> 1 lookup traversal
+/// - "userid.contactid.emailaddress1" -> 2 lookup traversals
+/// - "userid.contactid.parentcustomerid_account.name" -> 3 lookup traversals (max)
 ///
-/// Limited to at most one level of traversal.
+/// Limited to at most 4 segments (3 lookup traversals).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FieldPath {
-    /// The field segments (1 or 2 elements)
+    /// The field segments (1 to 4 elements)
     segments: Vec<String>,
 }
 
@@ -184,7 +240,7 @@ pub struct FieldPath {
 pub enum FieldPathError {
     /// Path is empty
     Empty,
-    /// Path has too many segments (max 2 allowed)
+    /// Path has too many segments (max 4 allowed)
     TooManySegments { count: usize },
     /// Segment is empty
     EmptySegment,
@@ -197,7 +253,7 @@ impl std::fmt::Display for FieldPathError {
             FieldPathError::TooManySegments { count } => {
                 write!(
                     f,
-                    "field path has {} segments, maximum is 2 (e.g., 'accountid.name')",
+                    "field path has {} segments, maximum is 4 (e.g., 'a.b.c.d')",
                     count
                 )
             }
@@ -209,11 +265,14 @@ impl std::fmt::Display for FieldPathError {
 impl std::error::Error for FieldPathError {}
 
 impl FieldPath {
+    /// Maximum number of segments allowed in a field path
+    pub const MAX_SEGMENTS: usize = 4;
+
     /// Parse a field path from a string
     ///
     /// Validates that:
     /// - Path is not empty
-    /// - At most 2 segments (one dot)
+    /// - At most 4 segments (three dots)
     /// - No empty segments
     pub fn parse(path: &str) -> Result<Self, FieldPathError> {
         if path.is_empty() {
@@ -222,7 +281,7 @@ impl FieldPath {
 
         let segments: Vec<String> = path.split('.').map(|s| s.to_string()).collect();
 
-        if segments.len() > 2 {
+        if segments.len() > Self::MAX_SEGMENTS {
             return Err(FieldPathError::TooManySegments {
                 count: segments.len(),
             });
@@ -249,9 +308,9 @@ impl FieldPath {
         }
     }
 
-    /// Check if this path traverses a lookup
+    /// Check if this path traverses a lookup (has more than one segment)
     pub fn is_lookup_traversal(&self) -> bool {
-        self.segments.len() == 2
+        self.segments.len() > 1
     }
 
     /// Get the base field name (first segment)
@@ -260,8 +319,31 @@ impl FieldPath {
     }
 
     /// Get the target field name for lookup traversal (second segment)
+    /// For paths with more than 2 segments, this returns only the second segment.
+    /// Use `target_field()` to get the final field being accessed.
     pub fn lookup_field(&self) -> Option<&str> {
         self.segments.get(1).map(|s| s.as_str())
+    }
+
+    /// Get the final field being accessed (last segment)
+    pub fn target_field(&self) -> &str {
+        self.segments.last().expect("FieldPath always has at least one segment")
+    }
+
+    /// Get all lookup segments (all except the last)
+    /// For "a.b.c.d", returns ["a", "b", "c"]
+    pub fn lookup_segments(&self) -> &[String] {
+        if self.segments.len() <= 1 {
+            &[]
+        } else {
+            &self.segments[..self.segments.len() - 1]
+        }
+    }
+
+    /// Get the depth of lookup traversal (number of lookups)
+    /// 0 for simple field, 1 for "a.b", 2 for "a.b.c", etc.
+    pub fn depth(&self) -> usize {
+        self.segments.len().saturating_sub(1)
     }
 
     /// Get all segments
@@ -370,6 +452,9 @@ mod tests {
         assert_eq!(path.base_field(), "name");
         assert!(!path.is_lookup_traversal());
         assert_eq!(path.lookup_field(), None);
+        assert_eq!(path.target_field(), "name");
+        assert_eq!(path.lookup_segments(), &[] as &[String]);
+        assert_eq!(path.depth(), 0);
         assert_eq!(path.to_string(), "name");
     }
 
@@ -379,15 +464,42 @@ mod tests {
         assert_eq!(path.base_field(), "accountid");
         assert!(path.is_lookup_traversal());
         assert_eq!(path.lookup_field(), Some("name"));
+        assert_eq!(path.target_field(), "name");
+        assert_eq!(path.lookup_segments(), &["accountid"]);
+        assert_eq!(path.depth(), 1);
         assert_eq!(path.to_string(), "accountid.name");
     }
 
     #[test]
+    fn test_field_path_three_segments() {
+        let path = FieldPath::parse("a.b.c").unwrap();
+        assert_eq!(path.base_field(), "a");
+        assert!(path.is_lookup_traversal());
+        assert_eq!(path.lookup_field(), Some("b"));
+        assert_eq!(path.target_field(), "c");
+        assert_eq!(path.lookup_segments(), &["a", "b"]);
+        assert_eq!(path.depth(), 2);
+        assert_eq!(path.to_string(), "a.b.c");
+    }
+
+    #[test]
+    fn test_field_path_four_segments() {
+        let path = FieldPath::parse("a.b.c.d").unwrap();
+        assert_eq!(path.base_field(), "a");
+        assert!(path.is_lookup_traversal());
+        assert_eq!(path.lookup_field(), Some("b"));
+        assert_eq!(path.target_field(), "d");
+        assert_eq!(path.lookup_segments(), &["a", "b", "c"]);
+        assert_eq!(path.depth(), 3);
+        assert_eq!(path.to_string(), "a.b.c.d");
+    }
+
+    #[test]
     fn test_field_path_too_many_segments() {
-        let result = FieldPath::parse("a.b.c");
+        let result = FieldPath::parse("a.b.c.d.e");
         assert!(matches!(
             result,
-            Err(FieldPathError::TooManySegments { count: 3 })
+            Err(FieldPathError::TooManySegments { count: 5 })
         ));
     }
 

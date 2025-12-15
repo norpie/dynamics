@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 
 use crate::api::metadata::FieldMetadata;
 use crate::config::repository::transfer::get_transfer_config;
-use crate::transfer::{LookupBindingContext, RecordAction, ResolvedTransfer, TransferConfig, TransformEngine};
+use crate::transfer::{ExpandTree, LookupBindingContext, RecordAction, ResolvedTransfer, TransferConfig, TransformEngine};
 use crate::tui::resource::Resource;
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
@@ -164,27 +164,12 @@ impl App for TransferPreviewApp {
                         source_fields.sort();
                         source_fields.dedup();
 
-                        // Collect expand specifications for lookup traversals
-                        // Group by lookup field to combine selects: accountid($select=name,email)
-                        let mut expand_map: std::collections::HashMap<String, Vec<String>> =
-                            std::collections::HashMap::new();
+                        // Build expand tree for nested lookup traversals
+                        let mut expand_tree = ExpandTree::new();
                         for fm in &mapping.field_mappings {
-                            for (lookup_field, target_field) in fm.transform.expand_specs() {
-                                expand_map
-                                    .entry(lookup_field.to_string())
-                                    .or_default()
-                                    .push(target_field.to_string());
-                            }
+                            expand_tree.add_transform(&fm.transform);
                         }
-                        // Build expand strings: "lookupfield($select=field1,field2)"
-                        let expands: Vec<String> = expand_map
-                            .into_iter()
-                            .map(|(lookup, mut fields)| {
-                                fields.sort();
-                                fields.dedup();
-                                format!("{}($select={})", lookup, fields.join(","))
-                            })
-                            .collect();
+                        let expands = expand_tree.build_expand_clauses();
 
                         log::info!(
                             "[{}] Source fetch will select {} fields, expand {} lookups",
@@ -1332,25 +1317,12 @@ impl App for TransferPreviewApp {
                     source_fields.sort();
                     source_fields.dedup();
 
-                    // Collect expand specifications for lookup traversals
-                    let mut expand_map: std::collections::HashMap<String, Vec<String>> =
-                        std::collections::HashMap::new();
+                    // Build expand tree for nested lookup traversals
+                    let mut expand_tree = ExpandTree::new();
                     for fm in &mapping.field_mappings {
-                        for (lookup_field, target_field) in fm.transform.expand_specs() {
-                            expand_map
-                                .entry(lookup_field.to_string())
-                                .or_default()
-                                .push(target_field.to_string());
-                        }
+                        expand_tree.add_transform(&fm.transform);
                     }
-                    let expands: Vec<String> = expand_map
-                        .into_iter()
-                        .map(|(lookup, mut fields)| {
-                            fields.sort();
-                            fields.dedup();
-                            format!("{}($select={})", lookup, fields.join(","))
-                        })
-                        .collect();
+                    let expands = expand_tree.build_expand_clauses();
 
                     builder = builder.add_task_with_progress(
                         format!("Source: {}", entity),
