@@ -1467,25 +1467,24 @@ impl MultiAppRuntime {
 
     /// Process side effects (navigation, events) from timers and async commands
     pub fn process_side_effects(&mut self) -> Result<()> {
-        // IMPORTANT: Broadcast events FIRST, then check navigation ONCE
+        // IMPORTANT: Check navigation FIRST to create any new apps, THEN broadcast events
         // This ensures:
-        // 1. Parallel task completion events are broadcast to LoadingScreen before we navigate away
-        // 2. Initial navigation still works because we loop until things settle
+        // 1. New apps (like LoadingScreen) exist before events are broadcast
+        // 2. Initial "InProgress" events from PerformParallel reach LoadingScreen
+        // 3. Completion events are broadcast to LoadingScreen before navigating away
         //
         // We loop until no more navigation happens:
-        // - Iteration 1: Broadcast "migration:selected", then navigate to ComparisonSelect
-        //   - ComparisonSelect.Initialize creates PerformParallel which sets navigation to LoadingScreen
-        // - Iteration 2: Broadcast "loading:init", then navigate to LoadingScreen
-        //   - LoadingScreen.Initialize sets up loading state
-        // - Iteration 3: Broadcast parallel completion events, then navigate to target
-        //   - LoadingScreen received all events before navigation
+        // - Iteration 1: Navigate to LoadingScreen (created), then broadcast "InProgress" events
+        //   - LoadingScreen now exists and receives the events
+        // - Iteration 2: No navigation, broadcast any completion events
+        //   - LoadingScreen receives completion events and triggers countdown
         const MAX_LOOPS: usize = 5;
         for _ in 0..MAX_LOOPS {
-            // Broadcast events first so LoadingScreen gets completion events before we navigate
-            self.broadcast_events()?;
-
-            // Then check if we need to navigate
+            // Check navigation first to create any new apps (e.g., LoadingScreen)
             let navigated = self.check_navigation()?;
+
+            // Then broadcast events so newly created apps receive them
+            self.broadcast_events()?;
 
             // If no navigation happened, we're done
             if !navigated {
