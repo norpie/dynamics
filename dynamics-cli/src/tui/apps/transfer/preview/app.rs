@@ -1641,7 +1641,7 @@ async fn fetch_entity_records(
 
     // First: get real count via FetchXML aggregate (OData $count caps at 5000)
     let count_fetchxml = format!(
-        r#"<fetch aggregate="true"><entity name="{}"><attribute name="{}id" aggregate="count" alias="total"/><filter><condition attribute="statecode" operator="eq" value="0"/></filter></entity></fetch>"#,
+        r#"<fetch aggregate="true"><entity name="{}"><attribute name="{}id" aggregate="count" alias="total"/></entity></fetch>"#,
         entity_name, entity_name
     );
 
@@ -1677,7 +1677,8 @@ async fn fetch_entity_records(
     let fetch_start = std::time::Instant::now();
 
     // Build initial query (no $top - let API return default 5000 with nextLink)
-    let mut builder = QueryBuilder::new(&entity_set).active_only();
+    // Fetch all records (active + inactive) for complete transfer coverage
+    let mut builder = QueryBuilder::new(&entity_set);
     if !fields.is_empty() {
         let field_refs: Vec<&str> = fields.iter().map(|s| s.as_str()).collect();
         builder = builder.select(&field_refs);
