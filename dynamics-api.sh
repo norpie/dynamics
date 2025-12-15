@@ -1,22 +1,22 @@
 #!/bin/bash
 
 # Dynamics 365 API Query Wrapper with OAuth Authentication
-# Usage: ./dynamics-api.sh <endpoint> [method] [data] [-o output_file]
+# Usage: ./dynamics-api.sh <endpoint> [-m method] [-d data] [-o output_file] [-h host_num]
 # Examples:
 #   ./dynamics-api.sh "adx_entitylists?\$filter=adx_name eq 'Active Projects'"
-#   ./dynamics-api.sh "nrq_requests(guid)" GET
-#   ./dynamics-api.sh "nrq_requests(guid)" PATCH '{"statuscode": 2}'
-#   ./dynamics-api.sh "nrq_requests(guid)" GET -o response.json
+#   ./dynamics-api.sh "nrq_requests(guid)"
+#   ./dynamics-api.sh "nrq_requests(guid)" -m PATCH -d '{"statuscode": 2}'
+#   ./dynamics-api.sh "nrq_requests(guid)" -o response.json
+#   ./dynamics-api.sh "nrq_requests" -h 2  # Uses DYNAMICS_HOST2
 
-# Load environment variables from .env.dynamics file if it exists
-if [ -f .env.dynamics ]; then
+# Load environment variables from .env file if it exists
+if [ -f .env ]; then
   set -a
-  source .env.dynamics
+  source .env
   set +a
 fi
 
 # Configuration
-DYNAMICS_HOST="${DYNAMICS_HOST:-}"
 DYNAMICS_CLIENT_ID="${DYNAMICS_CLIENT_ID:-}"
 DYNAMICS_CLIENT_SECRET="${DYNAMICS_CLIENT_SECRET:-}"
 DYNAMICS_USERNAME="${DYNAMICS_USERNAME:-}"
@@ -31,12 +31,55 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Parse arguments
+ENDPOINT="${1:-}"
+METHOD="GET"
+DATA=""
+OUTPUT_FILE=""
+HOST_NUM=""
+CUSTOM_HEADERS=()
+
+# Check for flags in arguments
+for ((j=1; j<=$#; j++)); do
+  case "${!j}" in
+    -o)
+      k=$((j+1))
+      OUTPUT_FILE="${!k}"
+      ;;
+    -h)
+      k=$((j+1))
+      HOST_NUM="${!k}"
+      ;;
+    -m)
+      k=$((j+1))
+      METHOD="${!k}"
+      ;;
+    -d)
+      k=$((j+1))
+      DATA="${!k}"
+      ;;
+    -H)
+      k=$((j+1))
+      CUSTOM_HEADERS+=("${!k}")
+      ;;
+  esac
+done
+
+# Determine which host variable to use
+if [ -z "$HOST_NUM" ] || [ "$HOST_NUM" = "1" ]; then
+  HOST_VAR="DYNAMICS_HOST"
+else
+  HOST_VAR="DYNAMICS_HOST${HOST_NUM}"
+fi
+DYNAMICS_HOST="${!HOST_VAR:-}"
+
 # Check for required configuration
 if [ -z "$DYNAMICS_HOST" ]; then
-  echo -e "${RED}ERROR: DYNAMICS_HOST not set${NC}"
+  echo -e "${RED}ERROR: $HOST_VAR not set${NC}"
   echo ""
-  echo "Please set the following variables in .env.dynamics:"
+  echo "Please set the following variables in .env:"
   echo "  DYNAMICS_HOST=https://your-org.crm.dynamics.com"
+  echo "  DYNAMICS_HOST2=https://your-other-org.crm.dynamics.com  (optional)"
   echo "  DYNAMICS_CLIENT_ID=your-client-id"
   echo "  DYNAMICS_CLIENT_SECRET=your-client-secret"
   echo "  DYNAMICS_USERNAME=your-username"
@@ -47,35 +90,21 @@ fi
 
 if [ -z "$DYNAMICS_CLIENT_ID" ] || [ -z "$DYNAMICS_CLIENT_SECRET" ] || [ -z "$DYNAMICS_USERNAME" ] || [ -z "$DYNAMICS_PASSWORD" ]; then
   echo -e "${RED}ERROR: Missing required authentication credentials${NC}"
-  echo "Please check .env.dynamics file"
+  echo "Please check .env file"
   exit 1
 fi
-
-# Parse arguments
-ENDPOINT="${1:-}"
-METHOD="${2:-GET}"
-DATA="${3:-}"
-OUTPUT_FILE=""
-
-# Check for -o flag in arguments
-for i in "$@"; do
-  if [ "$i" = "-o" ]; then
-    # Find the position of -o and get the next argument
-    for ((j=1; j<=$#; j++)); do
-      if [ "${!j}" = "-o" ]; then
-        k=$((j+1))
-        OUTPUT_FILE="${!k}"
-        break
-      fi
-    done
-    break
-  fi
-done
 
 if [ -z "$ENDPOINT" ]; then
   echo -e "${RED}ERROR: No endpoint provided${NC}"
   echo ""
-  echo "Usage: $0 <endpoint> [method] [data] [-o output_file]"
+  echo "Usage: $0 <endpoint> [-m method] [-d data] [-o output_file] [-h host_num]"
+  echo ""
+  echo "Options:"
+  echo "  -m METHOD    HTTP method (GET, POST, PATCH, DELETE). Default: GET"
+  echo "  -d DATA      JSON data for POST/PATCH requests"
+  echo "  -o FILE      Save response to file"
+  echo "  -h NUM       Use alternate host (DYNAMICS_HOST2, DYNAMICS_HOST3, etc.)"
+  echo "  -H HEADER    Add custom header (can be used multiple times)"
   echo ""
   echo "Examples:"
   echo "  # Get entity list"
@@ -88,13 +117,16 @@ if [ -z "$ENDPOINT" ]; then
   echo "  $0 \"nrq_projects?\\\$select=nrq_name,nrq_projectid&\\\$top=5\""
   echo ""
   echo "  # Update (PATCH) a record"
-  echo "  $0 \"nrq_requests(guid)\" PATCH '{\"statuscode\": 2}'"
+  echo "  $0 \"nrq_requests(guid)\" -m PATCH -d '{\"statuscode\": 2}'"
   echo ""
   echo "  # Create (POST) a record"
-  echo "  $0 \"nrq_projects\" POST '{\"nrq_name\": \"Test Project\"}'"
+  echo "  $0 \"nrq_projects\" -m POST -d '{\"nrq_name\": \"Test Project\"}'"
   echo ""
   echo "  # Save output to file"
-  echo "  $0 \"nrq_projects(guid)\" GET -o project.json"
+  echo "  $0 \"nrq_projects(guid)\" -o project.json"
+  echo ""
+  echo "  # Use alternate host (DYNAMICS_HOST2)"
+  echo "  $0 \"nrq_projects\" -h 2"
   echo ""
   echo "Common OData operators:"
   echo "  \$filter  - Filter results (eq, ne, gt, lt, contains, startswith)"
@@ -111,7 +143,7 @@ get_access_token() {
   local TOKEN_URL="https://login.windows.net/common/oauth2/token"
 
   # Check if we have a cached token
-  local CACHE_FILE="./.token_cache"
+  local CACHE_FILE="./.token_cache_${HOST_VAR}"
   if [ -f "$CACHE_FILE" ]; then
     local CACHED_TOKEN=$(cat "$CACHE_FILE" | jq -r '.access_token')
     local EXPIRES_AT=$(cat "$CACHE_FILE" | jq -r '.expires_at')
@@ -162,11 +194,21 @@ echo "" >&2
 
 # Build full URL
 if [[ "$ENDPOINT" == http* ]]; then
+  # Full URL provided (e.g., from @odata.nextLink) - use as-is, no encoding
   FULL_URL="$ENDPOINT"
-elif [[ "$ENDPOINT" == /api/* ]]; then
-  FULL_URL="${DYNAMICS_HOST}${ENDPOINT}"
 else
-  FULL_URL="${DYNAMICS_HOST}/api/data/${API_VERSION}/${ENDPOINT#/}"
+  # URL encode problematic characters for relative endpoints
+  # Note: percent must be encoded first to avoid double-encoding
+  ENDPOINT="${ENDPOINT//%/%25}"      # Percent (must be first!)
+  ENDPOINT="${ENDPOINT// /%20}"      # Space
+  ENDPOINT="${ENDPOINT//#/%23}"      # Hash
+  ENDPOINT="${ENDPOINT//+/%2B}"      # Plus
+
+  if [[ "$ENDPOINT" == /api/* ]]; then
+    FULL_URL="${DYNAMICS_HOST}${ENDPOINT}"
+  else
+    FULL_URL="${DYNAMICS_HOST}/api/data/${API_VERSION}/${ENDPOINT#/}"
+  fi
 fi
 
 # Start timer
@@ -190,6 +232,11 @@ CURL_CMD+=(-H "Authorization: Bearer $TOKEN")
 CURL_CMD+=(-H "Accept: application/json")
 CURL_CMD+=(-H "OData-MaxVersion: 4.0")
 CURL_CMD+=(-H "OData-Version: 4.0")
+
+# Add custom headers
+for header in "${CUSTOM_HEADERS[@]}"; do
+  CURL_CMD+=(-H "$header")
+done
 
 # Add method and data if applicable
 case "$METHOD" in
