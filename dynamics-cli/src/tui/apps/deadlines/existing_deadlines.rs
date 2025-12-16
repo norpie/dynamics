@@ -408,37 +408,30 @@ fn parse_date_from_iso(date_str: &str) -> Option<NaiveDate> {
     None
 }
 
-/// Build lookup map from deadlines, keyed by (name_lowercase, date, description)
+/// Build lookup map from deadlines, keyed by (name_lowercase, date)
+/// Multiple deadlines with same (name, date) are stored in a Vec for secondary matching
 fn build_lookup_map(deadlines: Vec<ExistingDeadline>) -> DeadlineLookupMap {
     let mut map = DeadlineLookupMap::new();
 
     for deadline in deadlines {
-        // Extract description from fields (try both NRQ and CGK field names)
-        let description = deadline.fields
-            .get("nrq_description")
-            .or_else(|| deadline.fields.get("cgk_info"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.trim().to_lowercase());
-
         let key: DeadlineLookupKey = (
             deadline.name.trim().to_lowercase(),
             deadline.date,
-            description.clone(),
         );
 
-        if map.contains_key(&key) {
-            log::warn!(
-                "Duplicate deadline key found: ({}, {}, {:?}). Keeping first occurrence.",
-                key.0,
-                key.1,
-                key.2.as_ref().map(|s| &s[..s.len().min(50)])
-            );
-        } else {
-            map.insert(key, deadline);
-        }
+        map.entry(key).or_insert_with(Vec::new).push(deadline);
     }
 
-    log::info!("Built lookup map with {} unique entries", map.len());
+    // Log stats
+    let total_entries: usize = map.values().map(|v| v.len()).sum();
+    let multi_match_keys = map.values().filter(|v| v.len() > 1).count();
+    log::info!(
+        "Built lookup map with {} keys, {} total entries, {} keys with multiple matches",
+        map.len(),
+        total_entries,
+        multi_match_keys
+    );
+
     map
 }
 

@@ -109,75 +109,161 @@ pub fn match_deadline(
         }
     };
 
-    // Extract description from direct_fields (try various field name formats)
+    // Build lookup key (name, date)
+    let key: DeadlineLookupKey = (name.clone(), date);
+
+    // Look up in map
+    let candidates = match lookup_map.get(&key) {
+        None => {
+            // No match - create new
+            log::debug!(
+                "Row {}: No existing deadline found for ({}, {}), mode=Create",
+                transformed.source_row,
+                name,
+                date
+            );
+            return MatchResult {
+                mode: DeadlineMode::Create,
+                existing_guid: None,
+                existing_fields: None,
+                existing_associations: None,
+            };
+        }
+        Some(candidates) => candidates,
+    };
+
+    // Single candidate - use it directly
+    if candidates.len() == 1 {
+        let existing = &candidates[0];
+        return build_match_result(transformed, existing, entity_type);
+    }
+
+    // Multiple candidates - try secondary matching
+    log::debug!(
+        "Row {}: Found {} candidates for ({}, {}), attempting secondary match",
+        transformed.source_row,
+        candidates.len(),
+        name,
+        date
+    );
+
+    // Extract description from transformed record
     let description = transformed.direct_fields
         .get("nrq_description")
         .or_else(|| transformed.direct_fields.get("cgk_info"))
         .map(|s| s.trim().to_lowercase());
 
-    // Build lookup key
-    let key: DeadlineLookupKey = (name.clone(), date, description.clone());
+    // Path 1: Try matching by description
+    if let Some(ref desc) = description {
+        let desc_matches: Vec<_> = candidates.iter()
+            .filter(|c| {
+                let existing_desc = c.fields
+                    .get("nrq_description")
+                    .or_else(|| c.fields.get("cgk_info"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim().to_lowercase());
+                existing_desc.as_ref() == Some(desc)
+            })
+            .collect();
 
-    // Look up in map
-    match lookup_map.get(&key) {
-        None => {
-            // No match - create new
+        if desc_matches.len() == 1 {
             log::debug!(
-                "Row {}: No existing deadline found for ({}, {}, {:?}), mode=Create",
+                "Row {}: Matched by description: {:?}",
                 transformed.source_row,
-                name,
-                date,
-                description.as_ref().map(|s| &s[..s.len().min(50)])
+                &desc[..desc.len().min(50)]
             );
-            MatchResult {
-                mode: DeadlineMode::Create,
-                existing_guid: None,
-                existing_fields: None,
-                existing_associations: None,
-            }
+            return build_match_result(transformed, desc_matches[0], entity_type);
         }
-        Some(existing) => {
-            // Found a match - diff to determine if Update or Unchanged
+    }
+
+    // Path 2: Try matching by support checkboxes (for NRQ: custom_junction_records, for CGK: checkbox_relationships)
+    let transformed_support_ids: std::collections::HashSet<_> = transformed.custom_junction_records
+        .iter()
+        .map(|r| r.related_id.to_lowercase())
+        .collect();
+
+    if !transformed_support_ids.is_empty() {
+        let support_matches: Vec<_> = candidates.iter()
+            .filter(|c| {
+                let existing_support_ids: std::collections::HashSet<_> = c.associations.support_ids
+                    .iter()
+                    .map(|s| s.to_lowercase())
+                    .collect();
+                existing_support_ids == transformed_support_ids
+            })
+            .collect();
+
+        if support_matches.len() == 1 {
             log::debug!(
-                "Row {}: Found existing deadline {} for ({}, {})",
+                "Row {}: Matched by support checkboxes ({} supports)",
                 transformed.source_row,
-                existing.id,
-                name,
-                date
+                transformed_support_ids.len()
             );
-
-            let has_field_changes = diff_fields(transformed, existing, entity_type);
-            let association_diff = diff_associations(transformed, &existing.associations, entity_type);
-            let has_association_changes = association_diff.has_changes();
-
-            let mode = if has_field_changes || has_association_changes {
-                log::info!(
-                    "Row {}: Changes detected (fields={}, associations={}), mode=Update",
-                    transformed.source_row,
-                    has_field_changes,
-                    has_association_changes
-                );
-                DeadlineMode::Update
-            } else {
-                log::info!(
-                    "Row {}: No changes detected, mode=Unchanged. Existing fields: {:?}, Transformed direct_fields: {:?}, lookup_fields: {:?}, picklist_fields: {:?}, boolean_fields: {:?}",
-                    transformed.source_row,
-                    existing.fields.keys().collect::<Vec<_>>(),
-                    transformed.direct_fields.keys().collect::<Vec<_>>(),
-                    transformed.lookup_fields.keys().collect::<Vec<_>>(),
-                    transformed.picklist_fields.keys().collect::<Vec<_>>(),
-                    transformed.boolean_fields.keys().collect::<Vec<_>>()
-                );
-                DeadlineMode::Unchanged
-            };
-
-            MatchResult {
-                mode,
-                existing_guid: Some(existing.id.clone()),
-                existing_fields: Some(existing.fields.clone()),
-                existing_associations: Some(existing.associations.clone()),
-            }
+            return build_match_result(transformed, support_matches[0], entity_type);
         }
+    }
+
+    // No unique match found - report error
+    log::warn!(
+        "Row {}: Multiple candidates ({}) for ({}, {}), could not narrow down. Treating as Create.",
+        transformed.source_row,
+        candidates.len(),
+        name,
+        date
+    );
+    MatchResult {
+        mode: DeadlineMode::Error(format!(
+            "Multiple existing deadlines ({}) match (name={}, date={})",
+            candidates.len(), name, date
+        )),
+        existing_guid: None,
+        existing_fields: None,
+        existing_associations: None,
+    }
+}
+
+/// Build a MatchResult for a matched deadline
+fn build_match_result(
+    transformed: &TransformedDeadline,
+    existing: &ExistingDeadline,
+    entity_type: &str,
+) -> MatchResult {
+    log::debug!(
+        "Row {}: Found existing deadline {}",
+        transformed.source_row,
+        existing.id,
+    );
+
+    let has_field_changes = diff_fields(transformed, existing, entity_type);
+    let association_diff = diff_associations(transformed, &existing.associations, entity_type);
+    let has_association_changes = association_diff.has_changes();
+
+    let mode = if has_field_changes || has_association_changes {
+        log::info!(
+            "Row {}: Changes detected (fields={}, associations={}), mode=Update",
+            transformed.source_row,
+            has_field_changes,
+            has_association_changes
+        );
+        DeadlineMode::Update
+    } else {
+        log::info!(
+            "Row {}: No changes detected, mode=Unchanged. Existing fields: {:?}, Transformed direct_fields: {:?}, lookup_fields: {:?}, picklist_fields: {:?}, boolean_fields: {:?}",
+            transformed.source_row,
+            existing.fields.keys().collect::<Vec<_>>(),
+            transformed.direct_fields.keys().collect::<Vec<_>>(),
+            transformed.lookup_fields.keys().collect::<Vec<_>>(),
+            transformed.picklist_fields.keys().collect::<Vec<_>>(),
+            transformed.boolean_fields.keys().collect::<Vec<_>>()
+        );
+        DeadlineMode::Unchanged
+    };
+
+    MatchResult {
+        mode,
+        existing_guid: Some(existing.id.clone()),
+        existing_fields: Some(existing.fields.clone()),
+        existing_associations: Some(existing.associations.clone()),
     }
 }
 

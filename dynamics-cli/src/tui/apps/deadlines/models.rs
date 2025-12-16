@@ -67,11 +67,11 @@ pub struct ExistingJunctionRecord {
     pub related_name: String,
 }
 
-/// Lookup key for matching deadlines: (name, date, description)
-pub type DeadlineLookupKey = (String, NaiveDate, Option<String>);
+/// Lookup key for matching deadlines: (name, date)
+pub type DeadlineLookupKey = (String, NaiveDate);
 
-/// Lookup map from (name, date, description) → ExistingDeadline
-pub type DeadlineLookupMap = HashMap<DeadlineLookupKey, ExistingDeadline>;
+/// Lookup map from (name, date) → Vec<ExistingDeadline> (multiple matches possible)
+pub type DeadlineLookupMap = HashMap<DeadlineLookupKey, Vec<ExistingDeadline>>;
 
 // ============================================================================
 // Deadline Mode (for edit/update support)
