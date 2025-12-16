@@ -1048,8 +1048,13 @@ fn try_run_matching(state: &mut State) -> bool {
         return false;
     }
 
-    // Need both Excel processed and existing deadlines loaded
+    // Need Excel processed
     if !state.excel_processed {
+        return false;
+    }
+
+    // Wait for existing deadlines to finish loading
+    if state.existing_deadlines_loading {
         return false;
     }
 
@@ -1621,10 +1626,14 @@ impl App for DeadlinesMappingApp {
                 }
 
                 // Bottom section: buttons
-                let right_button = if state.excel_processed {
-                    // Show Continue button after data is processed
+                let right_button = if state.matching_complete {
+                    // Show Continue button after matching is complete
                     Element::button("continue-button", "Continue")
                         .on_press(Msg::Continue)
+                        .build()
+                } else if state.excel_processed || state.existing_deadlines_loading {
+                    // Show loading indicator while processing
+                    Element::button("loading-button", "Loading...")
                         .build()
                 } else {
                     // Show Load Data button before data is loaded

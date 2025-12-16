@@ -65,29 +65,27 @@ pub async fn fetch_existing_deadlines(
     let orderby_field = if is_cgk { "cgk_date" } else { "nrq_deadlinedate" };
 
     let mut all_deadlines: Vec<ExistingDeadline> = Vec::new();
-    let mut skip: u32 = 0;
+
+    // Initial query (no $skip - use @odata.nextLink for pagination)
+    let query = QueryBuilder::new(entity_set)
+        .select(&select_fields)
+        .expand(&expand_expressions.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+        .orderby(OrderBy::desc(orderby_field))
+        .top(FETCH_CHUNK_SIZE)
+        .build();
+
+    log::debug!("Fetching existing deadlines, entity={}, params={:?}", entity_set, query.to_query_params());
+
+    let mut result = client
+        .execute_query(&query)
+        .await
+        .map_err(|e| format!("Failed to fetch deadlines: {}", e))?;
 
     loop {
-        // Build query with pagination
-        let query = QueryBuilder::new(entity_set)
-            .select(&select_fields)
-            .expand(&expand_expressions.iter().map(|s| s.as_str()).collect::<Vec<_>>())
-            .orderby(OrderBy::desc(orderby_field))
-            .top(FETCH_CHUNK_SIZE)
-            .skip(skip)
-            .build();
-
-        log::debug!("Fetching existing deadlines (skip={})", skip);
-
-        let result = client
-            .execute_query(&query)
-            .await
-            .map_err(|e| format!("Failed to fetch deadlines: {}", e))?;
-
         let records = result.records().cloned().unwrap_or_default();
         let record_count = records.len();
 
-        log::debug!("Fetched {} deadline records (skip={})", record_count, skip);
+        log::debug!("Fetched {} deadline records, has_next={}", record_count, result.has_more());
 
         // Parse each record into ExistingDeadline
         for record in records {
@@ -96,12 +94,17 @@ pub async fn fetch_existing_deadlines(
             }
         }
 
-        // Check if we got fewer records than requested (last page)
-        if (record_count as u32) < FETCH_CHUNK_SIZE {
+        // Check if there are more pages
+        if !result.has_more() {
             break;
         }
 
-        skip += FETCH_CHUNK_SIZE;
+        // Fetch next page using @odata.nextLink
+        result = result
+            .next_page(&client, Some(FETCH_CHUNK_SIZE))
+            .await
+            .map_err(|e| format!("Failed to fetch next page: {}", e))?
+            .ok_or_else(|| "Expected next page but got None".to_string())?;
     }
 
     log::info!(
@@ -263,27 +266,24 @@ async fn fetch_nrq_support_junctions(
         .map(|(idx, d)| (d.id.clone(), idx))
         .collect();
 
-    // Fetch all junction records in chunks
-    let mut skip: u32 = 0;
+    // Fetch all junction records using @odata.nextLink pagination
+    let query = QueryBuilder::new("nrq_deadlinesupports")
+        .select(&["nrq_deadlinesupportid", "_nrq_deadlineid_value", "_nrq_supportid_value", "nrq_name"])
+        .top(FETCH_CHUNK_SIZE)
+        .build();
+
+    log::debug!("Fetching NRQ support junctions");
+
+    let mut result = client
+        .execute_query(&query)
+        .await
+        .map_err(|e| format!("Failed to fetch support junctions: {}", e))?;
 
     loop {
-        let query = QueryBuilder::new("nrq_deadlinesupports")
-            .select(&["nrq_deadlinesupportid", "_nrq_deadlineid_value", "_nrq_supportid_value", "nrq_name"])
-            .top(FETCH_CHUNK_SIZE)
-            .skip(skip)
-            .build();
-
-        log::debug!("Fetching NRQ support junctions (skip={})", skip);
-
-        let result = client
-            .execute_query(&query)
-            .await
-            .map_err(|e| format!("Failed to fetch support junctions: {}", e))?;
-
         let records = result.records().cloned().unwrap_or_default();
         let record_count = records.len();
 
-        log::debug!("Fetched {} junction records (skip={})", record_count, skip);
+        log::debug!("Fetched {} junction records, has_next={}", record_count, result.has_more());
 
         // Associate junction records with their deadlines
         for record in records {
@@ -312,11 +312,17 @@ async fn fetch_nrq_support_junctions(
             }
         }
 
-        if (record_count as u32) < FETCH_CHUNK_SIZE {
+        // Check if there are more pages
+        if !result.has_more() {
             break;
         }
 
-        skip += FETCH_CHUNK_SIZE;
+        // Fetch next page
+        result = result
+            .next_page(client, Some(FETCH_CHUNK_SIZE))
+            .await
+            .map_err(|e| format!("Failed to fetch next junction page: {}", e))?
+            .ok_or_else(|| "Expected next page but got None".to_string())?;
     }
 
     Ok(())
