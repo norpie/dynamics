@@ -41,6 +41,7 @@ impl App for MappingEditorApp {
             resolver_form: ResolverForm::default(),
             editing_resolver_idx: None,
             resolver_match_fields: Resource::NotAsked,
+            resolver_match_fields_entity: None,
             show_delete_confirm: false,
             delete_target: None,
         };
@@ -558,6 +559,7 @@ impl App for MappingEditorApp {
                 state.editing_resolver_idx = None;
                 state.resolver_form = ResolverForm::default();
                 state.resolver_match_fields = Resource::NotAsked;
+                state.resolver_match_fields_entity = None;
                 Command::set_focus(FocusId::new("resolver-name"))
             }
 
@@ -572,6 +574,7 @@ impl App for MappingEditorApp {
                         let entity = resolver.source_entity.clone();
                         let target_env = config.target_env.clone();
                         state.resolver_match_fields = Resource::Loading;
+                        state.resolver_match_fields_entity = Some(entity.clone());
                         return Command::perform(
                             load_entity_fields(target_env, entity),
                             Msg::ResolverMatchFieldsLoaded,
@@ -591,6 +594,7 @@ impl App for MappingEditorApp {
                 state.show_resolver_modal = false;
                 state.editing_resolver_idx = None;
                 state.resolver_match_fields = Resource::NotAsked;
+                state.resolver_match_fields_entity = None;
                 Command::set_focus(FocusId::new("mapping-tree"))
             }
 
@@ -619,6 +623,7 @@ impl App for MappingEditorApp {
                 state.show_resolver_modal = false;
                 state.editing_resolver_idx = None;
                 state.resolver_match_fields = Resource::NotAsked;
+                state.resolver_match_fields_entity = None;
 
                 // Auto-save
                 if let Resource::Success(config) = &state.config {
@@ -647,12 +652,33 @@ impl App for MappingEditorApp {
                 check_resolver_entity_selection(state)
             }
 
-            Msg::ResolverFormMatchField(event) => {
+            Msg::ResolverAddMatchFieldRow => {
+                state.resolver_form.add_row();
+                Command::None
+            }
+
+            Msg::ResolverRemoveMatchFieldRow => {
+                state.resolver_form.remove_current_row();
+                Command::None
+            }
+
+            Msg::ResolverMatchField(idx, event) => {
+                state.resolver_form.focused_row = idx;
                 let options: Vec<String> = match &state.resolver_match_fields {
                     Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
                     _ => vec![],
                 };
-                state.resolver_form.match_field.handle_event::<Msg>(event, &options);
+                if let Some(row) = state.resolver_form.match_field_rows.get_mut(idx) {
+                    row.target_field.handle_event::<Msg>(event, &options);
+                }
+                Command::None
+            }
+
+            Msg::ResolverSourcePath(idx, event) => {
+                state.resolver_form.focused_row = idx;
+                if let Some(row) = state.resolver_form.match_field_rows.get_mut(idx) {
+                    row.source_path.handle_event(event, None);
+                }
                 Command::None
             }
 
@@ -1029,14 +1055,6 @@ fn check_resolver_entity_selection(state: &mut State) -> Command<Msg> {
         return Command::None;
     }
 
-    // Check if fields already loaded for this entity
-    if let Resource::Success(fields) = &state.resolver_match_fields {
-        // If we have fields and this is just typing, don't reload
-        if !fields.is_empty() {
-            return Command::None;
-        }
-    }
-
     // Only load if the entity matches one from the list (complete selection)
     let is_valid_entity = match &state.target_entities {
         Resource::Success(entities) => entities.contains(&entity_name),
@@ -1047,9 +1065,18 @@ fn check_resolver_entity_selection(state: &mut State) -> Command<Msg> {
         return Command::None;
     }
 
+    // Check if fields already loaded for THIS entity (not just any entity)
+    if let Some(loaded_entity) = &state.resolver_match_fields_entity {
+        if loaded_entity == &entity_name {
+            // Already loaded for this entity, don't reload
+            return Command::None;
+        }
+    }
+
     if let Resource::Success(config) = &state.config {
         let target_env = config.target_env.clone();
         state.resolver_match_fields = Resource::Loading;
+        state.resolver_match_fields_entity = Some(entity_name.clone());
         return Command::perform(
             load_entity_fields(target_env, entity_name),
             Msg::ResolverMatchFieldsLoaded,

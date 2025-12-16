@@ -210,6 +210,19 @@ impl App for TransferPreviewApp {
                             .collect();
                         source_fields.push(format!("{}id", entity)); // Primary key
 
+                        // Add resolver source_path fields for compound key resolution
+                        for fm in &mapping.field_mappings {
+                            if let Some(resolver_name) = fm.transform.resolver_name() {
+                                if let Some(resolver) = config.resolvers.iter().find(|r| r.name == resolver_name) {
+                                    for mf in &resolver.match_fields {
+                                        // Add the source_path field (first segment for simple paths)
+                                        let source_field = mf.source_path.base_field();
+                                        source_fields.push(source_field.to_string());
+                                    }
+                                }
+                            }
+                        }
+
                         // Add _fieldname_value for lookup fields (from source metadata)
                         if let Some(fields) = state.source_metadata.get(&mapping.source_entity) {
                             let lookup_fields: std::collections::HashSet<&str> = fields
@@ -319,13 +332,34 @@ impl App for TransferPreviewApp {
 
                         let entity = resolver.source_entity.clone();
                         let env = config.target_env.clone();
-                        let match_field = resolver.match_field.clone();
 
-                        // For resolver entities, we only need the primary key and match field
-                        let mut resolver_fields = vec![
-                            format!("{}id", entity),
-                            match_field,
-                        ];
+                        // For resolver entities, we need the primary key and all match fields
+                        let mut resolver_fields = vec![format!("{}id", entity)];
+                        for mf in &resolver.match_fields {
+                            resolver_fields.push(mf.target_field.clone());
+                        }
+
+                        // Convert lookup fields to _fieldname_value format (from target metadata)
+                        if let Some(fields) = state.target_metadata.get(&resolver.source_entity) {
+                            let lookup_fields: std::collections::HashSet<&str> = fields
+                                .iter()
+                                .filter(|f| f.related_entity.is_some())
+                                .map(|f| f.logical_name.as_str())
+                                .collect();
+
+                            // Replace lookup field names with _value versions
+                            resolver_fields = resolver_fields
+                                .into_iter()
+                                .map(|f| {
+                                    if lookup_fields.contains(f.as_str()) {
+                                        format!("_{}_value", f)
+                                    } else {
+                                        f
+                                    }
+                                })
+                                .collect();
+                        }
+
                         resolver_fields.sort();
                         resolver_fields.dedup();
 
@@ -1433,6 +1467,18 @@ impl App for TransferPreviewApp {
                         .collect();
                     source_fields.push(format!("{}id", entity));
 
+                    // Add resolver source_path fields for compound key resolution
+                    for fm in &mapping.field_mappings {
+                        if let Some(resolver_name) = fm.transform.resolver_name() {
+                            if let Some(resolver) = config.resolvers.iter().find(|r| r.name == resolver_name) {
+                                for mf in &resolver.match_fields {
+                                    let source_field = mf.source_path.base_field();
+                                    source_fields.push(source_field.to_string());
+                                }
+                            }
+                        }
+                    }
+
                     // Add _fieldname_value for lookup fields (from source metadata)
                     if let Some(fields) = state.source_metadata.get(&mapping.source_entity) {
                         let lookup_fields: std::collections::HashSet<&str> = fields
@@ -1527,12 +1573,33 @@ impl App for TransferPreviewApp {
 
                     let entity = resolver.source_entity.clone();
                     let env = config.target_env.clone();
-                    let match_field = resolver.match_field.clone();
 
-                    let mut resolver_fields = vec![
-                        format!("{}id", entity),
-                        match_field,
-                    ];
+                    let mut resolver_fields = vec![format!("{}id", entity)];
+                    for mf in &resolver.match_fields {
+                        resolver_fields.push(mf.target_field.clone());
+                    }
+
+                    // Convert lookup fields to _fieldname_value format (from target metadata)
+                    if let Some(fields) = state.target_metadata.get(&resolver.source_entity) {
+                        let lookup_fields: std::collections::HashSet<&str> = fields
+                            .iter()
+                            .filter(|f| f.related_entity.is_some())
+                            .map(|f| f.logical_name.as_str())
+                            .collect();
+
+                        // Replace lookup field names with _value versions
+                        resolver_fields = resolver_fields
+                            .into_iter()
+                            .map(|f| {
+                                if lookup_fields.contains(f.as_str()) {
+                                    format!("_{}_value", f)
+                                } else {
+                                    f
+                                }
+                            })
+                            .collect();
+                    }
+
                     resolver_fields.sort();
                     resolver_fields.dedup();
 

@@ -72,7 +72,10 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
         let fields_loading = matches!(&state.source_fields, Resource::Loading)
             || matches!(&state.target_fields, Resource::Loading);
         let resolvers: Vec<_> = match &state.config {
-            Resource::Success(config) => config.resolvers.iter().map(|r| (r.name.as_str(), r.source_entity.as_str(), r.match_field.as_str())).collect(),
+            Resource::Success(config) => config.resolvers.iter().map(|r| {
+                let match_field = r.match_fields.first().map(|mf| mf.target_field.as_str()).unwrap_or("");
+                (r.name.as_str(), r.source_entity.as_str(), match_field)
+            }).collect(),
             _ => vec![],
         };
 
@@ -817,27 +820,219 @@ fn render_resolver_modal(
     .build();
     let entity_panel = Element::panel(entity_input).title("Source Entity (to search in target)").build();
 
-    // Match field autocomplete (populated when entity selected)
+    // Match field autocomplete (single field - the original behavior)
+    // For compound keys, user adds more fields with "+ Add Field"
     let match_options: Vec<String> = match_fields.iter().map(|f| f.logical_name.clone()).collect();
-    let match_input = Element::autocomplete(
-        FocusId::new("resolver-field"),
-        match_options,
-        form.match_field.value.clone(),
-        &mut form.match_field.state,
-    )
-    .placeholder(if fields_loading { "Loading fields..." } else { "Type to search fields..." })
-    .on_event(Msg::ResolverFormMatchField)
-    .build();
-    let match_panel = Element::panel(match_input).title("Match Field").build();
+    let rows_len = form.match_field_rows.len();
 
-    // Fallback button (cycle between Error/Null)
+    // For single field, show simple input; for multiple, show list with add/remove
+    let match_field_content = if rows_len == 1 {
+        // Single field - simple autocomplete like before
+        let row = &mut form.match_field_rows[0];
+        let match_input = Element::autocomplete(
+            FocusId::new("resolver-field-0"),
+            match_options.clone(),
+            row.target_field.value.clone(),
+            &mut row.target_field.state,
+        )
+        .placeholder(if fields_loading { "Loading fields..." } else { "Field to match against" })
+        .on_event(|e| Msg::ResolverMatchField(0, e))
+        .build();
+
+        let add_btn = Element::button(FocusId::new("resolver-add-row"), "+ Compound Key")
+            .on_press(Msg::ResolverAddMatchFieldRow)
+            .build();
+
+        let row_with_add = RowBuilder::new()
+            .add(match_input, LayoutConstraint::Fill(1))
+            .add(Element::text(" "), LayoutConstraint::Length(1))
+            .add(add_btn, LayoutConstraint::Length(16))
+            .build();
+
+        Element::panel(row_with_add).title("Match Field").build()
+    } else {
+        // Multiple fields - show list with source_path → target_field
+        let mut match_rows_col = ColumnBuilder::new();
+
+        // Header row
+        let header = RowBuilder::new()
+            .add(Element::text("   "), LayoutConstraint::Length(3))
+            .add(Element::styled_text(Line::from(Span::styled("Source Path", Style::default().fg(theme.text_secondary)))).build(), LayoutConstraint::Fill(1))
+            .add(Element::text("  "), LayoutConstraint::Length(2))
+            .add(Element::styled_text(Line::from(Span::styled("Target Field", Style::default().fg(theme.text_secondary)))).build(), LayoutConstraint::Fill(1))
+            .add(Element::text("     "), LayoutConstraint::Length(5))
+            .build();
+        match_rows_col = match_rows_col.add(header, LayoutConstraint::Length(1));
+
+        // Row 0
+        if rows_len > 0 {
+            let row = &mut form.match_field_rows[0];
+            let source_input = Element::text_input(
+                FocusId::new("resolver-source-0"),
+                &row.source_path.value,
+                &mut row.source_path.state,
+            )
+            .placeholder("Source field path")
+            .on_event(|e| Msg::ResolverSourcePath(0, e))
+            .build();
+
+            let target_input = Element::autocomplete(
+                FocusId::new("resolver-field-0"),
+                match_options.clone(),
+                row.target_field.value.clone(),
+                &mut row.target_field.state,
+            )
+            .placeholder(if fields_loading { "Loading..." } else { "Target field" })
+            .on_event(|e| Msg::ResolverMatchField(0, e))
+            .build();
+
+            let del_btn = Element::button(FocusId::new("resolver-del-0"), "×")
+                .on_press(Msg::ResolverRemoveMatchFieldRow)
+                .build();
+
+            let entry_row = RowBuilder::new()
+                .add(Element::text("1. "), LayoutConstraint::Length(3))
+                .add(source_input, LayoutConstraint::Fill(1))
+                .add(Element::text("→ "), LayoutConstraint::Length(2))
+                .add(target_input, LayoutConstraint::Fill(1))
+                .add(del_btn, LayoutConstraint::Length(5))
+                .build();
+            match_rows_col = match_rows_col.add(entry_row, LayoutConstraint::Length(3));
+        }
+
+        // Row 1
+        if rows_len > 1 {
+            let row = &mut form.match_field_rows[1];
+            let source_input = Element::text_input(
+                FocusId::new("resolver-source-1"),
+                &row.source_path.value,
+                &mut row.source_path.state,
+            )
+            .placeholder("Source field path")
+            .on_event(|e| Msg::ResolverSourcePath(1, e))
+            .build();
+
+            let target_input = Element::autocomplete(
+                FocusId::new("resolver-field-1"),
+                match_options.clone(),
+                row.target_field.value.clone(),
+                &mut row.target_field.state,
+            )
+            .placeholder(if fields_loading { "Loading..." } else { "Target field" })
+            .on_event(|e| Msg::ResolverMatchField(1, e))
+            .build();
+
+            let del_btn = Element::button(FocusId::new("resolver-del-1"), "×")
+                .on_press(Msg::ResolverRemoveMatchFieldRow)
+                .build();
+
+            let entry_row = RowBuilder::new()
+                .add(Element::text("2. "), LayoutConstraint::Length(3))
+                .add(source_input, LayoutConstraint::Fill(1))
+                .add(Element::text("→ "), LayoutConstraint::Length(2))
+                .add(target_input, LayoutConstraint::Fill(1))
+                .add(del_btn, LayoutConstraint::Length(5))
+                .build();
+            match_rows_col = match_rows_col.add(entry_row, LayoutConstraint::Length(3));
+        }
+
+        // Row 2
+        if rows_len > 2 {
+            let row = &mut form.match_field_rows[2];
+            let source_input = Element::text_input(
+                FocusId::new("resolver-source-2"),
+                &row.source_path.value,
+                &mut row.source_path.state,
+            )
+            .placeholder("Source field path")
+            .on_event(|e| Msg::ResolverSourcePath(2, e))
+            .build();
+
+            let target_input = Element::autocomplete(
+                FocusId::new("resolver-field-2"),
+                match_options.clone(),
+                row.target_field.value.clone(),
+                &mut row.target_field.state,
+            )
+            .placeholder(if fields_loading { "Loading..." } else { "Target field" })
+            .on_event(|e| Msg::ResolverMatchField(2, e))
+            .build();
+
+            let del_btn = Element::button(FocusId::new("resolver-del-2"), "×")
+                .on_press(Msg::ResolverRemoveMatchFieldRow)
+                .build();
+
+            let entry_row = RowBuilder::new()
+                .add(Element::text("3. "), LayoutConstraint::Length(3))
+                .add(source_input, LayoutConstraint::Fill(1))
+                .add(Element::text("→ "), LayoutConstraint::Length(2))
+                .add(target_input, LayoutConstraint::Fill(1))
+                .add(del_btn, LayoutConstraint::Length(5))
+                .build();
+            match_rows_col = match_rows_col.add(entry_row, LayoutConstraint::Length(3));
+        }
+
+        // Row 3
+        if rows_len > 3 {
+            let row = &mut form.match_field_rows[3];
+            let source_input = Element::text_input(
+                FocusId::new("resolver-source-3"),
+                &row.source_path.value,
+                &mut row.source_path.state,
+            )
+            .placeholder("Source field path")
+            .on_event(|e| Msg::ResolverSourcePath(3, e))
+            .build();
+
+            let target_input = Element::autocomplete(
+                FocusId::new("resolver-field-3"),
+                match_options.clone(),
+                row.target_field.value.clone(),
+                &mut row.target_field.state,
+            )
+            .placeholder(if fields_loading { "Loading..." } else { "Target field" })
+            .on_event(|e| Msg::ResolverMatchField(3, e))
+            .build();
+
+            let del_btn = Element::button(FocusId::new("resolver-del-3"), "×")
+                .on_press(Msg::ResolverRemoveMatchFieldRow)
+                .build();
+
+            let entry_row = RowBuilder::new()
+                .add(Element::text("4. "), LayoutConstraint::Length(3))
+                .add(source_input, LayoutConstraint::Fill(1))
+                .add(Element::text("→ "), LayoutConstraint::Length(2))
+                .add(target_input, LayoutConstraint::Fill(1))
+                .add(del_btn, LayoutConstraint::Length(5))
+                .build();
+            match_rows_col = match_rows_col.add(entry_row, LayoutConstraint::Length(3));
+        }
+
+        if rows_len > 4 {
+            let more_text = format!("... and {} more", rows_len - 4);
+            match_rows_col = match_rows_col.add(
+                Element::styled_text(Line::from(vec![
+                    Span::styled(more_text, Style::default().fg(theme.text_tertiary)),
+                ]))
+                .build(),
+                LayoutConstraint::Length(1),
+            );
+        }
+
+        // Add button at bottom
+        let add_btn = Element::button(FocusId::new("resolver-add-row"), "+ Add Field")
+            .on_press(Msg::ResolverAddMatchFieldRow)
+            .build();
+        match_rows_col = match_rows_col.add(add_btn, LayoutConstraint::Length(3));
+
+        Element::panel(match_rows_col.build()).title("Match Fields (compound key)").build()
+    };
+
+    // Fallback button (cycle between Error/Null/Default)
     let fallback_label = format!("Fallback: {} (click to cycle)", form.fallback.label());
-    let fallback_btn = Element::button(
-        FocusId::new("resolver-fallback"),
-        &fallback_label,
-    )
-    .on_press(Msg::ResolverFormCycleFallback)
-    .build();
+    let fallback_btn = Element::button(FocusId::new("resolver-fallback"), &fallback_label)
+        .on_press(Msg::ResolverFormCycleFallback)
+        .build();
 
     // Default GUID input (optional - when filled, uses Default fallback)
     let default_guid_input = Element::text_input(
@@ -853,7 +1048,7 @@ fn render_resolver_modal(
     // Help text
     let help_text = Element::styled_text(Line::from(vec![
         Span::styled(
-            "Resolvers match source values to target records for lookup resolution.",
+            "Resolvers match source values to target records. Use multiple fields for compound key matching.",
             Style::default().fg(theme.text_tertiary),
         ),
     ]))
@@ -878,22 +1073,26 @@ fn render_resolver_modal(
         .add(save_btn, LayoutConstraint::Length(12))
         .build();
 
+    // Calculate height based on number of match field rows
+    let base_height: u16 = 28; // Base modal height for single field
+    let extra_rows = if rows_len > 1 { (rows_len - 1).min(3) * 4 } else { 0 };
+    let modal_height = base_height + extra_rows as u16;
+
     let form_content = ColumnBuilder::new()
         .add(name_panel, LayoutConstraint::Length(3))
         .add(entity_panel, LayoutConstraint::Length(3))
-        .add(match_panel, LayoutConstraint::Length(3))
+        .add(match_field_content, LayoutConstraint::Length(if rows_len == 1 { 5 } else { 4 + rows_len.min(4) as u16 * 3 + 3 }))
         .add(fallback_btn, LayoutConstraint::Length(3))
         .add(default_guid_panel, LayoutConstraint::Length(3))
-        .add(help_text, LayoutConstraint::Length(1))
-        .add(Element::text(""), LayoutConstraint::Fill(1))
+        .add(help_text, LayoutConstraint::Length(2))
         .add(button_row, LayoutConstraint::Length(3))
         .spacing(1)
         .build();
 
     Element::panel(Element::container(form_content).padding(1).build())
         .title(title)
-        .width(60)
-        .height(26)
+        .width(65)
+        .height(modal_height.min(45))
         .build()
 }
 
@@ -932,6 +1131,10 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
         subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseResolverModal));
         subs.push(Subscription::keyboard(KeyCode::Enter, "Save", Msg::SaveResolver));
         subs.push(Subscription::ctrl_key(KeyCode::Char('f'), "Cycle fallback", Msg::ResolverFormCycleFallback));
+        subs.push(Subscription::ctrl_key(KeyCode::Char('a'), "Add match field", Msg::ResolverAddMatchFieldRow));
+        if state.resolver_form.match_field_rows.len() > 1 {
+            subs.push(Subscription::ctrl_key(KeyCode::Char('d'), "Remove field", Msg::ResolverRemoveMatchFieldRow));
+        }
     } else {
         // Main view subscriptions
         subs.push(Subscription::keyboard(KeyCode::Char('a'), "Add entity", Msg::AddEntity));

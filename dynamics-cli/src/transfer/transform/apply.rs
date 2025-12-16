@@ -17,8 +17,9 @@ pub type TransformResult = Result<Value, String>;
 /// * `record` - The source record (JSON)
 /// * `resolver_ctx` - Optional resolver context for Copy transforms with resolvers
 ///
-/// When a Copy transform has a resolver specified, the source value is looked up
-/// in the resolver context to find the corresponding target GUID.
+/// When a Copy transform has a resolver specified:
+/// - For single-field resolvers: the source_path value is used for lookup
+/// - For compound key resolvers: the resolver's match_fields define where to get values from
 pub fn apply_transform(
     transform: &Transform,
     record: &serde_json::Value,
@@ -26,21 +27,72 @@ pub fn apply_transform(
 ) -> TransformResult {
     match transform {
         Transform::Copy { source_path, resolver } => {
-            let value = resolve_path(record, source_path);
-
-            // If a resolver is specified, look up the value to get the target GUID
+            // If a resolver is specified, resolve using the resolver
             if let Some(resolver_name) = resolver {
-                // Convert Value to serde_json::Value for the lookup
-                let json_value = value.to_json();
                 match resolver_ctx {
-                    Some(ctx) => ctx.resolve_to_value(resolver_name, &json_value),
+                    Some(ctx) => {
+                        // Get the resolver's match fields
+                        let Some(match_fields) = ctx.get_match_fields(resolver_name) else {
+                            return Err(format!(
+                                "Resolver '{}' not found in context",
+                                resolver_name
+                            ));
+                        };
+
+                        // Single-field resolver: use Transform's source_path to get the value
+                        // Compound key resolver: use resolver's match_fields to get values
+                        if match_fields.len() == 1 {
+                            // Single-field: use the Transform's source_path
+                            let value = resolve_path(record, source_path);
+                            let json_value = value.to_json();
+                            let target_field = match_fields[0].target_field.as_str();
+                            let pairs = [(target_field, &json_value)];
+                            ctx.resolve_composite_to_value(resolver_name, &pairs)
+                        } else {
+                            // Compound key: use resolver's match_fields to get values
+                            let mut pairs: Vec<(&str, serde_json::Value)> = Vec::with_capacity(match_fields.len());
+
+                            // Log source record keys once for debugging
+                            static LOGGED_KEYS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                            if !LOGGED_KEYS.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                                if let Some(obj) = record.as_object() {
+                                    let keys: Vec<_> = obj.keys().collect();
+                                    log::info!(
+                                        "Compound resolver '{}': source record has {} keys: {:?}",
+                                        resolver_name,
+                                        keys.len(),
+                                        keys
+                                    );
+                                }
+                            }
+
+                            for mf in match_fields {
+                                let value = resolve_path(record, &mf.source_path);
+                                log::trace!(
+                                    "Compound resolver: source_path '{}' -> {:?}",
+                                    mf.source_path,
+                                    value
+                                );
+                                pairs.push((mf.target_field.as_str(), value.to_json()));
+                            }
+
+                            // Build reference pairs for the resolver
+                            let ref_pairs: Vec<(&str, &serde_json::Value)> = pairs
+                                .iter()
+                                .map(|(k, v)| (*k, v))
+                                .collect();
+
+                            ctx.resolve_composite_to_value(resolver_name, &ref_pairs)
+                        }
+                    }
                     None => Err(format!(
                         "Resolver '{}' specified but no resolver context available",
                         resolver_name
                     )),
                 }
             } else {
-                Ok(value)
+                // No resolver - just copy the value
+                Ok(resolve_path(record, source_path))
             }
         }
 

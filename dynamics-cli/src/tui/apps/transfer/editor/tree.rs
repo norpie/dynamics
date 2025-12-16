@@ -71,16 +71,25 @@ pub struct ResolverNode {
     pub idx: usize,
     pub name: String,
     pub source_entity: String,
-    pub match_field: String,
+    /// Display string for match fields (e.g., "field1" or "field1, field2")
+    pub match_fields_display: String,
 }
 
 impl ResolverNode {
     pub fn from_resolver(idx: usize, resolver: &Resolver) -> Self {
+        // Build display string for match fields
+        let match_fields_display = resolver
+            .match_fields
+            .iter()
+            .map(|mf| mf.target_field.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+
         Self {
             idx,
             name: resolver.name.clone(),
             source_entity: resolver.source_entity.clone(),
-            match_field: resolver.match_field.clone(),
+            match_fields_display,
         }
     }
 
@@ -128,9 +137,9 @@ impl ResolverNode {
             Style::default().fg(theme.accent_secondary),
         ));
 
-        // Match field in parentheses
+        // Match field(s) in parentheses
         spans.push(Span::styled(
-            format!(" ({})", self.match_field),
+            format!(" ({})", self.match_fields_display),
             Style::default().fg(theme.text_tertiary),
         ));
 

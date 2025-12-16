@@ -602,7 +602,7 @@ mod tests {
         let existing = make_existing("guid-123", "Test Deadline", date);
 
         let mut lookup_map = DeadlineLookupMap::new();
-        lookup_map.insert(("test deadline".to_string(), date), existing);
+        lookup_map.insert(("test deadline".to_string(), date), vec![existing]);
 
         let result = match_deadline(&transformed, &lookup_map, "cgk_deadline");
 

@@ -56,6 +56,8 @@ pub struct State {
     pub resolver_form: ResolverForm,
     pub editing_resolver_idx: Option<usize>,
     pub resolver_match_fields: Resource<Vec<FieldMetadata>>,
+    /// Tracks which entity the resolver_match_fields were loaded for
+    pub resolver_match_fields_entity: Option<String>,
 
     // Delete confirmation
     pub show_delete_confirm: bool,
@@ -85,6 +87,7 @@ impl Default for State {
             resolver_form: ResolverForm::default(),
             editing_resolver_idx: None,
             resolver_match_fields: Resource::NotAsked,
+            resolver_match_fields_entity: None,
             show_delete_confirm: false,
             delete_target: None,
         }
@@ -135,20 +138,83 @@ impl EntityMappingForm {
     }
 }
 
+/// A single match field row in the resolver form
 #[derive(Clone, Default)]
+pub struct MatchFieldRow {
+    /// Source path - where to get value from source record (optional for single-field resolvers)
+    pub source_path: TextInputField,
+    /// Field to match against in target entity
+    pub target_field: AutocompleteField,
+}
+
+impl MatchFieldRow {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_values(source_path: &str, target_field: &str) -> Self {
+        let mut row = Self::new();
+        row.source_path.value = source_path.to_string();
+        row.target_field.value = target_field.to_string();
+        row
+    }
+
+    /// For backwards compatibility - sets target_field only
+    pub fn with_target_field(target_field: &str) -> Self {
+        let mut row = Self::new();
+        row.target_field.value = target_field.to_string();
+        row
+    }
+
+    pub fn is_valid(&self) -> bool {
+        !self.target_field.value.trim().is_empty()
+    }
+
+    /// Check if source_path is required (for compound keys) and valid
+    pub fn is_valid_compound(&self) -> bool {
+        !self.target_field.value.trim().is_empty() && !self.source_path.value.trim().is_empty()
+    }
+}
+
+#[derive(Clone)]
 pub struct ResolverForm {
     pub name: TextInputField,
     pub source_entity: AutocompleteField,
-    pub match_field: AutocompleteField,
+    /// Match field rows (supports compound keys)
+    pub match_field_rows: Vec<MatchFieldRow>,
+    /// Currently focused row index
+    pub focused_row: usize,
     pub fallback: ResolverFallback,
     pub default_guid: TextInputField, // For Default fallback
 }
 
+impl Default for ResolverForm {
+    fn default() -> Self {
+        Self {
+            name: TextInputField::default(),
+            source_entity: AutocompleteField::default(),
+            match_field_rows: vec![MatchFieldRow::new()], // Start with one empty row
+            focused_row: 0,
+            fallback: ResolverFallback::default(),
+            default_guid: TextInputField::default(),
+        }
+    }
+}
+
 impl ResolverForm {
     pub fn is_valid(&self) -> bool {
+        let rows_valid = if self.match_field_rows.len() == 1 {
+            // Single field - source_path optional
+            self.match_field_rows.iter().all(|row| row.is_valid())
+        } else {
+            // Compound key - source_path required
+            self.match_field_rows.iter().all(|row| row.is_valid_compound())
+        };
+
         let base_valid = !self.name.value.trim().is_empty()
             && !self.source_entity.value.trim().is_empty()
-            && !self.match_field.value.trim().is_empty();
+            && !self.match_field_rows.is_empty()
+            && rows_valid;
 
         // If using Default fallback, also validate the GUID
         if self.fallback.is_default() || !self.default_guid.value.trim().is_empty() {
@@ -162,7 +228,19 @@ impl ResolverForm {
         let mut form = Self::default();
         form.name.value = resolver.name.clone();
         form.source_entity.value = resolver.source_entity.clone();
-        form.match_field.value = resolver.match_field.clone();
+
+        // Load match fields with both source_path and target_field
+        form.match_field_rows = resolver
+            .match_fields
+            .iter()
+            .map(|mf| MatchFieldRow::with_values(&mf.source_path.to_string(), &mf.target_field))
+            .collect();
+
+        // Ensure at least one row
+        if form.match_field_rows.is_empty() {
+            form.match_field_rows.push(MatchFieldRow::new());
+        }
+
         form.fallback = resolver.fallback.clone();
         if let Some(guid) = resolver.fallback.default_guid() {
             form.default_guid.value = guid.to_string();
@@ -171,6 +249,8 @@ impl ResolverForm {
     }
 
     pub fn to_resolver(&self) -> Resolver {
+        use crate::transfer::MatchField;
+
         let fallback = if !self.default_guid.value.trim().is_empty() {
             if let Ok(guid) = uuid::Uuid::parse_str(self.default_guid.value.trim()) {
                 ResolverFallback::Default(guid)
@@ -181,13 +261,52 @@ impl ResolverForm {
             self.fallback.clone()
         };
 
-        Resolver {
-            id: None,
-            name: self.name.value.trim().to_string(),
-            source_entity: self.source_entity.value.trim().to_string(),
-            match_field: self.match_field.value.trim().to_string(),
+        // Build match fields from rows
+        let is_compound = self.match_field_rows.len() > 1;
+        let match_fields: Vec<MatchField> = self
+            .match_field_rows
+            .iter()
+            .filter(|row| row.is_valid())
+            .map(|row| {
+                let target_field = row.target_field.value.trim();
+                let source_path = row.source_path.value.trim();
+                // For single-field resolver, use target_field as source_path if not specified
+                let effective_source = if source_path.is_empty() && !is_compound {
+                    target_field
+                } else {
+                    source_path
+                };
+                MatchField::from_paths(effective_source, target_field).unwrap_or_else(|_| MatchField::simple(target_field))
+            })
+            .collect();
+
+        Resolver::with_match_fields(
+            self.name.value.trim(),
+            self.source_entity.value.trim(),
+            match_fields,
             fallback,
+        )
+    }
+
+    /// Add a new empty match field row
+    pub fn add_row(&mut self) {
+        self.match_field_rows.push(MatchFieldRow::new());
+        self.focused_row = self.match_field_rows.len() - 1;
+    }
+
+    /// Remove the currently focused row (if more than one exists)
+    pub fn remove_current_row(&mut self) {
+        if self.match_field_rows.len() > 1 {
+            self.match_field_rows.remove(self.focused_row);
+            if self.focused_row >= self.match_field_rows.len() {
+                self.focused_row = self.match_field_rows.len() - 1;
+            }
         }
+    }
+
+    /// Get current row mutably
+    pub fn current_row_mut(&mut self) -> Option<&mut MatchFieldRow> {
+        self.match_field_rows.get_mut(self.focused_row)
     }
 }
 
@@ -825,10 +944,14 @@ pub enum Msg {
     SaveResolver,
     ResolverFormName(TextInputEvent),
     ResolverFormSourceEntity(AutocompleteEvent),
-    ResolverFormMatchField(AutocompleteEvent),
     ResolverFormCycleFallback,
     ResolverFormDefaultGuid(TextInputEvent),
     ResolverMatchFieldsLoaded(Result<Vec<FieldMetadata>, String>),
+    // Match field row operations
+    ResolverAddMatchFieldRow,
+    ResolverRemoveMatchFieldRow,
+    ResolverMatchField(usize, AutocompleteEvent),
+    ResolverSourcePath(usize, TextInputEvent),
 
     // Delete confirmation
     ConfirmDelete,

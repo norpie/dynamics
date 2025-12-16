@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use sqlx::{Row, SqlitePool};
 
 use crate::transfer::{
-    EntityMapping, FieldMapping, OrphanHandling, Resolver, ResolverFallback, Transform,
-    TransferConfig,
+    EntityMapping, FieldMapping, FieldPath, MatchField, OrphanHandling, Resolver, ResolverFallback,
+    Transform, TransferConfig,
 };
 
 /// Summary of a transfer config (for listing)
@@ -162,11 +162,22 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
             ResolverFallback::Error
         };
 
+        // Parse match_field - could be JSON array (new format) or plain string (legacy)
+        let match_field_raw: String = row.try_get("match_field")?;
+        let match_fields = if match_field_raw.starts_with('[') {
+            // New JSON format: [{"source_path": {...}, "target_field": "..."}]
+            serde_json::from_str::<Vec<MatchField>>(&match_field_raw)
+                .unwrap_or_else(|_| vec![MatchField::simple(&match_field_raw)])
+        } else {
+            // Legacy single-field format: "emailaddress1"
+            vec![MatchField::simple(&match_field_raw)]
+        };
+
         resolvers.push(Resolver {
             id: Some(row.try_get("id")?),
             name: row.try_get("name")?,
             source_entity: row.try_get("source_entity")?,
-            match_field: row.try_get("match_field")?,
+            match_fields,
             fallback,
         });
     }
@@ -291,6 +302,10 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
             ResolverFallback::Default(guid) => format!("default:{}", guid),
         };
 
+        // Serialize match_fields as JSON
+        let match_fields_json = serde_json::to_string(&resolver.match_fields)
+            .unwrap_or_else(|_| "[]".to_string());
+
         sqlx::query(
             r#"
             INSERT INTO transfer_resolvers (config_id, name, source_entity, match_field, fallback)
@@ -300,7 +315,7 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
         .bind(config_id)
         .bind(&resolver.name)
         .bind(&resolver.source_entity)
-        .bind(&resolver.match_field)
+        .bind(&match_fields_json)
         .bind(&fallback_str)
         .execute(&mut *tx)
         .await

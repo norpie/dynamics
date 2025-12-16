@@ -198,6 +198,14 @@ impl Transform {
         }
     }
 
+    /// Get the resolver name if this transform uses one
+    pub fn resolver_name(&self) -> Option<&str> {
+        match self {
+            Transform::Copy { resolver, .. } => resolver.as_deref(),
+            _ => None,
+        }
+    }
+
     /// Create a format transform from a template string
     pub fn format(template: &str) -> Result<Self, crate::transfer::transform::format::ParseError> {
         let parsed = crate::transfer::transform::format::parse_template(template)?;

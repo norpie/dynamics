@@ -905,9 +905,14 @@ mod tests {
             &source, &mappings, &target_index, &field_names, &make_ctx(), &resolver_ctx
         );
 
-        // Should be marked as error because duplicate values are ambiguous
-        assert!(result.is_error());
-        assert!(result.error.as_ref().unwrap().contains("multiple matches"));
+        // With first-match-wins behavior, duplicates resolve to the first match
+        assert!(!result.is_error());
+        let guid_value = result.fields.get("primarycontactid").unwrap();
+        // Should resolve to first contact's GUID
+        assert_eq!(
+            guid_value,
+            &Value::Guid(Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap())
+        );
     }
 
     #[test]
