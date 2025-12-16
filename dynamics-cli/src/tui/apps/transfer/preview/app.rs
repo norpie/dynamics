@@ -1841,7 +1841,7 @@ async fn fetch_entity_records(
     let fetch_start = std::time::Instant::now();
 
     // Use smaller page size for more responsive progress updates
-    const PAGE_SIZE: u32 = 100;
+    const PAGE_SIZE: u32 = 500;
 
     // Build initial query with $top for smaller chunks
     // Fetch all records (active + inactive) for complete transfer coverage
