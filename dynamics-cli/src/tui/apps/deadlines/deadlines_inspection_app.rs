@@ -313,26 +313,26 @@ impl App for DeadlinesInspectionApp {
 
                 let mut all_queue_items = Vec::new();
 
-                // Batch deadline creates into groups of 50
+                // Batch deadline creates into groups of 10
                 if !create_records.is_empty() {
                     let create_items = batch_deadline_creates(
                         &create_records,
                         &state.entity_type,
                         &environment_name,
                         &mut state.queued_items,
-                        50
+                        10
                     );
                     all_queue_items.extend(create_items);
                 }
 
-                // Batch deadline updates into groups of 50
+                // Batch deadline updates into groups of 10
                 // Updates include: PATCH operation + association changes
                 if !update_records.is_empty() {
                     let update_items = batch_deadline_updates(
                         &update_records,
                         &state.entity_type,
                         &environment_name,
-                        50
+                        10
                     );
                     all_queue_items.extend(update_items);
                 }
@@ -418,12 +418,12 @@ impl App for DeadlinesInspectionApp {
                     if state.pending_associations.len() >= state.total_deadlines_queued {
                         log::info!("All {} deadlines created, batching associations", state.total_deadlines_queued);
 
-                        // Batch associations in groups of 50 max, never splitting a deadline's associations
+                        // Batch associations in groups of 10 max, never splitting a deadline's associations
                         let batched_queue_items = batch_associations(
                             &state.pending_associations,
                             &state.entity_type,
                             &metadata.environment_name,
-                            50
+                            10
                         );
 
                         if batched_queue_items.is_empty() {
