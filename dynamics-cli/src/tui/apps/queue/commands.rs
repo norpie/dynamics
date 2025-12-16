@@ -89,6 +89,8 @@ pub fn execute_next_if_available(state: &mut State) -> Command<Msg> {
             item.started_at = Some(std::time::Instant::now());
         });
         state.currently_running.insert(id.clone());
+        state.invalidate_index_cache();
+        state.tree_state.invalidate_cache();
 
         // Persist Running status to database
         let item_id_for_persist = id.clone();

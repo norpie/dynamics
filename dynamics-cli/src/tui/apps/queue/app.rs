@@ -60,6 +60,7 @@ pub enum Msg {
 
     // Filters/Settings
     SetFilter(QueueFilter),
+    CycleFilter,
     SetSortMode(SortMode),
     SetMaxConcurrent(usize),
     IncreaseConcurrency,
@@ -590,6 +591,7 @@ impl App for OperationQueueApp {
                 });
                 state.currently_running.insert(id.clone());
                 state.invalidate_index_cache();
+                state.tree_state.invalidate_cache();
 
                 // Persist Running status to database
                 let item_id_for_persist = id.clone();
@@ -746,6 +748,10 @@ impl App for OperationQueueApp {
                         item.succeeded_indices = new_succeeded_indices_clone;
                     });
 
+                    // Invalidate caches after status change so filter updates
+                    state.invalidate_index_cache();
+                    state.tree_state.invalidate_cache();
+
                     // Persist to database
                     let item_id = id.clone();
                     let result_for_persist = result.clone();
@@ -842,6 +848,19 @@ impl App for OperationQueueApp {
 
             Msg::SetFilter(filter) => {
                 state.filter = filter;
+                state.invalidate_index_cache();
+                state.tree_state.invalidate_cache();
+                save_settings_command(state)
+            }
+
+            Msg::CycleFilter => {
+                state.filter = match state.filter {
+                    QueueFilter::All => QueueFilter::Pending,
+                    QueueFilter::Pending => QueueFilter::Running,
+                    QueueFilter::Running => QueueFilter::Paused,
+                    QueueFilter::Paused => QueueFilter::Failed,
+                    QueueFilter::Failed => QueueFilter::All,
+                };
                 state.invalidate_index_cache();
                 state.tree_state.invalidate_cache();
                 save_settings_command(state)
@@ -1190,8 +1209,14 @@ impl App for OperationQueueApp {
             .build();
         let element_build_elapsed = element_build_start.elapsed();
 
+        // Queue panel title includes filter status
+        let queue_title = if state.filter == QueueFilter::All {
+            "Queue".to_string()
+        } else {
+            format!("Queue ({})", state.filter.label())
+        };
         let tree = Element::panel(tree_widget)
-            .title("Queue")
+            .title(&queue_title)
             .build();
 
         // Build details panel for selected item
@@ -1261,6 +1286,7 @@ impl App for OperationQueueApp {
             Subscription::keyboard(KeyBinding::new(KeyCode::Char('r')), "Retry (selected)", Msg::RetrySelected),
             Subscription::keyboard(KeyBinding::new(KeyCode::Char('d')), "Delete (selected)", Msg::RequestDeleteSelected),
             Subscription::keyboard(KeyBinding::new(KeyCode::Char('c')), "Clear interruption warning (selected)", Msg::ClearInterruptionFlagSelected),
+            Subscription::keyboard(KeyBinding::new(KeyCode::Char('f')), "Cycle filter", Msg::CycleFilter),
 
             // Event subscriptions
             Subscription::subscribe("queue:add_items", |value| {
