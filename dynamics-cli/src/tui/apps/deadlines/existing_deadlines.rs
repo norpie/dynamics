@@ -54,11 +54,33 @@ pub async fn fetch_existing_deadlines(
     // Build the $expand expressions for N:N relationships
     let expand_expressions = build_expand_expressions(entity_type);
 
-    // Build select fields for main entity
+    // Build select fields for main entity (include all fields needed for diffing)
     let select_fields: Vec<&str> = if is_cgk {
-        vec!["cgk_deadlineid", "cgk_deadlinename", "cgk_date"]
+        vec![
+            "cgk_deadlineid",
+            "cgk_deadlinename",
+            "cgk_date",
+            "cgk_info",
+            "cgk_datumcommissievergadering",
+            "cgk_commissievergaderingisdigitaal",
+        ]
     } else {
-        vec!["nrq_deadlineid", "nrq_deadlinename", "nrq_deadlinedate"]
+        vec![
+            "nrq_deadlineid",
+            "nrq_deadlinename",
+            "nrq_deadlinedate",
+            "nrq_description",
+            "nrq_committeemeetingdate",
+            "nrq_committeemeetinginperson",
+            "nrq_supporttypeoptionset",
+            // Lookup references
+            "_nrq_commissionid_value",
+            "_nrq_domainid_value",
+            "_nrq_fundid_value",
+            "_nrq_projectmanagerid_value",
+            "_nrq_typeid_value",
+            "_nrq_boardofdirectorsmeetingid_value",
+        ]
     };
 
     // Order by field

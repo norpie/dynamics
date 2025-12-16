@@ -34,6 +34,16 @@ impl TransformedDeadline {
     /// Build the JSON payload for creating the main deadline entity
     fn build_create_payload(&self, entity_type: &str) -> Value {
         let mut payload = json!({});
+        let name_field = if entity_type == "cgk_deadline" { "cgk_deadlinename" } else { "nrq_deadlinename" };
+        let date_field = if entity_type == "cgk_deadline" { "cgk_date" } else { "nrq_deadlinedate" };
+
+        // Warn if required fields are missing
+        if !self.direct_fields.contains_key(name_field) {
+            log::warn!("Create payload missing required field: {} (row {})", name_field, self.source_row);
+        }
+        if self.deadline_date.is_none() {
+            log::warn!("Create payload missing required field: {} (row {})", date_field, self.source_row);
+        }
 
         // 0. Constant fields (entity-specific defaults)
         for (field, value) in get_constant_fields(entity_type) {
@@ -206,15 +216,17 @@ impl TransformedDeadline {
 
         if let Some(name) = self.direct_fields.get(name_field) {
             payload[name_field] = json!(name);
+        } else {
+            log::warn!("Update payload missing required field: {}", name_field);
         }
 
         if let Some(date) = self.deadline_date {
-            let datetime = if let Some(time) = self.deadline_time {
-                date.and_time(time)
-            } else {
-                date.and_hms_opt(12, 0, 0).unwrap()
-            };
-            payload[date_field] = json!(datetime.format("%Y-%m-%dT%H:%M:%SZ").to_string());
+            // Use same timezone conversion as create payload
+            if let Ok(datetime_str) = combine_brussels_datetime_to_iso(date, self.deadline_time) {
+                payload[date_field] = json!(datetime_str);
+            }
+        } else {
+            log::warn!("Update payload missing required field: {}", date_field);
         }
 
         // 1. Direct fields (excluding already added and excluded)

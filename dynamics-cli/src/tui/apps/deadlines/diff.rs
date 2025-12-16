@@ -144,7 +144,7 @@ pub fn match_deadline(
             let has_association_changes = association_diff.has_changes();
 
             let mode = if has_field_changes || has_association_changes {
-                log::debug!(
+                log::info!(
                     "Row {}: Changes detected (fields={}, associations={}), mode=Update",
                     transformed.source_row,
                     has_field_changes,
@@ -152,9 +152,14 @@ pub fn match_deadline(
                 );
                 DeadlineMode::Update
             } else {
-                log::debug!(
-                    "Row {}: No changes detected, mode=Unchanged",
-                    transformed.source_row
+                log::info!(
+                    "Row {}: No changes detected, mode=Unchanged. Existing fields: {:?}, Transformed direct_fields: {:?}, lookup_fields: {:?}, picklist_fields: {:?}, boolean_fields: {:?}",
+                    transformed.source_row,
+                    existing.fields.keys().collect::<Vec<_>>(),
+                    transformed.direct_fields.keys().collect::<Vec<_>>(),
+                    transformed.lookup_fields.keys().collect::<Vec<_>>(),
+                    transformed.picklist_fields.keys().collect::<Vec<_>>(),
+                    transformed.boolean_fields.keys().collect::<Vec<_>>()
                 );
                 DeadlineMode::Unchanged
             };
@@ -234,7 +239,7 @@ fn diff_fields(
             .unwrap_or("");
 
         if new_value != existing_value {
-            log::debug!(
+            log::info!(
                 "Field '{}' changed: '{}' -> '{}'",
                 field_name,
                 existing_value,
@@ -250,8 +255,8 @@ fn diff_fields(
             continue;
         }
 
-        // Lookup fields in existing data are stored as _fieldname_value
-        let lookup_value_field = format!("_{}_value", field_name);
+        // Lookup fields in existing data are stored as _fieldname_value (lowercase)
+        let lookup_value_field = format!("_{}_value", field_name.to_lowercase());
         let existing_guid = existing
             .fields
             .get(&lookup_value_field)
@@ -260,7 +265,7 @@ fn diff_fields(
 
         // Compare GUIDs (case-insensitive)
         if !new_guid.eq_ignore_ascii_case(existing_guid) {
-            log::debug!(
+            log::info!(
                 "Lookup '{}' changed: '{}' -> '{}'",
                 field_name,
                 existing_guid,
@@ -279,7 +284,7 @@ fn diff_fields(
             .map(|v| v as i32);
 
         if existing_value != Some(*new_value) {
-            log::debug!(
+            log::info!(
                 "Picklist '{}' changed: {:?} -> {}",
                 field_name,
                 existing_value,
@@ -294,7 +299,7 @@ fn diff_fields(
         let existing_value = existing.fields.get(field_name).and_then(|v| v.as_bool());
 
         if existing_value != Some(*new_value) {
-            log::debug!(
+            log::info!(
                 "Boolean '{}' changed: {:?} -> {}",
                 field_name,
                 existing_value,

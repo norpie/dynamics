@@ -928,6 +928,15 @@ fn process_row(
         transformed.custom_junction_records = custom_junction_records;
     }
 
+    // Validate required fields
+    let name_field = if entity_type == "cgk_deadline" { "cgk_deadlinename" } else { "nrq_deadlinename" };
+    if !transformed.direct_fields.contains_key(name_field) {
+        transformed.warnings.push("Missing required field: Deadline Name".to_string());
+    }
+    if transformed.deadline_date.is_none() {
+        transformed.warnings.push("Missing required field: Deadline Date".to_string());
+    }
+
     transformed
 }
 
