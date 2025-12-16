@@ -79,12 +79,62 @@ impl ListItem for RecordListItem {
     }
 }
 
+/// Filter for which record modes to display
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModeFilter {
+    All,
+    Create,
+    Update,
+    Unchanged,
+    Errors,
+    Actionable, // Create + Update (records that will be processed)
+}
+
+impl ModeFilter {
+    fn next(self) -> Self {
+        match self {
+            ModeFilter::All => ModeFilter::Actionable,
+            ModeFilter::Actionable => ModeFilter::Create,
+            ModeFilter::Create => ModeFilter::Update,
+            ModeFilter::Update => ModeFilter::Unchanged,
+            ModeFilter::Unchanged => ModeFilter::Errors,
+            ModeFilter::Errors => ModeFilter::All,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            ModeFilter::All => "All",
+            ModeFilter::Create => "New Only",
+            ModeFilter::Update => "Updates Only",
+            ModeFilter::Unchanged => "Unchanged Only",
+            ModeFilter::Errors => "Errors Only",
+            ModeFilter::Actionable => "Actionable",
+        }
+    }
+
+    fn matches(self, record: &TransformedDeadline) -> bool {
+        match self {
+            ModeFilter::All => true,
+            ModeFilter::Create => record.is_create(),
+            ModeFilter::Update => record.is_update(),
+            ModeFilter::Unchanged => record.is_unchanged(),
+            ModeFilter::Errors => record.is_error(),
+            ModeFilter::Actionable => record.is_create() || record.is_update(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct State {
     entity_type: String,
     transformed_records: Vec<TransformedDeadline>,
     list_state: ListState,
     selected_record_idx: usize,
+    /// Current mode filter
+    mode_filter: ModeFilter,
+    /// Filtered record indices (indices into transformed_records)
+    filtered_indices: Vec<usize>,
     /// Track queue items created from this inspection session (queue_item_id -> Vec<TransformedDeadline>)
     queued_items: HashMap<String, Vec<TransformedDeadline>>,
     /// Total number of deadlines queued in current batch
@@ -95,11 +145,20 @@ pub struct State {
 
 impl State {
     fn new(entity_type: String, transformed_records: Vec<TransformedDeadline>) -> Self {
+        let mode_filter = ModeFilter::All;
+
+        // Build initial filtered indices
+        let filtered_indices: Vec<usize> = transformed_records
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| mode_filter.matches(r))
+            .map(|(i, _)| i)
+            .collect();
+
         let mut list_state = ListState::default();
         // Auto-select first record if any exist
-        let item_count = transformed_records.len();
-        if !transformed_records.is_empty() {
-            list_state.select_and_scroll(Some(0), item_count);
+        if !filtered_indices.is_empty() {
+            list_state.select_and_scroll(Some(0), filtered_indices.len());
         }
 
         Self {
@@ -107,10 +166,42 @@ impl State {
             transformed_records,
             list_state,
             selected_record_idx: 0,
+            mode_filter,
+            filtered_indices,
             queued_items: HashMap::new(),
             total_deadlines_queued: 0,
             pending_associations: HashMap::new(),
         }
+    }
+
+    /// Rebuild filtered indices based on current filter
+    fn apply_filter(&mut self) {
+        self.filtered_indices = self.transformed_records
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| self.mode_filter.matches(r))
+            .map(|(i, _)| i)
+            .collect();
+
+        // Reset selection to first item or none
+        if self.filtered_indices.is_empty() {
+            self.selected_record_idx = 0;
+            self.list_state.select_and_scroll(None, 0);
+        } else {
+            self.selected_record_idx = 0;
+            self.list_state.select_and_scroll(Some(0), self.filtered_indices.len());
+        }
+    }
+
+    /// Get the actual record index from the filtered index
+    fn get_record_index(&self, filtered_idx: usize) -> Option<usize> {
+        self.filtered_indices.get(filtered_idx).copied()
+    }
+
+    /// Get the currently selected record
+    fn selected_record(&self) -> Option<&TransformedDeadline> {
+        self.get_record_index(self.selected_record_idx)
+            .and_then(|idx| self.transformed_records.get(idx))
     }
 }
 
@@ -127,6 +218,7 @@ pub enum Msg {
     SetViewportHeight(usize),
     Back,
     AddToQueueAndView,
+    CycleFilter,
     EnvironmentLoaded(Result<String, String>),
     QueueItemCompleted(String, crate::tui::apps::queue::models::QueueResult, crate::tui::apps::queue::models::QueueMetadata),
 }
@@ -150,20 +242,19 @@ impl App for DeadlinesInspectionApp {
     fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         match msg {
             Msg::SelectRecord(idx) => {
-                if idx < state.transformed_records.len() {
+                if idx < state.filtered_indices.len() {
                     state.selected_record_idx = idx;
-                    let item_count = state.transformed_records.len();
-                    state.list_state.select_and_scroll(Some(idx), item_count);
+                    state.list_state.select_and_scroll(Some(idx), state.filtered_indices.len());
                 }
                 Command::None
             }
             Msg::ListNavigate(key) => {
                 // ListState will use its stored viewport_height from on_render, fallback to 20
-                state.list_state.handle_key(key, state.transformed_records.len(), 20);
+                state.list_state.handle_key(key, state.filtered_indices.len(), 20);
 
                 // Sync selected_record_idx with list_state
                 if let Some(selected) = state.list_state.selected() {
-                    if selected != state.selected_record_idx && selected < state.transformed_records.len() {
+                    if selected != state.selected_record_idx && selected < state.filtered_indices.len() {
                         state.selected_record_idx = selected;
                     }
                 }
@@ -171,9 +262,14 @@ impl App for DeadlinesInspectionApp {
                 Command::None
             }
             Msg::SetViewportHeight(height) => {
-                let item_count = state.transformed_records.len();
+                let item_count = state.filtered_indices.len();
                 state.list_state.set_viewport_height(height);
                 state.list_state.update_scroll(height, item_count);
+                Command::None
+            }
+            Msg::CycleFilter => {
+                state.mode_filter = state.mode_filter.next();
+                state.apply_filter();
                 Command::None
             }
             Msg::Back => Command::navigate_to(AppId::DeadlinesMapping),
@@ -368,8 +464,9 @@ impl App for DeadlinesInspectionApp {
         use_constraints!();
         let theme = &crate::global_runtime_config().theme;
 
-        // Convert records to list items
-        let list_items: Vec<RecordListItem> = state.transformed_records.iter()
+        // Convert filtered records to list items
+        let list_items: Vec<RecordListItem> = state.filtered_indices.iter()
+            .filter_map(|&idx| state.transformed_records.get(idx))
             .map(|r| RecordListItem {
                 record: r.clone(),
                 entity_type: state.entity_type.clone(),
@@ -389,13 +486,11 @@ impl App for DeadlinesInspectionApp {
         .on_render(Msg::SetViewportHeight)
         .build();
 
-        let records_with_warnings = state.transformed_records.iter()
-            .filter(|r| r.has_warnings())
-            .count();
-
-        let list_title = format!("Records ({} total, {} warnings)",
-            state.transformed_records.len(),
-            records_with_warnings
+        // Build list title with filter info
+        let filter_label = state.mode_filter.label();
+        let list_title = format!("Records [{filter_label}] ({}/{})",
+            state.filtered_indices.len(),
+            state.transformed_records.len()
         );
 
         let left_panel = Element::panel(record_list)
@@ -403,7 +498,7 @@ impl App for DeadlinesInspectionApp {
             .build();
 
         // Right panel: details for selected record
-        let detail_content = if let Some(record) = state.transformed_records.get(state.selected_record_idx) {
+        let detail_content = if let Some(record) = state.selected_record() {
             build_detail_panel(record, &state.entity_type)
         } else {
             col![
@@ -413,7 +508,7 @@ impl App for DeadlinesInspectionApp {
             ]
         };
 
-        let detail_title = if let Some(record) = state.transformed_records.get(state.selected_record_idx) {
+        let detail_title = if let Some(record) = state.selected_record() {
             let name_field = if state.entity_type == "cgk_deadline" { "cgk_deadlinename" } else { "nrq_deadlinename" };
             let name = record.direct_fields.get(name_field)
                 .map(|s| s.as_str())
@@ -438,6 +533,9 @@ impl App for DeadlinesInspectionApp {
                 Element::button("back-button", "Back")
                     .on_press(Msg::Back)
                     .build(),
+                Element::button("filter-button", &format!("Filter: {} [f]", filter_label))
+                    .on_press(Msg::CycleFilter)
+                    .build(),
                 spacer!(),
                 Element::button("queue-button", "Add to Queue & View")
                     .on_press(Msg::AddToQueueAndView)
@@ -461,6 +559,8 @@ impl App for DeadlinesInspectionApp {
                 let metadata: crate::tui::apps::queue::models::QueueMetadata = serde_json::from_value(value.get("metadata")?.clone()).ok()?;
                 Some(Msg::QueueItemCompleted(id, result, metadata))
             }),
+            // Keyboard shortcut for filter cycling
+            Subscription::keyboard(KeyCode::Char('f'), "Cycle filter", Msg::CycleFilter),
         ]
     }
 
@@ -507,6 +607,107 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
     use crate::tui::element::ColumnBuilder;
 
     let mut builder = ColumnBuilder::new();
+
+    // Mode section at top (prominent display)
+    let (mode_label, mode_color, mode_icon) = match &record.mode {
+        DeadlineMode::Create => ("CREATE - New Record", theme.accent_success, "+"),
+        DeadlineMode::Update => ("UPDATE - Existing Record", theme.accent_secondary, "~"),
+        DeadlineMode::Unchanged => ("UNCHANGED - No Changes", theme.text_tertiary, "="),
+        DeadlineMode::Error(msg) => ("ERROR", theme.accent_error, "!"),
+    };
+
+    builder = builder.add(Element::styled_text(Line::from(vec![
+        Span::styled(format!("{} ", mode_icon), Style::default().fg(mode_color).bold()),
+        Span::styled(mode_label, Style::default().fg(mode_color).bold())
+    ])).build(), Length(1));
+
+    // Show error message if in Error mode
+    if let DeadlineMode::Error(msg) = &record.mode {
+        builder = builder.add(Element::styled_text(Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(msg.clone(), Style::default().fg(theme.accent_error))
+        ])).build(), Length(1));
+    }
+
+    // Show existing GUID for Update records
+    if let Some(ref guid) = record.existing_guid {
+        builder = builder.add(Element::styled_text(Line::from(vec![
+            Span::styled("  Existing ID: ", Style::default().fg(theme.text_tertiary)),
+            Span::styled(guid.clone(), Style::default().fg(theme.accent_muted))
+        ])).build(), Length(1));
+    }
+
+    builder = builder.add(spacer!(), Length(1));
+
+    // For Update records, show what will change
+    if record.is_update() {
+        if let Some(ref existing_assoc) = record.existing_associations {
+            let association_diff = diff_associations(record, existing_assoc, entity_type);
+
+            if association_diff.has_changes() {
+                builder = builder.add(Element::styled_text(Line::from(vec![
+                    Span::styled("📋 Association Changes", Style::default().fg(theme.accent_warning).bold())
+                ])).build(), Length(1));
+
+                // Support changes
+                if !association_diff.support_to_add.is_empty() || !association_diff.support_to_remove.is_empty() {
+                    builder = builder.add(Element::styled_text(Line::from(vec![
+                        Span::styled("  Support: ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(format!("+{}", association_diff.support_to_add.len()), Style::default().fg(theme.accent_success)),
+                        Span::styled(" / ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(format!("-{}", association_diff.support_to_remove.len()), Style::default().fg(theme.accent_error)),
+                    ])).build(), Length(1));
+                }
+
+                // Category changes
+                if !association_diff.category_to_add.is_empty() || !association_diff.category_to_remove.is_empty() {
+                    builder = builder.add(Element::styled_text(Line::from(vec![
+                        Span::styled("  Category: ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(format!("+{}", association_diff.category_to_add.len()), Style::default().fg(theme.accent_success)),
+                        Span::styled(" / ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(format!("-{}", association_diff.category_to_remove.len()), Style::default().fg(theme.accent_error)),
+                    ])).build(), Length(1));
+                }
+
+                // Length changes (CGK only)
+                if !association_diff.length_to_add.is_empty() || !association_diff.length_to_remove.is_empty() {
+                    builder = builder.add(Element::styled_text(Line::from(vec![
+                        Span::styled("  Length: ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(format!("+{}", association_diff.length_to_add.len()), Style::default().fg(theme.accent_success)),
+                        Span::styled(" / ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(format!("-{}", association_diff.length_to_remove.len()), Style::default().fg(theme.accent_error)),
+                    ])).build(), Length(1));
+                }
+
+                // Flemishshare changes
+                if !association_diff.flemishshare_to_add.is_empty() || !association_diff.flemishshare_to_remove.is_empty() {
+                    builder = builder.add(Element::styled_text(Line::from(vec![
+                        Span::styled("  Flemish Share: ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(format!("+{}", association_diff.flemishshare_to_add.len()), Style::default().fg(theme.accent_success)),
+                        Span::styled(" / ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(format!("-{}", association_diff.flemishshare_to_remove.len()), Style::default().fg(theme.accent_error)),
+                    ])).build(), Length(1));
+                }
+
+                // Subcategory changes (NRQ only)
+                if !association_diff.subcategory_to_add.is_empty() || !association_diff.subcategory_to_remove.is_empty() {
+                    builder = builder.add(Element::styled_text(Line::from(vec![
+                        Span::styled("  Subcategory: ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(format!("+{}", association_diff.subcategory_to_add.len()), Style::default().fg(theme.accent_success)),
+                        Span::styled(" / ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(format!("-{}", association_diff.subcategory_to_remove.len()), Style::default().fg(theme.accent_error)),
+                    ])).build(), Length(1));
+                }
+
+                builder = builder.add(spacer!(), Length(1));
+            } else {
+                builder = builder.add(Element::styled_text(Line::from(vec![
+                    Span::styled("📋 No association changes", Style::default().fg(theme.text_tertiary))
+                ])).build(), Length(1));
+                builder = builder.add(spacer!(), Length(1));
+            }
+        }
+    }
 
     // Direct fields section
     if !record.direct_fields.is_empty() {
