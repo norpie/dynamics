@@ -71,6 +71,10 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
         };
         let fields_loading = matches!(&state.source_fields, Resource::Loading)
             || matches!(&state.target_fields, Resource::Loading);
+        let resolvers: Vec<_> = match &state.config {
+            Resource::Success(config) => config.resolvers.iter().map(|r| (r.name.as_str(), r.source_entity.as_str(), r.match_field.as_str())).collect(),
+            _ => vec![],
+        };
 
         view = view.with_app_modal(
             render_field_modal(
@@ -79,6 +83,7 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
                 source_fields,
                 target_fields,
                 fields_loading,
+                &resolvers,
                 theme,
             ),
             Alignment::Center,
@@ -285,6 +290,7 @@ fn render_field_modal(
     source_fields: &[FieldMetadata],
     target_fields: &[FieldMetadata],
     fields_loading: bool,
+    resolvers: &[(&str, &str, &str)], // (name, source_entity, match_field)
     theme: &Theme,
 ) -> Element<Msg> {
     use super::state::{ConditionType, FallbackType};
@@ -326,7 +332,40 @@ fn render_field_modal(
             .placeholder(if fields_loading { "Loading..." } else { "e.g., name or accountid.name" })
             .on_event(Msg::FieldFormSourcePath)
             .build();
-            (Element::panel(input).title("Source Field").build(), 18)
+            let source_panel = Element::panel(input).title("Source Field").build();
+
+            // Resolver button (cycle through available resolvers)
+            let resolver_label = if let Some(ref name) = form.resolver_name {
+                // Find the resolver details
+                if let Some((_, entity, field)) = resolvers.iter().find(|(n, _, _)| *n == name) {
+                    format!("Resolver: {} → {}.{}", name, entity, field)
+                } else {
+                    format!("Resolver: {} (not found)", name)
+                }
+            } else if resolvers.is_empty() {
+                "Resolver: (none available)".to_string()
+            } else {
+                format!("Resolver: (none) - Ctrl+R to cycle ({} available)", resolvers.len())
+            };
+
+            let resolver_btn = if !resolvers.is_empty() {
+                Element::button(FocusId::new("field-resolver"), &resolver_label)
+                    .on_press(Msg::FieldFormCycleResolver)
+                    .build()
+            } else {
+                Element::styled_text(Line::from(vec![
+                    Span::styled(resolver_label, Style::default().fg(theme.text_tertiary)),
+                ]))
+                .build()
+            };
+
+            let content = ColumnBuilder::new()
+                .add(source_panel, LayoutConstraint::Length(3))
+                .add(resolver_btn, LayoutConstraint::Length(3))
+                .spacing(1)
+                .build();
+
+            (content, 22)
         }
         TransformType::Constant => {
             let input = Element::text_input(
@@ -863,6 +902,9 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
 
         // Transform-specific shortcuts
         match state.field_form.transform_type {
+            TransformType::Copy => {
+                subs.push(Subscription::ctrl_key(KeyCode::Char('r'), "Cycle resolver", Msg::FieldFormCycleResolver));
+            }
             TransformType::Conditional => {
                 subs.push(Subscription::ctrl_key(KeyCode::Char('c'), "Cycle condition", Msg::FieldFormToggleConditionType));
             }

@@ -443,6 +443,31 @@ impl App for MappingEditorApp {
 
             Msg::FieldFormToggleType => {
                 state.field_form.transform_type = state.field_form.transform_type.next();
+                // Clear resolver when changing transform type
+                state.field_form.resolver_name = None;
+                Command::None
+            }
+
+            Msg::FieldFormCycleResolver => {
+                // Cycle through: None -> resolver1 -> resolver2 -> ... -> None
+                if let Resource::Success(config) = &state.config {
+                    let resolver_names: Vec<&str> = config.resolvers.iter().map(|r| r.name.as_str()).collect();
+
+                    if resolver_names.is_empty() {
+                        state.field_form.resolver_name = None;
+                    } else {
+                        let current_idx = state.field_form.resolver_name.as_ref()
+                            .and_then(|name| resolver_names.iter().position(|r| r == name));
+
+                        let next_idx = match current_idx {
+                            None => Some(0), // None -> first resolver
+                            Some(idx) if idx + 1 < resolver_names.len() => Some(idx + 1), // next resolver
+                            Some(_) => None, // last resolver -> None
+                        };
+
+                        state.field_form.resolver_name = next_idx.map(|i| resolver_names[i].to_string());
+                    }
+                }
                 Command::None
             }
 

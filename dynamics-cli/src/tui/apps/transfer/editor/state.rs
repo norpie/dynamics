@@ -774,6 +774,7 @@ pub enum Msg {
     FieldFormSourcePath(AutocompleteEvent),
     FieldFormConstant(TextInputEvent),
     FieldFormToggleType,
+    FieldFormCycleResolver, // Cycle through available resolvers for Copy transform
 
     // Conditional transform fields
     FieldFormConditionSource(AutocompleteEvent),
