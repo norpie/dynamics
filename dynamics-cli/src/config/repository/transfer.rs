@@ -4,7 +4,8 @@ use anyhow::{Context, Result};
 use sqlx::{Row, SqlitePool};
 
 use crate::transfer::{
-    EntityMapping, FieldMapping, OrphanHandling, Transform, TransferConfig,
+    EntityMapping, FieldMapping, OrphanHandling, Resolver, ResolverFallback, Transform,
+    TransferConfig,
 };
 
 /// Summary of a transfer config (for listing)
@@ -132,12 +133,43 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
         });
     }
 
+    // Get resolvers
+    let resolver_rows = sqlx::query(
+        r#"
+        SELECT id, name, source_entity, match_field, fallback
+        FROM transfer_resolvers
+        WHERE config_id = ?
+        ORDER BY name
+        "#,
+    )
+    .bind(config_id)
+    .fetch_all(pool)
+    .await
+    .context("Failed to get resolvers")?;
+
+    let mut resolvers = Vec::new();
+    for row in resolver_rows {
+        let fallback_str: String = row.try_get("fallback")?;
+        let fallback = match fallback_str.to_lowercase().as_str() {
+            "null" => ResolverFallback::Null,
+            _ => ResolverFallback::Error,
+        };
+
+        resolvers.push(Resolver {
+            id: Some(row.try_get("id")?),
+            name: row.try_get("name")?,
+            source_entity: row.try_get("source_entity")?,
+            match_field: row.try_get("match_field")?,
+            fallback,
+        });
+    }
+
     Ok(Some(TransferConfig {
         id: Some(config_id),
         name: config_row.try_get("name")?,
         source_env: config_row.try_get("source_env")?,
         target_env: config_row.try_get("target_env")?,
-        resolvers: Vec::new(), // TODO: Load from database in Phase 4
+        resolvers,
         entity_mappings,
     }))
 }
@@ -171,6 +203,13 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
             .execute(&mut *tx)
             .await
             .context("Failed to delete old entity mappings")?;
+
+        // Delete existing resolvers
+        sqlx::query("DELETE FROM transfer_resolvers WHERE config_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to delete old resolvers")?;
 
         id
     } else {
@@ -235,6 +274,29 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
             .await
             .context("Failed to insert field mapping")?;
         }
+    }
+
+    // Insert resolvers
+    for resolver in &config.resolvers {
+        let fallback_str = match resolver.fallback {
+            ResolverFallback::Error => "error",
+            ResolverFallback::Null => "null",
+        };
+
+        sqlx::query(
+            r#"
+            INSERT INTO transfer_resolvers (config_id, name, source_entity, match_field, fallback)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(config_id)
+        .bind(&resolver.name)
+        .bind(&resolver.source_entity)
+        .bind(&resolver.match_field)
+        .bind(fallback_str)
+        .execute(&mut *tx)
+        .await
+        .context("Failed to insert resolver")?;
     }
 
     tx.commit().await.context("Failed to commit transaction")?;
