@@ -1928,7 +1928,7 @@ async fn fetch_entity_records(
         // Fetch next page
         let next_start = std::time::Instant::now();
         result = result
-            .next_page(&client)
+            .next_page(&client, Some(PAGE_SIZE))
             .await
             .map_err(|e| format!("Pagination failed: {}", e))?
             .ok_or_else(|| "nextLink returned no data".to_string())?;

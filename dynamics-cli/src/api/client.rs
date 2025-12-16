@@ -199,7 +199,19 @@ impl DynamicsClient {
     /// Execute an OData query
     pub async fn execute_query(&self, query: &Query) -> anyhow::Result<QueryResult> {
         let url = constants::entity_endpoint(&self.base_url, &query.entity);
-        let params = query.to_query_params();
+
+        // Build params, excluding $top since we'll use Prefer: odata.maxpagesize instead
+        let mut params = query.to_query_params();
+        params.remove("$top");
+
+        // Build Prefer header with annotations and optional maxpagesize
+        let prefer = match query.top {
+            Some(page_size) => format!(
+                "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\",odata.maxpagesize={}",
+                page_size
+            ),
+            None => "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"".to_string(),
+        };
 
         let response = self.retry_policy.execute(|| async {
             self.http_client
@@ -207,7 +219,7 @@ impl DynamicsClient {
                 .bearer_auth(&self.access_token)
                 .header("Accept", headers::CONTENT_TYPE_JSON)
                 .header("OData-Version", headers::ODATA_VERSION)
-                .header("Prefer", "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"")
+                .header("Prefer", &prefer)
                 .query(&params)
                 .send()
                 .await
@@ -303,13 +315,23 @@ impl DynamicsClient {
     }
 
     /// Execute the next page of results using @odata.nextLink
-    pub async fn execute_next_page(&self, next_link: &str) -> anyhow::Result<QueryResult> {
+    pub async fn execute_next_page(&self, next_link: &str, page_size: Option<u32>) -> anyhow::Result<QueryResult> {
+        // Build Prefer header with annotations and optional maxpagesize
+        let prefer = match page_size {
+            Some(size) => format!(
+                "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\",odata.maxpagesize={}",
+                size
+            ),
+            None => "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"".to_string(),
+        };
+
         let response = self.retry_policy.execute(|| async {
             self.http_client
                 .get(next_link)
                 .bearer_auth(&self.access_token)
                 .header("Accept", headers::CONTENT_TYPE_JSON)
                 .header("OData-Version", headers::ODATA_VERSION)
+                .header("Prefer", &prefer)
                 .send()
                 .await
         }).await?;

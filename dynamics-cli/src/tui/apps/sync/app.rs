@@ -1545,7 +1545,7 @@ async fn fetch_all_records(
     }
 
     while result.has_more() {
-        if let Some(next) = result.next_page(client).await? {
+        if let Some(next) = result.next_page(client, None).await? {
             if let Some(ref data) = next.data {
                 all_records.extend(data.value.clone());
             }
@@ -1628,7 +1628,7 @@ async fn fetch_target_records(
     }
 
     while result.has_more() {
-        if let Some(next) = result.next_page(client).await? {
+        if let Some(next) = result.next_page(client, None).await? {
             if let Some(ref data) = next.data {
                 for record in &data.value {
                     if let Some(tr) = extract_record(record) {

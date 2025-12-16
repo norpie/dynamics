@@ -81,9 +81,9 @@ impl QueryResult {
     }
 
     /// Execute the next page if available
-    pub async fn next_page(&self, client: &crate::api::DynamicsClient) -> anyhow::Result<Option<QueryResult>> {
+    pub async fn next_page(&self, client: &crate::api::DynamicsClient, page_size: Option<u32>) -> anyhow::Result<Option<QueryResult>> {
         match self.next_link() {
-            Some(next_link) => Ok(Some(client.execute_next_page(next_link).await?)),
+            Some(next_link) => Ok(Some(client.execute_next_page(next_link, page_size).await?)),
             None => Ok(None),
         }
     }
