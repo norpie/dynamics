@@ -11,10 +11,11 @@
 
 use crate::api::operations::Operation;
 use crate::api::pluralization::pluralize_entity_name;
-use super::models::TransformedDeadline;
+use super::models::{TransformedDeadline, DeadlineMode, ExistingAssociations};
 use super::field_mappings::get_constant_fields;
+use super::diff::{diff_associations, AssociationDiff};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl TransformedDeadline {
     /// Convert this TransformedDeadline to a list of Operations ready for batch execution
@@ -144,6 +145,92 @@ impl TransformedDeadline {
 
         payload
     }
+
+    /// Convert this TransformedDeadline to an Update operation (for existing records)
+    ///
+    /// Only includes editable fields that have changed.
+    pub fn to_update_operations(&self, entity_type: &str) -> Vec<Operation> {
+        let entity_set = pluralize_entity_name(entity_type);
+
+        // Must have existing_guid to update
+        let entity_guid = match &self.existing_guid {
+            Some(guid) => guid.clone(),
+            None => {
+                log::error!("Cannot create Update operation without existing_guid");
+                return vec![];
+            }
+        };
+
+        let payload = self.build_update_payload(entity_type);
+
+        // If payload is empty (no changes), return empty vec
+        if payload.as_object().map(|o| o.is_empty()).unwrap_or(true) {
+            log::debug!("No field changes for update - skipping PATCH operation");
+            return vec![];
+        }
+
+        vec![Operation::Update {
+            entity: entity_set,
+            id: entity_guid,
+            data: payload,
+        }]
+    }
+
+    /// Build the JSON payload for updating an existing deadline entity
+    ///
+    /// Excludes non-editable fields (name, deadline date, commission date)
+    fn build_update_payload(&self, entity_type: &str) -> Value {
+        let mut payload = json!({});
+        let is_cgk = entity_type == "cgk_deadline";
+
+        // Non-editable fields (used as composite key or locked)
+        let non_editable: HashSet<&str> = if is_cgk {
+            ["cgk_deadlinename", "cgk_date", "cgk_datumcommissievergadering", "cgk_name"]
+                .iter()
+                .copied()
+                .collect()
+        } else {
+            ["nrq_deadlinename", "nrq_deadlinedate", "nrq_committeemeetingdate", "nrq_name"]
+                .iter()
+                .copied()
+                .collect()
+        };
+
+        // 1. Direct fields (excluding non-editable)
+        for (field, value) in &self.direct_fields {
+            if !non_editable.contains(field.as_str()) {
+                payload[field] = json!(value);
+            }
+        }
+
+        // 2. Picklist fields
+        for (field, value) in &self.picklist_fields {
+            if !non_editable.contains(field.as_str()) {
+                payload[field] = json!(value);
+            }
+        }
+
+        // 3. Boolean fields
+        for (field, value) in &self.boolean_fields {
+            if !non_editable.contains(field.as_str()) {
+                payload[field] = json!(value);
+            }
+        }
+
+        // 4. Lookup fields (@odata.bind format) - excluding non-editable
+        for (field, (id, target_entity)) in &self.lookup_fields {
+            if !non_editable.contains(field.as_str()) {
+                let bind_field = format!("{}@odata.bind", field);
+                let entity_set = pluralize_entity_name(target_entity);
+                payload[bind_field] = json!(format!("/{}({})", entity_set, id));
+            }
+        }
+
+        // Note: Deadline date/time and commission date/time are non-editable for updates
+        // N:N relationships are handled separately via Associate/Disassociate operations
+
+        payload
+    }
 }
 
 /// Get the junction entity name for a given entity type and relationship
@@ -266,6 +353,254 @@ fn capitalize_first_letter(s: &str) -> String {
         None => String::new(),
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
     }
+}
+
+// ============================================================================
+// Update/Edit Support Operations
+// ============================================================================
+
+/// Build DisassociateRef operations for removed N:N relationships
+///
+/// For each association that exists in Dynamics but not in Excel, generate a DELETE $ref operation.
+pub fn build_disassociate_operations(
+    entity_guid: &str,
+    entity_type: &str,
+    association_diff: &AssociationDiff,
+) -> Vec<Operation> {
+    let mut operations = Vec::new();
+    let entity_set = pluralize_entity_name(entity_type);
+    let is_cgk = entity_type == "cgk_deadline";
+
+    // Support disassociations (CGK only - NRQ uses custom junction)
+    if is_cgk {
+        let nav_prop = get_junction_entity_name(entity_type, "cgk_deadline_cgk_support");
+        for support_id in &association_diff.support_to_remove {
+            operations.push(Operation::DisassociateRef {
+                entity: entity_set.clone(),
+                entity_ref: entity_guid.to_string(),
+                navigation_property: nav_prop.clone(),
+                target_id: support_id.clone(),
+            });
+        }
+    }
+
+    // Category disassociations
+    let category_rel = if is_cgk { "cgk_deadline_cgk_category" } else { "nrq_deadline_nrq_category" };
+    let nav_prop = get_junction_entity_name(entity_type, category_rel);
+    for category_id in &association_diff.category_to_remove {
+        operations.push(Operation::DisassociateRef {
+            entity: entity_set.clone(),
+            entity_ref: entity_guid.to_string(),
+            navigation_property: nav_prop.clone(),
+            target_id: category_id.clone(),
+        });
+    }
+
+    // Length disassociations (CGK only)
+    if is_cgk {
+        let nav_prop = get_junction_entity_name(entity_type, "cgk_deadline_cgk_length");
+        for length_id in &association_diff.length_to_remove {
+            operations.push(Operation::DisassociateRef {
+                entity: entity_set.clone(),
+                entity_ref: entity_guid.to_string(),
+                navigation_property: nav_prop.clone(),
+                target_id: length_id.clone(),
+            });
+        }
+    }
+
+    // Flemishshare disassociations
+    let flemishshare_rel = if is_cgk { "cgk_deadline_cgk_flemishshare" } else { "nrq_deadline_nrq_flemishshare" };
+    let nav_prop = get_junction_entity_name(entity_type, flemishshare_rel);
+    for flemishshare_id in &association_diff.flemishshare_to_remove {
+        operations.push(Operation::DisassociateRef {
+            entity: entity_set.clone(),
+            entity_ref: entity_guid.to_string(),
+            navigation_property: nav_prop.clone(),
+            target_id: flemishshare_id.clone(),
+        });
+    }
+
+    // Subcategory disassociations (NRQ only)
+    if !is_cgk {
+        let nav_prop = get_junction_entity_name(entity_type, "nrq_deadline_nrq_subcategory");
+        for subcategory_id in &association_diff.subcategory_to_remove {
+            operations.push(Operation::DisassociateRef {
+                entity: entity_set.clone(),
+                entity_ref: entity_guid.to_string(),
+                navigation_property: nav_prop.clone(),
+                target_id: subcategory_id.clone(),
+            });
+        }
+    }
+
+    operations
+}
+
+/// Build AssociateRef operations for added N:N relationships
+///
+/// For each association that exists in Excel but not in Dynamics, generate a POST $ref operation.
+pub fn build_associate_operations(
+    entity_guid: &str,
+    entity_type: &str,
+    association_diff: &AssociationDiff,
+) -> Vec<Operation> {
+    let mut operations = Vec::new();
+    let entity_set = pluralize_entity_name(entity_type);
+    let is_cgk = entity_type == "cgk_deadline";
+
+    // Support associations (CGK only - NRQ uses custom junction)
+    if is_cgk {
+        let nav_prop = get_junction_entity_name(entity_type, "cgk_deadline_cgk_support");
+        let related_entity_set = pluralize_entity_name("cgk_support");
+        for support_id in &association_diff.support_to_add {
+            operations.push(Operation::AssociateRef {
+                entity: entity_set.clone(),
+                entity_ref: entity_guid.to_string(),
+                navigation_property: nav_prop.clone(),
+                target_ref: format!("/{}({})", related_entity_set, support_id),
+            });
+        }
+    }
+
+    // Category associations
+    let (category_rel, category_entity) = if is_cgk {
+        ("cgk_deadline_cgk_category", "cgk_category")
+    } else {
+        ("nrq_deadline_nrq_category", "nrq_category")
+    };
+    let nav_prop = get_junction_entity_name(entity_type, category_rel);
+    let related_entity_set = pluralize_entity_name(category_entity);
+    for category_id in &association_diff.category_to_add {
+        operations.push(Operation::AssociateRef {
+            entity: entity_set.clone(),
+            entity_ref: entity_guid.to_string(),
+            navigation_property: nav_prop.clone(),
+            target_ref: format!("/{}({})", related_entity_set, category_id),
+        });
+    }
+
+    // Length associations (CGK only)
+    if is_cgk {
+        let nav_prop = get_junction_entity_name(entity_type, "cgk_deadline_cgk_length");
+        let related_entity_set = pluralize_entity_name("cgk_length");
+        for length_id in &association_diff.length_to_add {
+            operations.push(Operation::AssociateRef {
+                entity: entity_set.clone(),
+                entity_ref: entity_guid.to_string(),
+                navigation_property: nav_prop.clone(),
+                target_ref: format!("/{}({})", related_entity_set, length_id),
+            });
+        }
+    }
+
+    // Flemishshare associations
+    let (flemishshare_rel, flemishshare_entity) = if is_cgk {
+        ("cgk_deadline_cgk_flemishshare", "cgk_flemishshare")
+    } else {
+        ("nrq_deadline_nrq_flemishshare", "nrq_flemishshare")
+    };
+    let nav_prop = get_junction_entity_name(entity_type, flemishshare_rel);
+    let related_entity_set = pluralize_entity_name(flemishshare_entity);
+    for flemishshare_id in &association_diff.flemishshare_to_add {
+        operations.push(Operation::AssociateRef {
+            entity: entity_set.clone(),
+            entity_ref: entity_guid.to_string(),
+            navigation_property: nav_prop.clone(),
+            target_ref: format!("/{}({})", related_entity_set, flemishshare_id),
+        });
+    }
+
+    // Subcategory associations (NRQ only)
+    if !is_cgk {
+        let nav_prop = get_junction_entity_name(entity_type, "nrq_deadline_nrq_subcategory");
+        let related_entity_set = pluralize_entity_name("nrq_subcategory");
+        for subcategory_id in &association_diff.subcategory_to_add {
+            operations.push(Operation::AssociateRef {
+                entity: entity_set.clone(),
+                entity_ref: entity_guid.to_string(),
+                navigation_property: nav_prop.clone(),
+                target_ref: format!("/{}({})", related_entity_set, subcategory_id),
+            });
+        }
+    }
+
+    operations
+}
+
+/// Build Delete operations for removed custom junction records (NRQ support)
+///
+/// For NRQ, support relationships use a custom junction entity (nrq_deadlinesupport).
+/// We need to delete the junction records directly rather than disassociate.
+pub fn build_delete_junction_operations(
+    existing_associations: &ExistingAssociations,
+    support_ids_to_remove: &HashSet<String>,
+) -> Vec<Operation> {
+    let mut operations = Vec::new();
+
+    // Find junction records for the support IDs being removed
+    for junction_record in &existing_associations.custom_junction_records {
+        if support_ids_to_remove.contains(&junction_record.related_id) {
+            operations.push(Operation::Delete {
+                entity: "nrq_deadlinesupports".to_string(),
+                id: junction_record.junction_id.clone(),
+            });
+        }
+    }
+
+    operations
+}
+
+/// Build Create operations for added custom junction records (NRQ support)
+///
+/// Similar to existing build_custom_junction_operations but works from diff data.
+pub fn build_create_junction_operations(
+    entity_guid: &str,
+    support_ids_to_add: &HashSet<String>,
+    custom_junction_records: &[super::models::CustomJunctionRecord],
+) -> Vec<Operation> {
+    let mut operations = Vec::new();
+
+    // Find the matching CustomJunctionRecord for each support ID to add
+    for support_id in support_ids_to_add {
+        // Find the record with this support ID to get the related_name
+        let record = custom_junction_records
+            .iter()
+            .find(|r| r.related_id == *support_id && r.junction_entity == "nrq_deadlinesupport");
+
+        if let Some(record) = record {
+            let mut payload = serde_json::Map::new();
+
+            // Main entity lookup
+            payload.insert(
+                "nrq_DeadlineId@odata.bind".to_string(),
+                json!(format!("/nrq_deadlines({})", entity_guid)),
+            );
+
+            // Related entity lookup
+            payload.insert(
+                "nrq_SupportId@odata.bind".to_string(),
+                json!(format!("/nrq_supports({})", support_id)),
+            );
+
+            // Entity-specific fields
+            payload.insert("nrq_name".to_string(), json!(record.related_name));
+            payload.insert("nrq_enablehearing".to_string(), json!(false));
+            payload.insert("nrq_enablereporter".to_string(), json!(true));
+
+            operations.push(Operation::Create {
+                entity: "nrq_deadlinesupports".to_string(),
+                data: serde_json::Value::Object(payload),
+            });
+        } else {
+            log::warn!(
+                "No CustomJunctionRecord found for support_id {} - skipping junction create",
+                support_id
+            );
+        }
+    }
+
+    operations
 }
 
 #[cfg(test)]

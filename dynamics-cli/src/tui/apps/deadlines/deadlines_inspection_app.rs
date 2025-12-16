@@ -7,7 +7,12 @@ use crate::{col, row, spacer, use_constraints};
 use ratatui::text::{Line, Span};
 use ratatui::style::{Style, Stylize};
 
-use super::models::{InspectionParams, TransformedDeadline};
+use super::models::{InspectionParams, TransformedDeadline, DeadlineMode};
+use super::diff::diff_associations;
+use super::operation_builder::{
+    build_disassociate_operations, build_associate_operations,
+    build_delete_junction_operations, build_create_junction_operations,
+};
 use crate::tui::apps::queue::{QueueItem, QueueMetadata};
 use crate::api::operations::Operations;
 
@@ -38,10 +43,18 @@ impl ListItem for RecordListItem {
             .unwrap_or("<No Name>");
 
         // Truncate name if too long
-        let display_name = if name.len() > 35 {
-            format!("{}...", &name[..32])
+        let display_name = if name.len() > 30 {
+            format!("{}...", &name[..27])
         } else {
             name.to_string()
+        };
+
+        // Mode indicator with color
+        let (mode_label, mode_color) = match &self.record.mode {
+            DeadlineMode::Create => ("NEW", theme.accent_success),
+            DeadlineMode::Update => ("UPD", theme.accent_secondary),
+            DeadlineMode::Unchanged => ("---", theme.text_tertiary),
+            DeadlineMode::Error(_) => ("ERR", theme.accent_error),
         };
 
         // Warning indicator
@@ -52,6 +65,7 @@ impl ListItem for RecordListItem {
         };
 
         let mut builder = Element::styled_text(Line::from(vec![
+            Span::styled(format!("[{}] ", mode_label), Style::default().fg(mode_color)),
             warning_indicator,
             Span::styled(format!("Row {}: ", self.record.source_row), Style::default().fg(theme.text_tertiary)),
             Span::styled(display_name, Style::default().fg(fg_color)),
@@ -176,30 +190,59 @@ impl App for DeadlinesInspectionApp {
                 )
             }
             Msg::EnvironmentLoaded(Ok(environment_name)) => {
-                // Collect all valid records
-                let mut valid_records: Vec<&TransformedDeadline> = state.transformed_records.iter()
-                    .filter(|record| !record.has_warnings())
+                // Collect valid records by mode (skip Unchanged, Error, and records with warnings)
+                let create_records: Vec<&TransformedDeadline> = state.transformed_records.iter()
+                    .filter(|r| r.is_create() && !r.has_warnings())
                     .collect();
 
-                if valid_records.is_empty() {
-                    log::warn!("No valid records to queue");
+                let update_records: Vec<&TransformedDeadline> = state.transformed_records.iter()
+                    .filter(|r| r.is_update() && !r.has_warnings())
+                    .collect();
+
+                let total_actionable = create_records.len() + update_records.len();
+
+                if total_actionable == 0 {
+                    log::warn!("No actionable records to queue (all unchanged/error/warnings)");
                     return Command::None;
                 }
 
-                // Track total for association batching later
-                state.total_deadlines_queued = valid_records.len();
-
-                // Batch deadline creates into groups of 50
-                let queue_items = batch_deadline_creates(
-                    &valid_records,
-                    &state.entity_type,
-                    &environment_name,
-                    &mut state.queued_items,
-                    50
+                log::info!(
+                    "Queuing {} creates and {} updates",
+                    create_records.len(),
+                    update_records.len()
                 );
 
+                // Track totals for association batching later
+                state.total_deadlines_queued = create_records.len();
+
+                let mut all_queue_items = Vec::new();
+
+                // Batch deadline creates into groups of 50
+                if !create_records.is_empty() {
+                    let create_items = batch_deadline_creates(
+                        &create_records,
+                        &state.entity_type,
+                        &environment_name,
+                        &mut state.queued_items,
+                        50
+                    );
+                    all_queue_items.extend(create_items);
+                }
+
+                // Batch deadline updates into groups of 50
+                // Updates include: PATCH operation + association changes
+                if !update_records.is_empty() {
+                    let update_items = batch_deadline_updates(
+                        &update_records,
+                        &state.entity_type,
+                        &environment_name,
+                        50
+                    );
+                    all_queue_items.extend(update_items);
+                }
+
                 // Serialize queue items to JSON for pub/sub
-                let queue_items_json = match serde_json::to_value(&queue_items) {
+                let queue_items_json = match serde_json::to_value(&all_queue_items) {
                     Ok(json) => json,
                     Err(e) => {
                         log::error!("Failed to serialize queue items: {}", e);
@@ -427,15 +470,27 @@ impl App for DeadlinesInspectionApp {
 
     fn status(state: &State) -> Option<Line<'static>> {
         let theme = &crate::global_runtime_config().theme;
+
+        // Count records by mode
+        let create_count = state.transformed_records.iter().filter(|r| r.is_create()).count();
+        let update_count = state.transformed_records.iter().filter(|r| r.is_update()).count();
+        let unchanged_count = state.transformed_records.iter().filter(|r| r.is_unchanged()).count();
+        let error_count = state.transformed_records.iter().filter(|r| r.is_error()).count();
         let records_with_warnings = state.transformed_records.iter()
             .filter(|r| r.has_warnings())
             .count();
 
         Some(Line::from(vec![
-            Span::styled("Records: ", Style::default().fg(theme.text_tertiary)),
+            Span::styled("New: ", Style::default().fg(theme.text_tertiary)),
+            Span::styled(create_count.to_string(), Style::default().fg(theme.accent_success)),
+            Span::styled(" | Update: ", Style::default().fg(theme.text_tertiary)),
+            Span::styled(update_count.to_string(), Style::default().fg(theme.accent_secondary)),
+            Span::styled(" | Unchanged: ", Style::default().fg(theme.text_tertiary)),
+            Span::styled(unchanged_count.to_string(), Style::default().fg(theme.text_tertiary)),
+            Span::styled(" | Errors: ", Style::default().fg(theme.text_tertiary)),
             Span::styled(
-                state.transformed_records.len().to_string(),
-                Style::default().fg(theme.accent_primary),
+                error_count.to_string(),
+                Style::default().fg(if error_count > 0 { theme.accent_error } else { theme.text_tertiary }),
             ),
             Span::styled(" | Warnings: ", Style::default().fg(theme.text_tertiary)),
             Span::styled(
@@ -912,6 +967,123 @@ fn batch_associations(
         let priority = 128; // Medium priority for associations
         queue_items.push(QueueItem::new(operations, metadata, priority));
     }
+
+    queue_items
+}
+
+/// Batch deadline updates into queue items
+///
+/// Each update record generates:
+/// 1. PATCH operation for field changes
+/// 2. Disassociate operations for removed N:N relationships
+/// 3. Associate operations for added N:N relationships
+/// 4. Delete operations for removed custom junctions (NRQ support)
+/// 5. Create operations for added custom junctions (NRQ support)
+fn batch_deadline_updates(
+    records: &[&TransformedDeadline],
+    entity_type: &str,
+    environment_name: &str,
+    max_per_batch: usize,
+) -> Vec<QueueItem> {
+    use crate::api::operations::Operations;
+
+    let mut queue_items = Vec::new();
+    let mut current_batch_ops = Vec::new();
+    let mut batch_num = 1;
+    let is_cgk = entity_type == "cgk_deadline";
+
+    for record in records {
+        // Skip records without existing_guid (shouldn't happen for Update mode)
+        let entity_guid = match &record.existing_guid {
+            Some(guid) => guid.clone(),
+            None => {
+                log::error!("Update record missing existing_guid - skipping");
+                continue;
+            }
+        };
+
+        // Get existing associations for diffing
+        let existing_associations = match &record.existing_associations {
+            Some(assoc) => assoc,
+            None => {
+                log::warn!("Update record missing existing_associations - skipping association sync");
+                // Still do the PATCH update even without association info
+                let update_ops = record.to_update_operations(entity_type);
+                current_batch_ops.extend(update_ops);
+                continue;
+            }
+        };
+
+        // 1. PATCH operation for field changes
+        let update_ops = record.to_update_operations(entity_type);
+        current_batch_ops.extend(update_ops);
+
+        // 2. Compute association diff
+        let association_diff = diff_associations(record, existing_associations, entity_type);
+
+        // 3. Disassociate operations for removed N:N
+        let disassociate_ops = build_disassociate_operations(&entity_guid, entity_type, &association_diff);
+        current_batch_ops.extend(disassociate_ops);
+
+        // 4. Associate operations for added N:N
+        let associate_ops = build_associate_operations(&entity_guid, entity_type, &association_diff);
+        current_batch_ops.extend(associate_ops);
+
+        // 5. For NRQ: Handle custom junction (nrq_deadlinesupport)
+        if !is_cgk {
+            // Delete removed support junctions
+            let delete_junction_ops = build_delete_junction_operations(
+                existing_associations,
+                &association_diff.support_to_remove,
+            );
+            current_batch_ops.extend(delete_junction_ops);
+
+            // Create added support junctions
+            let create_junction_ops = build_create_junction_operations(
+                &entity_guid,
+                &association_diff.support_to_add,
+                &record.custom_junction_records,
+            );
+            current_batch_ops.extend(create_junction_ops);
+        }
+
+        // If we hit the batch limit, create a queue item
+        if current_batch_ops.len() >= max_per_batch {
+            let operations = Operations::from_operations(current_batch_ops.clone());
+            let metadata = QueueMetadata {
+                source: "Deadlines Excel (Updates)".to_string(),
+                entity_type: entity_type.to_string(),
+                description: format!("Update batch {} ({} operations)", batch_num, current_batch_ops.len()),
+                row_number: None,
+                environment_name: environment_name.to_string(),
+            };
+            let priority = 64; // High priority
+            queue_items.push(QueueItem::new(operations, metadata, priority));
+
+            current_batch_ops.clear();
+            batch_num += 1;
+        }
+    }
+
+    // Create queue item for remaining operations
+    if !current_batch_ops.is_empty() {
+        let operations = Operations::from_operations(current_batch_ops.clone());
+        let metadata = QueueMetadata {
+            source: "Deadlines Excel (Updates)".to_string(),
+            entity_type: entity_type.to_string(),
+            description: format!("Update batch {} ({} operations)", batch_num, current_batch_ops.len()),
+            row_number: None,
+            environment_name: environment_name.to_string(),
+        };
+        let priority = 64; // High priority
+        queue_items.push(QueueItem::new(operations, metadata, priority));
+    }
+
+    log::info!(
+        "Created {} update queue items with {} total operations",
+        queue_items.len(),
+        records.len()
+    );
 
     queue_items
 }
