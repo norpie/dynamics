@@ -5,9 +5,11 @@ pub mod models;
 pub mod field_mappings;
 pub mod operation_builder;
 pub mod existing_deadlines;
+pub mod diff;
 
 pub use deadlines_file_select_app::{DeadlinesFileSelectApp, State as DeadlinesFileSelectState};
 pub use deadlines_mapping_app::{DeadlinesMappingApp, State as DeadlinesMappingState};
 pub use deadlines_inspection_app::{DeadlinesInspectionApp, State as DeadlinesInspectionState};
-pub use models::{MappingParams, InspectionParams};
+pub use models::{MappingParams, InspectionParams, DeadlineMode};
 pub use existing_deadlines::fetch_existing_deadlines;
+pub use diff::{match_all_deadlines, diff_associations, AssociationDiff};

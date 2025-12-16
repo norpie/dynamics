@@ -10,8 +10,9 @@ use ratatui::style::{Style, Stylize};
 use calamine::{Reader, open_workbook, Xlsx};
 
 use super::field_mappings;
-use super::models::{TransformedDeadline, DeadlineLookupMap};
+use super::models::{TransformedDeadline, DeadlineLookupMap, DeadlineMode};
 use super::existing_deadlines::fetch_existing_deadlines;
+use super::diff::match_all_deadlines;
 
 /// Extract the primary ID field from a record
 fn extract_id_from_record(record: &serde_json::Value, entity_name: &str) -> Option<String> {
@@ -1039,6 +1040,59 @@ fn start_existing_deadlines_loading(state: &mut State, entity_type: &str) -> Com
     )
 }
 
+/// Try to run matching if both Excel processing and existing deadlines loading are complete.
+/// Returns true if matching was performed.
+fn try_run_matching(state: &mut State) -> bool {
+    // Don't re-run if already complete
+    if state.matching_complete {
+        return false;
+    }
+
+    // Need both Excel processed and existing deadlines loaded
+    if !state.excel_processed {
+        return false;
+    }
+
+    // Get entity type
+    let entity_type = match state.detected_entity.as_ref().or(state.manual_override.as_ref()) {
+        Some(et) => et.clone(),
+        None => return false,
+    };
+
+    // Run matching against existing deadlines (if available)
+    if let Some(ref lookup_map) = state.existing_deadlines_lookup {
+        log::info!(
+            "Running matching: {} transformed records against {} existing deadlines",
+            state.transformed_records.len(),
+            lookup_map.len()
+        );
+        match_all_deadlines(&mut state.transformed_records, lookup_map, &entity_type);
+    } else {
+        // No existing deadlines loaded - all records are Create mode (already the default)
+        log::info!(
+            "No existing deadlines available - all {} records will be Create mode",
+            state.transformed_records.len()
+        );
+    }
+
+    // Update mode counts
+    state.create_count = state.transformed_records.iter().filter(|r| r.is_create()).count();
+    state.update_count = state.transformed_records.iter().filter(|r| r.is_update()).count();
+    state.unchanged_count = state.transformed_records.iter().filter(|r| r.is_unchanged()).count();
+    state.error_count = state.transformed_records.iter().filter(|r| r.is_error()).count();
+
+    log::info!(
+        "Matching complete: {} create, {} update, {} unchanged, {} error",
+        state.create_count,
+        state.update_count,
+        state.unchanged_count,
+        state.error_count
+    );
+
+    state.matching_complete = true;
+    true
+}
+
 pub struct DeadlinesMappingApp;
 
 // Wrapper type for warnings to implement ListItem
@@ -1102,6 +1156,13 @@ pub struct State {
     // Existing deadlines for edit support
     existing_deadlines_loading: bool,
     existing_deadlines_lookup: Option<DeadlineLookupMap>,
+    // Matching status
+    matching_complete: bool,
+    // Mode counts (after matching)
+    create_count: usize,
+    update_count: usize,
+    unchanged_count: usize,
+    error_count: usize,
 }
 
 impl State {
@@ -1128,6 +1189,11 @@ impl State {
             rows_with_warnings: 0,
             existing_deadlines_loading: false,
             existing_deadlines_lookup: None,
+            matching_complete: false,
+            create_count: 0,
+            update_count: 0,
+            unchanged_count: 0,
+            error_count: 0,
         }
     }
 }
@@ -1316,7 +1382,12 @@ impl App for DeadlinesMappingApp {
                         // Add temporary loading item to warnings list
                         state.warnings.clear();
                         state.warnings.push(Warning("Loading... Processing Excel file and validating data...".to_string()));
-                        return process_excel_file(state);
+                        let cmd = process_excel_file(state);
+
+                        // Try to run matching (if existing deadlines are already loaded)
+                        try_run_matching(state);
+
+                        return cmd;
                     }
                 }
 
@@ -1343,6 +1414,9 @@ impl App for DeadlinesMappingApp {
                         state.existing_deadlines_lookup = None;
                     }
                 }
+
+                // Try to run matching (if Excel processing is already complete)
+                try_run_matching(state);
 
                 Command::None
             }

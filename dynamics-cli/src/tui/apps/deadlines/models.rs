@@ -63,6 +63,40 @@ pub type DeadlineLookupKey = (String, NaiveDate);
 /// Lookup map from (name, date) → ExistingDeadline
 pub type DeadlineLookupMap = HashMap<DeadlineLookupKey, ExistingDeadline>;
 
+// ============================================================================
+// Deadline Mode (for edit/update support)
+// ============================================================================
+
+/// The mode/action for a transformed deadline record
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DeadlineMode {
+    /// No match found → create new record
+    Create,
+    /// Match found, changes detected → update existing record
+    Update,
+    /// Match found, no changes → show in UI but skip operations
+    Unchanged,
+    /// Error state (e.g., multiple matches found)
+    Error(String),
+}
+
+impl Default for DeadlineMode {
+    fn default() -> Self {
+        DeadlineMode::Create
+    }
+}
+
+impl std::fmt::Display for DeadlineMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeadlineMode::Create => write!(f, "Create"),
+            DeadlineMode::Update => write!(f, "Update"),
+            DeadlineMode::Unchanged => write!(f, "Unchanged"),
+            DeadlineMode::Error(msg) => write!(f, "Error: {}", msg),
+        }
+    }
+}
+
 impl Default for MappingParams {
     fn default() -> Self {
         Self {
@@ -90,7 +124,7 @@ pub struct CustomJunctionRecord {
     pub related_name: String,
 }
 
-/// A single transformed record ready for API creation
+/// A single transformed record ready for API creation or update
 #[derive(Clone, Debug)]
 pub struct TransformedDeadline {
     /// Excel row number (for error reporting)
@@ -134,6 +168,19 @@ pub struct TransformedDeadline {
 
     /// Warnings for this specific row (unresolved lookups, validation errors)
     pub warnings: Vec<String>,
+
+    // ========================================================================
+    // Edit mode fields (for update support)
+    // ========================================================================
+
+    /// The mode/action for this record (Create/Update/Unchanged/Error)
+    pub mode: DeadlineMode,
+
+    /// If matched to an existing record, this is the GUID
+    pub existing_guid: Option<String>,
+
+    /// If matched, the existing record's N:N associations (for diffing)
+    pub existing_associations: Option<ExistingAssociations>,
 }
 
 impl TransformedDeadline {
@@ -152,7 +199,41 @@ impl TransformedDeadline {
             commission_time: None,
             notes: None,
             warnings: Vec::new(),
+            // Edit mode fields - default to Create
+            mode: DeadlineMode::Create,
+            existing_guid: None,
+            existing_associations: None,
         }
+    }
+
+    /// Get the deadline name from direct_fields (cgk_deadlinename or nrq_deadlinename)
+    pub fn get_deadline_name(&self, entity_type: &str) -> Option<&str> {
+        let name_field = if entity_type == "cgk_deadline" {
+            "cgk_deadlinename"
+        } else {
+            "nrq_deadlinename"
+        };
+        self.direct_fields.get(name_field).map(|s| s.as_str())
+    }
+
+    /// Check if this record is in Create mode
+    pub fn is_create(&self) -> bool {
+        matches!(self.mode, DeadlineMode::Create)
+    }
+
+    /// Check if this record is in Update mode
+    pub fn is_update(&self) -> bool {
+        matches!(self.mode, DeadlineMode::Update)
+    }
+
+    /// Check if this record is Unchanged
+    pub fn is_unchanged(&self) -> bool {
+        matches!(self.mode, DeadlineMode::Unchanged)
+    }
+
+    /// Check if this record has an error
+    pub fn is_error(&self) -> bool {
+        matches!(self.mode, DeadlineMode::Error(_))
     }
 
     /// Check if this record has any warnings
