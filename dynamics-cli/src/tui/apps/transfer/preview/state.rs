@@ -227,6 +227,8 @@ pub struct State {
     pub pending_metadata_fetches: usize,
     /// Number of pending source metadata fetch tasks
     pub pending_source_metadata_fetches: usize,
+    /// Number of pending target metadata fetch tasks
+    pub pending_target_metadata_fetches: usize,
     /// Whether we're currently refreshing (vs initial load)
     pub is_refreshing: bool,
     /// Accumulated source records by entity name (kept for refresh comparison)
@@ -281,6 +283,7 @@ impl Default for State {
             pending_fetches: 0,
             pending_metadata_fetches: 0,
             pending_source_metadata_fetches: 0,
+            pending_target_metadata_fetches: 0,
             is_refreshing: false,
             source_data: std::collections::HashMap::new(),
             target_data: std::collections::HashMap::new(),
@@ -427,7 +430,8 @@ pub enum Msg {
     // Data loading
     ConfigLoaded(Result<crate::transfer::TransferConfig, String>),
     SourceMetadataResult(Result<(String, Vec<FieldMetadata>), String>), // (entity_name, fields) - for source lookup detection
-    FetchRecords, // Triggered after source metadata is loaded
+    TargetMetadataResult(Result<(String, Vec<FieldMetadata>), String>), // (entity_name, fields) - for target lookup detection
+    FetchRecords, // Triggered after both source and target metadata are loaded
     FetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
     MetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, entity_set_name)
     RunTransform, // Triggered after loading screen returns
