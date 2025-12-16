@@ -65,6 +65,8 @@ pub enum Msg {
     SetMaxConcurrent(usize),
     IncreaseConcurrency,
     DecreaseConcurrency,
+    IncreaseMaxFailures,
+    DecreaseMaxFailures,
 
     // Details panel scrolling
     DetailsScroll(crossterm::event::KeyCode),
@@ -95,6 +97,8 @@ pub struct State {
     // Execution state
     pub auto_play: bool,
     pub max_concurrent: usize,
+    pub max_failures: usize,         // 0 = unlimited, N = pause after N failures
+    pub session_failure_count: usize, // Reset when starting play
     pub currently_running: HashSet<String>,
 
     // Performance tracking
@@ -126,6 +130,8 @@ impl Default for State {
             index_cache_valid: false,
             auto_play: false,
             max_concurrent: default_max_concurrent,
+            max_failures: 1, // Default: pause after 1 failure (current behavior)
+            session_failure_count: 0,
             currently_running: HashSet::new(),
             recent_completion_times: VecDeque::with_capacity(10),
             filter: QueueFilter::All,
@@ -373,6 +379,11 @@ impl App for OperationQueueApp {
 
             Msg::TogglePlay => {
                 state.auto_play = !state.auto_play;
+
+                // Reset failure count when starting to play
+                if state.auto_play {
+                    state.session_failure_count = 0;
+                }
 
                 let save_cmd = save_settings_command(state);
                 let exec_cmd = if state.auto_play {
@@ -829,10 +840,15 @@ impl App for OperationQueueApp {
                     };
                 }
 
-                // Pause on failure - don't continue to next item if this one failed
+                // Track failures and pause if we've hit the limit
                 if !result.success && state.auto_play {
-                    state.auto_play = false;
-                    log::warn!("Queue paused due to failed operation");
+                    state.session_failure_count += 1;
+                    // max_failures of 0 means unlimited
+                    if state.max_failures > 0 && state.session_failure_count >= state.max_failures {
+                        state.auto_play = false;
+                        log::warn!("Queue paused after {} failure(s) (limit: {})",
+                            state.session_failure_count, state.max_failures);
+                    }
                 }
 
                 // Continue if auto-play (will be false if we just paused due to failure)
@@ -890,6 +906,20 @@ impl App for OperationQueueApp {
                 if state.max_concurrent > 1 {
                     state.max_concurrent -= 1;
                     return save_settings_command(state);
+                }
+                Command::None
+            }
+
+            Msg::IncreaseMaxFailures => {
+                if state.max_failures < 100 {
+                    state.max_failures += 1;
+                }
+                Command::None
+            }
+
+            Msg::DecreaseMaxFailures => {
+                if state.max_failures > 0 {
+                    state.max_failures -= 1;
                 }
                 Command::None
             }
@@ -1123,33 +1153,6 @@ impl App for OperationQueueApp {
             .on_press(Msg::RequestClearQueue)
             .build();
 
-        let count_by_status = |status: OperationStatus| {
-            state
-                .queue_items
-                .iter()
-                .filter(|item| item.status == status)
-                .count()
-        };
-
-        let stats_text = format!(
-            "Total: {}  Pending: {}  Running: {}  Done: {}  Failed: {}",
-            state.queue_items.len(),
-            count_by_status(OperationStatus::Pending),
-            state.currently_running.len(),
-            count_by_status(OperationStatus::Done),
-            count_by_status(OperationStatus::Failed),
-        );
-
-        // Time estimates
-        let est_3 = estimate_remaining_time(state, 3).unwrap_or_else(|| "-".to_string());
-        let est_5 = estimate_remaining_time(state, 5).unwrap_or_else(|| "-".to_string());
-        let est_10 = estimate_remaining_time(state, 10).unwrap_or_else(|| "-".to_string());
-
-        let estimates_text = format!(
-            "⏱ Est. remaining (last 3/5/10): {} / {} / {}",
-            est_3, est_5, est_10
-        );
-
         let buttons = row![
             play_button => Length(14),
             Element::None => Length(1),
@@ -1158,46 +1161,60 @@ impl App for OperationQueueApp {
             clear_button => Length(11),
         ];
 
-        let stats_and_estimates = col![
-            Element::text(stats_text) => Length(1),
-            Element::None => Length(1),
-            Element::text(estimates_text) => Length(1),
-        ];
-
-        // Left panel: buttons + stats
-        let controls_left_content = row![
-            buttons => Length(38),
-            Element::None => Length(2),
-            stats_and_estimates => Fill(1),
-        ];
-        let controls_left = Element::panel(controls_left_content)
+        // Left panel: just buttons
+        let controls_panel = Element::panel(buttons)
             .title("Controls")
             .build();
 
+        // Middle panel: max failures before pause
+        let fail_dec_btn = Element::button("fail-dec", "[-]")
+            .on_press(Msg::DecreaseMaxFailures)
+            .build();
+        let fail_inc_btn = Element::button("fail-inc", "[+]")
+            .on_press(Msg::IncreaseMaxFailures)
+            .build();
+        let failures_label = if state.max_failures == 0 {
+            Element::text("∞".to_string())
+        } else {
+            Element::text(format!("{}", state.max_failures))
+        };
+
+        let failures_content = row![
+            fail_dec_btn => Length(5),
+            Element::None => Length(1),
+            failures_label => Fill(1),
+            Element::None => Length(1),
+            fail_inc_btn => Length(5),
+        ];
+        let failures_panel = Element::panel(failures_content)
+            .title("Pause After Failures")
+            .build();
+
         // Right panel: concurrency controls
-        let decrease_btn = Element::button("concur-dec", "[-]")
+        let concur_dec_btn = Element::button("concur-dec", "[-]")
             .on_press(Msg::DecreaseConcurrency)
             .build();
-        let increase_btn = Element::button("concur-inc", "[+]")
+        let concur_inc_btn = Element::button("concur-inc", "[+]")
             .on_press(Msg::IncreaseConcurrency)
             .build();
-        let concurrency_label = Element::text(format!("Concurrency: {}", state.max_concurrent));
+        let concurrency_label = Element::text(format!("{}", state.max_concurrent));
 
         let concurrency_content = row![
-            decrease_btn => Length(5),
+            concur_dec_btn => Length(5),
             Element::None => Length(1),
             concurrency_label => Fill(1),
             Element::None => Length(1),
-            increase_btn => Length(5),
+            concur_inc_btn => Length(5),
         ];
-        let controls_right = Element::panel(concurrency_content)
+        let concurrency_panel = Element::panel(concurrency_content)
             .title("Concurrency")
             .build();
 
-        // Two panels side by side - same ratio as queue/details (2:1)
+        // Three panels side by side
         let controls = row![
-            controls_left => Fill(2),
-            controls_right => Fill(1),
+            controls_panel => Fill(2),
+            failures_panel => Fill(1),
+            concurrency_panel => Fill(1),
         ];
 
         // Table tree
@@ -1307,21 +1324,52 @@ impl App for OperationQueueApp {
         let theme = &crate::global_runtime_config().theme;
         use ratatui::style::Style;
 
+        let count_by_status = |status: OperationStatus| {
+            state
+                .queue_items
+                .iter()
+                .filter(|item| item.status == status)
+                .count()
+        };
+
+        let pending = count_by_status(OperationStatus::Pending);
+        let running = state.currently_running.len();
+        let done = count_by_status(OperationStatus::Done);
+        let failed = count_by_status(OperationStatus::Failed);
+
+        // Time estimate
+        let est = estimate_remaining_time(state, 5).unwrap_or_else(|| "-".to_string());
+
         let interrupted_count = state.queue_items.iter()
             .filter(|item| item.was_interrupted)
             .count();
 
+        let mut spans = vec![
+            Span::styled(format!("{}", state.queue_items.len()), Style::default().fg(theme.text_primary)),
+            Span::styled(" total  ", Style::default().fg(theme.text_tertiary)),
+            Span::styled(format!("{}", pending), Style::default().fg(theme.text_primary)),
+            Span::styled(" pending  ", Style::default().fg(theme.text_tertiary)),
+            Span::styled(format!("{}", running), Style::default().fg(theme.accent_secondary)),
+            Span::styled(" running  ", Style::default().fg(theme.text_tertiary)),
+            Span::styled(format!("{}", done), Style::default().fg(theme.accent_success)),
+            Span::styled(" done  ", Style::default().fg(theme.text_tertiary)),
+            Span::styled(format!("{}", failed), Style::default().fg(theme.accent_error)),
+            Span::styled(" failed  ", Style::default().fg(theme.text_tertiary)),
+            Span::styled("│ ", Style::default().fg(theme.border_primary)),
+            Span::styled("⏱ ", Style::default().fg(theme.text_tertiary)),
+            Span::styled(est, Style::default().fg(theme.text_primary)),
+        ];
+
         if interrupted_count > 0 {
-            Some(Line::from(vec![
-                Span::styled("⚠ ", Style::default().fg(theme.accent_error)),
-                Span::styled(
-                    format!("{} interrupted operation(s) - verify before resuming", interrupted_count),
-                    Style::default().fg(theme.accent_warning)
-                ),
-            ]))
-        } else {
-            None
+            spans.push(Span::styled("  │ ", Style::default().fg(theme.border_primary)));
+            spans.push(Span::styled("⚠ ", Style::default().fg(theme.accent_error)));
+            spans.push(Span::styled(
+                format!("{} interrupted", interrupted_count),
+                Style::default().fg(theme.accent_warning)
+            ));
         }
+
+        Some(Line::from(spans))
     }
 
     fn suspend_policy() -> crate::tui::SuspendPolicy {
