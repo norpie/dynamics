@@ -188,7 +188,11 @@ impl TransformEngine {
     ) -> HashMap<String, Value> {
         let mut fields = HashMap::new();
         for field_name in field_names {
-            if let Some(json_value) = target.get(field_name) {
+            // Try direct field name first, then OData lookup format (_fieldname_value)
+            let json_value = target
+                .get(field_name)
+                .or_else(|| target.get(&format!("_{}_value", field_name)));
+            if let Some(json_value) = json_value {
                 let value = Value::from_json(json_value);
                 fields.insert(field_name.clone(), value);
             }
@@ -283,7 +287,10 @@ impl TransformEngine {
     ) -> bool {
         for field_name in field_names {
             let resolved_value = resolved.get(field_name);
-            let target_value = target.get(field_name);
+            // Try direct field name first, then OData lookup format (_fieldname_value)
+            let target_value = target
+                .get(field_name)
+                .or_else(|| target.get(&format!("_{}_value", field_name)));
 
             match (resolved_value, target_value) {
                 // Both null/missing -> match
@@ -585,6 +592,72 @@ mod tests {
             &Value::String("a".to_string()),
             &json!("b")
         ));
+    }
+
+    #[test]
+    fn test_nochange_with_odata_lookup_field_format() {
+        // Verifies that lookup fields stored in OData format (_fieldname_value)
+        // are correctly matched against resolved fields (fieldname)
+        let source = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "parentaccountid": "11111111-1111-1111-1111-111111111111"
+        });
+
+        // Target uses OData format: _parentaccountid_value instead of parentaccountid
+        let target = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "_parentaccountid_value": "11111111-1111-1111-1111-111111111111"
+        });
+
+        let mappings = vec![
+            FieldMapping::new("parentaccountid", Transform::Copy {
+                source_path: FieldPath::simple("parentaccountid"),
+                resolver: None,
+            }),
+        ];
+
+        let mut target_index = HashMap::new();
+        target_index.insert("a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(), &target);
+        let field_names = vec!["parentaccountid".to_string()];
+
+        let result = TransformEngine::transform_record(
+            &source, &mappings, &target_index, &field_names, &make_ctx(), &empty_resolver_ctx()
+        );
+
+        // Should be NoChange because the GUID values match (despite different key names)
+        assert!(result.is_nochange(), "Expected NoChange but got {:?}", result.action);
+    }
+
+    #[test]
+    fn test_update_with_odata_lookup_field_different_value() {
+        // Verifies that different lookup values are correctly detected as Update
+        let source = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "parentaccountid": "22222222-2222-2222-2222-222222222222"
+        });
+
+        let target = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "_parentaccountid_value": "11111111-1111-1111-1111-111111111111"
+        });
+
+        let mappings = vec![
+            FieldMapping::new("parentaccountid", Transform::Copy {
+                source_path: FieldPath::simple("parentaccountid"),
+                resolver: None,
+            }),
+        ];
+
+        let mut target_index = HashMap::new();
+        target_index.insert("a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(), &target);
+        let field_names = vec!["parentaccountid".to_string()];
+
+        let result = TransformEngine::transform_record(
+            &source, &mappings, &target_index, &field_names, &make_ctx(), &empty_resolver_ctx()
+        );
+
+        // Should be Update because the GUID values differ
+        assert!(result.is_update(), "Expected Update but got {:?}", result.action);
     }
 
     // Resolver integration tests
