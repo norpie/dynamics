@@ -383,6 +383,48 @@ impl App for OperationQueueApp {
 
             Msg::StepOne => {
                 state.auto_play = false;
+
+                // Check if selected item is Failed or PartiallyFailed - if so, retry it directly
+                if let Some(ref selected_id) = state.selected_item_id {
+                    let selected_status = state.queue_items.iter()
+                        .find(|i| &i.id == selected_id)
+                        .map(|i| i.status.clone());
+
+                    if matches!(selected_status, Some(OperationStatus::Failed) | Some(OperationStatus::PartiallyFailed)) {
+                        let id = selected_id.clone();
+
+                        // Reset item for retry
+                        state.mutate_item(&id, |item| {
+                            item.status = OperationStatus::Pending;
+                            item.result = None;
+                            item.started_at = None;
+                        });
+                        state.invalidate_index_cache();
+
+                        // Persist Pending status and then trigger StartExecution
+                        let item_id = id.clone();
+                        let persist_cmd = Command::perform(
+                            async move {
+                                crate::global_config().update_queue_item_status(&item_id, OperationStatus::Pending).await
+                                    .map_err(|e| format!("Failed to update status: {}", e))
+                            },
+                            |result| {
+                                if let Err(err) = result {
+                                    Msg::PersistenceError(err)
+                                } else {
+                                    Msg::PersistenceError("".to_string())
+                                }
+                            }
+                        );
+
+                        // Execute this item directly
+                        let exec_cmd = Command::perform(async move { id }, Msg::StartExecution);
+
+                        return Command::Batch(vec![persist_cmd, exec_cmd]);
+                    }
+                }
+
+                // Default: execute next available pending item
                 execute_next_if_available(state)
             }
 
