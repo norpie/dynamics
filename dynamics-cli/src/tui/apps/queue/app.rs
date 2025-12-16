@@ -62,6 +62,8 @@ pub enum Msg {
     SetFilter(QueueFilter),
     SetSortMode(SortMode),
     SetMaxConcurrent(usize),
+    IncreaseConcurrency,
+    DecreaseConcurrency,
 
     // Details panel scrolling
     DetailsScroll(crossterm::event::KeyCode),
@@ -857,6 +859,22 @@ impl App for OperationQueueApp {
                 save_settings_command(state)
             }
 
+            Msg::IncreaseConcurrency => {
+                if state.max_concurrent < 20 {
+                    state.max_concurrent += 1;
+                    return save_settings_command(state);
+                }
+                Command::None
+            }
+
+            Msg::DecreaseConcurrency => {
+                if state.max_concurrent > 1 {
+                    state.max_concurrent -= 1;
+                    return save_settings_command(state);
+                }
+                Command::None
+            }
+
             // Keyboard shortcuts operating on selected item
             Msg::IncreasePrioritySelected => {
                 if let Some(id) = state.selected_item_id.clone() {
@@ -1127,10 +1145,40 @@ impl App for OperationQueueApp {
             Element::text(estimates_text) => Length(1),
         ];
 
-        let header = row![
+        // Left panel: buttons + stats
+        let controls_left_content = row![
             buttons => Length(38),
             Element::None => Length(2),
             stats_and_estimates => Fill(1),
+        ];
+        let controls_left = Element::panel(controls_left_content)
+            .title("Controls")
+            .build();
+
+        // Right panel: concurrency controls
+        let decrease_btn = Element::button("concur-dec", "[-]")
+            .on_press(Msg::DecreaseConcurrency)
+            .build();
+        let increase_btn = Element::button("concur-inc", "[+]")
+            .on_press(Msg::IncreaseConcurrency)
+            .build();
+        let concurrency_label = Element::text(format!("Concurrency: {}", state.max_concurrent));
+
+        let concurrency_content = row![
+            decrease_btn => Length(5),
+            Element::None => Length(1),
+            concurrency_label => Fill(1),
+            Element::None => Length(1),
+            increase_btn => Length(5),
+        ];
+        let controls_right = Element::panel(concurrency_content)
+            .title("Concurrency")
+            .build();
+
+        // Two panels side by side - same ratio as queue/details (2:1)
+        let controls = row![
+            controls_left => Fill(2),
+            controls_right => Fill(1),
         ];
 
         // Table tree
@@ -1149,16 +1197,20 @@ impl App for OperationQueueApp {
         // Build details panel for selected item
         let details_panel = build_details_panel(state, &state.details_scroll_state);
 
-        // Split into tree (left) and details (right) - 2/1 ratio
-        let main_content = row![
-            col![
-                header => Length(3),
-                tree => Fill(1),
-            ] => Fill(2),
+        // Two columns: queue (left) and details (right)
+        let columns = row![
+            tree => Fill(2),
             details_panel => Fill(1),
         ];
 
-        let mut view = LayeredView::new(Element::panel(main_content).build());
+        // Main layout: controls at top, columns below
+        // Controls panel needs 5 lines: 3 for content + 2 for panel borders
+        let main_content = col![
+            controls => Length(5),
+            columns => Fill(1),
+        ];
+
+        let mut view = LayeredView::new(main_content);
 
         // Add clear confirmation modal if open
         if state.clear_confirm_modal.is_open() {
