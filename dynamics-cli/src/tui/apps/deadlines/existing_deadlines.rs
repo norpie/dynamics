@@ -189,65 +189,96 @@ fn parse_associations(record: &Value, entity_type: &str) -> ExistingAssociations
 
     if is_cgk {
         // CGK associations
-        associations.support_ids = extract_ids_from_nav_prop(
+        let (ids, names) = extract_ids_and_names_from_nav_prop(
             record,
             cgk_nav_props::SUPPORT,
             "cgk_supportid",
+            "cgk_name",
         );
-        associations.category_ids = extract_ids_from_nav_prop(
+        associations.support_ids = ids;
+        associations.support_names = names;
+
+        let (ids, names) = extract_ids_and_names_from_nav_prop(
             record,
             cgk_nav_props::CATEGORY,
             "cgk_categoryid",
+            "cgk_name",
         );
-        associations.length_ids = extract_ids_from_nav_prop(
+        associations.category_ids = ids;
+        associations.category_names = names;
+
+        let (ids, names) = extract_ids_and_names_from_nav_prop(
             record,
             cgk_nav_props::LENGTH,
             "cgk_lengthid",
+            "cgk_name",
         );
-        associations.flemishshare_ids = extract_ids_from_nav_prop(
+        associations.length_ids = ids;
+        associations.length_names = names;
+
+        let (ids, names) = extract_ids_and_names_from_nav_prop(
             record,
             cgk_nav_props::FLEMISHSHARE,
             "cgk_flemishshareid",
+            "cgk_name",
         );
+        associations.flemishshare_ids = ids;
+        associations.flemishshare_names = names;
     } else {
         // NRQ associations (support handled separately via junction)
-        associations.category_ids = extract_ids_from_nav_prop(
+        let (ids, names) = extract_ids_and_names_from_nav_prop(
             record,
             nrq_nav_props::CATEGORY,
             "nrq_categoryid",
+            "nrq_name",
         );
-        associations.subcategory_ids = extract_ids_from_nav_prop(
+        associations.category_ids = ids;
+        associations.category_names = names;
+
+        let (ids, names) = extract_ids_and_names_from_nav_prop(
             record,
             nrq_nav_props::SUBCATEGORY,
             "nrq_subcategoryid",
+            "nrq_name",
         );
-        associations.flemishshare_ids = extract_ids_from_nav_prop(
+        associations.subcategory_ids = ids;
+        associations.subcategory_names = names;
+
+        let (ids, names) = extract_ids_and_names_from_nav_prop(
             record,
             nrq_nav_props::FLEMISHSHARE,
             "nrq_flemishshareid",
+            "nrq_name",
         );
+        associations.flemishshare_ids = ids;
+        associations.flemishshare_names = names;
     }
 
     associations
 }
 
-/// Extract IDs from an expanded navigation property array
-fn extract_ids_from_nav_prop(
+/// Extract IDs and names from an expanded navigation property array
+fn extract_ids_and_names_from_nav_prop(
     record: &Value,
     nav_prop: &str,
     id_field: &str,
-) -> HashSet<String> {
+    name_field: &str,
+) -> (HashSet<String>, HashMap<String, String>) {
     let mut ids = HashSet::new();
+    let mut names = HashMap::new();
 
     if let Some(array) = record.get(nav_prop).and_then(|v| v.as_array()) {
         for item in array {
             if let Some(id) = item.get(id_field).and_then(|v| v.as_str()) {
                 ids.insert(id.to_string());
+                if let Some(name) = item.get(name_field).and_then(|v| v.as_str()) {
+                    names.insert(id.to_string(), name.to_string());
+                }
             }
         }
     }
 
-    ids
+    (ids, names)
 }
 
 /// Fetch NRQ support junction records (nrq_deadlinesupport)
@@ -301,6 +332,7 @@ async fn fetch_nrq_support_junctions(
                         .to_string();
 
                     deadlines[idx].associations.support_ids.insert(support_id.to_string());
+                    deadlines[idx].associations.support_names.insert(support_id.to_string(), name.clone());
                     deadlines[idx].associations.custom_junction_records.push(
                         ExistingJunctionRecord {
                             junction_id: junction_id.to_string(),

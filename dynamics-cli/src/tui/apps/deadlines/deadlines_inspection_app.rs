@@ -641,6 +641,72 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
 
     // For Update records, show what will change
     if record.is_update() {
+        // Show field changes
+        if let Some(ref existing_fields) = record.existing_fields {
+            let mut field_changes: Vec<(String, String, String)> = Vec::new(); // (field_name, old_value, new_value)
+
+            // Check direct fields for changes
+            for (field_name, new_value) in &record.direct_fields {
+                let old_value = existing_fields
+                    .get(field_name)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                if new_value != &old_value {
+                    field_changes.push((field_name.clone(), old_value, new_value.clone()));
+                }
+            }
+
+            // Check picklist fields
+            for (field_name, new_value) in &record.picklist_fields {
+                let old_value = existing_fields
+                    .get(field_name)
+                    .and_then(|v| v.as_i64())
+                    .map(|v| v as i32);
+
+                if old_value != Some(*new_value) {
+                    field_changes.push((
+                        field_name.clone(),
+                        old_value.map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
+                        new_value.to_string(),
+                    ));
+                }
+            }
+
+            // Check boolean fields
+            for (field_name, new_value) in &record.boolean_fields {
+                let old_value = existing_fields.get(field_name).and_then(|v| v.as_bool());
+
+                if old_value != Some(*new_value) {
+                    field_changes.push((
+                        field_name.clone(),
+                        old_value.map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
+                        new_value.to_string(),
+                    ));
+                }
+            }
+
+            if !field_changes.is_empty() {
+                builder = builder.add(Element::styled_text(Line::from(vec![
+                    Span::styled("📝 Field Changes", Style::default().fg(theme.accent_info).bold())
+                ])).build(), Length(1));
+
+                for (field_name, old_val, new_val) in &field_changes {
+                    let old_display = if old_val.is_empty() { "(empty)" } else { old_val.as_str() };
+                    let new_display = if new_val.is_empty() { "(empty)" } else { new_val.as_str() };
+
+                    builder = builder.add(Element::styled_text(Line::from(vec![
+                        Span::styled(format!("  {}: ", field_name), Style::default().fg(theme.text_tertiary)),
+                        Span::styled(old_display.to_string(), Style::default().fg(theme.accent_error)),
+                        Span::styled(" → ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(new_display.to_string(), Style::default().fg(theme.accent_success)),
+                    ])).build(), Length(1));
+                }
+                builder = builder.add(spacer!(), Length(1));
+            }
+        }
+
         if let Some(ref existing_assoc) = record.existing_associations {
             let association_diff = diff_associations(record, existing_assoc, entity_type);
 
@@ -649,54 +715,126 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
                     Span::styled("📋 Association Changes", Style::default().fg(theme.accent_warning).bold())
                 ])).build(), Length(1));
 
+                // Helper to format names for display
+                let format_names = |ids: &std::collections::HashSet<String>, name_map: &std::collections::HashMap<String, String>| -> String {
+                    ids.iter()
+                        .map(|id| name_map.get(id).cloned().unwrap_or_else(|| id[..8.min(id.len())].to_string()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+
                 // Support changes
                 if !association_diff.support_to_add.is_empty() || !association_diff.support_to_remove.is_empty() {
                     builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled("  Support: ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(format!("+{}", association_diff.support_to_add.len()), Style::default().fg(theme.accent_success)),
-                        Span::styled(" / ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(format!("-{}", association_diff.support_to_remove.len()), Style::default().fg(theme.accent_error)),
+                        Span::styled("  Support:", Style::default().fg(theme.text_secondary).bold()),
                     ])).build(), Length(1));
+                    if !association_diff.support_to_add.is_empty() {
+                        // For NRQ, get names from custom_junction_records
+                        let add_names: String = association_diff.support_to_add.iter()
+                            .map(|id| {
+                                record.custom_junction_records.iter()
+                                    .find(|r| &r.related_id == id)
+                                    .map(|r| r.related_name.clone())
+                                    .unwrap_or_else(|| id[..8.min(id.len())].to_string())
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        builder = builder.add(Element::styled_text(Line::from(vec![
+                            Span::styled("    + ", Style::default().fg(theme.accent_success)),
+                            Span::styled(add_names, Style::default().fg(theme.accent_success)),
+                        ])).build(), Length(1));
+                    }
+                    if !association_diff.support_to_remove.is_empty() {
+                        let remove_names = format_names(&association_diff.support_to_remove, &existing_assoc.support_names);
+                        builder = builder.add(Element::styled_text(Line::from(vec![
+                            Span::styled("    - ", Style::default().fg(theme.accent_error)),
+                            Span::styled(remove_names, Style::default().fg(theme.accent_error)),
+                        ])).build(), Length(1));
+                    }
                 }
 
                 // Category changes
                 if !association_diff.category_to_add.is_empty() || !association_diff.category_to_remove.is_empty() {
                     builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled("  Category: ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(format!("+{}", association_diff.category_to_add.len()), Style::default().fg(theme.accent_success)),
-                        Span::styled(" / ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(format!("-{}", association_diff.category_to_remove.len()), Style::default().fg(theme.accent_error)),
+                        Span::styled("  Category:", Style::default().fg(theme.text_secondary).bold()),
                     ])).build(), Length(1));
+                    if !association_diff.category_to_add.is_empty() {
+                        let add_names = format!("{} item(s)", association_diff.category_to_add.len());
+                        builder = builder.add(Element::styled_text(Line::from(vec![
+                            Span::styled("    + ", Style::default().fg(theme.accent_success)),
+                            Span::styled(add_names, Style::default().fg(theme.accent_success)),
+                        ])).build(), Length(1));
+                    }
+                    if !association_diff.category_to_remove.is_empty() {
+                        let remove_names = format_names(&association_diff.category_to_remove, &existing_assoc.category_names);
+                        builder = builder.add(Element::styled_text(Line::from(vec![
+                            Span::styled("    - ", Style::default().fg(theme.accent_error)),
+                            Span::styled(remove_names, Style::default().fg(theme.accent_error)),
+                        ])).build(), Length(1));
+                    }
                 }
 
                 // Length changes (CGK only)
                 if !association_diff.length_to_add.is_empty() || !association_diff.length_to_remove.is_empty() {
                     builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled("  Length: ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(format!("+{}", association_diff.length_to_add.len()), Style::default().fg(theme.accent_success)),
-                        Span::styled(" / ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(format!("-{}", association_diff.length_to_remove.len()), Style::default().fg(theme.accent_error)),
+                        Span::styled("  Length:", Style::default().fg(theme.text_secondary).bold()),
                     ])).build(), Length(1));
+                    if !association_diff.length_to_add.is_empty() {
+                        let add_names = format!("{} item(s)", association_diff.length_to_add.len());
+                        builder = builder.add(Element::styled_text(Line::from(vec![
+                            Span::styled("    + ", Style::default().fg(theme.accent_success)),
+                            Span::styled(add_names, Style::default().fg(theme.accent_success)),
+                        ])).build(), Length(1));
+                    }
+                    if !association_diff.length_to_remove.is_empty() {
+                        let remove_names = format_names(&association_diff.length_to_remove, &existing_assoc.length_names);
+                        builder = builder.add(Element::styled_text(Line::from(vec![
+                            Span::styled("    - ", Style::default().fg(theme.accent_error)),
+                            Span::styled(remove_names, Style::default().fg(theme.accent_error)),
+                        ])).build(), Length(1));
+                    }
                 }
 
                 // Flemishshare changes
                 if !association_diff.flemishshare_to_add.is_empty() || !association_diff.flemishshare_to_remove.is_empty() {
                     builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled("  Flemish Share: ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(format!("+{}", association_diff.flemishshare_to_add.len()), Style::default().fg(theme.accent_success)),
-                        Span::styled(" / ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(format!("-{}", association_diff.flemishshare_to_remove.len()), Style::default().fg(theme.accent_error)),
+                        Span::styled("  Flemish Share:", Style::default().fg(theme.text_secondary).bold()),
                     ])).build(), Length(1));
+                    if !association_diff.flemishshare_to_add.is_empty() {
+                        let add_names = format!("{} item(s)", association_diff.flemishshare_to_add.len());
+                        builder = builder.add(Element::styled_text(Line::from(vec![
+                            Span::styled("    + ", Style::default().fg(theme.accent_success)),
+                            Span::styled(add_names, Style::default().fg(theme.accent_success)),
+                        ])).build(), Length(1));
+                    }
+                    if !association_diff.flemishshare_to_remove.is_empty() {
+                        let remove_names = format_names(&association_diff.flemishshare_to_remove, &existing_assoc.flemishshare_names);
+                        builder = builder.add(Element::styled_text(Line::from(vec![
+                            Span::styled("    - ", Style::default().fg(theme.accent_error)),
+                            Span::styled(remove_names, Style::default().fg(theme.accent_error)),
+                        ])).build(), Length(1));
+                    }
                 }
 
                 // Subcategory changes (NRQ only)
                 if !association_diff.subcategory_to_add.is_empty() || !association_diff.subcategory_to_remove.is_empty() {
                     builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled("  Subcategory: ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(format!("+{}", association_diff.subcategory_to_add.len()), Style::default().fg(theme.accent_success)),
-                        Span::styled(" / ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(format!("-{}", association_diff.subcategory_to_remove.len()), Style::default().fg(theme.accent_error)),
+                        Span::styled("  Subcategory:", Style::default().fg(theme.text_secondary).bold()),
                     ])).build(), Length(1));
+                    if !association_diff.subcategory_to_add.is_empty() {
+                        let add_names = format!("{} item(s)", association_diff.subcategory_to_add.len());
+                        builder = builder.add(Element::styled_text(Line::from(vec![
+                            Span::styled("    + ", Style::default().fg(theme.accent_success)),
+                            Span::styled(add_names, Style::default().fg(theme.accent_success)),
+                        ])).build(), Length(1));
+                    }
+                    if !association_diff.subcategory_to_remove.is_empty() {
+                        let remove_names = format_names(&association_diff.subcategory_to_remove, &existing_assoc.subcategory_names);
+                        builder = builder.add(Element::styled_text(Line::from(vec![
+                            Span::styled("    - ", Style::default().fg(theme.accent_error)),
+                            Span::styled(remove_names, Style::default().fg(theme.accent_error)),
+                        ])).build(), Length(1));
+                    }
                 }
 
                 builder = builder.add(spacer!(), Length(1));

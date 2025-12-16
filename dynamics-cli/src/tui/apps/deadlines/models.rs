@@ -34,14 +34,24 @@ pub struct ExistingDeadline {
 pub struct ExistingAssociations {
     /// Support IDs (CGK: N:N, NRQ: via custom junction)
     pub support_ids: HashSet<String>,
+    /// Support ID → name map
+    pub support_names: HashMap<String, String>,
     /// Category IDs
     pub category_ids: HashSet<String>,
+    /// Category ID → name map
+    pub category_names: HashMap<String, String>,
     /// Length IDs (CGK only)
     pub length_ids: HashSet<String>,
+    /// Length ID → name map
+    pub length_names: HashMap<String, String>,
     /// Flemish share IDs
     pub flemishshare_ids: HashSet<String>,
+    /// Flemish share ID → name map
+    pub flemishshare_names: HashMap<String, String>,
     /// Subcategory IDs (NRQ only)
     pub subcategory_ids: HashSet<String>,
+    /// Subcategory ID → name map
+    pub subcategory_names: HashMap<String, String>,
     /// Custom junction records for NRQ deadlinesupport (includes extra fields)
     pub custom_junction_records: Vec<ExistingJunctionRecord>,
 }
@@ -179,6 +189,9 @@ pub struct TransformedDeadline {
     /// If matched to an existing record, this is the GUID
     pub existing_guid: Option<String>,
 
+    /// If matched, the existing record's field values (for diffing)
+    pub existing_fields: Option<HashMap<String, serde_json::Value>>,
+
     /// If matched, the existing record's N:N associations (for diffing)
     pub existing_associations: Option<ExistingAssociations>,
 }
@@ -202,6 +215,7 @@ impl TransformedDeadline {
             // Edit mode fields - default to Create
             mode: DeadlineMode::Create,
             existing_guid: None,
+            existing_fields: None,
             existing_associations: None,
         }
     }

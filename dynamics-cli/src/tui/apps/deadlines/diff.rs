@@ -19,6 +19,8 @@ pub struct MatchResult {
     pub mode: DeadlineMode,
     /// If matched, the existing deadline GUID
     pub existing_guid: Option<String>,
+    /// If matched, the existing field values (for showing diff in UI)
+    pub existing_fields: Option<std::collections::HashMap<String, serde_json::Value>>,
     /// If matched, the existing associations (for building update operations)
     pub existing_associations: Option<ExistingAssociations>,
 }
@@ -84,6 +86,7 @@ pub fn match_deadline(
             return MatchResult {
                 mode: DeadlineMode::Create,
                 existing_guid: None,
+                existing_fields: None,
                 existing_associations: None,
             };
         }
@@ -100,6 +103,7 @@ pub fn match_deadline(
             return MatchResult {
                 mode: DeadlineMode::Create,
                 existing_guid: None,
+                existing_fields: None,
                 existing_associations: None,
             };
         }
@@ -121,6 +125,7 @@ pub fn match_deadline(
             MatchResult {
                 mode: DeadlineMode::Create,
                 existing_guid: None,
+                existing_fields: None,
                 existing_associations: None,
             }
         }
@@ -157,6 +162,7 @@ pub fn match_deadline(
             MatchResult {
                 mode,
                 existing_guid: Some(existing.id.clone()),
+                existing_fields: Some(existing.fields.clone()),
                 existing_associations: Some(existing.associations.clone()),
             }
         }
@@ -173,6 +179,7 @@ pub fn match_all_deadlines(
         let result = match_deadline(record, lookup_map, entity_type);
         record.mode = result.mode;
         record.existing_guid = result.existing_guid;
+        record.existing_fields = result.existing_fields;
         record.existing_associations = result.existing_associations;
     }
 

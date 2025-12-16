@@ -201,16 +201,22 @@ fn resolve_checkboxes(
             // Check if checkbox is checked
             if cell_value == "x" || cell_value == "1" || cell_value == "true" || cell_value == "yes" {
                 // Try to find matching entity record and extract its ID
+                let mut found = false;
                 for entity_name in &checkbox_entities {
                     if let Some(id) = find_checkbox_id(cache, entity_name, header) {
                         // Get the relationship name for this entity type
                         if let Some(relationship_name) = relationship_map.get(entity_name) {
+                            log::debug!("Checkbox '{}' matched to {} (id={})", header, entity_name, id);
                             result.entry(relationship_name.clone())
                                 .or_insert_with(Vec::new)
                                 .push(id);
                         }
+                        found = true;
                         break;
                     }
+                }
+                if !found {
+                    log::warn!("Checkbox column '{}' (checked) not matched to any entity", header);
                 }
             }
         }
