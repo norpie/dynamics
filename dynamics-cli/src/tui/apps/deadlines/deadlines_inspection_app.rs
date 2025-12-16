@@ -1329,9 +1329,13 @@ fn batch_deadline_updates(
     use crate::api::operations::Operations;
 
     let mut queue_items = Vec::new();
-    let mut current_batch_ops = Vec::new();
-    let mut batch_num = 1;
     let is_cgk = entity_type == "cgk_deadline";
+
+    // Collect all PATCH operations separately from association operations
+    let mut update_ops_batch = Vec::new();
+    let mut association_ops_batch = Vec::new();
+    let mut update_batch_num = 1;
+    let mut assoc_batch_num = 1;
 
     for record in records {
         // Skip records without existing_guid (shouldn't happen for Update mode)
@@ -1343,32 +1347,44 @@ fn batch_deadline_updates(
             }
         };
 
+        // 1. PATCH operation for field changes (separate batch)
+        let update_ops = record.to_update_operations(entity_type);
+        update_ops_batch.extend(update_ops);
+
+        // Flush update batch if at limit
+        if update_ops_batch.len() >= max_per_batch {
+            let operations = Operations::from_operations(update_ops_batch.clone());
+            let metadata = QueueMetadata {
+                source: "Deadlines Excel (Updates)".to_string(),
+                entity_type: entity_type.to_string(),
+                description: format!("Field update batch {} ({} operations)", update_batch_num, update_ops_batch.len()),
+                row_number: None,
+                environment_name: environment_name.to_string(),
+            };
+            queue_items.push(QueueItem::new(operations, metadata, 64));
+            update_ops_batch.clear();
+            update_batch_num += 1;
+        }
+
         // Get existing associations for diffing
         let existing_associations = match &record.existing_associations {
             Some(assoc) => assoc,
             None => {
                 log::warn!("Update record missing existing_associations - skipping association sync");
-                // Still do the PATCH update even without association info
-                let update_ops = record.to_update_operations(entity_type);
-                current_batch_ops.extend(update_ops);
                 continue;
             }
         };
-
-        // 1. PATCH operation for field changes
-        let update_ops = record.to_update_operations(entity_type);
-        current_batch_ops.extend(update_ops);
 
         // 2. Compute association diff
         let association_diff = diff_associations(record, existing_associations, entity_type);
 
         // 3. Disassociate operations for removed N:N
         let disassociate_ops = build_disassociate_operations(&entity_guid, entity_type, &association_diff);
-        current_batch_ops.extend(disassociate_ops);
+        association_ops_batch.extend(disassociate_ops);
 
         // 4. Associate operations for added N:N
         let associate_ops = build_associate_operations(&entity_guid, entity_type, &association_diff);
-        current_batch_ops.extend(associate_ops);
+        association_ops_batch.extend(associate_ops);
 
         // 5. For NRQ: Handle custom junction (nrq_deadlinesupport)
         if !is_cgk {
@@ -1377,7 +1393,7 @@ fn batch_deadline_updates(
                 existing_associations,
                 &association_diff.support_to_remove,
             );
-            current_batch_ops.extend(delete_junction_ops);
+            association_ops_batch.extend(delete_junction_ops);
 
             // Create added support junctions
             let create_junction_ops = build_create_junction_operations(
@@ -1385,38 +1401,49 @@ fn batch_deadline_updates(
                 &association_diff.support_to_add,
                 &record.custom_junction_records,
             );
-            current_batch_ops.extend(create_junction_ops);
+            association_ops_batch.extend(create_junction_ops);
         }
 
-        // If we hit the batch limit, create a queue item
-        if current_batch_ops.len() >= max_per_batch {
-            let operations = Operations::from_operations(current_batch_ops.clone());
+        // Flush association batch if at limit
+        if association_ops_batch.len() >= max_per_batch {
+            let operations = Operations::from_operations(association_ops_batch.clone());
             let metadata = QueueMetadata {
-                source: "Deadlines Excel (Updates)".to_string(),
+                source: "Deadlines Excel (Associations)".to_string(),
                 entity_type: entity_type.to_string(),
-                description: format!("Update batch {} ({} operations)", batch_num, current_batch_ops.len()),
+                description: format!("Association batch {} ({} operations)", assoc_batch_num, association_ops_batch.len()),
                 row_number: None,
                 environment_name: environment_name.to_string(),
             };
-            let priority = 64; // High priority
-            queue_items.push(QueueItem::new(operations, metadata, priority));
-
-            current_batch_ops.clear();
-            batch_num += 1;
+            queue_items.push(QueueItem::new(operations, metadata, 63)); // Slightly lower priority
+            association_ops_batch.clear();
+            assoc_batch_num += 1;
         }
     }
 
-    // Create queue item for remaining operations
-    if !current_batch_ops.is_empty() {
-        let operations = Operations::from_operations(current_batch_ops.clone());
+    // Flush remaining update operations
+    if !update_ops_batch.is_empty() {
+        let operations = Operations::from_operations(update_ops_batch.clone());
         let metadata = QueueMetadata {
             source: "Deadlines Excel (Updates)".to_string(),
             entity_type: entity_type.to_string(),
-            description: format!("Update batch {} ({} operations)", batch_num, current_batch_ops.len()),
+            description: format!("Field update batch {} ({} operations)", update_batch_num, update_ops_batch.len()),
             row_number: None,
             environment_name: environment_name.to_string(),
         };
-        let priority = 64; // High priority
+        queue_items.push(QueueItem::new(operations, metadata, 64));
+    }
+
+    // Flush remaining association operations
+    if !association_ops_batch.is_empty() {
+        let operations = Operations::from_operations(association_ops_batch.clone());
+        let metadata = QueueMetadata {
+            source: "Deadlines Excel (Associations)".to_string(),
+            entity_type: entity_type.to_string(),
+            description: format!("Association batch {} ({} operations)", assoc_batch_num, association_ops_batch.len()),
+            row_number: None,
+            environment_name: environment_name.to_string(),
+        };
+        let priority = 63; // Slightly lower priority than field updates
         queue_items.push(QueueItem::new(operations, metadata, priority));
     }
 
