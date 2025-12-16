@@ -105,12 +105,17 @@ impl App for TransferPreviewApp {
                         builder
                             .on_complete(AppId::TransferPreview)
                             .build(move |task_idx, result| {
-                                let data = result
-                                    .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>), String>>()
-                                    .unwrap();
                                 if task_idx < num_source_tasks {
+                                    // Source metadata returns (entity_name, fields)
+                                    let data = result
+                                        .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>), String>>()
+                                        .unwrap();
                                     Msg::SourceMetadataResult(*data)
                                 } else {
+                                    // Target metadata returns (entity_name, fields, entity_set_name)
+                                    let data = result
+                                        .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String>>()
+                                        .unwrap();
                                     Msg::TargetMetadataResult(*data)
                                 }
                             })
@@ -154,14 +159,16 @@ impl App for TransferPreviewApp {
             // Data loading - Step 1c: Target metadata loaded, accumulate
             Msg::TargetMetadataResult(result) => {
                 match result {
-                    Ok((entity_name, fields)) => {
+                    Ok((entity_name, fields, entity_set)) => {
                         log::info!(
-                            "[{}] Target metadata loaded: {} fields ({} lookups)",
+                            "[{}] Target metadata loaded: {} fields ({} lookups), entity_set={}",
                             entity_name,
                             fields.len(),
-                            fields.iter().filter(|f| f.related_entity.is_some()).count()
+                            fields.iter().filter(|f| f.related_entity.is_some()).count(),
+                            entity_set
                         );
-                        state.target_metadata.insert(entity_name, fields);
+                        state.target_metadata.insert(entity_name.clone(), fields);
+                        state.entity_set_map.insert(entity_name, entity_set);
                         state.pending_target_metadata_fetches = state.pending_target_metadata_fetches.saturating_sub(1);
 
                         // Check if BOTH source and target metadata are loaded
@@ -2063,28 +2070,30 @@ async fn fetch_source_metadata(
 }
 
 /// Fetch target entity field metadata for lookup field detection
-/// Returns (entity_name, field_metadata)
+/// Returns (entity_name, field_metadata, entity_set_name)
 /// Uses SQLite cache with 1 hour TTL
 async fn fetch_target_metadata(
     env_name: String,
     entity_name: String,
-) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>), String> {
+) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String> {
     log::debug!("[{}] fetch_target_metadata START for env={}", entity_name, env_name);
 
     let config = crate::global_config();
 
-    // Check cache first (1 hour TTL)
+    // Check cache first (1 hour TTL) - only use if entity_set_name is present
     match config.get_entity_metadata_cache(&env_name, &entity_name, 1).await {
-        Ok(Some(cached)) => {
+        Ok(Some(cached)) if cached.entity_set_name.is_some() => {
+            let entity_set = cached.entity_set_name.unwrap();
             log::info!(
-                "[{}] Using cached target metadata: {} fields",
+                "[{}] Using cached target metadata: {} fields, entity_set={}",
                 entity_name,
-                cached.fields.len()
+                cached.fields.len(),
+                entity_set
             );
-            return Ok((entity_name, cached.fields));
+            return Ok((entity_name, cached.fields, entity_set));
         }
-        Ok(None) => {
-            log::info!("[{}] No valid target cache, fetching from API", entity_name);
+        Ok(_) => {
+            log::info!("[{}] No valid target cache (or missing entity_set_name), fetching from API", entity_name);
         }
         Err(e) => {
             log::warn!("[{}] Target cache check failed, fetching from API: {}", entity_name, e);
@@ -2104,22 +2113,30 @@ async fn fetch_target_metadata(
         .await
         .map_err(|e| format!("Failed to fetch target field metadata for {}: {}", entity_name, e))?;
 
+    // Fetch entity metadata info (includes entity_set_name)
+    let entity_info = client
+        .fetch_entity_metadata_info(&entity_name)
+        .await
+        .map_err(|e| format!("Failed to fetch entity info for {}: {}", entity_name, e))?;
+
     log::info!(
-        "[{}] Fetched {} target fields",
+        "[{}] Fetched {} target fields, entity_set={}",
         entity_name,
-        fields.len()
+        fields.len(),
+        entity_info.entity_set_name
     );
 
-    // Save to cache
+    // Save to cache with entity_set_name
     let metadata = crate::api::metadata::EntityMetadata {
         fields: fields.clone(),
+        entity_set_name: Some(entity_info.entity_set_name.clone()),
         ..Default::default()
     };
     if let Err(e) = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await {
         log::warn!("[{}] Failed to cache target metadata: {}", entity_name, e);
     }
 
-    Ok((entity_name, fields))
+    Ok((entity_name, fields, entity_info.entity_set_name))
 }
 
 /// Fetch entity metadata (fields + entity set name) for lookup binding

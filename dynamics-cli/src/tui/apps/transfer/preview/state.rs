@@ -430,7 +430,7 @@ pub enum Msg {
     // Data loading
     ConfigLoaded(Result<crate::transfer::TransferConfig, String>),
     SourceMetadataResult(Result<(String, Vec<FieldMetadata>), String>), // (entity_name, fields) - for source lookup detection
-    TargetMetadataResult(Result<(String, Vec<FieldMetadata>), String>), // (entity_name, fields) - for target lookup detection
+    TargetMetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, entity_set_name) - for target lookup detection
     FetchRecords, // Triggered after both source and target metadata are loaded
     FetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
     MetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, entity_set_name)
