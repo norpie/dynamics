@@ -140,14 +140,22 @@ pub struct ResolverForm {
     pub name: TextInputField,
     pub source_entity: AutocompleteField,
     pub match_field: AutocompleteField,
-    pub fallback_idx: usize,
+    pub fallback: ResolverFallback,
+    pub default_guid: TextInputField, // For Default fallback
 }
 
 impl ResolverForm {
     pub fn is_valid(&self) -> bool {
-        !self.name.value.trim().is_empty()
+        let base_valid = !self.name.value.trim().is_empty()
             && !self.source_entity.value.trim().is_empty()
-            && !self.match_field.value.trim().is_empty()
+            && !self.match_field.value.trim().is_empty();
+
+        // If using Default fallback, also validate the GUID
+        if self.fallback.is_default() || !self.default_guid.value.trim().is_empty() {
+            base_valid && uuid::Uuid::parse_str(self.default_guid.value.trim()).is_ok()
+        } else {
+            base_valid
+        }
     }
 
     pub fn from_resolver(resolver: &Resolver) -> Self {
@@ -155,17 +163,30 @@ impl ResolverForm {
         form.name.value = resolver.name.clone();
         form.source_entity.value = resolver.source_entity.clone();
         form.match_field.value = resolver.match_field.clone();
-        form.fallback_idx = resolver.fallback.to_index();
+        form.fallback = resolver.fallback.clone();
+        if let Some(guid) = resolver.fallback.default_guid() {
+            form.default_guid.value = guid.to_string();
+        }
         form
     }
 
     pub fn to_resolver(&self) -> Resolver {
+        let fallback = if !self.default_guid.value.trim().is_empty() {
+            if let Ok(guid) = uuid::Uuid::parse_str(self.default_guid.value.trim()) {
+                ResolverFallback::Default(guid)
+            } else {
+                self.fallback.clone()
+            }
+        } else {
+            self.fallback.clone()
+        };
+
         Resolver {
             id: None,
             name: self.name.value.trim().to_string(),
             source_entity: self.source_entity.value.trim().to_string(),
             match_field: self.match_field.value.trim().to_string(),
-            fallback: ResolverFallback::from_index(self.fallback_idx),
+            fallback,
         }
     }
 }
@@ -806,6 +827,7 @@ pub enum Msg {
     ResolverFormSourceEntity(AutocompleteEvent),
     ResolverFormMatchField(AutocompleteEvent),
     ResolverFormCycleFallback,
+    ResolverFormDefaultGuid(TextInputEvent),
     ResolverMatchFieldsLoaded(Result<Vec<FieldMetadata>, String>),
 
     // Delete confirmation

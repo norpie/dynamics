@@ -830,15 +830,25 @@ fn render_resolver_modal(
     .build();
     let match_panel = Element::panel(match_input).title("Match Field").build();
 
-    // Fallback button (cycle)
-    let current_fallback = ResolverFallback::from_index(form.fallback_idx);
-    let fallback_label = format!("Fallback: {} (click to cycle)", current_fallback.label());
+    // Fallback button (cycle between Error/Null)
+    let fallback_label = format!("Fallback: {} (click to cycle)", form.fallback.label());
     let fallback_btn = Element::button(
         FocusId::new("resolver-fallback"),
         &fallback_label,
     )
     .on_press(Msg::ResolverFormCycleFallback)
     .build();
+
+    // Default GUID input (optional - when filled, uses Default fallback)
+    let default_guid_input = Element::text_input(
+        FocusId::new("resolver-default-guid"),
+        &form.default_guid.value,
+        &mut form.default_guid.state,
+    )
+    .placeholder("Optional GUID - uses this if no match found")
+    .on_event(Msg::ResolverFormDefaultGuid)
+    .build();
+    let default_guid_panel = Element::panel(default_guid_input).title("Default GUID (optional)").build();
 
     // Help text
     let help_text = Element::styled_text(Line::from(vec![
@@ -873,6 +883,7 @@ fn render_resolver_modal(
         .add(entity_panel, LayoutConstraint::Length(3))
         .add(match_panel, LayoutConstraint::Length(3))
         .add(fallback_btn, LayoutConstraint::Length(3))
+        .add(default_guid_panel, LayoutConstraint::Length(3))
         .add(help_text, LayoutConstraint::Length(1))
         .add(Element::text(""), LayoutConstraint::Fill(1))
         .add(button_row, LayoutConstraint::Length(3))

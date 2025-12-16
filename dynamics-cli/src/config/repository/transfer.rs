@@ -150,9 +150,16 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
     let mut resolvers = Vec::new();
     for row in resolver_rows {
         let fallback_str: String = row.try_get("fallback")?;
-        let fallback = match fallback_str.to_lowercase().as_str() {
-            "null" => ResolverFallback::Null,
-            _ => ResolverFallback::Error,
+        let fallback_lower = fallback_str.to_lowercase();
+        let fallback = if fallback_lower == "null" {
+            ResolverFallback::Null
+        } else if let Some(guid_str) = fallback_lower.strip_prefix("default:") {
+            match uuid::Uuid::parse_str(guid_str) {
+                Ok(guid) => ResolverFallback::Default(guid),
+                Err(_) => ResolverFallback::Error, // Invalid GUID, fall back to Error
+            }
+        } else {
+            ResolverFallback::Error
         };
 
         resolvers.push(Resolver {
@@ -278,9 +285,10 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
 
     // Insert resolvers
     for resolver in &config.resolvers {
-        let fallback_str = match resolver.fallback {
-            ResolverFallback::Error => "error",
-            ResolverFallback::Null => "null",
+        let fallback_str = match &resolver.fallback {
+            ResolverFallback::Error => "error".to_string(),
+            ResolverFallback::Null => "null".to_string(),
+            ResolverFallback::Default(guid) => format!("default:{}", guid),
         };
 
         sqlx::query(
@@ -293,7 +301,7 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
         .bind(&resolver.name)
         .bind(&resolver.source_entity)
         .bind(&resolver.match_field)
-        .bind(fallback_str)
+        .bind(&fallback_str)
         .execute(&mut *tx)
         .await
         .context("Failed to insert resolver")?;

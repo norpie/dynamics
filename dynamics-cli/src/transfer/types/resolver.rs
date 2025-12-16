@@ -64,7 +64,7 @@ impl Resolver {
 }
 
 /// Fallback behavior for resolver when no match is found
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ResolverFallback {
     /// Mark the record as an error (won't be transferred)
@@ -72,44 +72,41 @@ pub enum ResolverFallback {
     Error,
     /// Use null for the lookup field
     Null,
+    /// Use a static GUID as the fallback value
+    #[serde(rename = "default")]
+    Default(uuid::Uuid),
 }
 
 impl ResolverFallback {
     /// Get display label for UI
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> String {
         match self {
-            ResolverFallback::Error => "Error",
-            ResolverFallback::Null => "Null",
+            ResolverFallback::Error => "Error".to_string(),
+            ResolverFallback::Null => "Null".to_string(),
+            ResolverFallback::Default(guid) => format!("Default({})", guid),
         }
     }
 
-    /// Get all variants for UI selection
-    pub fn all_variants() -> &'static [ResolverFallback] {
-        &[ResolverFallback::Error, ResolverFallback::Null]
-    }
-
-    /// Convert from index (for UI selection)
-    pub fn from_index(idx: usize) -> Self {
-        match idx {
-            0 => ResolverFallback::Error,
-            1 => ResolverFallback::Null,
-            _ => ResolverFallback::Error,
-        }
-    }
-
-    /// Convert to index (for UI selection)
-    pub fn to_index(&self) -> usize {
-        match self {
-            ResolverFallback::Error => 0,
-            ResolverFallback::Null => 1,
-        }
-    }
-
-    /// Cycle to the next fallback option
+    /// Cycle to the next fallback option (cycles through Error -> Null -> Error)
+    /// Note: Default requires explicit setting with a GUID, so it's not part of the cycle
     pub fn cycle(&self) -> Self {
         match self {
             ResolverFallback::Error => ResolverFallback::Null,
             ResolverFallback::Null => ResolverFallback::Error,
+            ResolverFallback::Default(_) => ResolverFallback::Error,
+        }
+    }
+
+    /// Check if this is the Default variant
+    pub fn is_default(&self) -> bool {
+        matches!(self, ResolverFallback::Default(_))
+    }
+
+    /// Get the default GUID if this is a Default variant
+    pub fn default_guid(&self) -> Option<uuid::Uuid> {
+        match self {
+            ResolverFallback::Default(guid) => Some(*guid),
+            _ => None,
         }
     }
 }
@@ -273,7 +270,7 @@ impl ResolverContext {
             );
 
             ctx.tables.insert(resolver.name.clone(), table);
-            ctx.fallbacks.insert(resolver.name.clone(), resolver.fallback);
+            ctx.fallbacks.insert(resolver.name.clone(), resolver.fallback.clone());
         }
 
         ctx
@@ -330,7 +327,7 @@ impl ResolverContext {
         let fallback = self
             .fallbacks
             .get(resolver_name)
-            .copied()
+            .cloned()
             .unwrap_or(ResolverFallback::Error);
 
         match result {
@@ -344,6 +341,7 @@ impl ResolverContext {
                     ))
                 }
                 ResolverFallback::Null => Ok(Value::Null),
+                ResolverFallback::Default(guid) => Ok(Value::Guid(guid)),
             },
             ResolveResult::Duplicate => unreachable!("Duplicates are handled by first-match-wins"),
         }

@@ -657,8 +657,12 @@ impl App for MappingEditorApp {
             }
 
             Msg::ResolverFormCycleFallback => {
-                let num_variants = ResolverFallback::all_variants().len();
-                state.resolver_form.fallback_idx = (state.resolver_form.fallback_idx + 1) % num_variants;
+                state.resolver_form.fallback = state.resolver_form.fallback.cycle();
+                Command::None
+            }
+
+            Msg::ResolverFormDefaultGuid(event) => {
+                state.resolver_form.default_guid.handle_event(event, None);
                 Command::None
             }
 
