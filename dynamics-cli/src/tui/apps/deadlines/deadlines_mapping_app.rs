@@ -73,6 +73,25 @@ fn sanitize_field_value(value: &str) -> String {
     // value.replace(": ", " - ")
 }
 
+/// Truncate field value to max length (Dynamics field limits)
+fn truncate_field_value(value: &str, field_name: &str) -> String {
+    let max_len = match field_name {
+        // Name fields: 200 chars
+        "cgk_deadlinename" | "nrq_deadlinename" | "cgk_name" | "nrq_name" => 200,
+        // Description/info fields: 2000 chars
+        "cgk_info" | "nrq_description" => 2000,
+        // Default: no truncation
+        _ => usize::MAX,
+    };
+
+    if value.len() > max_len {
+        log::warn!("Truncating field '{}' from {} to {} chars", field_name, value.len(), max_len);
+        value.chars().take(max_len).collect()
+    } else {
+        value.to_string()
+    }
+}
+
 /// Parse a time value and return NaiveTime
 fn parse_time(value: &str) -> Result<chrono::NaiveTime, String> {
     // Try parsing as Excel time fraction (0.0 to 1.0)
@@ -797,11 +816,12 @@ fn process_row(
                         }
                     }
                     field_mappings::FieldType::Direct => {
-                        // Direct field - sanitize and copy value
+                        // Direct field - sanitize and truncate value
                         let sanitized_value = sanitize_field_value(&cell_value);
+                        let truncated_value = truncate_field_value(&sanitized_value, &mapping.dynamics_field);
                         transformed.direct_fields.insert(
                             mapping.dynamics_field.clone(),
-                            sanitized_value
+                            truncated_value
                         );
                     }
                     field_mappings::FieldType::Picklist { options } => {
