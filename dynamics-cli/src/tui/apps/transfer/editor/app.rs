@@ -925,22 +925,32 @@ async fn load_entity_fields(env_name: String, entity_name: String) -> Result<Vec
     Ok(fields)
 }
 
+/// Check if a field is a virtual/computed field (like accountidname)
+/// These fields are not queryable and should be excluded from source field selection
+fn is_virtual_field(field: &FieldMetadata) -> bool {
+    matches!(&field.field_type, FieldType::Other(t) if t == "Virtual")
+}
+
 /// Build the source field options for autocomplete, including nested lookup paths
 fn get_source_options(state: &State) -> Vec<String> {
     let mut options = Vec::new();
 
-    // Add base fields
+    // Add base fields (excluding virtual/computed fields)
     if let Resource::Success(fields) = &state.source_fields {
         for f in fields {
-            options.push(f.logical_name.clone());
+            if !is_virtual_field(f) {
+                options.push(f.logical_name.clone());
+            }
         }
     }
 
-    // Add nested paths for loaded related entities
+    // Add nested paths for loaded related entities (also excluding virtual fields)
     for (lookup_field, resource) in &state.related_fields {
         if let Resource::Success(related_fields) = resource {
             for f in related_fields {
-                options.push(format!("{}.{}", lookup_field, f.logical_name));
+                if !is_virtual_field(f) {
+                    options.push(format!("{}.{}", lookup_field, f.logical_name));
+                }
             }
         }
     }
