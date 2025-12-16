@@ -3,7 +3,7 @@
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::transfer::{Condition, DynamicValue, Fallback, Transform, Value};
+use crate::transfer::{Condition, DynamicValue, Fallback, ResolverContext, Transform, Value};
 
 use super::path::resolve_path;
 
@@ -12,14 +12,36 @@ pub type TransformResult = Result<Value, String>;
 
 /// Apply a transform to a source record
 ///
-/// Note: Resolver-based transforms are handled separately in the transform engine,
-/// not here. This function only handles the basic transform logic.
-pub fn apply_transform(transform: &Transform, record: &serde_json::Value) -> TransformResult {
+/// # Arguments
+/// * `transform` - The transform to apply
+/// * `record` - The source record (JSON)
+/// * `resolver_ctx` - Optional resolver context for Copy transforms with resolvers
+///
+/// When a Copy transform has a resolver specified, the source value is looked up
+/// in the resolver context to find the corresponding target GUID.
+pub fn apply_transform(
+    transform: &Transform,
+    record: &serde_json::Value,
+    resolver_ctx: Option<&ResolverContext>,
+) -> TransformResult {
     match transform {
-        Transform::Copy { source_path, .. } => {
-            // Note: resolver handling is done in the transform engine, not here
+        Transform::Copy { source_path, resolver } => {
             let value = resolve_path(record, source_path);
-            Ok(value)
+
+            // If a resolver is specified, look up the value to get the target GUID
+            if let Some(resolver_name) = resolver {
+                // Convert Value to serde_json::Value for the lookup
+                let json_value = value.to_json();
+                match resolver_ctx {
+                    Some(ctx) => ctx.resolve_to_value(resolver_name, &json_value),
+                    None => Err(format!(
+                        "Resolver '{}' specified but no resolver context available",
+                        resolver_name
+                    )),
+                }
+            } else {
+                Ok(value)
+            }
         }
 
         Transform::Constant { value } => {
@@ -121,7 +143,7 @@ mod tests {
             resolver: None,
         };
 
-        let result = apply_transform(&transform, &record).unwrap();
+        let result = apply_transform(&transform, &record, None).unwrap();
         assert_eq!(result, Value::String("Contoso".into()));
     }
 
@@ -132,7 +154,7 @@ mod tests {
             value: Value::Bool(true),
         };
 
-        let result = apply_transform(&transform, &record).unwrap();
+        let result = apply_transform(&transform, &record, None).unwrap();
         assert_eq!(result, Value::Bool(true));
     }
 
@@ -143,7 +165,7 @@ mod tests {
             value: Value::Dynamic(DynamicValue::Now),
         };
 
-        let result = apply_transform(&transform, &record).unwrap();
+        let result = apply_transform(&transform, &record, None).unwrap();
         assert!(matches!(result, Value::DateTime(_)));
     }
 
@@ -154,7 +176,7 @@ mod tests {
             value: Value::Dynamic(DynamicValue::NewGuid),
         };
 
-        let result = apply_transform(&transform, &record).unwrap();
+        let result = apply_transform(&transform, &record, None).unwrap();
         assert!(matches!(result, Value::Guid(_)));
     }
 
@@ -168,7 +190,7 @@ mod tests {
             else_value: Value::String("Inactive".into()),
         };
 
-        let result = apply_transform(&transform, &record).unwrap();
+        let result = apply_transform(&transform, &record, None).unwrap();
         assert_eq!(result, Value::String("Active".into()));
     }
 
@@ -182,7 +204,7 @@ mod tests {
             else_value: Value::String("Inactive".into()),
         };
 
-        let result = apply_transform(&transform, &record).unwrap();
+        let result = apply_transform(&transform, &record, None).unwrap();
         assert_eq!(result, Value::String("Inactive".into()));
     }
 
@@ -196,7 +218,7 @@ mod tests {
             else_value: Value::Dynamic(DynamicValue::SourceValue),
         };
 
-        let result = apply_transform(&transform, &record).unwrap();
+        let result = apply_transform(&transform, &record, None).unwrap();
         assert_eq!(result, Value::String("N/A".into()));
     }
 
@@ -212,7 +234,7 @@ mod tests {
             fallback: Fallback::Error,
         };
 
-        let result = apply_transform(&transform, &record).unwrap();
+        let result = apply_transform(&transform, &record, None).unwrap();
         assert_eq!(result, Value::Int(100));
     }
 
@@ -228,7 +250,7 @@ mod tests {
             fallback: Fallback::Default { value: Value::Int(0) },
         };
 
-        let result = apply_transform(&transform, &record).unwrap();
+        let result = apply_transform(&transform, &record, None).unwrap();
         assert_eq!(result, Value::Int(0));
     }
 
@@ -243,7 +265,7 @@ mod tests {
             fallback: Fallback::PassThrough,
         };
 
-        let result = apply_transform(&transform, &record).unwrap();
+        let result = apply_transform(&transform, &record, None).unwrap();
         assert_eq!(result, Value::Int(99));
     }
 
@@ -258,7 +280,7 @@ mod tests {
             fallback: Fallback::Error,
         };
 
-        let result = apply_transform(&transform, &record);
+        let result = apply_transform(&transform, &record, None);
         assert!(result.is_err());
     }
 }

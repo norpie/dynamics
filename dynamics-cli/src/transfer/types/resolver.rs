@@ -117,6 +117,8 @@ impl ResolverFallback {
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+use super::value::Value;
+
 /// Runtime context for resolver lookups
 ///
 /// Built from target entity data, provides fast lookups to resolve
@@ -127,6 +129,8 @@ pub struct ResolverContext {
     tables: HashMap<String, HashMap<String, Uuid>>,
     /// Values that have duplicates (resolver_name -> set of normalized values)
     duplicates: HashMap<String, HashSet<String>>,
+    /// Fallback behavior for each resolver
+    fallbacks: HashMap<String, ResolverFallback>,
 }
 
 /// Result of a resolver lookup
@@ -227,6 +231,7 @@ impl ResolverContext {
             }
 
             ctx.tables.insert(resolver.name.clone(), table);
+            ctx.fallbacks.insert(resolver.name.clone(), resolver.fallback);
             if !duplicates.is_empty() {
                 ctx.duplicates.insert(resolver.name.clone(), duplicates);
             }
@@ -269,6 +274,53 @@ impl ResolverContext {
     /// Check if a resolver exists in this context
     pub fn has_resolver(&self, name: &str) -> bool {
         self.tables.contains_key(name)
+    }
+
+    /// Resolve a value and return the result as a Value, applying fallback behavior
+    ///
+    /// This method is used by the transform engine to resolve Copy transforms
+    /// that have a resolver specified.
+    ///
+    /// # Arguments
+    /// * `resolver_name` - The name of the resolver to use
+    /// * `value` - The source value to look up
+    ///
+    /// # Returns
+    /// * `Ok(Value::Guid(uuid))` - Successfully resolved to a GUID
+    /// * `Ok(Value::Null)` - No match found and fallback is Null
+    /// * `Err(String)` - No match/duplicate found and fallback is Error
+    pub fn resolve_to_value(
+        &self,
+        resolver_name: &str,
+        value: &serde_json::Value,
+    ) -> Result<Value, String> {
+        let result = self.resolve(resolver_name, value);
+        let fallback = self
+            .fallbacks
+            .get(resolver_name)
+            .copied()
+            .unwrap_or(ResolverFallback::Error);
+
+        match result {
+            ResolveResult::Found(guid) => Ok(Value::Guid(guid)),
+            ResolveResult::NotFound => match fallback {
+                ResolverFallback::Error => {
+                    let display_value = Self::normalize_value(value);
+                    Err(format!(
+                        "Resolver '{}': no match found for value '{}'",
+                        resolver_name, display_value
+                    ))
+                }
+                ResolverFallback::Null => Ok(Value::Null),
+            },
+            ResolveResult::Duplicate => {
+                let display_value = Self::normalize_value(value);
+                Err(format!(
+                    "Resolver '{}': multiple matches found for value '{}' (ambiguous)",
+                    resolver_name, display_value
+                ))
+            }
+        }
     }
 
     /// Normalize a JSON value for case-insensitive lookup

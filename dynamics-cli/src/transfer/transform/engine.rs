@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::transfer::{
     EntityMapping, FieldMapping, RecordAction, ResolvedEntity, ResolvedRecord,
-    ResolvedTransfer, TransferConfig, Value,
+    ResolvedTransfer, ResolverContext, TransferConfig, Value,
 };
 
 use super::apply::apply_transform;
@@ -52,6 +52,9 @@ impl TransformEngine {
             &config.target_env,
         );
 
+        // Build resolver context from config's resolvers and target data
+        let resolver_ctx = ResolverContext::build(&config.resolvers, target_data, primary_keys);
+
         for entity_mapping in config.entity_mappings_by_priority() {
             let source_records = source_data
                 .get(&entity_mapping.source_entity)
@@ -79,7 +82,7 @@ impl TransformEngine {
             };
 
             let resolved_entity =
-                Self::transform_entity(entity_mapping, source_records, target_records, &ctx);
+                Self::transform_entity(entity_mapping, source_records, target_records, &ctx, &resolver_ctx);
             resolved.add_entity(resolved_entity);
         }
 
@@ -92,6 +95,7 @@ impl TransformEngine {
         source_records: &[serde_json::Value],
         target_records: &[serde_json::Value],
         ctx: &TransformContext,
+        resolver_ctx: &ResolverContext,
     ) -> ResolvedEntity {
         let mut resolved = ResolvedEntity::new(
             &mapping.target_entity,
@@ -154,6 +158,7 @@ impl TransformEngine {
                 &target_index,
                 &field_names,
                 ctx,
+                resolver_ctx,
             );
             resolved.add_record(resolved_record);
         }
@@ -198,6 +203,7 @@ impl TransformEngine {
         target_index: &HashMap<String, &serde_json::Value>,
         field_names: &[String],
         ctx: &TransformContext,
+        resolver_ctx: &ResolverContext,
     ) -> ResolvedRecord {
         // Extract source ID using source pk field
         let source_id_str = source
@@ -211,7 +217,7 @@ impl TransformEngine {
         let mut errors = Vec::new();
 
         for field_mapping in field_mappings {
-            match apply_transform(&field_mapping.transform, source) {
+            match apply_transform(&field_mapping.transform, source, Some(resolver_ctx)) {
                 Ok(value) => {
                     fields.insert(field_mapping.target_field.clone(), value);
                 }
@@ -342,6 +348,10 @@ mod tests {
         }
     }
 
+    fn empty_resolver_ctx() -> ResolverContext {
+        ResolverContext::default()
+    }
+
     #[test]
     fn test_transform_record_create_when_no_target() {
         let source = json!({
@@ -364,7 +374,7 @@ mod tests {
         let field_names = vec!["name".to_string(), "was_migrated".to_string()];
 
         let result = TransformEngine::transform_record(
-            &source, &mappings, &target_index, &field_names, &make_ctx()
+            &source, &mappings, &target_index, &field_names, &make_ctx(), &empty_resolver_ctx()
         );
 
         assert!(result.is_create());
@@ -396,7 +406,7 @@ mod tests {
         let field_names = vec!["name".to_string()];
 
         let result = TransformEngine::transform_record(
-            &source, &mappings, &target_index, &field_names, &make_ctx()
+            &source, &mappings, &target_index, &field_names, &make_ctx(), &empty_resolver_ctx()
         );
 
         assert!(result.is_nochange());
@@ -426,7 +436,7 @@ mod tests {
         let field_names = vec!["name".to_string()];
 
         let result = TransformEngine::transform_record(
-            &source, &mappings, &target_index, &field_names, &make_ctx()
+            &source, &mappings, &target_index, &field_names, &make_ctx(), &empty_resolver_ctx()
         );
 
         assert!(result.is_update());
@@ -453,7 +463,7 @@ mod tests {
         let field_names = vec!["gendercode".to_string()];
 
         let result = TransformEngine::transform_record(
-            &source, &mappings, &target_index, &field_names, &make_ctx()
+            &source, &mappings, &target_index, &field_names, &make_ctx(), &empty_resolver_ctx()
         );
 
         assert!(result.is_error());
@@ -497,7 +507,7 @@ mod tests {
         };
 
         let result = TransformEngine::transform_entity(
-            &mapping, &source_records, &target_records, &make_ctx()
+            &mapping, &source_records, &target_records, &make_ctx(), &empty_resolver_ctx()
         );
 
         assert_eq!(result.entity_name, "account");
@@ -575,5 +585,265 @@ mod tests {
             &Value::String("a".to_string()),
             &json!("b")
         ));
+    }
+
+    // Resolver integration tests
+
+    #[test]
+    fn test_transform_with_resolver_found() {
+        use crate::transfer::Resolver;
+
+        // Setup: source record with email, resolver to look up contact by email
+        let source = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "primary_contact_email": "john@example.com"
+        });
+
+        let mappings = vec![
+            FieldMapping::new("primarycontactid", Transform::Copy {
+                source_path: FieldPath::simple("primary_contact_email"),
+                resolver: Some("contact_by_email".to_string()),
+            }),
+        ];
+
+        // Build resolver context with target contact data
+        let resolvers = vec![
+            Resolver::new("contact_by_email", "contact", "emailaddress1"),
+        ];
+
+        let mut target_data = HashMap::new();
+        target_data.insert("contact".to_string(), vec![
+            json!({
+                "contactid": "11111111-1111-1111-1111-111111111111",
+                "emailaddress1": "john@example.com"
+            }),
+        ]);
+
+        let mut primary_keys = HashMap::new();
+        primary_keys.insert("contact".to_string(), "contactid".to_string());
+
+        let resolver_ctx = ResolverContext::build(&resolvers, &target_data, &primary_keys);
+
+        let target_index = HashMap::new();
+        let field_names = vec!["primarycontactid".to_string()];
+
+        let result = TransformEngine::transform_record(
+            &source, &mappings, &target_index, &field_names, &make_ctx(), &resolver_ctx
+        );
+
+        // Should create with resolved GUID
+        assert!(result.is_create());
+        let expected_guid = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        assert_eq!(result.get_field("primarycontactid"), Some(&Value::Guid(expected_guid)));
+    }
+
+    #[test]
+    fn test_transform_with_resolver_not_found_error() {
+        use crate::transfer::Resolver;
+
+        let source = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "primary_contact_email": "unknown@example.com"
+        });
+
+        let mappings = vec![
+            FieldMapping::new("primarycontactid", Transform::Copy {
+                source_path: FieldPath::simple("primary_contact_email"),
+                resolver: Some("contact_by_email".to_string()),
+            }),
+        ];
+
+        // Resolver with fallback Error (default)
+        let resolvers = vec![
+            Resolver::new("contact_by_email", "contact", "emailaddress1"),
+        ];
+
+        let mut target_data = HashMap::new();
+        target_data.insert("contact".to_string(), vec![
+            json!({
+                "contactid": "11111111-1111-1111-1111-111111111111",
+                "emailaddress1": "john@example.com"  // Different email!
+            }),
+        ]);
+
+        let mut primary_keys = HashMap::new();
+        primary_keys.insert("contact".to_string(), "contactid".to_string());
+
+        let resolver_ctx = ResolverContext::build(&resolvers, &target_data, &primary_keys);
+
+        let target_index = HashMap::new();
+        let field_names = vec!["primarycontactid".to_string()];
+
+        let result = TransformEngine::transform_record(
+            &source, &mappings, &target_index, &field_names, &make_ctx(), &resolver_ctx
+        );
+
+        // Should be marked as error because no match found and fallback is Error
+        assert!(result.is_error());
+        assert!(result.error.as_ref().unwrap().contains("no match found"));
+    }
+
+    #[test]
+    fn test_transform_with_resolver_not_found_null() {
+        use crate::transfer::{Resolver, ResolverFallback};
+
+        let source = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "primary_contact_email": "unknown@example.com"
+        });
+
+        let mappings = vec![
+            FieldMapping::new("primarycontactid", Transform::Copy {
+                source_path: FieldPath::simple("primary_contact_email"),
+                resolver: Some("contact_by_email".to_string()),
+            }),
+        ];
+
+        // Resolver with fallback Null
+        let resolvers = vec![
+            Resolver::with_fallback("contact_by_email", "contact", "emailaddress1", ResolverFallback::Null),
+        ];
+
+        let mut target_data = HashMap::new();
+        target_data.insert("contact".to_string(), vec![
+            json!({
+                "contactid": "11111111-1111-1111-1111-111111111111",
+                "emailaddress1": "john@example.com"
+            }),
+        ]);
+
+        let mut primary_keys = HashMap::new();
+        primary_keys.insert("contact".to_string(), "contactid".to_string());
+
+        let resolver_ctx = ResolverContext::build(&resolvers, &target_data, &primary_keys);
+
+        let target_index = HashMap::new();
+        let field_names = vec!["primarycontactid".to_string()];
+
+        let result = TransformEngine::transform_record(
+            &source, &mappings, &target_index, &field_names, &make_ctx(), &resolver_ctx
+        );
+
+        // Should create with null value because fallback is Null
+        assert!(result.is_create());
+        assert_eq!(result.get_field("primarycontactid"), Some(&Value::Null));
+    }
+
+    #[test]
+    fn test_transform_with_resolver_duplicate() {
+        use crate::transfer::Resolver;
+
+        let source = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "primary_contact_email": "duplicate@example.com"
+        });
+
+        let mappings = vec![
+            FieldMapping::new("primarycontactid", Transform::Copy {
+                source_path: FieldPath::simple("primary_contact_email"),
+                resolver: Some("contact_by_email".to_string()),
+            }),
+        ];
+
+        let resolvers = vec![
+            Resolver::new("contact_by_email", "contact", "emailaddress1"),
+        ];
+
+        // Two contacts with same email - ambiguous!
+        let mut target_data = HashMap::new();
+        target_data.insert("contact".to_string(), vec![
+            json!({
+                "contactid": "11111111-1111-1111-1111-111111111111",
+                "emailaddress1": "duplicate@example.com"
+            }),
+            json!({
+                "contactid": "22222222-2222-2222-2222-222222222222",
+                "emailaddress1": "duplicate@example.com"
+            }),
+        ]);
+
+        let mut primary_keys = HashMap::new();
+        primary_keys.insert("contact".to_string(), "contactid".to_string());
+
+        let resolver_ctx = ResolverContext::build(&resolvers, &target_data, &primary_keys);
+
+        let target_index = HashMap::new();
+        let field_names = vec!["primarycontactid".to_string()];
+
+        let result = TransformEngine::transform_record(
+            &source, &mappings, &target_index, &field_names, &make_ctx(), &resolver_ctx
+        );
+
+        // Should be marked as error because duplicate values are ambiguous
+        assert!(result.is_error());
+        assert!(result.error.as_ref().unwrap().contains("multiple matches"));
+    }
+
+    #[test]
+    fn test_transform_all_with_resolver() {
+        use crate::transfer::Resolver;
+
+        let config = TransferConfig {
+            id: None,
+            name: "test-with-resolver".to_string(),
+            source_env: "dev".to_string(),
+            target_env: "prod".to_string(),
+            resolvers: vec![
+                Resolver::new("contact_by_email", "contact", "emailaddress1"),
+            ],
+            entity_mappings: vec![
+                EntityMapping {
+                    id: None,
+                    source_entity: "account".to_string(),
+                    target_entity: "account".to_string(),
+                    priority: 1,
+                    orphan_handling: OrphanHandling::default(),
+                    field_mappings: vec![
+                        FieldMapping::new("name", Transform::Copy {
+                            source_path: FieldPath::simple("name"),
+                            resolver: None,
+                        }),
+                        FieldMapping::new("primarycontactid", Transform::Copy {
+                            source_path: FieldPath::simple("contact_email"),
+                            resolver: Some("contact_by_email".to_string()),
+                        }),
+                    ],
+                },
+            ],
+        };
+
+        let mut source_data = HashMap::new();
+        source_data.insert("account".to_string(), vec![
+            json!({
+                "accountid": "a1b2c3d4-0000-0000-0000-000000000001",
+                "name": "Test Account",
+                "contact_email": "john@example.com"
+            }),
+        ]);
+
+        let mut target_data = HashMap::new();
+        // Contact data for resolver
+        target_data.insert("contact".to_string(), vec![
+            json!({
+                "contactid": "11111111-1111-1111-1111-111111111111",
+                "emailaddress1": "john@example.com"
+            }),
+        ]);
+
+        let mut primary_keys = HashMap::new();
+        primary_keys.insert("account".to_string(), "accountid".to_string());
+        primary_keys.insert("contact".to_string(), "contactid".to_string());
+
+        let result = TransformEngine::transform_all(&config, &source_data, &target_data, &primary_keys);
+
+        assert_eq!(result.config_name, "test-with-resolver");
+        assert_eq!(result.entities.len(), 1);
+        assert_eq!(result.create_count(), 1);
+
+        // Verify the resolved GUID
+        let account_entity = &result.entities[0];
+        let record = &account_entity.records[0];
+        let expected_guid = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        assert_eq!(record.get_field("primarycontactid"), Some(&Value::Guid(expected_guid)));
     }
 }
