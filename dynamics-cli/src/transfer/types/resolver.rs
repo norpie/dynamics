@@ -166,7 +166,21 @@ impl ResolverContext {
     ) -> Self {
         let mut ctx = Self::new();
 
+        log::info!(
+            "Building ResolverContext: {} resolvers, target_data keys: {:?}, primary_keys: {:?}",
+            resolvers.len(),
+            target_data.keys().collect::<Vec<_>>(),
+            primary_keys
+        );
+
         for resolver in resolvers {
+            log::info!(
+                "Processing resolver '{}': source_entity='{}', match_field='{}'",
+                resolver.name,
+                resolver.source_entity,
+                resolver.match_field
+            );
+
             let Some(records) = target_data.get(&resolver.source_entity) else {
                 log::warn!(
                     "Resolver '{}' references entity '{}' which has no data",
@@ -175,6 +189,35 @@ impl ResolverContext {
                 );
                 continue;
             };
+
+            log::info!(
+                "Resolver '{}': found {} records for entity '{}'",
+                resolver.name,
+                records.len(),
+                resolver.source_entity
+            );
+
+            // Log sample record keys to debug field name issues
+            if let Some(first_record) = records.first() {
+                if let Some(obj) = first_record.as_object() {
+                    let keys: Vec<_> = obj.keys().collect();
+                    log::info!(
+                        "Resolver '{}': sample record has {} keys: {:?}",
+                        resolver.name,
+                        keys.len(),
+                        keys.iter().take(10).collect::<Vec<_>>()
+                    );
+                    // Check if match_field exists
+                    if !obj.contains_key(&resolver.match_field) {
+                        log::warn!(
+                            "Resolver '{}': match_field '{}' NOT FOUND in record! Available: {:?}",
+                            resolver.name,
+                            resolver.match_field,
+                            keys
+                        );
+                    }
+                }
+            }
 
             let Some(pk_field) = primary_keys.get(&resolver.source_entity) else {
                 log::warn!(
