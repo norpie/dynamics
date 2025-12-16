@@ -178,55 +178,75 @@ impl TransformedDeadline {
 
     /// Build the JSON payload for updating an existing deadline entity
     ///
-    /// Excludes non-editable fields (name, deadline date, commission date)
+    /// NOTE: Business rules require deadline name and date to always be included
     fn build_update_payload(&self, entity_type: &str) -> Value {
         let mut payload = json!({});
         let is_cgk = entity_type == "cgk_deadline";
 
-        // Non-editable fields (used as composite key or locked)
-        let non_editable: HashSet<&str> = if is_cgk {
-            ["cgk_deadlinename", "cgk_date", "cgk_datumcommissievergadering", "cgk_name"]
+        // Fields that shouldn't be modified but some need to be included for validation
+        // Commission date is still excluded as it's truly locked
+        let excluded: HashSet<&str> = if is_cgk {
+            ["cgk_datumcommissievergadering", "cgk_name"]
                 .iter()
                 .copied()
                 .collect()
         } else {
-            ["nrq_deadlinename", "nrq_deadlinedate", "nrq_committeemeetingdate", "nrq_name"]
+            ["nrq_committeemeetingdate", "nrq_name"]
                 .iter()
                 .copied()
                 .collect()
         };
 
-        // 1. Direct fields (excluding non-editable)
+        // Always include deadline name and date (required by business rules)
+        let (name_field, date_field) = if is_cgk {
+            ("cgk_deadlinename", "cgk_date")
+        } else {
+            ("nrq_deadlinename", "nrq_deadlinedate")
+        };
+
+        if let Some(name) = self.direct_fields.get(name_field) {
+            payload[name_field] = json!(name);
+        }
+
+        if let Some(date) = self.deadline_date {
+            let datetime = if let Some(time) = self.deadline_time {
+                date.and_time(time)
+            } else {
+                date.and_hms_opt(12, 0, 0).unwrap()
+            };
+            payload[date_field] = json!(datetime.format("%Y-%m-%dT%H:%M:%SZ").to_string());
+        }
+
+        // 1. Direct fields (excluding already added and excluded)
         for (field, value) in &self.direct_fields {
-            if !non_editable.contains(field.as_str()) {
+            if field != name_field && !excluded.contains(field.as_str()) {
                 payload[field] = json!(value);
             }
         }
 
         // 2. Picklist fields
         for (field, value) in &self.picklist_fields {
-            if !non_editable.contains(field.as_str()) {
+            if !excluded.contains(field.as_str()) {
                 payload[field] = json!(value);
             }
         }
 
         // 3. Boolean fields
         for (field, value) in &self.boolean_fields {
-            if !non_editable.contains(field.as_str()) {
+            if !excluded.contains(field.as_str()) {
                 payload[field] = json!(value);
             }
         }
 
-        // 4. Lookup fields (@odata.bind format) - excluding non-editable
+        // 4. Lookup fields (@odata.bind format)
         for (field, (id, target_entity)) in &self.lookup_fields {
-            if !non_editable.contains(field.as_str()) {
+            if !excluded.contains(field.as_str()) {
                 let bind_field = format!("{}@odata.bind", field);
                 let entity_set = pluralize_entity_name(target_entity);
                 payload[bind_field] = json!(format!("/{}({})", entity_set, id));
             }
         }
 
-        // Note: Deadline date/time and commission date/time are non-editable for updates
         // N:N relationships are handled separately via Associate/Disassociate operations
 
         payload
