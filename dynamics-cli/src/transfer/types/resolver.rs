@@ -127,8 +127,6 @@ use super::value::Value;
 pub struct ResolverContext {
     /// Lookup tables: resolver_name -> (normalized_value -> guid)
     tables: HashMap<String, HashMap<String, Uuid>>,
-    /// Values that have duplicates (resolver_name -> set of normalized values)
-    duplicates: HashMap<String, HashSet<String>>,
     /// Fallback behavior for each resolver
     fallbacks: HashMap<String, ResolverFallback>,
 }
@@ -229,8 +227,7 @@ impl ResolverContext {
             };
 
             let mut table: HashMap<String, Uuid> = HashMap::new();
-            let mut duplicates: HashSet<String> = HashSet::new();
-            let mut seen: HashSet<String> = HashSet::new();
+            let mut duplicate_count = 0usize;
 
             for record in records {
                 // Get the primary key value
@@ -252,32 +249,31 @@ impl ResolverContext {
                     continue;
                 }
 
-                // Track duplicates
-                if seen.contains(&normalized) {
-                    duplicates.insert(normalized.clone());
-                    table.remove(&normalized); // Remove from table since it's ambiguous
+                // First match wins - skip if already have a value for this key
+                if table.contains_key(&normalized) {
+                    duplicate_count += 1;
                 } else {
-                    seen.insert(normalized.clone());
-                    if !duplicates.contains(&normalized) {
-                        table.insert(normalized, guid);
-                    }
+                    table.insert(normalized, guid);
                 }
             }
 
-            if !duplicates.is_empty() {
+            if duplicate_count > 0 {
                 log::warn!(
-                    "Resolver '{}' has {} duplicate values in field '{}'",
+                    "Resolver '{}' has {} duplicate values in field '{}' (using first match)",
                     resolver.name,
-                    duplicates.len(),
+                    duplicate_count,
                     resolver.match_field
                 );
             }
 
+            log::info!(
+                "Resolver '{}' built lookup table with {} unique entries",
+                resolver.name,
+                table.len()
+            );
+
             ctx.tables.insert(resolver.name.clone(), table);
             ctx.fallbacks.insert(resolver.name.clone(), resolver.fallback);
-            if !duplicates.is_empty() {
-                ctx.duplicates.insert(resolver.name.clone(), duplicates);
-            }
         }
 
         ctx
@@ -290,18 +286,11 @@ impl ResolverContext {
     /// * `value` - The value to look up
     ///
     /// # Returns
-    /// The resolution result (Found, NotFound, or Duplicate)
+    /// The resolution result (Found or NotFound)
     pub fn resolve(&self, resolver_name: &str, value: &serde_json::Value) -> ResolveResult {
         let normalized = Self::normalize_value(value);
         if normalized.is_empty() {
             return ResolveResult::NotFound;
-        }
-
-        // Check if this value is a duplicate
-        if let Some(dups) = self.duplicates.get(resolver_name) {
-            if dups.contains(&normalized) {
-                return ResolveResult::Duplicate;
-            }
         }
 
         // Look up in the table
@@ -356,13 +345,7 @@ impl ResolverContext {
                 }
                 ResolverFallback::Null => Ok(Value::Null),
             },
-            ResolveResult::Duplicate => {
-                let display_value = Self::normalize_value(value);
-                Err(format!(
-                    "Resolver '{}': multiple matches found for value '{}' (ambiguous)",
-                    resolver_name, display_value
-                ))
-            }
+            ResolveResult::Duplicate => unreachable!("Duplicates are handled by first-match-wins"),
         }
     }
 
