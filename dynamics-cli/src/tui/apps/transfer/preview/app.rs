@@ -1662,11 +1662,19 @@ async fn fetch_entity_records(
         log::info!("[{}] Query will expand: {:?}", entity_name, expands);
     }
     let query = builder.build();
+    log::info!("[{}] Executing query: {:?}", entity_name, query);
 
     let mut result = client
         .execute_query(&query)
         .await
         .map_err(|e| format!("Query failed for {}: {}", entity_name, e))?;
+
+    log::info!("[{}] Initial response: has_data={}, record_count={}, has_more={}",
+        entity_name,
+        result.data.is_some(),
+        result.data.as_ref().map(|d| d.value.len()).unwrap_or(0),
+        result.has_more()
+    );
 
     loop {
         page += 1;
