@@ -1,4 +1,4 @@
-use crate::transfer::{EntityMapping, FieldMapping};
+use crate::transfer::{EntityMapping, FieldMapping, Resolver};
 use crate::tui::{Element, widgets::TreeItem};
 use ratatui::{style::Style, text::{Line, Span}};
 
@@ -7,6 +7,7 @@ use super::state::Msg;
 /// Tree item for the mapping editor
 #[derive(Clone)]
 pub enum MappingTreeItem {
+    Resolver(ResolverNode),
     Entity(EntityNode),
     Field(FieldNode),
 }
@@ -16,6 +17,7 @@ impl TreeItem for MappingTreeItem {
 
     fn id(&self) -> String {
         match self {
+            Self::Resolver(node) => node.id(),
             Self::Entity(node) => node.id(),
             Self::Field(node) => node.id(),
         }
@@ -23,6 +25,7 @@ impl TreeItem for MappingTreeItem {
 
     fn has_children(&self) -> bool {
         match self {
+            Self::Resolver(_) => false,
             Self::Entity(node) => !node.field_mappings.is_empty(),
             Self::Field(_) => false,
         }
@@ -30,6 +33,7 @@ impl TreeItem for MappingTreeItem {
 
     fn children(&self) -> Vec<Self> {
         match self {
+            Self::Resolver(_) => vec![],
             Self::Entity(node) => node
                 .field_mappings
                 .iter()
@@ -54,9 +58,89 @@ impl TreeItem for MappingTreeItem {
         is_expanded: bool,
     ) -> Element<Self::Msg> {
         match self {
+            Self::Resolver(node) => node.to_element(depth, is_selected, is_multi_selected, is_expanded),
             Self::Entity(node) => node.to_element(depth, is_selected, is_multi_selected, is_expanded),
             Self::Field(node) => node.to_element(depth, is_selected, is_multi_selected, is_expanded),
         }
+    }
+}
+
+/// Node representing a resolver in the tree
+#[derive(Clone)]
+pub struct ResolverNode {
+    pub idx: usize,
+    pub name: String,
+    pub source_entity: String,
+    pub match_field: String,
+}
+
+impl ResolverNode {
+    pub fn from_resolver(idx: usize, resolver: &Resolver) -> Self {
+        Self {
+            idx,
+            name: resolver.name.clone(),
+            source_entity: resolver.source_entity.clone(),
+            match_field: resolver.match_field.clone(),
+        }
+    }
+
+    fn id(&self) -> String {
+        format!("resolver_{}", self.idx)
+    }
+
+    fn to_element(
+        &self,
+        depth: usize,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_expanded: bool,
+    ) -> Element<Msg> {
+        let theme = &crate::global_runtime_config().theme;
+        let indent = "  ".repeat(depth);
+
+        let mut spans = Vec::new();
+
+        if depth > 0 {
+            spans.push(Span::styled(indent, Style::default()));
+        }
+
+        // No expand indicator (resolvers have no children)
+        spans.push(Span::styled("  ", Style::default()));
+
+        // [Resolver] badge
+        spans.push(Span::styled(
+            "[Resolver] ",
+            Style::default().fg(theme.accent_warning),
+        ));
+
+        // Resolver name
+        spans.push(Span::styled(
+            self.name.clone(),
+            Style::default().fg(theme.text_primary),
+        ));
+
+        // Arrow
+        spans.push(Span::styled(" → ", Style::default().fg(theme.border_primary)));
+
+        // Source entity
+        spans.push(Span::styled(
+            self.source_entity.clone(),
+            Style::default().fg(theme.accent_secondary),
+        ));
+
+        // Match field in parentheses
+        spans.push(Span::styled(
+            format!(" ({})", self.match_field),
+            Style::default().fg(theme.text_tertiary),
+        ));
+
+        let mut builder = Element::styled_text(Line::from(spans));
+
+        if is_selected {
+            builder = builder.background(Style::default().bg(theme.bg_surface));
+        }
+
+        builder.build()
     }
 }
 
@@ -197,10 +281,17 @@ impl FieldNode {
 
 /// Build tree items from a TransferConfig
 pub fn build_tree(config: &crate::transfer::TransferConfig) -> Vec<MappingTreeItem> {
-    config
-        .entity_mappings
-        .iter()
-        .enumerate()
-        .map(|(idx, em)| MappingTreeItem::Entity(EntityNode::from_mapping(idx, em)))
-        .collect()
+    let mut items = Vec::new();
+
+    // Add resolvers first
+    for (idx, resolver) in config.resolvers.iter().enumerate() {
+        items.push(MappingTreeItem::Resolver(ResolverNode::from_resolver(idx, resolver)));
+    }
+
+    // Add entity mappings
+    for (idx, em) in config.entity_mappings.iter().enumerate() {
+        items.push(MappingTreeItem::Entity(EntityNode::from_mapping(idx, em)));
+    }
+
+    items
 }
