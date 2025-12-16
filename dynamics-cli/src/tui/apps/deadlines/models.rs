@@ -1,3 +1,6 @@
+use std::collections::{HashMap, HashSet};
+use chrono::NaiveDate;
+
 /// Parameters passed from FileSelectApp to MappingApp
 #[derive(Clone, Debug)]
 pub struct MappingParams {
@@ -6,6 +9,59 @@ pub struct MappingParams {
     /// If true, this import is specifically for Board of Directors meetings (NRQ only)
     pub board_of_directors_import: bool,
 }
+
+// ============================================================================
+// Existing Deadline Types (for edit/update support)
+// ============================================================================
+
+/// An existing deadline record fetched from Dynamics 365
+#[derive(Clone, Debug)]
+pub struct ExistingDeadline {
+    /// The GUID of the existing record
+    pub id: String,
+    /// The deadline name (cgk_deadlinename or nrq_deadlinename)
+    pub name: String,
+    /// The deadline date (date portion only, for matching)
+    pub date: NaiveDate,
+    /// All field values from the record (for diffing)
+    pub fields: HashMap<String, serde_json::Value>,
+    /// Existing N:N associations
+    pub associations: ExistingAssociations,
+}
+
+/// Existing N:N associations for a deadline
+#[derive(Clone, Debug, Default)]
+pub struct ExistingAssociations {
+    /// Support IDs (CGK: N:N, NRQ: via custom junction)
+    pub support_ids: HashSet<String>,
+    /// Category IDs
+    pub category_ids: HashSet<String>,
+    /// Length IDs (CGK only)
+    pub length_ids: HashSet<String>,
+    /// Flemish share IDs
+    pub flemishshare_ids: HashSet<String>,
+    /// Subcategory IDs (NRQ only)
+    pub subcategory_ids: HashSet<String>,
+    /// Custom junction records for NRQ deadlinesupport (includes extra fields)
+    pub custom_junction_records: Vec<ExistingJunctionRecord>,
+}
+
+/// An existing custom junction record (e.g., nrq_deadlinesupport)
+#[derive(Clone, Debug)]
+pub struct ExistingJunctionRecord {
+    /// The junction record's own GUID (for deletion)
+    pub junction_id: String,
+    /// The related entity's GUID (e.g., support ID)
+    pub related_id: String,
+    /// The related entity's name
+    pub related_name: String,
+}
+
+/// Lookup key for matching deadlines: (name, date)
+pub type DeadlineLookupKey = (String, NaiveDate);
+
+/// Lookup map from (name, date) → ExistingDeadline
+pub type DeadlineLookupMap = HashMap<DeadlineLookupKey, ExistingDeadline>;
 
 impl Default for MappingParams {
     fn default() -> Self {

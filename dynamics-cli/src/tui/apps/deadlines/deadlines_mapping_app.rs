@@ -10,7 +10,8 @@ use ratatui::style::{Style, Stylize};
 use calamine::{Reader, open_workbook, Xlsx};
 
 use super::field_mappings;
-use super::models::TransformedDeadline;
+use super::models::{TransformedDeadline, DeadlineLookupMap};
+use super::existing_deadlines::fetch_existing_deadlines;
 
 /// Extract the primary ID field from a record
 fn extract_id_from_record(record: &serde_json::Value, entity_name: &str) -> Option<String> {
@@ -1002,7 +1003,7 @@ fn start_entity_data_loading(state: &mut State, entity_type: &str) -> Command<Ms
 
     let mut builder = Command::perform_parallel();
 
-    for (index, entity_name) in cache_entities.iter().enumerate() {
+    for (_index, entity_name) in cache_entities.iter().enumerate() {
         let entity_name_clone = entity_name.clone();
 
         builder = builder.add_task(
@@ -1023,6 +1024,19 @@ fn start_entity_data_loading(state: &mut State, entity_type: &str) -> Command<Ms
                 .unwrap_or_else(|_| Err("Type mismatch in task result".to_string()));
             Msg::EntityDataLoaded(task_index, typed_result)
         })
+}
+
+/// Start fetching existing deadlines for edit/update support
+fn start_existing_deadlines_loading(state: &mut State, entity_type: &str) -> Command<Msg> {
+    state.existing_deadlines_loading = true;
+    let entity_type_owned = entity_type.to_string();
+
+    Command::perform(
+        async move {
+            fetch_existing_deadlines(&entity_type_owned).await
+        },
+        Msg::ExistingDeadlinesLoaded
+    )
 }
 
 pub struct DeadlinesMappingApp;
@@ -1085,6 +1099,9 @@ pub struct State {
     ignored_rows: Vec<(usize, String)>, // (row_number, ignore_reason)
     total_rows: usize,
     rows_with_warnings: usize,
+    // Existing deadlines for edit support
+    existing_deadlines_loading: bool,
+    existing_deadlines_lookup: Option<DeadlineLookupMap>,
 }
 
 impl State {
@@ -1109,6 +1126,8 @@ impl State {
             ignored_rows: Vec::new(),
             total_rows: 0,
             rows_with_warnings: 0,
+            existing_deadlines_loading: false,
+            existing_deadlines_lookup: None,
         }
     }
 }
@@ -1126,6 +1145,7 @@ pub enum Msg {
     EntitySelectorEvent(SelectEvent),
     StartDataLoading,
     EntityDataLoaded(usize, Result<Vec<serde_json::Value>, String>),
+    ExistingDeadlinesLoaded(Result<DeadlineLookupMap, String>),
     Back,
     Continue,
 }
@@ -1237,7 +1257,10 @@ impl App for DeadlinesMappingApp {
                     .or_else(|| state.manual_override.clone());
 
                 if let Some(entity_type) = entity_type {
-                    start_entity_data_loading(state, &entity_type)
+                    // Start both entity data loading and existing deadlines loading in parallel
+                    let entity_data_cmd = start_entity_data_loading(state, &entity_type);
+                    let existing_deadlines_cmd = start_existing_deadlines_loading(state, &entity_type);
+                    Command::batch(vec![entity_data_cmd, existing_deadlines_cmd])
                 } else {
                     Command::None
                 }
@@ -1294,6 +1317,30 @@ impl App for DeadlinesMappingApp {
                         state.warnings.clear();
                         state.warnings.push(Warning("Loading... Processing Excel file and validating data...".to_string()));
                         return process_excel_file(state);
+                    }
+                }
+
+                Command::None
+            }
+            Msg::ExistingDeadlinesLoaded(result) => {
+                state.existing_deadlines_loading = false;
+
+                match result {
+                    Ok(lookup_map) => {
+                        log::info!(
+                            "Loaded {} existing deadlines for matching",
+                            lookup_map.len()
+                        );
+                        state.existing_deadlines_lookup = Some(lookup_map);
+                    }
+                    Err(err) => {
+                        log::error!("Failed to load existing deadlines: {}", err);
+                        state.warnings.push(Warning(format!(
+                            "Failed to load existing deadlines (edit mode unavailable): {}",
+                            err
+                        )));
+                        // Continue without existing deadlines - all records will be creates
+                        state.existing_deadlines_lookup = None;
                     }
                 }
 
