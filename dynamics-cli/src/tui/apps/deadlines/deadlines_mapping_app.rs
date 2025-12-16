@@ -67,8 +67,10 @@ fn resolve_lookup(
 
 /// Sanitize field values from Excel
 /// - Replaces `: ` with ` - ` (colons cause issues in SharePoint paths)
+/// NOTE: Currently disabled
 fn sanitize_field_value(value: &str) -> String {
-    value.replace(": ", " - ")
+    value.to_string()
+    // value.replace(": ", " - ")
 }
 
 /// Parse a time value and return NaiveTime
