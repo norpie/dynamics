@@ -1840,7 +1840,10 @@ async fn fetch_entity_records(
     log::info!("[{}] 🚀 Starting data fetch...", entity_name);
     let fetch_start = std::time::Instant::now();
 
-    // Build initial query (no $top - let API return default 5000 with nextLink)
+    // Use smaller page size for more responsive progress updates
+    const PAGE_SIZE: u32 = 100;
+
+    // Build initial query with $top for smaller chunks
     // Fetch all records (active + inactive) for complete transfer coverage
     let mut builder = QueryBuilder::new(&entity_set);
     if !fields.is_empty() {
@@ -1853,6 +1856,8 @@ async fn fetch_entity_records(
         builder = builder.expand(&expand_refs);
         log::info!("[{}] Query will expand: {:?}", entity_name, expands);
     }
+    // Use smaller page size for more responsive progress
+    builder = builder.top(PAGE_SIZE);
     let query = builder.build();
     log::info!("[{}] Executing query: {:?}", entity_name, query);
 
@@ -1884,9 +1889,31 @@ async fn fetch_entity_records(
             all_records.extend(data.value.clone());
         }
 
-        // Report progress
+        // Report progress with ETA
         let progress_msg = match total_count {
-            Some(total) => format!("{}/{}", all_records.len(), total),
+            Some(total) => {
+                let fetched = all_records.len() as u64;
+                let elapsed = fetch_start.elapsed();
+
+                // Calculate ETA based on records per second
+                let eta_str = if fetched > 0 && fetched < total {
+                    let records_per_sec = fetched as f64 / elapsed.as_secs_f64();
+                    if records_per_sec > 0.0 {
+                        let remaining = total - fetched;
+                        let eta_secs = (remaining as f64 / records_per_sec) as u64;
+                        if eta_secs >= 60 {
+                            format!(" (~{}m {}s left)", eta_secs / 60, eta_secs % 60)
+                        } else {
+                            format!(" (~{}s left)", eta_secs)
+                        }
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+                format!("{}/{}{}", fetched, total, eta_str)
+            }
             None => format!("{} records", all_records.len()),
         };
         if let Some(ref tx) = progress {
