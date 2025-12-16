@@ -408,18 +408,30 @@ fn parse_date_from_iso(date_str: &str) -> Option<NaiveDate> {
     None
 }
 
-/// Build lookup map from deadlines, keyed by (name_lowercase, date)
+/// Build lookup map from deadlines, keyed by (name_lowercase, date, description)
 fn build_lookup_map(deadlines: Vec<ExistingDeadline>) -> DeadlineLookupMap {
     let mut map = DeadlineLookupMap::new();
 
     for deadline in deadlines {
-        let key: DeadlineLookupKey = (deadline.name.trim().to_lowercase(), deadline.date);
+        // Extract description from fields (try both NRQ and CGK field names)
+        let description = deadline.fields
+            .get("nrq_description")
+            .or_else(|| deadline.fields.get("cgk_info"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_lowercase());
+
+        let key: DeadlineLookupKey = (
+            deadline.name.trim().to_lowercase(),
+            deadline.date,
+            description.clone(),
+        );
 
         if map.contains_key(&key) {
             log::warn!(
-                "Duplicate deadline key found: ({}, {}). Keeping first occurrence.",
+                "Duplicate deadline key found: ({}, {}, {:?}). Keeping first occurrence.",
                 key.0,
-                key.1
+                key.1,
+                key.2.as_ref().map(|s| &s[..s.len().min(50)])
             );
         } else {
             map.insert(key, deadline);

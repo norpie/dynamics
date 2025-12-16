@@ -1331,11 +1331,16 @@ fn batch_deadline_updates(
     let mut queue_items = Vec::new();
     let is_cgk = entity_type == "cgk_deadline";
 
-    // Collect all PATCH operations separately from association operations
+    // Collect operations into three separate batches:
+    // 1. Field updates (PATCH) - priority 64
+    // 2. Deletes/Disassociates - priority 63
+    // 3. Creates/Associates - priority 62
     let mut update_ops_batch = Vec::new();
-    let mut association_ops_batch = Vec::new();
+    let mut delete_ops_batch = Vec::new();
+    let mut create_ops_batch = Vec::new();
     let mut update_batch_num = 1;
-    let mut assoc_batch_num = 1;
+    let mut delete_batch_num = 1;
+    let mut create_batch_num = 1;
 
     for record in records {
         // Skip records without existing_guid (shouldn't happen for Update mode)
@@ -1378,45 +1383,60 @@ fn batch_deadline_updates(
         // 2. Compute association diff
         let association_diff = diff_associations(record, existing_associations, entity_type);
 
-        // 3. Disassociate operations for removed N:N
+        // 3. Disassociate operations for removed N:N (delete batch)
         let disassociate_ops = build_disassociate_operations(&entity_guid, entity_type, &association_diff);
-        association_ops_batch.extend(disassociate_ops);
+        delete_ops_batch.extend(disassociate_ops);
 
-        // 4. Associate operations for added N:N
+        // 4. Associate operations for added N:N (create batch)
         let associate_ops = build_associate_operations(&entity_guid, entity_type, &association_diff);
-        association_ops_batch.extend(associate_ops);
+        create_ops_batch.extend(associate_ops);
 
         // 5. For NRQ: Handle custom junction (nrq_deadlinesupport)
         if !is_cgk {
-            // Delete removed support junctions
+            // Delete removed support junctions (delete batch)
             let delete_junction_ops = build_delete_junction_operations(
                 existing_associations,
                 &association_diff.support_to_remove,
             );
-            association_ops_batch.extend(delete_junction_ops);
+            delete_ops_batch.extend(delete_junction_ops);
 
-            // Create added support junctions
+            // Create added support junctions (create batch)
             let create_junction_ops = build_create_junction_operations(
                 &entity_guid,
                 &association_diff.support_to_add,
                 &record.custom_junction_records,
             );
-            association_ops_batch.extend(create_junction_ops);
+            create_ops_batch.extend(create_junction_ops);
         }
 
-        // Flush association batch if at limit
-        if association_ops_batch.len() >= max_per_batch {
-            let operations = Operations::from_operations(association_ops_batch.clone());
+        // Flush delete batch if at limit
+        if delete_ops_batch.len() >= max_per_batch {
+            let operations = Operations::from_operations(delete_ops_batch.clone());
             let metadata = QueueMetadata {
-                source: "Deadlines Excel (Associations)".to_string(),
+                source: "Deadlines Excel (Removals)".to_string(),
                 entity_type: entity_type.to_string(),
-                description: format!("Association batch {} ({} operations)", assoc_batch_num, association_ops_batch.len()),
+                description: format!("Delete/Disassociate batch {} ({} operations)", delete_batch_num, delete_ops_batch.len()),
                 row_number: None,
                 environment_name: environment_name.to_string(),
             };
-            queue_items.push(QueueItem::new(operations, metadata, 63)); // Slightly lower priority
-            association_ops_batch.clear();
-            assoc_batch_num += 1;
+            queue_items.push(QueueItem::new(operations, metadata, 63));
+            delete_ops_batch.clear();
+            delete_batch_num += 1;
+        }
+
+        // Flush create batch if at limit
+        if create_ops_batch.len() >= max_per_batch {
+            let operations = Operations::from_operations(create_ops_batch.clone());
+            let metadata = QueueMetadata {
+                source: "Deadlines Excel (Additions)".to_string(),
+                entity_type: entity_type.to_string(),
+                description: format!("Create/Associate batch {} ({} operations)", create_batch_num, create_ops_batch.len()),
+                row_number: None,
+                environment_name: environment_name.to_string(),
+            };
+            queue_items.push(QueueItem::new(operations, metadata, 62));
+            create_ops_batch.clear();
+            create_batch_num += 1;
         }
     }
 
@@ -1433,18 +1453,30 @@ fn batch_deadline_updates(
         queue_items.push(QueueItem::new(operations, metadata, 64));
     }
 
-    // Flush remaining association operations
-    if !association_ops_batch.is_empty() {
-        let operations = Operations::from_operations(association_ops_batch.clone());
+    // Flush remaining delete operations
+    if !delete_ops_batch.is_empty() {
+        let operations = Operations::from_operations(delete_ops_batch.clone());
         let metadata = QueueMetadata {
-            source: "Deadlines Excel (Associations)".to_string(),
+            source: "Deadlines Excel (Removals)".to_string(),
             entity_type: entity_type.to_string(),
-            description: format!("Association batch {} ({} operations)", assoc_batch_num, association_ops_batch.len()),
+            description: format!("Delete/Disassociate batch {} ({} operations)", delete_batch_num, delete_ops_batch.len()),
             row_number: None,
             environment_name: environment_name.to_string(),
         };
-        let priority = 63; // Slightly lower priority than field updates
-        queue_items.push(QueueItem::new(operations, metadata, priority));
+        queue_items.push(QueueItem::new(operations, metadata, 63));
+    }
+
+    // Flush remaining create operations
+    if !create_ops_batch.is_empty() {
+        let operations = Operations::from_operations(create_ops_batch.clone());
+        let metadata = QueueMetadata {
+            source: "Deadlines Excel (Additions)".to_string(),
+            entity_type: entity_type.to_string(),
+            description: format!("Create/Associate batch {} ({} operations)", create_batch_num, create_ops_batch.len()),
+            row_number: None,
+            environment_name: environment_name.to_string(),
+        };
+        queue_items.push(QueueItem::new(operations, metadata, 62));
     }
 
     log::info!(

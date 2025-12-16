@@ -109,18 +109,25 @@ pub fn match_deadline(
         }
     };
 
+    // Extract description from direct_fields (try various field name formats)
+    let description = transformed.direct_fields
+        .get("nrq_description")
+        .or_else(|| transformed.direct_fields.get("cgk_info"))
+        .map(|s| s.trim().to_lowercase());
+
     // Build lookup key
-    let key: DeadlineLookupKey = (name.clone(), date);
+    let key: DeadlineLookupKey = (name.clone(), date, description.clone());
 
     // Look up in map
     match lookup_map.get(&key) {
         None => {
             // No match - create new
             log::debug!(
-                "Row {}: No existing deadline found for ({}, {}), mode=Create",
+                "Row {}: No existing deadline found for ({}, {}, {:?}), mode=Create",
                 transformed.source_row,
                 name,
-                date
+                date,
+                description.as_ref().map(|s| &s[..s.len().min(50)])
             );
             MatchResult {
                 mode: DeadlineMode::Create,
