@@ -715,12 +715,13 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
                     Span::styled("📋 Association Changes", Style::default().fg(theme.accent_warning).bold())
                 ])).build(), Length(1));
 
-                // Helper to format names for display
+                // Helper to format names for display (sorted for deterministic order)
                 let format_names = |ids: &std::collections::HashSet<String>, name_map: &std::collections::HashMap<String, String>| -> String {
-                    ids.iter()
+                    let mut names: Vec<_> = ids.iter()
                         .map(|id| name_map.get(id).cloned().unwrap_or_else(|| id[..8.min(id.len())].to_string()))
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                        .collect();
+                    names.sort();
+                    names.join(", ")
                 };
 
                 // Support changes
@@ -729,16 +730,17 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
                         Span::styled("  Support:", Style::default().fg(theme.text_secondary).bold()),
                     ])).build(), Length(1));
                     if !association_diff.support_to_add.is_empty() {
-                        // For NRQ, get names from custom_junction_records
-                        let add_names: String = association_diff.support_to_add.iter()
+                        // For NRQ, get names from custom_junction_records (sorted)
+                        let mut add_names_vec: Vec<_> = association_diff.support_to_add.iter()
                             .map(|id| {
                                 record.custom_junction_records.iter()
                                     .find(|r| &r.related_id == id)
                                     .map(|r| r.related_name.clone())
                                     .unwrap_or_else(|| id[..8.min(id.len())].to_string())
                             })
-                            .collect::<Vec<_>>()
-                            .join(", ");
+                            .collect();
+                        add_names_vec.sort();
+                        let add_names = add_names_vec.join(", ");
                         builder = builder.add(Element::styled_text(Line::from(vec![
                             Span::styled("    + ", Style::default().fg(theme.accent_success)),
                             Span::styled(add_names, Style::default().fg(theme.accent_success)),
