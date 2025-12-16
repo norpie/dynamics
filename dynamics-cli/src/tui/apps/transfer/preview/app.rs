@@ -57,11 +57,12 @@ impl App for TransferPreviewApp {
                             .into_iter()
                             .collect();
 
-                        // Get unique target entities that need metadata
+                        // Get unique target entities that need metadata (including resolver source entities)
                         let target_entities: Vec<String> = config
                             .entity_mappings
                             .iter()
                             .map(|m| m.target_entity.clone())
+                            .chain(config.resolvers.iter().map(|r| r.source_entity.clone()))
                             .collect::<std::collections::HashSet<_>>()
                             .into_iter()
                             .collect();
@@ -292,8 +293,52 @@ impl App for TransferPreviewApp {
                         );
                     }
 
-                    // Track how many fetches we're waiting for (source + target for each entity)
-                    state.pending_fetches = num_entities * 2;
+                    // Add resolver source entity fetches (from target environment)
+                    // These are needed to build the resolver lookup tables
+                    let resolver_entities: Vec<String> = config
+                        .resolvers
+                        .iter()
+                        .map(|r| r.source_entity.clone())
+                        .filter(|e| !config.entity_mappings.iter().any(|m| &m.target_entity == e))
+                        .collect::<std::collections::HashSet<_>>()
+                        .into_iter()
+                        .collect();
+
+                    for resolver in &config.resolvers {
+                        // Skip if already fetched as part of entity mappings
+                        if config.entity_mappings.iter().any(|m| m.target_entity == resolver.source_entity) {
+                            continue;
+                        }
+
+                        let entity = resolver.source_entity.clone();
+                        let env = config.target_env.clone();
+                        let match_field = resolver.match_field.clone();
+
+                        // For resolver entities, we only need the primary key and match field
+                        let mut resolver_fields = vec![
+                            format!("{}id", entity),
+                            match_field,
+                        ];
+                        resolver_fields.sort();
+                        resolver_fields.dedup();
+
+                        log::info!(
+                            "[{}] Resolver entity fetch will select {} fields: {:?}",
+                            entity,
+                            resolver_fields.len(),
+                            resolver_fields
+                        );
+
+                        let no_expands: Vec<String> = vec![];
+
+                        builder = builder.add_task_with_progress(
+                            format!("Resolver: {}", entity),
+                            move |progress| fetch_entity_records(env, entity, false, resolver_fields, no_expands, Some(progress), false),
+                        );
+                    }
+
+                    // Track how many fetches we're waiting for (source + target for each entity + resolver entities)
+                    state.pending_fetches = num_entities * 2 + resolver_entities.len();
 
                     return builder
                         .on_complete(AppId::TransferPreview)
@@ -438,6 +483,10 @@ impl App for TransferPreviewApp {
                     for m in &config.entity_mappings {
                         primary_keys.insert(m.source_entity.clone(), format!("{}id", m.source_entity));
                         primary_keys.insert(m.target_entity.clone(), format!("{}id", m.target_entity));
+                    }
+                    // Also add resolver source entities
+                    for r in &config.resolvers {
+                        primary_keys.insert(r.source_entity.clone(), format!("{}id", r.source_entity));
                     }
 
                     // Run transform
@@ -1453,7 +1502,42 @@ impl App for TransferPreviewApp {
                     );
                 }
 
-                state.pending_fetches = num_entities * 2;
+                // Add resolver source entity fetches (from target environment)
+                let resolver_entities: Vec<String> = config
+                    .resolvers
+                    .iter()
+                    .map(|r| r.source_entity.clone())
+                    .filter(|e| !config.entity_mappings.iter().any(|m| &m.target_entity == e))
+                    .collect::<std::collections::HashSet<_>>()
+                    .into_iter()
+                    .collect();
+
+                for resolver in &config.resolvers {
+                    // Skip if already fetched as part of entity mappings
+                    if config.entity_mappings.iter().any(|m| m.target_entity == resolver.source_entity) {
+                        continue;
+                    }
+
+                    let entity = resolver.source_entity.clone();
+                    let env = config.target_env.clone();
+                    let match_field = resolver.match_field.clone();
+
+                    let mut resolver_fields = vec![
+                        format!("{}id", entity),
+                        match_field,
+                    ];
+                    resolver_fields.sort();
+                    resolver_fields.dedup();
+
+                    let no_expands: Vec<String> = vec![];
+
+                    builder = builder.add_task_with_progress(
+                        format!("Resolver: {}", entity),
+                        move |progress| fetch_entity_records(env, entity, false, resolver_fields, no_expands, Some(progress), true), // force refresh
+                    );
+                }
+
+                state.pending_fetches = num_entities * 2 + resolver_entities.len();
 
                 builder
                     .on_complete(AppId::TransferPreview)
