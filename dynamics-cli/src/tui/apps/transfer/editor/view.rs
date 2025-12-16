@@ -3,7 +3,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::api::FieldMetadata;
-use crate::transfer::OrphanHandling;
+use crate::transfer::{OrphanHandling, ResolverFallback};
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::modals::ConfirmationModal;
 use crate::tui::resource::Resource;
@@ -85,11 +85,37 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
         );
     }
 
+    // Resolver modal
+    if state.show_resolver_modal {
+        let target_entities = match &state.target_entities {
+            Resource::Success(e) => e.as_slice(),
+            _ => &[],
+        };
+        let match_fields = match &state.resolver_match_fields {
+            Resource::Success(f) => f.as_slice(),
+            _ => &[],
+        };
+        let fields_loading = matches!(&state.resolver_match_fields, Resource::Loading);
+
+        view = view.with_app_modal(
+            render_resolver_modal(
+                &mut state.resolver_form,
+                state.editing_resolver_idx.is_some(),
+                target_entities,
+                match_fields,
+                fields_loading,
+                theme,
+            ),
+            Alignment::Center,
+        );
+    }
+
     // Delete confirmation
     if state.show_delete_confirm {
         let message = match &state.delete_target {
             Some(DeleteTarget::Entity(_)) => "Delete this entity mapping and all its field mappings?",
             Some(DeleteTarget::Field(_, _)) => "Delete this field mapping?",
+            Some(DeleteTarget::Resolver(_)) => "Delete this resolver?",
             None => "Delete?",
         };
 
@@ -719,6 +745,108 @@ fn render_field_modal(
         .build()
 }
 
+fn render_resolver_modal(
+    form: &mut super::state::ResolverForm,
+    is_edit: bool,
+    target_entities: &[String],
+    match_fields: &[FieldMetadata],
+    fields_loading: bool,
+    theme: &Theme,
+) -> Element<Msg> {
+    let title = if is_edit { "Edit Resolver" } else { "Add Resolver" };
+
+    // Name input
+    let name_input = Element::text_input(
+        FocusId::new("resolver-name"),
+        &form.name.value,
+        &mut form.name.state,
+    )
+    .placeholder("e.g., contact_by_email")
+    .on_event(Msg::ResolverFormName)
+    .build();
+    let name_panel = Element::panel(name_input).title("Resolver Name").build();
+
+    // Source entity autocomplete (searches in target environment)
+    let entity_input = Element::autocomplete(
+        FocusId::new("resolver-entity"),
+        target_entities.to_vec(),
+        form.source_entity.value.clone(),
+        &mut form.source_entity.state,
+    )
+    .placeholder("Type to search entities...")
+    .on_event(Msg::ResolverFormSourceEntity)
+    .build();
+    let entity_panel = Element::panel(entity_input).title("Source Entity (to search in target)").build();
+
+    // Match field autocomplete (populated when entity selected)
+    let match_options: Vec<String> = match_fields.iter().map(|f| f.logical_name.clone()).collect();
+    let match_input = Element::autocomplete(
+        FocusId::new("resolver-field"),
+        match_options,
+        form.match_field.value.clone(),
+        &mut form.match_field.state,
+    )
+    .placeholder(if fields_loading { "Loading fields..." } else { "Type to search fields..." })
+    .on_event(Msg::ResolverFormMatchField)
+    .build();
+    let match_panel = Element::panel(match_input).title("Match Field").build();
+
+    // Fallback button (cycle)
+    let current_fallback = ResolverFallback::from_index(form.fallback_idx);
+    let fallback_label = format!("Fallback: {} (click to cycle)", current_fallback.label());
+    let fallback_btn = Element::button(
+        FocusId::new("resolver-fallback"),
+        &fallback_label,
+    )
+    .on_press(Msg::ResolverFormCycleFallback)
+    .build();
+
+    // Help text
+    let help_text = Element::styled_text(Line::from(vec![
+        Span::styled(
+            "Resolvers match source values to target records for lookup resolution.",
+            Style::default().fg(theme.text_tertiary),
+        ),
+    ]))
+    .build();
+
+    // Buttons
+    let cancel_btn = Element::button(FocusId::new("resolver-cancel"), "Cancel")
+        .on_press(Msg::CloseResolverModal)
+        .build();
+
+    let save_btn = if form.is_valid() {
+        Element::button(FocusId::new("resolver-save"), "Save")
+            .on_press(Msg::SaveResolver)
+            .build()
+    } else {
+        Element::button(FocusId::new("resolver-save"), "Save").build()
+    };
+
+    let button_row = RowBuilder::new()
+        .add(cancel_btn, LayoutConstraint::Length(12))
+        .add(Element::text(""), LayoutConstraint::Fill(1))
+        .add(save_btn, LayoutConstraint::Length(12))
+        .build();
+
+    let form_content = ColumnBuilder::new()
+        .add(name_panel, LayoutConstraint::Length(3))
+        .add(entity_panel, LayoutConstraint::Length(3))
+        .add(match_panel, LayoutConstraint::Length(3))
+        .add(fallback_btn, LayoutConstraint::Length(3))
+        .add(help_text, LayoutConstraint::Length(1))
+        .add(Element::text(""), LayoutConstraint::Fill(1))
+        .add(button_row, LayoutConstraint::Length(3))
+        .spacing(1)
+        .build();
+
+    Element::panel(Element::container(form_content).padding(1).build())
+        .title(title)
+        .width(60)
+        .height(26)
+        .build()
+}
+
 pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
     let mut subs = vec![];
 
@@ -747,9 +875,14 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
             }
             _ => {}
         }
+    } else if state.show_resolver_modal {
+        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseResolverModal));
+        subs.push(Subscription::keyboard(KeyCode::Enter, "Save", Msg::SaveResolver));
+        subs.push(Subscription::ctrl_key(KeyCode::Char('f'), "Cycle fallback", Msg::ResolverFormCycleFallback));
     } else {
         // Main view subscriptions
         subs.push(Subscription::keyboard(KeyCode::Char('a'), "Add entity", Msg::AddEntity));
+        subs.push(Subscription::keyboard(KeyCode::Char('r'), "Add resolver", Msg::AddResolver));
         subs.push(Subscription::keyboard(KeyCode::Esc, "Back", Msg::Back));
 
         // Context-sensitive actions based on selection
@@ -788,6 +921,19 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                                 Msg::DeleteField(entity_idx, field_idx),
                             ));
                         }
+                    }
+                } else if selected.starts_with("resolver_") {
+                    if let Some(idx) = selected.strip_prefix("resolver_").and_then(|s| s.parse::<usize>().ok()) {
+                        subs.push(Subscription::keyboard(
+                            KeyCode::Char('e'),
+                            "Edit resolver",
+                            Msg::EditResolver(idx),
+                        ));
+                        subs.push(Subscription::keyboard(
+                            KeyCode::Char('d'),
+                            "Delete resolver",
+                            Msg::DeleteResolver(idx),
+                        ));
                     }
                 }
             }

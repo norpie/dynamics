@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OrphanHandling, Transform};
+use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OrphanHandling, Transform, Resolver, ResolverFallback};
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField};
 use crate::tui::widgets::events::{TreeEvent, AutocompleteEvent, TextInputEvent};
@@ -51,6 +51,12 @@ pub struct State {
     // Related entity fields cache - keyed by lookup field name (e.g., "parentaccountid")
     pub related_fields: HashMap<String, Resource<Vec<FieldMetadata>>>,
 
+    // Resolver modal
+    pub show_resolver_modal: bool,
+    pub resolver_form: ResolverForm,
+    pub editing_resolver_idx: Option<usize>,
+    pub resolver_match_fields: Resource<Vec<FieldMetadata>>,
+
     // Delete confirmation
     pub show_delete_confirm: bool,
     pub delete_target: Option<DeleteTarget>,
@@ -75,6 +81,10 @@ impl Default for State {
             current_field_entity_idx: None,
             pending_field_modal: None,
             related_fields: HashMap::new(),
+            show_resolver_modal: false,
+            resolver_form: ResolverForm::default(),
+            editing_resolver_idx: None,
+            resolver_match_fields: Resource::NotAsked,
             show_delete_confirm: false,
             delete_target: None,
         }
@@ -85,6 +95,7 @@ impl Default for State {
 pub enum DeleteTarget {
     Entity(usize),
     Field(usize, usize),
+    Resolver(usize),
 }
 
 #[derive(Clone, Default)]
@@ -120,6 +131,41 @@ impl EntityMappingForm {
             priority: self.priority.value.trim().parse().unwrap_or(0),
             orphan_handling: OrphanHandling::from_index(self.orphan_handling_idx),
             field_mappings: vec![],
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct ResolverForm {
+    pub name: TextInputField,
+    pub source_entity: AutocompleteField,
+    pub match_field: AutocompleteField,
+    pub fallback_idx: usize,
+}
+
+impl ResolverForm {
+    pub fn is_valid(&self) -> bool {
+        !self.name.value.trim().is_empty()
+            && !self.source_entity.value.trim().is_empty()
+            && !self.match_field.value.trim().is_empty()
+    }
+
+    pub fn from_resolver(resolver: &Resolver) -> Self {
+        let mut form = Self::default();
+        form.name.value = resolver.name.clone();
+        form.source_entity.value = resolver.source_entity.clone();
+        form.match_field.value = resolver.match_field.clone();
+        form.fallback_idx = resolver.fallback.to_index();
+        form
+    }
+
+    pub fn to_resolver(&self) -> Resolver {
+        Resolver {
+            id: None,
+            name: self.name.value.trim().to_string(),
+            source_entity: self.source_entity.value.trim().to_string(),
+            match_field: self.match_field.value.trim().to_string(),
+            fallback: ResolverFallback::from_index(self.fallback_idx),
         }
     }
 }
@@ -748,6 +794,18 @@ pub enum Msg {
     // Format transform fields
     FieldFormFormatTemplate(TextInputEvent),
     FieldFormToggleNullHandling,
+
+    // Resolver modal actions
+    AddResolver,
+    EditResolver(usize),
+    DeleteResolver(usize),
+    CloseResolverModal,
+    SaveResolver,
+    ResolverFormName(TextInputEvent),
+    ResolverFormSourceEntity(AutocompleteEvent),
+    ResolverFormMatchField(AutocompleteEvent),
+    ResolverFormCycleFallback,
+    ResolverMatchFieldsLoaded(Result<Vec<FieldMetadata>, String>),
 
     // Delete confirmation
     ConfirmDelete,
