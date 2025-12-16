@@ -266,12 +266,13 @@ impl TransformEngine {
         }
 
         if let Some(target) = found_in_target {
-            // Target exists - check if fields match
-            if Self::fields_match(&fields, target, field_names) {
+            // Target exists - identify which fields differ
+            let changed_fields = Self::identify_changed_fields(&fields, target, field_names);
+            if changed_fields.is_empty() {
                 return ResolvedRecord::nochange(source_id, fields);
             } else {
-                // Target exists but fields differ → Update
-                return ResolvedRecord::update(source_id, fields);
+                // Target exists but some fields differ → Partial Update
+                return ResolvedRecord::update_partial(source_id, fields, changed_fields);
             }
         }
 
@@ -279,12 +280,15 @@ impl TransformEngine {
         ResolvedRecord::create(source_id, fields)
     }
 
-    /// Compare resolved fields against target record
-    fn fields_match(
+    /// Identify which fields differ between resolved and target record
+    /// Returns empty set if all fields match
+    fn identify_changed_fields(
         resolved: &HashMap<String, Value>,
         target: &serde_json::Value,
         field_names: &[String],
-    ) -> bool {
+    ) -> HashSet<String> {
+        let mut changed = HashSet::new();
+
         for field_name in field_names {
             let resolved_value = resolved.get(field_name);
             // Try direct field name first, then OData lookup format (_fieldname_value)
@@ -292,26 +296,29 @@ impl TransformEngine {
                 .get(field_name)
                 .or_else(|| target.get(&format!("_{}_value", field_name)));
 
-            match (resolved_value, target_value) {
+            let is_different = match (resolved_value, target_value) {
                 // Both null/missing -> match
-                (None, None) => continue,
-                (Some(Value::Null), None) => continue,
-                (None, Some(serde_json::Value::Null)) => continue,
-                (Some(Value::Null), Some(serde_json::Value::Null)) => continue,
+                (None, None) => false,
+                (Some(Value::Null), None) => false,
+                (None, Some(serde_json::Value::Null)) => false,
+                (Some(Value::Null), Some(serde_json::Value::Null)) => false,
 
-                // One exists, other doesn't -> no match
-                (None, Some(_)) => return false,
-                (Some(_), None) => return false,
+                // One exists, other doesn't -> different
+                (None, Some(_)) => true,
+                (Some(_), None) => true,
 
                 // Both exist -> compare
                 (Some(resolved_val), Some(target_val)) => {
-                    if !Self::values_equal(resolved_val, target_val) {
-                        return false;
-                    }
+                    !Self::values_equal(resolved_val, target_val)
                 }
+            };
+
+            if is_different {
+                changed.insert(field_name.clone());
             }
         }
-        true
+
+        changed
     }
 
     /// Compare a resolved Value against a JSON value
@@ -658,6 +665,57 @@ mod tests {
 
         // Should be Update because the GUID values differ
         assert!(result.is_update(), "Expected Update but got {:?}", result.action);
+    }
+
+    #[test]
+    fn test_partial_update_tracks_changed_fields() {
+        // Verify that Update records correctly track which fields changed
+        let source = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "name": "Updated Name",
+            "revenue": 1000000,
+            "description": "Same description"
+        });
+
+        let target = json!({
+            "accountid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "name": "Old Name",        // Different
+            "revenue": 500000,         // Different
+            "description": "Same description"  // Same
+        });
+
+        let mappings = vec![
+            FieldMapping::new("name", Transform::Copy {
+                source_path: FieldPath::simple("name"),
+                resolver: None,
+            }),
+            FieldMapping::new("revenue", Transform::Copy {
+                source_path: FieldPath::simple("revenue"),
+                resolver: None,
+            }),
+            FieldMapping::new("description", Transform::Copy {
+                source_path: FieldPath::simple("description"),
+                resolver: None,
+            }),
+        ];
+
+        let mut target_index = HashMap::new();
+        target_index.insert("a1b2c3d4-e5f6-7890-abcd-ef1234567890".to_string(), &target);
+        let field_names = vec!["name".to_string(), "revenue".to_string(), "description".to_string()];
+
+        let result = TransformEngine::transform_record(
+            &source, &mappings, &target_index, &field_names, &make_ctx(), &empty_resolver_ctx()
+        );
+
+        // Should be Update with only changed fields tracked
+        assert!(result.is_update());
+        assert!(result.changed_fields.is_some(), "changed_fields should be set for updates");
+
+        let changed = result.changed_fields.as_ref().unwrap();
+        assert!(changed.contains("name"), "name should be marked as changed");
+        assert!(changed.contains("revenue"), "revenue should be marked as changed");
+        assert!(!changed.contains("description"), "description should NOT be marked as changed");
+        assert_eq!(changed.len(), 2, "Only 2 fields should be marked as changed");
     }
 
     // Resolver integration tests

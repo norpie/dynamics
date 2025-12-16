@@ -260,6 +260,11 @@ pub struct ResolvedRecord {
     pub source_id: Uuid,
     /// Resolved field values
     pub fields: HashMap<String, Value>,
+    /// Fields that differ from target (for Update action - enables partial updates)
+    /// When Some, only these fields are sent in the update payload
+    /// When None, all fields are sent (backwards compatible)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changed_fields: Option<HashSet<String>>,
     /// Error message if transform failed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -272,16 +277,35 @@ impl ResolvedRecord {
             action: RecordAction::Create,
             source_id,
             fields,
+            changed_fields: None,
             error: None,
         }
     }
 
     /// Create a new record to be updated in target (exists but differs)
+    /// Sends all fields in the update payload
     pub fn update(source_id: Uuid, fields: HashMap<String, Value>) -> Self {
         ResolvedRecord {
             action: RecordAction::Update,
             source_id,
             fields,
+            changed_fields: None,
+            error: None,
+        }
+    }
+
+    /// Create a new record to be updated with only specific changed fields
+    /// Only the changed fields will be sent in the update payload (partial update)
+    pub fn update_partial(
+        source_id: Uuid,
+        fields: HashMap<String, Value>,
+        changed_fields: HashSet<String>,
+    ) -> Self {
+        ResolvedRecord {
+            action: RecordAction::Update,
+            source_id,
+            fields,
+            changed_fields: Some(changed_fields),
             error: None,
         }
     }
@@ -292,6 +316,7 @@ impl ResolvedRecord {
             action: RecordAction::Error,
             source_id,
             fields: HashMap::new(),
+            changed_fields: None,
             error: Some(error.into()),
         }
     }
@@ -306,6 +331,7 @@ impl ResolvedRecord {
             action: RecordAction::Error,
             source_id,
             fields,
+            changed_fields: None,
             error: Some(error.into()),
         }
     }
@@ -316,6 +342,7 @@ impl ResolvedRecord {
             action: RecordAction::Skip,
             source_id,
             fields,
+            changed_fields: None,
             error: None,
         }
     }
@@ -326,6 +353,7 @@ impl ResolvedRecord {
             action: RecordAction::NoChange,
             source_id,
             fields,
+            changed_fields: None,
             error: None,
         }
     }
@@ -336,6 +364,7 @@ impl ResolvedRecord {
             action: RecordAction::TargetOnly,
             source_id: target_id, // Using source_id field to store target ID
             fields,
+            changed_fields: None,
             error: None,
         }
     }

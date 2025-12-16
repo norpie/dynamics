@@ -16,6 +16,10 @@ const DEFAULT_BATCH_SIZE: usize = 50;
 ///
 /// Converts lookup fields to @odata.bind format when lookup context is available.
 /// Non-lookup fields pass through unchanged.
+///
+/// For Update operations with `changed_fields` set, only the changed fields are
+/// included in the payload (partial update). This reduces payload size and avoids
+/// unnecessary writes to unchanged fields.
 fn prepare_payload(
     record: &ResolvedRecord,
     lookup_ctx: Option<&LookupBindingContext>,
@@ -23,6 +27,13 @@ fn prepare_payload(
     let mut obj = serde_json::Map::new();
 
     for (field_name, value) in &record.fields {
+        // For partial updates, skip fields that haven't changed
+        if let Some(ref changed) = record.changed_fields {
+            if !changed.contains(field_name) {
+                continue;
+            }
+        }
+
         // Check if this is a lookup field that needs @odata.bind
         if let Some(ctx) = lookup_ctx {
             if let Some(binding_info) = ctx.get(field_name) {
@@ -391,7 +402,7 @@ fn build_target_only_queue_items(
 mod tests {
     use super::*;
     use crate::transfer::{ResolvedRecord, Value};
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use uuid::Uuid;
 
     fn make_test_transfer() -> ResolvedTransfer {
@@ -449,12 +460,12 @@ mod tests {
 
         let items = build_queue_items(&transfer, &options);
 
-        // accounts (priority 1): creates=3, updates=4
-        // contacts (priority 2): creates=5
-        // Formula: BASE(1) + entity.priority * 2 + phase_offset
-        assert_eq!(items[0].priority, 3); // accounts create
-        assert_eq!(items[1].priority, 4); // accounts update
-        assert_eq!(items[2].priority, 5); // contacts create
+        // accounts (priority 1): creates, updates
+        // contacts (priority 2): creates
+        // Formula: BASE(1) + entity.priority * 3 + phase_offset (0=target-only, 1=create, 2=update)
+        assert_eq!(items[0].priority, 5); // accounts create: 1 + 1*3 + 1 = 5
+        assert_eq!(items[1].priority, 6); // accounts update: 1 + 1*3 + 2 = 6
+        assert_eq!(items[2].priority, 8); // contacts create: 1 + 2*3 + 1 = 8
     }
 
     #[test]
@@ -571,5 +582,72 @@ mod tests {
         // Priorities should be ascending
         assert!(items[0].priority < items[1].priority);
         assert!(items[1].priority < items[2].priority);
+    }
+
+    #[test]
+    fn test_partial_update_only_includes_changed_fields() {
+        // Test that update_partial records only include changed fields in payload
+        let id = Uuid::new_v4();
+        let fields = HashMap::from([
+            ("name".to_string(), Value::String("Updated Name".to_string())),
+            ("revenue".to_string(), Value::Int(1000000)),
+            ("description".to_string(), Value::String("Same description".to_string())),
+        ]);
+        // Only name and revenue changed, not description
+        let changed = HashSet::from(["name".to_string(), "revenue".to_string()]);
+
+        let record = ResolvedRecord::update_partial(id, fields, changed);
+
+        // Build payload
+        let payload = prepare_payload(&record, None);
+        let obj = payload.as_object().unwrap();
+
+        // Should only contain changed fields
+        assert_eq!(obj.len(), 2);
+        assert!(obj.contains_key("name"));
+        assert!(obj.contains_key("revenue"));
+        assert!(!obj.contains_key("description")); // Not changed, excluded
+    }
+
+    #[test]
+    fn test_full_update_includes_all_fields() {
+        // Test that regular update (no changed_fields) includes all fields
+        let id = Uuid::new_v4();
+        let fields = HashMap::from([
+            ("name".to_string(), Value::String("Updated Name".to_string())),
+            ("revenue".to_string(), Value::Int(1000000)),
+            ("description".to_string(), Value::String("Description".to_string())),
+        ]);
+
+        let record = ResolvedRecord::update(id, fields);
+
+        // Build payload
+        let payload = prepare_payload(&record, None);
+        let obj = payload.as_object().unwrap();
+
+        // Should contain all fields
+        assert_eq!(obj.len(), 3);
+        assert!(obj.contains_key("name"));
+        assert!(obj.contains_key("revenue"));
+        assert!(obj.contains_key("description"));
+    }
+
+    #[test]
+    fn test_create_includes_all_fields() {
+        // Test that create records include all fields (changed_fields is None)
+        let id = Uuid::new_v4();
+        let fields = HashMap::from([
+            ("name".to_string(), Value::String("New Record".to_string())),
+            ("revenue".to_string(), Value::Int(500000)),
+        ]);
+
+        let record = ResolvedRecord::create(id, fields);
+
+        let payload = prepare_payload(&record, None);
+        let obj = payload.as_object().unwrap();
+
+        assert_eq!(obj.len(), 2);
+        assert!(obj.contains_key("name"));
+        assert!(obj.contains_key("revenue"));
     }
 }
