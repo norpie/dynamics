@@ -72,23 +72,60 @@ impl ExpandTree {
     ///
     /// Each string is a complete expand clause for a root-level lookup,
     /// e.g., `accountid($select=name;$expand=parentcustomerid($select=name))`
-    pub fn build_expand_clauses(&self) -> Vec<String> {
+    ///
+    /// # Arguments
+    /// * `nav_prop_map` - Optional map from logical name to navigation property name (schema name)
+    ///   Used to convert lookup field names to proper OData navigation property names.
+    ///   If None or if a field is not in the map, the logical name is used as-is.
+    /// * `lookup_fields` - Optional set of field names that are lookup fields across all related entities.
+    ///   When selecting these fields, they need to be prefixed with `_` and suffixed with `_value`.
+    pub fn build_expand_clauses(
+        &self,
+        nav_prop_map: Option<&std::collections::HashMap<String, String>>,
+        lookup_fields: Option<&std::collections::HashSet<String>>,
+    ) -> Vec<String> {
         self.nodes
             .iter()
-            .map(|(field, node)| Self::build_node_string(field, node))
+            .map(|(field, node)| {
+                let nav_prop_name = nav_prop_map
+                    .and_then(|m| m.get(field))
+                    .map(|s| s.as_str())
+                    .unwrap_or(field);
+                Self::build_node_string(nav_prop_name, field, node, nav_prop_map, lookup_fields)
+            })
             .collect()
     }
 
     /// Build the expand string for a single node
-    fn build_node_string(field: &str, node: &ExpandNode) -> String {
+    ///
+    /// # Arguments
+    /// * `nav_prop_name` - The navigation property name to use in the output (may be schema-cased)
+    /// * `logical_name` - The logical name of the field (used for intermediate selects)
+    /// * `node` - The expand node
+    /// * `nav_prop_map` - Optional map for converting child field names
+    /// * `lookup_fields` - Optional set of lookup field names that need _value format
+    fn build_node_string(
+        nav_prop_name: &str,
+        logical_name: &str,
+        node: &ExpandNode,
+        nav_prop_map: Option<&std::collections::HashMap<String, String>>,
+        lookup_fields: Option<&std::collections::HashSet<String>>,
+    ) -> String {
         let mut parts = Vec::new();
 
         // Build select fields, converting lookup fields to OData _value format
-        // A field that's also in children is a lookup (navigation property) - use _fieldname_value
+        // A field needs _value format if:
+        // 1. It's also being expanded (in children), OR
+        // 2. It's in the lookup_fields set (known to be a lookup on a related entity)
         let select_fields: Vec<String> = node.selects.iter()
             .map(|s| {
-                if node.children.contains_key(s) {
-                    // This field is also being expanded - it's a lookup, use _value format for the GUID
+                let is_expanded = node.children.contains_key(s);
+                let is_known_lookup = lookup_fields
+                    .map(|lf| lf.contains(s))
+                    .unwrap_or(false);
+
+                if is_expanded || is_known_lookup {
+                    // This field is a lookup - use _value format for the GUID
                     format!("_{}_value", s)
                 } else {
                     s.clone()
@@ -96,14 +133,13 @@ impl ExpandTree {
             })
             .collect();
 
-        // Add $select for leaf fields OR use the field name as PK to minimize intermediate level data
+        // Add $select for leaf fields OR use the logical name to minimize intermediate level data
         if !select_fields.is_empty() {
             let fields: Vec<&str> = select_fields.iter().map(|s| s.as_str()).collect();
             parts.push(format!("$select={}", fields.join(",")));
         } else if !node.children.is_empty() {
-            // Intermediate node with no direct selects - add $select={field} to minimize returned fields
-            // The field name (navigation property) usually matches the target entity's primary key
-            parts.push(format!("$select={}", field));
+            // Intermediate node with no direct selects - add $select={logical_name} to minimize returned fields
+            parts.push(format!("$select={}", logical_name));
         }
 
         // Add nested $expand if there are children
@@ -111,15 +147,21 @@ impl ExpandTree {
             let nested: Vec<String> = node
                 .children
                 .iter()
-                .map(|(child_field, child_node)| Self::build_node_string(child_field, child_node))
+                .map(|(child_field, child_node)| {
+                    let child_nav_prop = nav_prop_map
+                        .and_then(|m| m.get(child_field))
+                        .map(|s| s.as_str())
+                        .unwrap_or(child_field);
+                    Self::build_node_string(child_nav_prop, child_field, child_node, nav_prop_map, lookup_fields)
+                })
                 .collect();
             parts.push(format!("$expand={}", nested.join(",")));
         }
 
         if parts.is_empty() {
-            field.to_string()
+            nav_prop_name.to_string()
         } else {
-            format!("{}({})", field, parts.join(";"))
+            format!("{}({})", nav_prop_name, parts.join(";"))
         }
     }
 
@@ -145,7 +187,7 @@ mod tests {
         let mut tree = ExpandTree::new();
         tree.add_path(&FieldPath::parse("name").unwrap());
         assert!(tree.is_empty());
-        assert!(tree.build_expand_clauses().is_empty());
+        assert!(tree.build_expand_clauses(None, None).is_empty());
     }
 
     #[test]
@@ -153,7 +195,7 @@ mod tests {
         let mut tree = ExpandTree::new();
         tree.add_path(&FieldPath::parse("accountid.name").unwrap());
 
-        let clauses = tree.build_expand_clauses();
+        let clauses = tree.build_expand_clauses(None, None);
         assert_eq!(clauses.len(), 1);
         assert_eq!(clauses[0], "accountid($select=name)");
     }
@@ -164,7 +206,7 @@ mod tests {
         tree.add_path(&FieldPath::parse("accountid.name").unwrap());
         tree.add_path(&FieldPath::parse("accountid.revenue").unwrap());
 
-        let clauses = tree.build_expand_clauses();
+        let clauses = tree.build_expand_clauses(None, None);
         assert_eq!(clauses.len(), 1);
         assert_eq!(clauses[0], "accountid($select=name,revenue)");
     }
@@ -174,7 +216,7 @@ mod tests {
         let mut tree = ExpandTree::new();
         tree.add_path(&FieldPath::parse("userid.contactid.emailaddress1").unwrap());
 
-        let clauses = tree.build_expand_clauses();
+        let clauses = tree.build_expand_clauses(None, None);
         assert_eq!(clauses.len(), 1);
         // Intermediate level gets $select={field} to minimize data returned
         assert_eq!(
@@ -190,7 +232,7 @@ mod tests {
             &FieldPath::parse("userid.contactid.parentcustomerid_account.name").unwrap(),
         );
 
-        let clauses = tree.build_expand_clauses();
+        let clauses = tree.build_expand_clauses(None, None);
         assert_eq!(clauses.len(), 1);
         // All intermediate levels get $select={field} to minimize data
         assert_eq!(
@@ -207,7 +249,7 @@ mod tests {
         // Direct field from same root lookup
         tree.add_path(&FieldPath::parse("userid.fullname").unwrap());
 
-        let clauses = tree.build_expand_clauses();
+        let clauses = tree.build_expand_clauses(None, None);
         assert_eq!(clauses.len(), 1);
         // Should have both select and expand
         assert_eq!(
@@ -222,7 +264,7 @@ mod tests {
         tree.add_path(&FieldPath::parse("accountid.name").unwrap());
         tree.add_path(&FieldPath::parse("ownerid.fullname").unwrap());
 
-        let clauses = tree.build_expand_clauses();
+        let clauses = tree.build_expand_clauses(None, None);
         assert_eq!(clauses.len(), 2);
         // BTreeMap ensures consistent order
         assert_eq!(clauses[0], "accountid($select=name)");
@@ -239,7 +281,7 @@ mod tests {
         // Different root lookup
         tree.add_path(&FieldPath::parse("accountid.name").unwrap());
 
-        let clauses = tree.build_expand_clauses();
+        let clauses = tree.build_expand_clauses(None, None);
         assert_eq!(clauses.len(), 2);
         assert_eq!(clauses[0], "accountid($select=name)");
         // contactid is NOT in selects, only in children, so no _value conversion needed
@@ -257,12 +299,89 @@ mod tests {
         // Path 2: wants to traverse into projectmanagerid (adds to children)
         tree.add_path(&FieldPath::parse("deadlineid.projectmanagerid.email").unwrap());
 
-        let clauses = tree.build_expand_clauses();
+        let clauses = tree.build_expand_clauses(None, None);
         assert_eq!(clauses.len(), 1);
         // projectmanagerid is both selected AND expanded, so select uses _value format
         assert_eq!(
             clauses[0],
             "deadlineid($select=_projectmanagerid_value;$expand=projectmanagerid($select=email))"
         );
+    }
+
+    #[test]
+    fn test_nav_prop_map_converts_names() {
+        use std::collections::HashMap;
+
+        let mut tree = ExpandTree::new();
+        tree.add_path(&FieldPath::parse("nrq_deadlineid.nrq_typeid").unwrap());
+
+        // Without nav prop map - uses logical names
+        let clauses = tree.build_expand_clauses(None, None);
+        assert_eq!(clauses[0], "nrq_deadlineid($select=nrq_typeid)");
+
+        // With nav prop map - converts to schema names
+        let mut nav_prop_map = HashMap::new();
+        nav_prop_map.insert("nrq_deadlineid".to_string(), "nrq_DeadlineId".to_string());
+
+        let clauses = tree.build_expand_clauses(Some(&nav_prop_map), None);
+        assert_eq!(clauses[0], "nrq_DeadlineId($select=nrq_typeid)");
+    }
+
+    #[test]
+    fn test_nav_prop_map_nested() {
+        use std::collections::HashMap;
+
+        let mut tree = ExpandTree::new();
+        tree.add_path(&FieldPath::parse("userid.contactid.email").unwrap());
+
+        let mut nav_prop_map = HashMap::new();
+        nav_prop_map.insert("userid".to_string(), "UserId".to_string());
+        nav_prop_map.insert("contactid".to_string(), "ContactId".to_string());
+
+        let clauses = tree.build_expand_clauses(Some(&nav_prop_map), None);
+        // Both navigation properties should be converted
+        assert_eq!(
+            clauses[0],
+            "UserId($select=userid;$expand=ContactId($select=email))"
+        );
+    }
+
+    #[test]
+    fn test_lookup_fields_converts_to_value_format() {
+        use std::collections::HashSet;
+
+        let mut tree = ExpandTree::new();
+        // nrq_typeid is a lookup field on the related entity
+        tree.add_path(&FieldPath::parse("nrq_deadlineid.nrq_typeid").unwrap());
+
+        // Without lookup_fields - uses field name as-is
+        let clauses = tree.build_expand_clauses(None, None);
+        assert_eq!(clauses[0], "nrq_deadlineid($select=nrq_typeid)");
+
+        // With lookup_fields - converts to _value format
+        let mut lookup_fields = HashSet::new();
+        lookup_fields.insert("nrq_typeid".to_string());
+
+        let clauses = tree.build_expand_clauses(None, Some(&lookup_fields));
+        assert_eq!(clauses[0], "nrq_deadlineid($select=_nrq_typeid_value)");
+    }
+
+    #[test]
+    fn test_both_nav_prop_and_lookup_fields() {
+        use std::collections::HashMap;
+        use std::collections::HashSet;
+
+        let mut tree = ExpandTree::new();
+        tree.add_path(&FieldPath::parse("nrq_deadlineid.nrq_typeid").unwrap());
+
+        let mut nav_prop_map = HashMap::new();
+        nav_prop_map.insert("nrq_deadlineid".to_string(), "nrq_DeadlineId".to_string());
+
+        let mut lookup_fields = HashSet::new();
+        lookup_fields.insert("nrq_typeid".to_string());
+
+        let clauses = tree.build_expand_clauses(Some(&nav_prop_map), Some(&lookup_fields));
+        // Navigation property should be schema-cased, and lookup field should use _value format
+        assert_eq!(clauses[0], "nrq_DeadlineId($select=_nrq_typeid_value)");
     }
 }

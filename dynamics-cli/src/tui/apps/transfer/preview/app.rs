@@ -142,8 +142,8 @@ impl App for TransferPreviewApp {
 
                         // Check if BOTH source and target metadata are loaded
                         if state.pending_source_metadata_fetches == 0 && state.pending_target_metadata_fetches == 0 {
-                            log::info!("All metadata loaded, triggering record fetch");
-                            return Command::perform(async { () }, |_| Msg::FetchRecords);
+                            // Trigger related metadata check via message (to avoid nested parallel commands)
+                            return Command::perform(async { () }, |_| Msg::FetchRelatedMetadata);
                         }
                     }
                     Err(e) => {
@@ -173,8 +173,8 @@ impl App for TransferPreviewApp {
 
                         // Check if BOTH source and target metadata are loaded
                         if state.pending_source_metadata_fetches == 0 && state.pending_target_metadata_fetches == 0 {
-                            log::info!("All metadata loaded, triggering record fetch");
-                            return Command::perform(async { () }, |_| Msg::FetchRecords);
+                            // Trigger related metadata check via message (to avoid nested parallel commands)
+                            return Command::perform(async { () }, |_| Msg::FetchRelatedMetadata);
                         }
                     }
                     Err(e) => {
@@ -185,6 +185,46 @@ impl App for TransferPreviewApp {
                     }
                 }
                 Command::None
+
+            }
+
+            // Data loading - Step 1d: Related entity metadata loaded (for lookup traversals)
+            Msg::RelatedMetadataResult(result) => {
+                match result {
+                    Ok((entity_name, fields)) => {
+                        log::info!(
+                            "[{}] Related entity metadata loaded: {} fields ({} lookups)",
+                            entity_name,
+                            fields.len(),
+                            fields.iter().filter(|f| f.related_entity.is_some()).count()
+                        );
+                        // Store in source_metadata since it's used for source query building
+                        state.source_metadata.insert(entity_name, fields);
+                        state.pending_related_metadata_fetches = state.pending_related_metadata_fetches.saturating_sub(1);
+
+                        // Check if all related metadata is loaded
+                        if state.pending_related_metadata_fetches == 0 {
+                            log::info!("All related metadata loaded, triggering record fetch");
+                            return Command::perform(async { () }, |_| Msg::FetchRecords);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to fetch related entity metadata: {}", e);
+                        state.resolved = Resource::Failure(e);
+                        state.pending_related_metadata_fetches = 0;
+                    }
+                }
+                Command::None
+            }
+
+            // Data loading - Step 1e: Trigger related metadata fetch after source/target metadata loaded
+            Msg::FetchRelatedMetadata => {
+                if let Some(cmd) = check_and_fetch_related_metadata(state) {
+                    log::info!("Related metadata fetch triggered");
+                    return cmd;
+                }
+                log::info!("No related metadata needed, triggering record fetch");
+                Command::perform(async { () }, |_| Msg::FetchRecords)
             }
 
             // Data loading - Step 2: Fetch records (after both source and target metadata are loaded)
@@ -235,26 +275,58 @@ impl App for TransferPreviewApp {
                             }
                         }
 
-                        // Add _fieldname_value for lookup fields (from source metadata)
-                        if let Some(fields) = state.source_metadata.get(&mapping.source_entity) {
+                        // Add _fieldname_value for lookup fields and build nav prop map (from source metadata)
+                        let (nav_prop_map, all_lookup_fields): (
+                            Option<std::collections::HashMap<String, String>>,
+                            Option<std::collections::HashSet<String>>,
+                        ) = if let Some(fields) = state.source_metadata.get(&mapping.source_entity) {
                             let lookup_fields: std::collections::HashSet<&str> = fields
                                 .iter()
                                 .filter(|f| f.related_entity.is_some())
                                 .map(|f| f.logical_name.as_str())
                                 .collect();
 
-                            let lookup_value_fields: Vec<String> = source_fields
-                                .iter()
-                                .filter(|f| lookup_fields.contains(f.as_str()))
-                                .map(|f| format!("_{}_value", f))
+                            // Replace lookup fields with _value format (don't keep both)
+                            source_fields = source_fields
+                                .into_iter()
+                                .map(|f| {
+                                    if lookup_fields.contains(f.as_str()) {
+                                        format!("_{}_value", f)
+                                    } else {
+                                        f
+                                    }
+                                })
                                 .collect();
-                            source_fields.extend(lookup_value_fields);
-                        }
+
+                            // Build nav prop map: logical_name -> schema_name for lookups
+                            let map: std::collections::HashMap<String, String> = fields
+                                .iter()
+                                .filter(|f| f.related_entity.is_some() && f.schema_name.is_some())
+                                .map(|f| (f.logical_name.clone(), f.schema_name.clone().unwrap()))
+                                .collect();
+
+                            // Build lookup_fields set from ALL source_metadata (including related entities)
+                            // This is used to convert nested lookup fields to _value format
+                            let all_lookups: std::collections::HashSet<String> = state
+                                .source_metadata
+                                .values()
+                                .flat_map(|fields| fields.iter())
+                                .filter(|f| f.related_entity.is_some())
+                                .map(|f| f.logical_name.clone())
+                                .collect();
+
+                            (
+                                if map.is_empty() { None } else { Some(map) },
+                                if all_lookups.is_empty() { None } else { Some(all_lookups) },
+                            )
+                        } else {
+                            (None, None)
+                        };
 
                         source_fields.sort();
                         source_fields.dedup();
 
-                        let expands = expand_tree.build_expand_clauses();
+                        let expands = expand_tree.build_expand_clauses(nav_prop_map.as_ref(), all_lookup_fields.as_ref());
 
                         log::info!(
                             "[{}] Source fetch will select {} fields, expand {} lookups",
@@ -1578,26 +1650,57 @@ impl App for TransferPreviewApp {
                         }
                     }
 
-                    // Add _fieldname_value for lookup fields (from source metadata)
-                    if let Some(fields) = state.source_metadata.get(&mapping.source_entity) {
+                    // Add _fieldname_value for lookup fields and build nav prop map (from source metadata)
+                    let (nav_prop_map, all_lookup_fields): (
+                        Option<std::collections::HashMap<String, String>>,
+                        Option<std::collections::HashSet<String>>,
+                    ) = if let Some(fields) = state.source_metadata.get(&mapping.source_entity) {
                         let lookup_fields: std::collections::HashSet<&str> = fields
                             .iter()
                             .filter(|f| f.related_entity.is_some())
                             .map(|f| f.logical_name.as_str())
                             .collect();
 
-                        let lookup_value_fields: Vec<String> = source_fields
-                            .iter()
-                            .filter(|f| lookup_fields.contains(f.as_str()))
-                            .map(|f| format!("_{}_value", f))
+                        // Replace lookup fields with _value format (don't keep both)
+                        source_fields = source_fields
+                            .into_iter()
+                            .map(|f| {
+                                if lookup_fields.contains(f.as_str()) {
+                                    format!("_{}_value", f)
+                                } else {
+                                    f
+                                }
+                            })
                             .collect();
-                        source_fields.extend(lookup_value_fields);
-                    }
+
+                        // Build nav prop map: logical_name -> schema_name for lookups
+                        let map: std::collections::HashMap<String, String> = fields
+                            .iter()
+                            .filter(|f| f.related_entity.is_some() && f.schema_name.is_some())
+                            .map(|f| (f.logical_name.clone(), f.schema_name.clone().unwrap()))
+                            .collect();
+
+                        // Build lookup_fields set from ALL source_metadata (including related entities)
+                        let all_lookups: std::collections::HashSet<String> = state
+                            .source_metadata
+                            .values()
+                            .flat_map(|fields| fields.iter())
+                            .filter(|f| f.related_entity.is_some())
+                            .map(|f| f.logical_name.clone())
+                            .collect();
+
+                        (
+                            if map.is_empty() { None } else { Some(map) },
+                            if all_lookups.is_empty() { None } else { Some(all_lookups) },
+                        )
+                    } else {
+                        (None, None)
+                    };
 
                     source_fields.sort();
                     source_fields.dedup();
 
-                    let expands = expand_tree.build_expand_clauses();
+                    let expands = expand_tree.build_expand_clauses(nav_prop_map.as_ref(), all_lookup_fields.as_ref());
 
                     builder = builder.add_task_with_progress(
                         format!("Source: {}", entity),
@@ -2194,6 +2297,96 @@ fn build_queue_items_from_resolved(resolved: &ResolvedTransfer) -> Vec<crate::tu
 
     let options = QueueBuildOptions::default();
     build_queue_items(resolved, &options)
+}
+
+/// Check if we need to fetch related entity metadata for lookup traversals
+/// Returns Some(Command) if fetches are needed, None otherwise
+fn check_and_fetch_related_metadata(state: &mut State) -> Option<Command<Msg>> {
+    let config = state.config.as_ref()?;
+
+    // Collect all related entities needed for lookup traversals
+    let mut needed_entities: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for mapping in &config.entity_mappings {
+        // Get source entity metadata
+        let source_fields = state.source_metadata.get(&mapping.source_entity)?;
+
+        // Build a map of lookup field -> related entity
+        let lookup_map: std::collections::HashMap<&str, &str> = source_fields
+            .iter()
+            .filter_map(|f| {
+                f.related_entity.as_ref().map(|re| (f.logical_name.as_str(), re.as_str()))
+            })
+            .collect();
+
+        // Check all transforms for lookup traversals
+        for fm in &mapping.field_mappings {
+            for path in fm.transform.lookup_paths() {
+                let segments = path.segments();
+                if segments.len() > 1 {
+                    // First segment is the lookup field on the source entity
+                    let lookup_field = &segments[0];
+                    if let Some(related_entity) = lookup_map.get(lookup_field.as_str()) {
+                        // Check if we already have metadata for this related entity
+                        if !state.source_metadata.contains_key(*related_entity) {
+                            needed_entities.insert((*related_entity).to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also check resolver match_fields
+        for resolver in &mapping.resolvers {
+            for mf in &resolver.match_fields {
+                if mf.source_path.is_lookup_traversal() {
+                    let segments = mf.source_path.segments();
+                    if segments.len() > 1 {
+                        let lookup_field = &segments[0];
+                        if let Some(related_entity) = lookup_map.get(lookup_field.as_str()) {
+                            if !state.source_metadata.contains_key(*related_entity) {
+                                needed_entities.insert((*related_entity).to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if needed_entities.is_empty() {
+        return None;
+    }
+
+    log::info!(
+        "Fetching metadata for {} related entities: {:?}",
+        needed_entities.len(),
+        needed_entities
+    );
+
+    state.pending_related_metadata_fetches = needed_entities.len();
+
+    let source_env = config.source_env.clone();
+    let mut builder = Command::perform_parallel()
+        .with_title("Fetching Related Entity Metadata");
+
+    for entity in needed_entities {
+        let env = source_env.clone();
+        let e = entity.clone();
+        builder = builder.add_task(
+            format!("Related: {}", e),
+            fetch_source_metadata(env, e),
+        );
+    }
+
+    Some(builder
+        .on_complete(AppId::TransferPreview)
+        .build(|_task_idx, result| {
+            let data = result
+                .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>), String>>()
+                .unwrap();
+            Msg::RelatedMetadataResult(*data)
+        }))
 }
 
 /// Fetch source entity field metadata for lookup detection
