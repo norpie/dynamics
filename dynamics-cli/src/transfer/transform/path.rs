@@ -18,27 +18,48 @@ pub fn resolve_path(record: &serde_json::Value, path: &FieldPath) -> Value {
     // Navigate through the path
     let mut current = record;
     for (i, segment) in segments.iter().enumerate() {
-        match current.get(segment.as_str()) {
-            Some(val) => current = val,
-            None => {
-                // Try OData lookup value format: _fieldname_value
-                // This handles lookup fields at any nesting level (e.g., cgk_deadlineid.cgk_projectmanagerid)
-                let value_field = format!("_{}_value", segment);
-                if let Some(val) = current.get(&value_field) {
-                    // If this is the final segment, return the value
-                    if i == segments.len() - 1 {
-                        return Value::from_json(val);
-                    }
-                    // Otherwise continue navigating (though _value fields are terminal, so this is unlikely)
-                    current = val;
-                } else {
-                    return Value::Null;
-                }
-            }
+        // Try exact match first
+        if let Some(val) = current.get(segment.as_str()) {
+            current = val;
+            continue;
         }
+
+        // Try schema-cased navigation property name (e.g., nrq_deadlineid -> nrq_DeadlineId)
+        // OData expand uses schema names which have different casing
+        if let Some(val) = find_case_insensitive(current, segment) {
+            current = val;
+            continue;
+        }
+
+        // Try OData lookup value format: _fieldname_value
+        // This handles lookup fields at any nesting level (e.g., cgk_deadlineid.cgk_projectmanagerid)
+        let value_field = format!("_{}_value", segment);
+        if let Some(val) = current.get(&value_field) {
+            // If this is the final segment, return the value
+            if i == segments.len() - 1 {
+                return Value::from_json(val);
+            }
+            // Otherwise continue navigating (though _value fields are terminal, so this is unlikely)
+            current = val;
+            continue;
+        }
+
+        return Value::Null;
     }
 
     Value::from_json(current)
+}
+
+/// Find a key in a JSON object using case-insensitive matching
+fn find_case_insensitive<'a>(obj: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
+    let obj = obj.as_object()?;
+    let key_lower = key.to_lowercase();
+    for (k, v) in obj.iter() {
+        if k.to_lowercase() == key_lower {
+            return Some(v);
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -207,6 +228,35 @@ mod tests {
 
         // Regular field in expanded entity should still work
         let path = FieldPath::parse("cgk_deadlineid.cgk_name").unwrap();
+        let value = resolve_path(&record, &path);
+        assert_eq!(value, Value::String("Test Deadline".into()));
+    }
+
+    #[test]
+    fn test_resolve_schema_cased_navigation_property() {
+        use uuid::Uuid;
+
+        // OData $expand returns navigation properties with schema casing (e.g., nrq_DeadlineId)
+        // but users write paths with logical names (e.g., nrq_deadlineid)
+        let record = json!({
+            "_nrq_deadlineid_value": "f5c89a81-dab3-f011-bbd2-000d3a44517e",
+            "nrq_DeadlineId": {
+                "_nrq_typeid_value": "c49cb12c-7481-ef11-ac21-000d3a39e654",
+                "nrq_name": "Test Deadline"
+            },
+            "nrq_requestid": "f9454c2d-e6b3-f011-bbd2-000d3a44517e"
+        });
+
+        // User writes path with logical name, data has schema-cased key
+        let path = FieldPath::parse("nrq_deadlineid.nrq_typeid").unwrap();
+        let value = resolve_path(&record, &path);
+        assert_eq!(
+            value,
+            Value::Guid(Uuid::parse_str("c49cb12c-7481-ef11-ac21-000d3a39e654").unwrap())
+        );
+
+        // Regular field in schema-cased expanded entity
+        let path = FieldPath::parse("nrq_deadlineid.nrq_name").unwrap();
         let value = resolve_path(&record, &path);
         assert_eq!(value, Value::String("Test Deadline".into()));
     }
