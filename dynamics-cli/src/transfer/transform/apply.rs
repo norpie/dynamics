@@ -148,8 +148,19 @@ pub fn apply_transform(
             match source_value {
                 Value::String(s) => {
                     let mut result = s;
-                    for (pattern, replacement) in replacements {
-                        result = result.replace(pattern, replacement);
+                    for r in replacements {
+                        if r.is_regex {
+                            match regex::Regex::new(&r.pattern) {
+                                Ok(re) => {
+                                    result = re.replace_all(&result, r.replacement.as_str()).into_owned();
+                                }
+                                Err(e) => {
+                                    return Err(format!("Invalid regex pattern '{}': {}", r.pattern, e));
+                                }
+                            }
+                        } else {
+                            result = result.replace(&r.pattern, &r.replacement);
+                        }
                     }
                     Ok(Value::String(result))
                 }
@@ -358,10 +369,11 @@ mod tests {
 
     #[test]
     fn test_apply_replace_single() {
+        use crate::transfer::Replacement;
         let record = json!({"name": "Hello World"});
         let transform = Transform::Replace {
             source_path: FieldPath::simple("name"),
-            replacements: vec![("World".to_string(), "Universe".to_string())],
+            replacements: vec![Replacement::literal("World", "Universe")],
         };
         let result = apply_transform(&transform, &record, None).unwrap();
         assert_eq!(result, Value::String("Hello Universe".into()));
@@ -369,12 +381,13 @@ mod tests {
 
     #[test]
     fn test_apply_replace_multiple_in_order() {
+        use crate::transfer::Replacement;
         let record = json!({"name": "foo bar baz"});
         let transform = Transform::Replace {
             source_path: FieldPath::simple("name"),
             replacements: vec![
-                ("foo".to_string(), "bar".to_string()),  // "bar bar baz"
-                ("bar".to_string(), "qux".to_string()),  // "qux qux baz"
+                Replacement::literal("foo", "bar"),  // "bar bar baz"
+                Replacement::literal("bar", "qux"),  // "qux qux baz"
             ],
         };
         let result = apply_transform(&transform, &record, None).unwrap();
@@ -383,10 +396,11 @@ mod tests {
 
     #[test]
     fn test_apply_replace_null() {
+        use crate::transfer::Replacement;
         let record = json!({"name": null});
         let transform = Transform::Replace {
             source_path: FieldPath::simple("name"),
-            replacements: vec![("a".to_string(), "b".to_string())],
+            replacements: vec![Replacement::literal("a", "b")],
         };
         let result = apply_transform(&transform, &record, None).unwrap();
         assert_eq!(result, Value::Null);
@@ -394,12 +408,65 @@ mod tests {
 
     #[test]
     fn test_apply_replace_non_string_error() {
+        use crate::transfer::Replacement;
         let record = json!({"count": 42});
         let transform = Transform::Replace {
             source_path: FieldPath::simple("count"),
-            replacements: vec![("a".to_string(), "b".to_string())],
+            replacements: vec![Replacement::literal("a", "b")],
         };
         let result = apply_transform(&transform, &record, None);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_apply_replace_regex() {
+        use crate::transfer::Replacement;
+        let record = json!({"name": "Hello123World456"});
+        let transform = Transform::Replace {
+            source_path: FieldPath::simple("name"),
+            replacements: vec![Replacement::regex(r"\d+", "_")],
+        };
+        let result = apply_transform(&transform, &record, None).unwrap();
+        assert_eq!(result, Value::String("Hello_World_".into()));
+    }
+
+    #[test]
+    fn test_apply_replace_regex_capture_groups() {
+        use crate::transfer::Replacement;
+        let record = json!({"name": "John Smith"});
+        let transform = Transform::Replace {
+            source_path: FieldPath::simple("name"),
+            replacements: vec![Replacement::regex(r"(\w+) (\w+)", "$2, $1")],
+        };
+        let result = apply_transform(&transform, &record, None).unwrap();
+        assert_eq!(result, Value::String("Smith, John".into()));
+    }
+
+    #[test]
+    fn test_apply_replace_invalid_regex() {
+        use crate::transfer::Replacement;
+        let record = json!({"name": "test"});
+        let transform = Transform::Replace {
+            source_path: FieldPath::simple("name"),
+            replacements: vec![Replacement::regex(r"[invalid", "x")],
+        };
+        let result = apply_transform(&transform, &record, None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid regex pattern"));
+    }
+
+    #[test]
+    fn test_apply_replace_mixed_literal_and_regex() {
+        use crate::transfer::Replacement;
+        let record = json!({"name": "Hello123 World456"});
+        let transform = Transform::Replace {
+            source_path: FieldPath::simple("name"),
+            replacements: vec![
+                Replacement::literal("Hello", "Hi"),
+                Replacement::regex(r"\d+", ""),
+            ],
+        };
+        let result = apply_transform(&transform, &record, None).unwrap();
+        assert_eq!(result, Value::String("Hi World".into()));
     }
 }

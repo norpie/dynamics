@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OperationFilter, Transform, Resolver, ResolverFallback};
+use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OperationFilter, Transform, Replacement, Resolver, ResolverFallback};
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField};
 use crate::tui::widgets::events::{TreeEvent, AutocompleteEvent, TextInputEvent};
@@ -393,6 +393,7 @@ pub struct ValueMapEntry {
 pub struct ReplaceEntry {
     pub pattern: TextInputField,
     pub replacement: TextInputField,
+    pub is_regex: bool,
 }
 
 #[derive(Clone, Default, PartialEq, Copy)]
@@ -849,10 +850,11 @@ impl FieldMappingForm {
             Transform::Replace { source_path, replacements } => {
                 form.transform_type = TransformType::Replace;
                 form.replace_source.value = source_path.to_string();
-                form.replace_entries = replacements.iter().map(|(p, r)| {
+                form.replace_entries = replacements.iter().map(|r| {
                     ReplaceEntry {
-                        pattern: TextInputField { value: p.clone(), ..Default::default() },
-                        replacement: TextInputField { value: r.clone(), ..Default::default() },
+                        pattern: TextInputField { value: r.pattern.clone(), ..Default::default() },
+                        replacement: TextInputField { value: r.replacement.clone(), ..Default::default() },
+                        is_regex: r.is_regex,
                     }
                 }).collect();
             }
@@ -925,9 +927,13 @@ impl FieldMappingForm {
             }
             TransformType::Replace => {
                 let source_path = FieldPath::parse(self.replace_source.value.trim()).ok()?;
-                let replacements: Vec<(String, String)> = self.replace_entries.iter()
+                let replacements: Vec<Replacement> = self.replace_entries.iter()
                     .filter(|e| !e.pattern.value.trim().is_empty())
-                    .map(|e| (e.pattern.value.trim().to_string(), e.replacement.value.trim().to_string()))
+                    .map(|e| Replacement::new(
+                        e.pattern.value.trim(),
+                        e.replacement.value.trim(),
+                        e.is_regex,
+                    ))
                     .collect();
                 Transform::Replace { source_path, replacements }
             }
@@ -1049,6 +1055,7 @@ pub enum Msg {
     FieldFormRemoveReplace(usize),
     FieldFormReplacePattern(usize, TextInputEvent),
     FieldFormReplaceReplacement(usize, TextInputEvent),
+    FieldFormToggleReplaceRegex(usize),
 
     // Resolver modal actions
     /// AddResolver(entity_idx)

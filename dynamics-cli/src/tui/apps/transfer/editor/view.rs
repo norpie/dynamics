@@ -789,7 +789,7 @@ fn render_field_modal(
                     &entry.pattern.value,
                     &mut entry.pattern.state,
                 )
-                .placeholder("Pattern")
+                .placeholder(if entry.is_regex { "Regex pattern" } else { "Pattern" })
                 .on_event(|e| Msg::FieldFormReplacePattern(0, e))
                 .build();
 
@@ -802,6 +802,13 @@ fn render_field_modal(
                 .on_event(|e| Msg::FieldFormReplaceReplacement(0, e))
                 .build();
 
+                let regex_btn = Element::button(
+                    FocusId::new("replace-regex-0"),
+                    if entry.is_regex { ".*" } else { "Aa" }
+                )
+                .on_press(Msg::FieldFormToggleReplaceRegex(0))
+                .build();
+
                 let del_btn = Element::button(FocusId::new("replace-del-0"), "×")
                     .on_press(Msg::FieldFormRemoveReplace(0))
                     .build();
@@ -810,6 +817,7 @@ fn render_field_modal(
                     .add(pattern_input, LayoutConstraint::Fill(1))
                     .add(Element::text(" → "), LayoutConstraint::Length(4))
                     .add(replacement_input, LayoutConstraint::Fill(1))
+                    .add(regex_btn, LayoutConstraint::Length(5))
                     .add(del_btn, LayoutConstraint::Length(5))
                     .build();
                 entries_col = entries_col.add(entry_row, LayoutConstraint::Length(3));
@@ -823,7 +831,7 @@ fn render_field_modal(
                     &entry.pattern.value,
                     &mut entry.pattern.state,
                 )
-                .placeholder("Pattern")
+                .placeholder(if entry.is_regex { "Regex pattern" } else { "Pattern" })
                 .on_event(|e| Msg::FieldFormReplacePattern(1, e))
                 .build();
 
@@ -836,6 +844,13 @@ fn render_field_modal(
                 .on_event(|e| Msg::FieldFormReplaceReplacement(1, e))
                 .build();
 
+                let regex_btn = Element::button(
+                    FocusId::new("replace-regex-1"),
+                    if entry.is_regex { ".*" } else { "Aa" }
+                )
+                .on_press(Msg::FieldFormToggleReplaceRegex(1))
+                .build();
+
                 let del_btn = Element::button(FocusId::new("replace-del-1"), "×")
                     .on_press(Msg::FieldFormRemoveReplace(1))
                     .build();
@@ -844,6 +859,7 @@ fn render_field_modal(
                     .add(pattern_input, LayoutConstraint::Fill(1))
                     .add(Element::text(" → "), LayoutConstraint::Length(4))
                     .add(replacement_input, LayoutConstraint::Fill(1))
+                    .add(regex_btn, LayoutConstraint::Length(5))
                     .add(del_btn, LayoutConstraint::Length(5))
                     .build();
                 entries_col = entries_col.add(entry_row, LayoutConstraint::Length(3));
@@ -857,7 +873,7 @@ fn render_field_modal(
                     &entry.pattern.value,
                     &mut entry.pattern.state,
                 )
-                .placeholder("Pattern")
+                .placeholder(if entry.is_regex { "Regex pattern" } else { "Pattern" })
                 .on_event(|e| Msg::FieldFormReplacePattern(2, e))
                 .build();
 
@@ -870,6 +886,13 @@ fn render_field_modal(
                 .on_event(|e| Msg::FieldFormReplaceReplacement(2, e))
                 .build();
 
+                let regex_btn = Element::button(
+                    FocusId::new("replace-regex-2"),
+                    if entry.is_regex { ".*" } else { "Aa" }
+                )
+                .on_press(Msg::FieldFormToggleReplaceRegex(2))
+                .build();
+
                 let del_btn = Element::button(FocusId::new("replace-del-2"), "×")
                     .on_press(Msg::FieldFormRemoveReplace(2))
                     .build();
@@ -878,6 +901,7 @@ fn render_field_modal(
                     .add(pattern_input, LayoutConstraint::Fill(1))
                     .add(Element::text(" → "), LayoutConstraint::Length(4))
                     .add(replacement_input, LayoutConstraint::Fill(1))
+                    .add(regex_btn, LayoutConstraint::Length(5))
                     .add(del_btn, LayoutConstraint::Length(5))
                     .build();
                 entries_col = entries_col.add(entry_row, LayoutConstraint::Length(3));
@@ -891,7 +915,7 @@ fn render_field_modal(
                     &entry.pattern.value,
                     &mut entry.pattern.state,
                 )
-                .placeholder("Pattern")
+                .placeholder(if entry.is_regex { "Regex pattern" } else { "Pattern" })
                 .on_event(|e| Msg::FieldFormReplacePattern(3, e))
                 .build();
 
@@ -904,6 +928,13 @@ fn render_field_modal(
                 .on_event(|e| Msg::FieldFormReplaceReplacement(3, e))
                 .build();
 
+                let regex_btn = Element::button(
+                    FocusId::new("replace-regex-3"),
+                    if entry.is_regex { ".*" } else { "Aa" }
+                )
+                .on_press(Msg::FieldFormToggleReplaceRegex(3))
+                .build();
+
                 let del_btn = Element::button(FocusId::new("replace-del-3"), "×")
                     .on_press(Msg::FieldFormRemoveReplace(3))
                     .build();
@@ -912,6 +943,7 @@ fn render_field_modal(
                     .add(pattern_input, LayoutConstraint::Fill(1))
                     .add(Element::text(" → "), LayoutConstraint::Length(4))
                     .add(replacement_input, LayoutConstraint::Fill(1))
+                    .add(regex_btn, LayoutConstraint::Length(5))
                     .add(del_btn, LayoutConstraint::Length(5))
                     .build();
                 entries_col = entries_col.add(entry_row, LayoutConstraint::Length(3));

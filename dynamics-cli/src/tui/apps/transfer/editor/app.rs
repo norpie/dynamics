@@ -606,6 +606,13 @@ impl App for MappingEditorApp {
                 Command::None
             }
 
+            Msg::FieldFormToggleReplaceRegex(idx) => {
+                if let Some(entry) = state.field_form.replace_entries.get_mut(idx) {
+                    entry.is_regex = !entry.is_regex;
+                }
+                Command::None
+            }
+
             // Resolver modal
             Msg::AddResolver(entity_idx) => {
                 if let Resource::Success(config) = &state.config {

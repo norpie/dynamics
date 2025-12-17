@@ -1,6 +1,6 @@
 //! Transform definitions for field mappings
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::Value;
 use crate::transfer::transform::format::{FormatTemplate, NullHandling};
@@ -56,9 +56,87 @@ pub enum Transform {
     Replace {
         /// Source field to transform
         source_path: FieldPath,
-        /// Replacement pairs (pattern, replacement) applied in order
-        replacements: Vec<(String, String)>,
+        /// Replacement operations applied in order
+        replacements: Vec<Replacement>,
     },
+}
+
+/// A single replacement operation (pattern → replacement, optionally regex)
+#[derive(Debug, Clone, PartialEq)]
+pub struct Replacement {
+    pub pattern: String,
+    pub replacement: String,
+    pub is_regex: bool,
+}
+
+impl Replacement {
+    pub fn new(pattern: impl Into<String>, replacement: impl Into<String>, is_regex: bool) -> Self {
+        Self {
+            pattern: pattern.into(),
+            replacement: replacement.into(),
+            is_regex,
+        }
+    }
+
+    pub fn literal(pattern: impl Into<String>, replacement: impl Into<String>) -> Self {
+        Self::new(pattern, replacement, false)
+    }
+
+    pub fn regex(pattern: impl Into<String>, replacement: impl Into<String>) -> Self {
+        Self::new(pattern, replacement, true)
+    }
+}
+
+// Custom serialization: always serialize as 3-tuple
+impl Serialize for Replacement {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (&self.pattern, &self.replacement, self.is_regex).serialize(serializer)
+    }
+}
+
+// Custom deserialization: handle both 2-tuple (old) and 3-tuple (new) formats
+impl<'de> Deserialize<'de> for Replacement {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::{self, SeqAccess, Visitor};
+
+        struct ReplacementVisitor;
+
+        impl<'de> Visitor<'de> for ReplacementVisitor {
+            type Value = Replacement;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a tuple of 2 or 3 elements: (pattern, replacement) or (pattern, replacement, is_regex)")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let pattern: String = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let replacement: String = seq
+                    .next_element()?
+                    .ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                // Third element is optional, defaults to false for backwards compatibility
+                let is_regex: bool = seq.next_element()?.unwrap_or(false);
+
+                Ok(Replacement {
+                    pattern,
+                    replacement,
+                    is_regex,
+                })
+            }
+        }
+
+        deserializer.deserialize_seq(ReplacementVisitor)
+    }
 }
 
 impl Transform {
