@@ -54,10 +54,17 @@ pub struct State {
     // Resolver modal
     pub show_resolver_modal: bool,
     pub resolver_form: ResolverForm,
+    /// Which entity mapping this resolver belongs to
+    pub editing_resolver_for_entity: Option<usize>,
+    /// Index within that entity's resolvers (None = adding new)
     pub editing_resolver_idx: Option<usize>,
     pub resolver_match_fields: Resource<Vec<FieldMetadata>>,
     /// Tracks which entity the resolver_match_fields were loaded for
     pub resolver_match_fields_entity: Option<String>,
+    /// Source fields for resolver source_path autocomplete
+    pub resolver_source_fields: Resource<Vec<FieldMetadata>>,
+    /// Related fields for nested lookup traversal in resolver source_path
+    pub resolver_related_fields: HashMap<String, Resource<Vec<FieldMetadata>>>,
 
     // Delete confirmation
     pub show_delete_confirm: bool,
@@ -85,9 +92,12 @@ impl Default for State {
             related_fields: HashMap::new(),
             show_resolver_modal: false,
             resolver_form: ResolverForm::default(),
+            editing_resolver_for_entity: None,
             editing_resolver_idx: None,
             resolver_match_fields: Resource::NotAsked,
             resolver_match_fields_entity: None,
+            resolver_source_fields: Resource::NotAsked,
+            resolver_related_fields: HashMap::new(),
             show_delete_confirm: false,
             delete_target: None,
         }
@@ -98,7 +108,8 @@ impl Default for State {
 pub enum DeleteTarget {
     Entity(usize),
     Field(usize, usize),
-    Resolver(usize),
+    /// (entity_idx, resolver_idx)
+    Resolver(usize, usize),
 }
 
 #[derive(Clone)]
@@ -158,6 +169,7 @@ impl EntityMappingForm {
                 deletes: self.allow_deletes,
                 deactivates: self.allow_deactivates,
             },
+            resolvers: vec![],
             field_mappings: vec![],
         }
     }
@@ -166,8 +178,8 @@ impl EntityMappingForm {
 /// A single match field row in the resolver form
 #[derive(Clone, Default)]
 pub struct MatchFieldRow {
-    /// Source path - where to get value from source record (optional for single-field resolvers)
-    pub source_path: TextInputField,
+    /// Source path - where to get value from source record (e.g., cgk_userid.cgk_email)
+    pub source_path: AutocompleteField,
     /// Field to match against in target entity
     pub target_field: AutocompleteField,
 }
@@ -965,9 +977,12 @@ pub enum Msg {
     FieldFormToggleNullHandling,
 
     // Resolver modal actions
-    AddResolver,
-    EditResolver(usize),
-    DeleteResolver(usize),
+    /// AddResolver(entity_idx)
+    AddResolver(usize),
+    /// EditResolver(entity_idx, resolver_idx)
+    EditResolver(usize, usize),
+    /// DeleteResolver(entity_idx, resolver_idx)
+    DeleteResolver(usize, usize),
     CloseResolverModal,
     SaveResolver,
     ResolverFormName(TextInputEvent),
@@ -975,11 +990,18 @@ pub enum Msg {
     ResolverFormCycleFallback,
     ResolverFormDefaultGuid(TextInputEvent),
     ResolverMatchFieldsLoaded(Result<Vec<FieldMetadata>, String>),
+    /// Source fields for resolver source_path autocomplete
+    ResolverSourceFieldsLoaded(Result<Vec<FieldMetadata>, String>),
     // Match field row operations
     ResolverAddMatchFieldRow,
     ResolverRemoveMatchFieldRow,
     ResolverMatchField(usize, AutocompleteEvent),
-    ResolverSourcePath(usize, TextInputEvent),
+    ResolverSourcePath(usize, AutocompleteEvent),
+    /// Related fields loaded for resolver source_path nested lookup
+    ResolverRelatedFieldsLoaded {
+        lookup_field: String,
+        result: Result<Vec<FieldMetadata>, String>,
+    },
 
     // Delete confirmation
     ConfirmDelete,

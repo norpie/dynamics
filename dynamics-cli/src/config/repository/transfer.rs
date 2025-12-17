@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use sqlx::{Row, SqlitePool};
 
 use crate::transfer::{
-    EntityMapping, FieldMapping, FieldPath, MatchField, OperationFilter, Resolver, ResolverFallback,
+    EntityMapping, FieldMapping, MatchField, OperationFilter, Resolver, ResolverFallback,
     Transform, TransferConfig,
 };
 
@@ -124,62 +124,57 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
             deactivates: entity_row.try_get::<i64, _>("allow_deactivates")? != 0,
         };
 
+        // Get resolvers for this entity mapping
+        let resolver_rows = sqlx::query(
+            r#"
+            SELECT id, name, source_entity, match_fields_json, fallback
+            FROM transfer_resolvers
+            WHERE entity_mapping_id = ?
+            ORDER BY name
+            "#,
+        )
+        .bind(entity_id)
+        .fetch_all(pool)
+        .await
+        .context("Failed to get resolvers")?;
+
+        let mut resolvers = Vec::new();
+        for row in resolver_rows {
+            let fallback_str: String = row.try_get("fallback")?;
+            let fallback_lower = fallback_str.to_lowercase();
+            let fallback = if fallback_lower == "null" {
+                ResolverFallback::Null
+            } else if let Some(guid_str) = fallback_lower.strip_prefix("default:") {
+                match uuid::Uuid::parse_str(guid_str) {
+                    Ok(guid) => ResolverFallback::Default(guid),
+                    Err(_) => ResolverFallback::Error, // Invalid GUID, fall back to Error
+                }
+            } else {
+                ResolverFallback::Error
+            };
+
+            // Parse match_fields_json
+            let match_fields_json: String = row.try_get("match_fields_json")?;
+            let match_fields = serde_json::from_str::<Vec<MatchField>>(&match_fields_json)
+                .unwrap_or_default();
+
+            resolvers.push(Resolver {
+                id: Some(row.try_get("id")?),
+                name: row.try_get("name")?,
+                source_entity: row.try_get("source_entity")?,
+                match_fields,
+                fallback,
+            });
+        }
+
         entity_mappings.push(EntityMapping {
             id: Some(entity_id),
             source_entity: entity_row.try_get("source_entity")?,
             target_entity: entity_row.try_get("target_entity")?,
             priority: entity_row.try_get::<i64, _>("priority")? as u32,
             operation_filter,
+            resolvers,
             field_mappings,
-        });
-    }
-
-    // Get resolvers
-    let resolver_rows = sqlx::query(
-        r#"
-        SELECT id, name, source_entity, match_field, fallback
-        FROM transfer_resolvers
-        WHERE config_id = ?
-        ORDER BY name
-        "#,
-    )
-    .bind(config_id)
-    .fetch_all(pool)
-    .await
-    .context("Failed to get resolvers")?;
-
-    let mut resolvers = Vec::new();
-    for row in resolver_rows {
-        let fallback_str: String = row.try_get("fallback")?;
-        let fallback_lower = fallback_str.to_lowercase();
-        let fallback = if fallback_lower == "null" {
-            ResolverFallback::Null
-        } else if let Some(guid_str) = fallback_lower.strip_prefix("default:") {
-            match uuid::Uuid::parse_str(guid_str) {
-                Ok(guid) => ResolverFallback::Default(guid),
-                Err(_) => ResolverFallback::Error, // Invalid GUID, fall back to Error
-            }
-        } else {
-            ResolverFallback::Error
-        };
-
-        // Parse match_field - could be JSON array (new format) or plain string (legacy)
-        let match_field_raw: String = row.try_get("match_field")?;
-        let match_fields = if match_field_raw.starts_with('[') {
-            // New JSON format: [{"source_path": {...}, "target_field": "..."}]
-            serde_json::from_str::<Vec<MatchField>>(&match_field_raw)
-                .unwrap_or_else(|_| vec![MatchField::simple(&match_field_raw)])
-        } else {
-            // Legacy single-field format: "emailaddress1"
-            vec![MatchField::simple(&match_field_raw)]
-        };
-
-        resolvers.push(Resolver {
-            id: Some(row.try_get("id")?),
-            name: row.try_get("name")?,
-            source_entity: row.try_get("source_entity")?,
-            match_fields,
-            fallback,
         });
     }
 
@@ -188,7 +183,6 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
         name: config_row.try_get("name")?,
         source_env: config_row.try_get("source_env")?,
         target_env: config_row.try_get("target_env")?,
-        resolvers,
         entity_mappings,
     }))
 }
@@ -216,19 +210,12 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
         .await
         .context("Failed to update transfer config")?;
 
-        // Delete existing entity mappings (cascade will delete field mappings)
+        // Delete existing entity mappings (cascade will delete field mappings and resolvers)
         sqlx::query("DELETE FROM transfer_entity_mappings WHERE config_id = ?")
             .bind(id)
             .execute(&mut *tx)
             .await
             .context("Failed to delete old entity mappings")?;
-
-        // Delete existing resolvers
-        sqlx::query("DELETE FROM transfer_resolvers WHERE config_id = ?")
-            .bind(id)
-            .execute(&mut *tx)
-            .await
-            .context("Failed to delete old resolvers")?;
 
         id
     } else {
@@ -292,34 +279,34 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
             .await
             .context("Failed to insert field mapping")?;
         }
-    }
 
-    // Insert resolvers
-    for resolver in &config.resolvers {
-        let fallback_str = match &resolver.fallback {
-            ResolverFallback::Error => "error".to_string(),
-            ResolverFallback::Null => "null".to_string(),
-            ResolverFallback::Default(guid) => format!("default:{}", guid),
-        };
+        // Insert resolvers for this entity mapping
+        for resolver in &entity.resolvers {
+            let fallback_str = match &resolver.fallback {
+                ResolverFallback::Error => "error".to_string(),
+                ResolverFallback::Null => "null".to_string(),
+                ResolverFallback::Default(guid) => format!("default:{}", guid),
+            };
 
-        // Serialize match_fields as JSON
-        let match_fields_json = serde_json::to_string(&resolver.match_fields)
-            .unwrap_or_else(|_| "[]".to_string());
+            // Serialize match_fields as JSON
+            let match_fields_json = serde_json::to_string(&resolver.match_fields)
+                .unwrap_or_else(|_| "[]".to_string());
 
-        sqlx::query(
-            r#"
-            INSERT INTO transfer_resolvers (config_id, name, source_entity, match_field, fallback)
-            VALUES (?, ?, ?, ?, ?)
-            "#,
-        )
-        .bind(config_id)
-        .bind(&resolver.name)
-        .bind(&resolver.source_entity)
-        .bind(&match_fields_json)
-        .bind(&fallback_str)
-        .execute(&mut *tx)
-        .await
-        .context("Failed to insert resolver")?;
+            sqlx::query(
+                r#"
+                INSERT INTO transfer_resolvers (entity_mapping_id, name, source_entity, match_fields_json, fallback)
+                VALUES (?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(entity_id)
+            .bind(&resolver.name)
+            .bind(&resolver.source_entity)
+            .bind(&match_fields_json)
+            .bind(&fallback_str)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to insert resolver")?;
+        }
     }
 
     tx.commit().await.context("Failed to commit transaction")?;

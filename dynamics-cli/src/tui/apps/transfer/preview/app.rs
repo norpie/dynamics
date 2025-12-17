@@ -62,7 +62,7 @@ impl App for TransferPreviewApp {
                             .entity_mappings
                             .iter()
                             .map(|m| m.target_entity.clone())
-                            .chain(config.resolvers.iter().map(|r| r.source_entity.clone()))
+                            .chain(config.entity_mappings.iter().flat_map(|m| m.resolvers.iter().map(|r| r.source_entity.clone())))
                             .collect::<std::collections::HashSet<_>>()
                             .into_iter()
                             .collect();
@@ -210,14 +210,26 @@ impl App for TransferPreviewApp {
                             .collect();
                         source_fields.push(format!("{}id", entity)); // Primary key
 
+                        // Build expand tree for nested lookup traversals
+                        let mut expand_tree = ExpandTree::new();
+                        for fm in &mapping.field_mappings {
+                            expand_tree.add_transform(&fm.transform);
+                        }
+
                         // Add resolver source_path fields for compound key resolution
+                        // If source_path is a lookup traversal (e.g., cgk_userid.cgk_email), add to expand tree
+                        // Otherwise add the base field to source_fields
                         for fm in &mapping.field_mappings {
                             if let Some(resolver_name) = fm.transform.resolver_name() {
-                                if let Some(resolver) = config.resolvers.iter().find(|r| r.name == resolver_name) {
+                                if let Some(resolver) = mapping.resolvers.iter().find(|r| r.name == resolver_name) {
                                     for mf in &resolver.match_fields {
-                                        // Add the source_path field (first segment for simple paths)
-                                        let source_field = mf.source_path.base_field();
-                                        source_fields.push(source_field.to_string());
+                                        if mf.source_path.is_lookup_traversal() {
+                                            // Add to expand tree - the nested field will be fetched via $expand
+                                            expand_tree.add_path(&mf.source_path);
+                                        } else {
+                                            // Simple field - add to select
+                                            source_fields.push(mf.source_path.base_field().to_string());
+                                        }
                                     }
                                 }
                             }
@@ -242,11 +254,6 @@ impl App for TransferPreviewApp {
                         source_fields.sort();
                         source_fields.dedup();
 
-                        // Build expand tree for nested lookup traversals
-                        let mut expand_tree = ExpandTree::new();
-                        for fm in &mapping.field_mappings {
-                            expand_tree.add_transform(&fm.transform);
-                        }
                         let expands = expand_tree.build_expand_clauses();
 
                         log::info!(
@@ -315,32 +322,42 @@ impl App for TransferPreviewApp {
 
                     // Add resolver source entity fetches (from target environment)
                     // These are needed to build the resolver lookup tables
+                    // Collect unique resolver source entities across all entity mappings
                     let resolver_entities: Vec<String> = config
-                        .resolvers
+                        .entity_mappings
                         .iter()
-                        .map(|r| r.source_entity.clone())
+                        .flat_map(|m| m.resolvers.iter().map(|r| r.source_entity.clone()))
                         .filter(|e| !config.entity_mappings.iter().any(|m| &m.target_entity == e))
                         .collect::<std::collections::HashSet<_>>()
                         .into_iter()
                         .collect();
 
-                    for resolver in &config.resolvers {
-                        // Skip if already fetched as part of entity mappings
-                        if config.entity_mappings.iter().any(|m| m.target_entity == resolver.source_entity) {
-                            continue;
-                        }
+                    // Build a map of resolver entity -> fields needed (aggregated from all resolvers using that entity)
+                    let mut resolver_entity_fields: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+                    for mapping in &config.entity_mappings {
+                        for resolver in &mapping.resolvers {
+                            // Skip if already fetched as part of entity mappings
+                            if config.entity_mappings.iter().any(|m| m.target_entity == resolver.source_entity) {
+                                continue;
+                            }
 
-                        let entity = resolver.source_entity.clone();
+                            let entry = resolver_entity_fields
+                                .entry(resolver.source_entity.clone())
+                                .or_insert_with(|| vec![format!("{}id", resolver.source_entity)]);
+
+                            for mf in &resolver.match_fields {
+                                if !entry.contains(&mf.target_field) {
+                                    entry.push(mf.target_field.clone());
+                                }
+                            }
+                        }
+                    }
+
+                    for (entity, mut resolver_fields) in resolver_entity_fields {
                         let env = config.target_env.clone();
 
-                        // For resolver entities, we need the primary key and all match fields
-                        let mut resolver_fields = vec![format!("{}id", entity)];
-                        for mf in &resolver.match_fields {
-                            resolver_fields.push(mf.target_field.clone());
-                        }
-
                         // Convert lookup fields to _fieldname_value format (from target metadata)
-                        if let Some(fields) = state.target_metadata.get(&resolver.source_entity) {
+                        if let Some(fields) = state.target_metadata.get(&entity) {
                             let lookup_fields: std::collections::HashSet<&str> = fields
                                 .iter()
                                 .filter(|f| f.related_entity.is_some())
@@ -371,10 +388,11 @@ impl App for TransferPreviewApp {
                         );
 
                         let no_expands: Vec<String> = vec![];
+                        let entity_clone = entity.clone();
 
                         builder = builder.add_task_with_progress(
                             format!("Resolver: {}", entity),
-                            move |progress| fetch_entity_records(env, entity, false, resolver_fields, no_expands, Some(progress), false),
+                            move |progress| fetch_entity_records(env, entity_clone, false, resolver_fields, no_expands, Some(progress), false),
                         );
                     }
 
@@ -525,9 +543,11 @@ impl App for TransferPreviewApp {
                         primary_keys.insert(m.source_entity.clone(), format!("{}id", m.source_entity));
                         primary_keys.insert(m.target_entity.clone(), format!("{}id", m.target_entity));
                     }
-                    // Also add resolver source entities
-                    for r in &config.resolvers {
-                        primary_keys.insert(r.source_entity.clone(), format!("{}id", r.source_entity));
+                    // Also add resolver source entities (from all entity mappings)
+                    for m in &config.entity_mappings {
+                        for r in &m.resolvers {
+                            primary_keys.insert(r.source_entity.clone(), format!("{}id", r.source_entity));
+                        }
                     }
 
                     // Run transform
@@ -1467,13 +1487,27 @@ impl App for TransferPreviewApp {
                         .collect();
                     source_fields.push(format!("{}id", entity));
 
+                    // Build expand tree for nested lookup traversals
+                    let mut expand_tree = ExpandTree::new();
+                    for fm in &mapping.field_mappings {
+                        expand_tree.add_transform(&fm.transform);
+                    }
+
                     // Add resolver source_path fields for compound key resolution
+                    // If source_path is a lookup traversal (e.g., cgk_userid.cgk_email), add to expand tree
+                    // Otherwise add the base field to source_fields
                     for fm in &mapping.field_mappings {
                         if let Some(resolver_name) = fm.transform.resolver_name() {
-                            if let Some(resolver) = config.resolvers.iter().find(|r| r.name == resolver_name) {
+                            // Look for resolver in this entity mapping's resolvers
+                            if let Some(resolver) = mapping.resolvers.iter().find(|r| r.name == resolver_name) {
                                 for mf in &resolver.match_fields {
-                                    let source_field = mf.source_path.base_field();
-                                    source_fields.push(source_field.to_string());
+                                    if mf.source_path.is_lookup_traversal() {
+                                        // Add to expand tree - the nested field will be fetched via $expand
+                                        expand_tree.add_path(&mf.source_path);
+                                    } else {
+                                        // Simple field - add to select
+                                        source_fields.push(mf.source_path.base_field().to_string());
+                                    }
                                 }
                             }
                         }
@@ -1498,11 +1532,6 @@ impl App for TransferPreviewApp {
                     source_fields.sort();
                     source_fields.dedup();
 
-                    // Build expand tree for nested lookup traversals
-                    let mut expand_tree = ExpandTree::new();
-                    for fm in &mapping.field_mappings {
-                        expand_tree.add_transform(&fm.transform);
-                    }
                     let expands = expand_tree.build_expand_clauses();
 
                     builder = builder.add_task_with_progress(
@@ -1556,31 +1585,29 @@ impl App for TransferPreviewApp {
                 }
 
                 // Add resolver source entity fetches (from target environment)
-                let resolver_entities: Vec<String> = config
-                    .resolvers
-                    .iter()
-                    .map(|r| r.source_entity.clone())
-                    .filter(|e| !config.entity_mappings.iter().any(|m| &m.target_entity == e))
-                    .collect::<std::collections::HashSet<_>>()
-                    .into_iter()
-                    .collect();
+                // Build map of resolver entity -> fields needed (aggregated from all entity mappings)
+                let mut resolver_entity_fields: HashMap<String, Vec<String>> = HashMap::new();
+                for m in &config.entity_mappings {
+                    for r in &m.resolvers {
+                        // Skip if already fetched as part of entity mappings
+                        if config.entity_mappings.iter().any(|em| em.target_entity == r.source_entity) {
+                            continue;
+                        }
 
-                for resolver in &config.resolvers {
-                    // Skip if already fetched as part of entity mappings
-                    if config.entity_mappings.iter().any(|m| m.target_entity == resolver.source_entity) {
-                        continue;
+                        let fields = resolver_entity_fields.entry(r.source_entity.clone()).or_default();
+                        fields.push(format!("{}id", r.source_entity));
+                        for mf in &r.match_fields {
+                            fields.push(mf.target_field.clone());
+                        }
                     }
+                }
 
-                    let entity = resolver.source_entity.clone();
+                let resolver_entity_count = resolver_entity_fields.len();
+                for (entity, mut resolver_fields) in resolver_entity_fields {
                     let env = config.target_env.clone();
 
-                    let mut resolver_fields = vec![format!("{}id", entity)];
-                    for mf in &resolver.match_fields {
-                        resolver_fields.push(mf.target_field.clone());
-                    }
-
                     // Convert lookup fields to _fieldname_value format (from target metadata)
-                    if let Some(fields) = state.target_metadata.get(&resolver.source_entity) {
+                    if let Some(fields) = state.target_metadata.get(&entity) {
                         let lookup_fields: std::collections::HashSet<&str> = fields
                             .iter()
                             .filter(|f| f.related_entity.is_some())
@@ -1604,14 +1631,15 @@ impl App for TransferPreviewApp {
                     resolver_fields.dedup();
 
                     let no_expands: Vec<String> = vec![];
+                    let entity_clone = entity.clone();
 
                     builder = builder.add_task_with_progress(
                         format!("Resolver: {}", entity),
-                        move |progress| fetch_entity_records(env, entity, false, resolver_fields, no_expands, Some(progress), true), // force refresh
+                        move |progress| fetch_entity_records(env, entity_clone, false, resolver_fields, no_expands, Some(progress), true), // force refresh
                     );
                 }
 
-                state.pending_fetches = num_entities * 2 + resolver_entities.len();
+                state.pending_fetches = num_entities * 2 + resolver_entity_count;
 
                 builder
                     .on_complete(AppId::TransferPreview)

@@ -26,7 +26,7 @@ impl TreeItem for MappingTreeItem {
     fn has_children(&self) -> bool {
         match self {
             Self::Resolver(_) => false,
-            Self::Entity(node) => !node.field_mappings.is_empty(),
+            Self::Entity(node) => !node.resolvers.is_empty() || !node.field_mappings.is_empty(),
             Self::Field(_) => false,
         }
     }
@@ -34,18 +34,25 @@ impl TreeItem for MappingTreeItem {
     fn children(&self) -> Vec<Self> {
         match self {
             Self::Resolver(_) => vec![],
-            Self::Entity(node) => node
-                .field_mappings
-                .iter()
-                .enumerate()
-                .map(|(idx, fm)| {
-                    Self::Field(FieldNode {
+            Self::Entity(node) => {
+                let mut children = Vec::new();
+
+                // Add resolvers first
+                for (idx, resolver) in node.resolvers.iter().enumerate() {
+                    children.push(Self::Resolver(ResolverNode::from_resolver(node.idx, idx, resolver)));
+                }
+
+                // Then add field mappings
+                for (idx, fm) in node.field_mappings.iter().enumerate() {
+                    children.push(Self::Field(FieldNode {
                         entity_idx: node.idx,
                         field_idx: idx,
                         mapping: fm.clone(),
-                    })
-                })
-                .collect(),
+                    }));
+                }
+
+                children
+            }
             Self::Field(_) => vec![],
         }
     }
@@ -65,10 +72,11 @@ impl TreeItem for MappingTreeItem {
     }
 }
 
-/// Node representing a resolver in the tree
+/// Node representing a resolver in the tree (child of an entity mapping)
 #[derive(Clone)]
 pub struct ResolverNode {
-    pub idx: usize,
+    pub entity_idx: usize,
+    pub resolver_idx: usize,
     pub name: String,
     pub source_entity: String,
     /// Display string for match fields (e.g., "field1" or "field1, field2")
@@ -76,17 +84,25 @@ pub struct ResolverNode {
 }
 
 impl ResolverNode {
-    pub fn from_resolver(idx: usize, resolver: &Resolver) -> Self {
-        // Build display string for match fields
+    pub fn from_resolver(entity_idx: usize, resolver_idx: usize, resolver: &Resolver) -> Self {
+        // Build display string for match fields showing source_path -> target_field
         let match_fields_display = resolver
             .match_fields
             .iter()
-            .map(|mf| mf.target_field.as_str())
+            .map(|mf| {
+                let source = mf.source_path.to_string();
+                if source == mf.target_field {
+                    mf.target_field.clone()
+                } else {
+                    format!("{} → {}", source, mf.target_field)
+                }
+            })
             .collect::<Vec<_>>()
             .join(", ");
 
         Self {
-            idx,
+            entity_idx,
+            resolver_idx,
             name: resolver.name.clone(),
             source_entity: resolver.source_entity.clone(),
             match_fields_display,
@@ -94,7 +110,7 @@ impl ResolverNode {
     }
 
     fn id(&self) -> String {
-        format!("resolver_{}", self.idx)
+        format!("resolver_{}_{}", self.entity_idx, self.resolver_idx)
     }
 
     fn to_element(
@@ -159,6 +175,7 @@ pub struct EntityNode {
     pub source_entity: String,
     pub target_entity: String,
     pub priority: u32,
+    pub resolvers: Vec<Resolver>,
     pub field_mappings: Vec<FieldMapping>,
 }
 
@@ -169,6 +186,7 @@ impl EntityNode {
             source_entity: mapping.source_entity.clone(),
             target_entity: mapping.target_entity.clone(),
             priority: mapping.priority,
+            resolvers: mapping.resolvers.clone(),
             field_mappings: mapping.field_mappings.clone(),
         }
     }
@@ -292,12 +310,7 @@ impl FieldNode {
 pub fn build_tree(config: &crate::transfer::TransferConfig) -> Vec<MappingTreeItem> {
     let mut items = Vec::new();
 
-    // Add resolvers first
-    for (idx, resolver) in config.resolvers.iter().enumerate() {
-        items.push(MappingTreeItem::Resolver(ResolverNode::from_resolver(idx, resolver)));
-    }
-
-    // Add entity mappings
+    // Add entity mappings (resolvers are now children of entities)
     for (idx, em) in config.entity_mappings.iter().enumerate() {
         items.push(MappingTreeItem::Entity(EntityNode::from_mapping(idx, em)));
     }

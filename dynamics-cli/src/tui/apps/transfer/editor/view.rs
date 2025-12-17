@@ -71,11 +71,16 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
         };
         let fields_loading = matches!(&state.source_fields, Resource::Loading)
             || matches!(&state.target_fields, Resource::Loading);
-        let resolvers: Vec<_> = match &state.config {
-            Resource::Success(config) => config.resolvers.iter().map(|r| {
-                let match_field = r.match_fields.first().map(|mf| mf.target_field.as_str()).unwrap_or("");
-                (r.name.as_str(), r.source_entity.as_str(), match_field)
-            }).collect(),
+        // Get resolvers from the currently selected entity (if editing a field)
+        let resolvers: Vec<_> = match (&state.config, state.editing_field) {
+            (Resource::Success(config), Some((entity_idx, _))) => {
+                config.entity_mappings.get(entity_idx)
+                    .map(|em| em.resolvers.iter().map(|r| {
+                        let match_field = r.match_fields.first().map(|mf| mf.target_field.as_str()).unwrap_or("");
+                        (r.name.as_str(), r.source_entity.as_str(), match_field)
+                    }).collect())
+                    .unwrap_or_default()
+            }
             _ => vec![],
         };
 
@@ -103,7 +108,12 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
             Resource::Success(f) => f.as_slice(),
             _ => &[],
         };
-        let fields_loading = matches!(&state.resolver_match_fields, Resource::Loading);
+        let source_fields = match &state.resolver_source_fields {
+            Resource::Success(f) => f.as_slice(),
+            _ => &[],
+        };
+        let fields_loading = matches!(&state.resolver_match_fields, Resource::Loading)
+            || matches!(&state.resolver_source_fields, Resource::Loading);
 
         view = view.with_app_modal(
             render_resolver_modal(
@@ -111,6 +121,8 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
                 state.editing_resolver_idx.is_some(),
                 target_entities,
                 match_fields,
+                source_fields,
+                &state.resolver_related_fields,
                 fields_loading,
                 theme,
             ),
@@ -123,7 +135,7 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
         let message = match &state.delete_target {
             Some(DeleteTarget::Entity(_)) => "Delete this entity mapping and all its field mappings?",
             Some(DeleteTarget::Field(_, _)) => "Delete this field mapping?",
-            Some(DeleteTarget::Resolver(_)) => "Delete this resolver?",
+            Some(DeleteTarget::Resolver(_, _)) => "Delete this resolver?",
             None => "Delete?",
         };
 
@@ -814,6 +826,8 @@ fn render_resolver_modal(
     is_edit: bool,
     target_entities: &[String],
     match_fields: &[FieldMetadata],
+    source_fields: &[FieldMetadata],
+    resolver_related_fields: &std::collections::HashMap<String, Resource<Vec<FieldMetadata>>>,
     fields_loading: bool,
     theme: &Theme,
 ) -> Element<Msg> {
@@ -842,22 +856,45 @@ fn render_resolver_modal(
     .build();
     let entity_panel = Element::panel(entity_input).title("Source Entity (to search in target)").build();
 
-    // Match field autocomplete (single field - the original behavior)
-    // For compound keys, user adds more fields with "+ Add Field"
+    // Match field inputs - always show source_path → target_field
     let match_options: Vec<String> = match_fields.iter().map(|f| f.logical_name.clone()).collect();
+
+    // Build source options including nested paths from related entities
+    let mut source_options: Vec<String> = source_fields.iter().map(|f| f.logical_name.clone()).collect();
+    for (lookup_field, resource) in resolver_related_fields {
+        if let Resource::Success(related_fields) = resource {
+            for f in related_fields {
+                source_options.push(format!("{}.{}", lookup_field, f.logical_name));
+            }
+        }
+    }
     let rows_len = form.match_field_rows.len();
 
-    // For single field, show simple input; for multiple, show list with add/remove
+    // For single field, show source_path → target_field with add button
+    // For multiple, show list with add/remove
     let match_field_content = if rows_len == 1 {
-        // Single field - simple autocomplete like before
+        // Single field - show both source_path and target_field
         let row = &mut form.match_field_rows[0];
-        let match_input = Element::autocomplete(
+
+        // Source path input (with autocomplete from source entity fields)
+        let source_input = Element::autocomplete(
+            FocusId::new("resolver-source-0"),
+            source_options.clone(),
+            row.source_path.value.clone(),
+            &mut row.source_path.state,
+        )
+        .placeholder(if fields_loading { "Loading..." } else { "e.g., cgk_userid.cgk_email" })
+        .on_event(|e| Msg::ResolverSourcePath(0, e))
+        .build();
+
+        // Target field input (field on resolver entity)
+        let target_input = Element::autocomplete(
             FocusId::new("resolver-field-0"),
             match_options.clone(),
             row.target_field.value.clone(),
             &mut row.target_field.state,
         )
-        .placeholder(if fields_loading { "Loading fields..." } else { "Field to match against" })
+        .placeholder(if fields_loading { "Loading..." } else { "e.g., emailaddress1" })
         .on_event(|e| Msg::ResolverMatchField(0, e))
         .build();
 
@@ -865,13 +902,28 @@ fn render_resolver_modal(
             .on_press(Msg::ResolverAddMatchFieldRow)
             .build();
 
-        let row_with_add = RowBuilder::new()
-            .add(match_input, LayoutConstraint::Fill(1))
-            .add(Element::text(" "), LayoutConstraint::Length(1))
-            .add(add_btn, LayoutConstraint::Length(16))
+        // Header labels
+        let header = RowBuilder::new()
+            .add(Element::styled_text(Line::from(Span::styled("Source Path (from transfer source)", Style::default().fg(theme.text_secondary)))).build(), LayoutConstraint::Fill(1))
+            .add(Element::text("  "), LayoutConstraint::Length(2))
+            .add(Element::styled_text(Line::from(Span::styled("Target Field (on resolver entity)", Style::default().fg(theme.text_secondary)))).build(), LayoutConstraint::Fill(1))
+            .add(Element::text("                "), LayoutConstraint::Length(16))
             .build();
 
-        Element::panel(row_with_add).title("Match Field").build()
+        let input_row = RowBuilder::new()
+            .add(source_input, LayoutConstraint::Fill(1))
+            .add(Element::text("→ "), LayoutConstraint::Length(2))
+            .add(target_input, LayoutConstraint::Fill(1))
+            .add(Element::text(" "), LayoutConstraint::Length(1))
+            .add(add_btn, LayoutConstraint::Length(15))
+            .build();
+
+        let col = ColumnBuilder::new()
+            .add(header, LayoutConstraint::Length(1))
+            .add(input_row, LayoutConstraint::Length(3))
+            .build();
+
+        Element::panel(col).title("Match Field").build()
     } else {
         // Multiple fields - show list with source_path → target_field
         let mut match_rows_col = ColumnBuilder::new();
@@ -889,9 +941,10 @@ fn render_resolver_modal(
         // Row 0
         if rows_len > 0 {
             let row = &mut form.match_field_rows[0];
-            let source_input = Element::text_input(
+            let source_input = Element::autocomplete(
                 FocusId::new("resolver-source-0"),
-                &row.source_path.value,
+                source_options.clone(),
+                row.source_path.value.clone(),
                 &mut row.source_path.state,
             )
             .placeholder("Source field path")
@@ -925,9 +978,10 @@ fn render_resolver_modal(
         // Row 1
         if rows_len > 1 {
             let row = &mut form.match_field_rows[1];
-            let source_input = Element::text_input(
+            let source_input = Element::autocomplete(
                 FocusId::new("resolver-source-1"),
-                &row.source_path.value,
+                source_options.clone(),
+                row.source_path.value.clone(),
                 &mut row.source_path.state,
             )
             .placeholder("Source field path")
@@ -961,9 +1015,10 @@ fn render_resolver_modal(
         // Row 2
         if rows_len > 2 {
             let row = &mut form.match_field_rows[2];
-            let source_input = Element::text_input(
+            let source_input = Element::autocomplete(
                 FocusId::new("resolver-source-2"),
-                &row.source_path.value,
+                source_options.clone(),
+                row.source_path.value.clone(),
                 &mut row.source_path.state,
             )
             .placeholder("Source field path")
@@ -997,9 +1052,10 @@ fn render_resolver_modal(
         // Row 3
         if rows_len > 3 {
             let row = &mut form.match_field_rows[3];
-            let source_input = Element::text_input(
+            let source_input = Element::autocomplete(
                 FocusId::new("resolver-source-3"),
-                &row.source_path.value,
+                source_options.clone(),
+                row.source_path.value.clone(),
                 &mut row.source_path.state,
             )
             .placeholder("Source field path")
@@ -1160,11 +1216,10 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
     } else {
         // Main view subscriptions
         subs.push(Subscription::keyboard(KeyCode::Char('a'), "Add entity", Msg::AddEntity));
-        subs.push(Subscription::keyboard(KeyCode::Char('r'), "Add resolver", Msg::AddResolver));
         subs.push(Subscription::keyboard(KeyCode::Esc, "Back", Msg::Back));
 
         // Context-sensitive actions based on selection
-        if let Resource::Success(config) = &state.config {
+        if let Resource::Success(_config) = &state.config {
             if let Some(selected) = state.tree_state.selected() {
                 if selected.starts_with("entity_") {
                     if let Some(idx) = selected.strip_prefix("entity_").and_then(|s| s.parse::<usize>().ok()) {
@@ -1182,6 +1237,11 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                             KeyCode::Char('f'),
                             "Add field",
                             Msg::AddField(idx),
+                        ));
+                        subs.push(Subscription::keyboard(
+                            KeyCode::Char('r'),
+                            "Add resolver",
+                            Msg::AddResolver(idx),
                         ));
                     }
                 } else if selected.starts_with("field_") {
@@ -1201,17 +1261,21 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                         }
                     }
                 } else if selected.starts_with("resolver_") {
-                    if let Some(idx) = selected.strip_prefix("resolver_").and_then(|s| s.parse::<usize>().ok()) {
-                        subs.push(Subscription::keyboard(
-                            KeyCode::Char('e'),
-                            "Edit resolver",
-                            Msg::EditResolver(idx),
-                        ));
-                        subs.push(Subscription::keyboard(
-                            KeyCode::Char('d'),
-                            "Delete resolver",
-                            Msg::DeleteResolver(idx),
-                        ));
+                    // Format: resolver_<entity_idx>_<resolver_idx>
+                    let parts: Vec<&str> = selected.strip_prefix("resolver_").unwrap_or("").split('_').collect();
+                    if parts.len() == 2 {
+                        if let (Ok(entity_idx), Ok(resolver_idx)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
+                            subs.push(Subscription::keyboard(
+                                KeyCode::Char('e'),
+                                "Edit resolver",
+                                Msg::EditResolver(entity_idx, resolver_idx),
+                            ));
+                            subs.push(Subscription::keyboard(
+                                KeyCode::Char('d'),
+                                "Delete resolver",
+                                Msg::DeleteResolver(entity_idx, resolver_idx),
+                            ));
+                        }
                     }
                 }
             }

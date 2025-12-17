@@ -39,9 +39,12 @@ impl App for MappingEditorApp {
             related_fields: std::collections::HashMap::new(),
             show_resolver_modal: false,
             resolver_form: ResolverForm::default(),
+            editing_resolver_for_entity: None,
             editing_resolver_idx: None,
             resolver_match_fields: Resource::NotAsked,
             resolver_match_fields_entity: None,
+            resolver_source_fields: Resource::NotAsked,
+            resolver_related_fields: std::collections::HashMap::new(),
             show_delete_confirm: false,
             delete_target: None,
         };
@@ -464,8 +467,12 @@ impl App for MappingEditorApp {
 
             Msg::FieldFormCycleResolver => {
                 // Cycle through: None -> resolver1 -> resolver2 -> ... -> None
-                if let Resource::Success(config) = &state.config {
-                    let resolver_names: Vec<&str> = config.resolvers.iter().map(|r| r.name.as_str()).collect();
+                // Get resolvers from the current entity being edited
+                if let (Resource::Success(config), Some((entity_idx, _))) = (&state.config, state.editing_field) {
+                    let resolver_names: Vec<&str> = config.entity_mappings
+                        .get(entity_idx)
+                        .map(|em| em.resolvers.iter().map(|r| r.name.as_str()).collect())
+                        .unwrap_or_default();
 
                     if resolver_names.is_empty() {
                         state.field_form.resolver_name = None;
@@ -567,47 +574,82 @@ impl App for MappingEditorApp {
             }
 
             // Resolver modal
-            Msg::AddResolver => {
-                state.show_resolver_modal = true;
-                state.editing_resolver_idx = None;
-                state.resolver_form = ResolverForm::default();
-                state.resolver_match_fields = Resource::NotAsked;
-                state.resolver_match_fields_entity = None;
+            Msg::AddResolver(entity_idx) => {
+                if let Resource::Success(config) = &state.config {
+                    state.show_resolver_modal = true;
+                    state.editing_resolver_for_entity = Some(entity_idx);
+                    state.editing_resolver_idx = None;
+                    state.resolver_form = ResolverForm::default();
+                    state.resolver_match_fields = Resource::NotAsked;
+                    state.resolver_match_fields_entity = None;
+                    state.resolver_source_fields = Resource::Loading;
+
+                    // Load source entity fields for source_path autocomplete
+                    if let Some(entity_mapping) = config.entity_mappings.get(entity_idx) {
+                        let source_entity = entity_mapping.source_entity.clone();
+                        let source_env = config.source_env.clone();
+                        return Command::batch(vec![
+                            Command::set_focus(FocusId::new("resolver-name")),
+                            Command::perform(
+                                load_entity_fields(source_env, source_entity),
+                                Msg::ResolverSourceFieldsLoaded,
+                            ),
+                        ]);
+                    }
+                }
                 Command::set_focus(FocusId::new("resolver-name"))
             }
 
-            Msg::EditResolver(idx) => {
+            Msg::EditResolver(entity_idx, resolver_idx) => {
                 if let Resource::Success(config) = &state.config {
-                    if let Some(resolver) = config.resolvers.get(idx) {
-                        state.show_resolver_modal = true;
-                        state.editing_resolver_idx = Some(idx);
-                        state.resolver_form = ResolverForm::from_resolver(resolver);
+                    if let Some(entity_mapping) = config.entity_mappings.get(entity_idx) {
+                        if let Some(resolver) = entity_mapping.resolvers.get(resolver_idx) {
+                            state.show_resolver_modal = true;
+                            state.editing_resolver_for_entity = Some(entity_idx);
+                            state.editing_resolver_idx = Some(resolver_idx);
+                            state.resolver_form = ResolverForm::from_resolver(resolver);
 
-                        // Load match fields for the selected source entity
-                        let entity = resolver.source_entity.clone();
-                        let target_env = config.target_env.clone();
-                        state.resolver_match_fields = Resource::Loading;
-                        state.resolver_match_fields_entity = Some(entity.clone());
-                        return Command::perform(
-                            load_entity_fields(target_env, entity),
-                            Msg::ResolverMatchFieldsLoaded,
-                        );
+                            // Load match fields for the selected source entity (target env)
+                            let resolver_entity = resolver.source_entity.clone();
+                            let target_env = config.target_env.clone();
+                            state.resolver_match_fields = Resource::Loading;
+                            state.resolver_match_fields_entity = Some(resolver_entity.clone());
+
+                            // Load source entity fields for source_path autocomplete (source env)
+                            let source_entity = entity_mapping.source_entity.clone();
+                            let source_env = config.source_env.clone();
+                            state.resolver_source_fields = Resource::Loading;
+
+                            return Command::batch(vec![
+                                Command::perform(
+                                    load_entity_fields(target_env, resolver_entity),
+                                    Msg::ResolverMatchFieldsLoaded,
+                                ),
+                                Command::perform(
+                                    load_entity_fields(source_env, source_entity),
+                                    Msg::ResolverSourceFieldsLoaded,
+                                ),
+                            ]);
+                        }
                     }
                 }
                 Command::None
             }
 
-            Msg::DeleteResolver(idx) => {
+            Msg::DeleteResolver(entity_idx, resolver_idx) => {
                 state.show_delete_confirm = true;
-                state.delete_target = Some(DeleteTarget::Resolver(idx));
+                state.delete_target = Some(DeleteTarget::Resolver(entity_idx, resolver_idx));
                 Command::None
             }
 
             Msg::CloseResolverModal => {
                 state.show_resolver_modal = false;
+                state.editing_resolver_for_entity = None;
                 state.editing_resolver_idx = None;
                 state.resolver_match_fields = Resource::NotAsked;
                 state.resolver_match_fields_entity = None;
+                state.resolver_source_fields = Resource::NotAsked;
+                state.resolver_related_fields.clear();
                 Command::set_focus(FocusId::new("mapping-tree"))
             }
 
@@ -616,27 +658,31 @@ impl App for MappingEditorApp {
                     return Command::None;
                 }
 
-                if let Resource::Success(config) = &mut state.config {
-                    let mut new_resolver = state.resolver_form.to_resolver();
+                if let (Resource::Success(config), Some(entity_idx)) = (&mut state.config, state.editing_resolver_for_entity) {
+                    if let Some(entity_mapping) = config.entity_mappings.get_mut(entity_idx) {
+                        let mut new_resolver = state.resolver_form.to_resolver();
 
-                    if let Some(idx) = state.editing_resolver_idx {
-                        // Editing: preserve ID if present
-                        if let Some(existing) = config.resolvers.get(idx) {
-                            new_resolver.id = existing.id;
+                        if let Some(resolver_idx) = state.editing_resolver_idx {
+                            // Editing: preserve ID if present
+                            if let Some(existing) = entity_mapping.resolvers.get(resolver_idx) {
+                                new_resolver.id = existing.id;
+                            }
+                            entity_mapping.resolvers[resolver_idx] = new_resolver;
+                        } else {
+                            // Adding new
+                            entity_mapping.resolvers.push(new_resolver);
                         }
-                        config.resolvers[idx] = new_resolver;
-                    } else {
-                        // Adding new
-                        config.resolvers.push(new_resolver);
-                    }
 
-                    state.tree_state.invalidate_cache();
+                        state.tree_state.invalidate_cache();
+                    }
                 }
 
                 state.show_resolver_modal = false;
+                state.editing_resolver_for_entity = None;
                 state.editing_resolver_idx = None;
                 state.resolver_match_fields = Resource::NotAsked;
                 state.resolver_match_fields_entity = None;
+                state.resolver_source_fields = Resource::NotAsked;
 
                 // Auto-save
                 if let Resource::Success(config) = &state.config {
@@ -689,8 +735,14 @@ impl App for MappingEditorApp {
 
             Msg::ResolverSourcePath(idx, event) => {
                 state.resolver_form.focused_row = idx;
+                let options = build_resolver_source_options(state);
                 if let Some(row) = state.resolver_form.match_field_rows.get_mut(idx) {
-                    row.source_path.handle_event(event, None);
+                    row.source_path.handle_event::<Msg>(event, &options);
+                }
+                // Check if we need to load related entity fields for nested lookup
+                if let Some(row) = state.resolver_form.match_field_rows.get(idx) {
+                    let current_value = row.source_path.value.clone();
+                    return check_resolver_nested_lookup(state, &current_value);
                 }
                 Command::None
             }
@@ -713,6 +765,26 @@ impl App for MappingEditorApp {
                 Command::None
             }
 
+            Msg::ResolverSourceFieldsLoaded(result) => {
+                state.resolver_source_fields = match result {
+                    Ok(fields) => Resource::Success(fields),
+                    Err(e) => Resource::Failure(e),
+                };
+                Command::None
+            }
+
+            Msg::ResolverRelatedFieldsLoaded { lookup_field, result } => {
+                state.resolver_related_fields.insert(
+                    lookup_field,
+                    match result {
+                        Ok(fields) => Resource::Success(fields),
+                        Err(e) => Resource::Failure(e),
+                    }
+                );
+                // Restore focus to the source path field
+                Command::set_focus(FocusId::new("resolver-source-0"))
+            }
+
             // Delete confirmation
             Msg::ConfirmDelete => {
                 if let Some(target) = state.delete_target.take() {
@@ -732,10 +804,12 @@ impl App for MappingEditorApp {
                                     }
                                 }
                             }
-                            DeleteTarget::Resolver(idx) => {
-                                if idx < config.resolvers.len() {
-                                    config.resolvers.remove(idx);
-                                    state.tree_state.invalidate_cache();
+                            DeleteTarget::Resolver(entity_idx, resolver_idx) => {
+                                if let Some(entity) = config.entity_mappings.get_mut(entity_idx) {
+                                    if resolver_idx < entity.resolvers.len() {
+                                        entity.resolvers.remove(resolver_idx);
+                                        state.tree_state.invalidate_cache();
+                                    }
                                 }
                             }
                         }
@@ -1094,6 +1168,87 @@ fn check_resolver_entity_selection(state: &mut State) -> Command<Msg> {
             load_entity_fields(target_env, entity_name),
             Msg::ResolverMatchFieldsLoaded,
         );
+    }
+
+    Command::None
+}
+
+/// Build autocomplete options for resolver source_path field
+/// Includes base source entity fields and nested paths for loaded related entities
+fn build_resolver_source_options(state: &State) -> Vec<String> {
+    let mut options = Vec::new();
+
+    // Add base source fields (excluding virtual fields)
+    if let Resource::Success(fields) = &state.resolver_source_fields {
+        for f in fields {
+            if !is_virtual_field(f) {
+                options.push(f.logical_name.clone());
+            }
+        }
+    }
+
+    // Add nested paths for loaded related entities
+    for (lookup_field, resource) in &state.resolver_related_fields {
+        if let Resource::Success(related_fields) = resource {
+            for f in related_fields {
+                if !is_virtual_field(f) {
+                    options.push(format!("{}.{}", lookup_field, f.logical_name));
+                }
+            }
+        }
+    }
+
+    options
+}
+
+/// Check if the current resolver source_path value contains a lookup field reference
+/// that requires loading the related entity's fields.
+fn check_resolver_nested_lookup(state: &mut State, current_value: &str) -> Command<Msg> {
+    if !current_value.contains('.') {
+        return Command::None;
+    }
+
+    let base_field = current_value.split('.').next().unwrap();
+
+    // Find the lookup field in resolver_source_fields
+    let lookup_info = if let Resource::Success(fields) = &state.resolver_source_fields {
+        fields.iter()
+            .find(|f| f.logical_name == base_field && f.field_type == FieldType::Lookup)
+            .and_then(|f| f.related_entity.clone().map(|e| (base_field.to_string(), e)))
+    } else {
+        None
+    };
+
+    if let Some((field_name, related_entity)) = lookup_info {
+        // Check if already loaded or loading
+        if state.resolver_related_fields.contains_key(&field_name) {
+            return Command::None;
+        }
+
+        // Get source env name from config (resolver source_path is from the transfer source entity)
+        let source_env = if let Resource::Success(config) = &state.config {
+            config.source_env.clone()
+        } else {
+            return Command::None;
+        };
+
+        state.resolver_related_fields.insert(field_name.clone(), Resource::Loading);
+
+        // Use loading screen for fetch
+        return Command::perform_parallel()
+            .add_task(
+                format!("Loading fields from {}", related_entity),
+                load_entity_fields(source_env, related_entity),
+            )
+            .with_title("Loading Related Entity")
+            .on_complete(AppId::TransferMappingEditor)
+            .build(move |_task_idx, result| {
+                let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                Msg::ResolverRelatedFieldsLoaded {
+                    lookup_field: field_name.clone(),
+                    result: *data,
+                }
+            });
     }
 
     Command::None

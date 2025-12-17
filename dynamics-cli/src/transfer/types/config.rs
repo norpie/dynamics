@@ -162,10 +162,7 @@ pub struct TransferConfig {
     pub source_env: String,
     /// Target environment name
     pub target_env: String,
-    /// Resolvers for lookup field resolution
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub resolvers: Vec<Resolver>,
-    /// Entity mappings
+    /// Entity mappings (resolvers are now per-entity)
     pub entity_mappings: Vec<EntityMapping>,
 }
 
@@ -177,7 +174,6 @@ impl TransferConfig {
             name: name.into(),
             source_env: source_env.into(),
             target_env: target_env.into(),
-            resolvers: Vec::new(),
             entity_mappings: Vec::new(),
         }
     }
@@ -206,6 +202,90 @@ impl TransferConfig {
         self.entity_mappings
             .iter_mut()
             .find(|m| m.source_entity == source_entity)
+    }
+}
+
+impl Default for TransferConfig {
+    fn default() -> Self {
+        TransferConfig {
+            id: None,
+            name: String::new(),
+            source_env: String::new(),
+            target_env: String::new(),
+            entity_mappings: Vec::new(),
+        }
+    }
+}
+
+/// Mapping from a source entity to a target entity
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EntityMapping {
+    /// Database ID (None if not yet persisted)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    /// Source entity logical name
+    pub source_entity: String,
+    /// Target entity logical name
+    pub target_entity: String,
+    /// Execution priority (lower = runs first)
+    /// Used to handle dependencies (e.g., accounts before contacts)
+    pub priority: u32,
+    /// Filter controlling which operations are executed
+    #[serde(default)]
+    pub operation_filter: OperationFilter,
+    /// Resolvers for lookup field resolution (scoped to this entity)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolvers: Vec<Resolver>,
+    /// Field mappings for this entity
+    pub field_mappings: Vec<FieldMapping>,
+}
+
+impl EntityMapping {
+    /// Create a new entity mapping
+    pub fn new(
+        source_entity: impl Into<String>,
+        target_entity: impl Into<String>,
+        priority: u32,
+    ) -> Self {
+        EntityMapping {
+            id: None,
+            source_entity: source_entity.into(),
+            target_entity: target_entity.into(),
+            priority,
+            operation_filter: OperationFilter::default(),
+            resolvers: Vec::new(),
+            field_mappings: Vec::new(),
+        }
+    }
+
+    /// Create a same-entity mapping (source = target)
+    pub fn same_entity(entity: impl Into<String>, priority: u32) -> Self {
+        let entity = entity.into();
+        EntityMapping::new(entity.clone(), entity, priority)
+    }
+
+    /// Add a field mapping
+    pub fn add_field_mapping(&mut self, mapping: FieldMapping) {
+        self.field_mappings.push(mapping);
+    }
+
+    /// Find a field mapping by target field name
+    pub fn find_field_mapping(&self, target_field: &str) -> Option<&FieldMapping> {
+        self.field_mappings
+            .iter()
+            .find(|m| m.target_field == target_field)
+    }
+
+    /// Find a field mapping by target field name (mutable)
+    pub fn find_field_mapping_mut(&mut self, target_field: &str) -> Option<&mut FieldMapping> {
+        self.field_mappings
+            .iter_mut()
+            .find(|m| m.target_field == target_field)
+    }
+
+    /// Get the number of field mappings
+    pub fn field_count(&self) -> usize {
+        self.field_mappings.len()
     }
 
     /// Add a resolver
@@ -241,13 +321,11 @@ impl TransferConfig {
         };
 
         if found {
-            // Update all references in field mappings
-            for entity_mapping in &mut self.entity_mappings {
-                for field_mapping in &mut entity_mapping.field_mappings {
-                    if let super::Transform::Copy { resolver, .. } = &mut field_mapping.transform {
-                        if resolver.as_deref() == Some(old_name) {
-                            *resolver = Some(new_name.to_string());
-                        }
+            // Update all references in field mappings within this entity
+            for field_mapping in &mut self.field_mappings {
+                if let super::Transform::Copy { resolver, .. } = &mut field_mapping.transform {
+                    if resolver.as_deref() == Some(old_name) {
+                        *resolver = Some(new_name.to_string());
                     }
                 }
             }
@@ -256,90 +334,9 @@ impl TransferConfig {
         found
     }
 
-    /// Check if a resolver name is unique (not already used)
+    /// Check if a resolver name is unique (not already used in this entity)
     pub fn is_resolver_name_unique(&self, name: &str) -> bool {
         !self.resolvers.iter().any(|r| r.name == name)
-    }
-}
-
-impl Default for TransferConfig {
-    fn default() -> Self {
-        TransferConfig {
-            id: None,
-            name: String::new(),
-            source_env: String::new(),
-            target_env: String::new(),
-            resolvers: Vec::new(),
-            entity_mappings: Vec::new(),
-        }
-    }
-}
-
-/// Mapping from a source entity to a target entity
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct EntityMapping {
-    /// Database ID (None if not yet persisted)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<i64>,
-    /// Source entity logical name
-    pub source_entity: String,
-    /// Target entity logical name
-    pub target_entity: String,
-    /// Execution priority (lower = runs first)
-    /// Used to handle dependencies (e.g., accounts before contacts)
-    pub priority: u32,
-    /// Filter controlling which operations are executed
-    #[serde(default)]
-    pub operation_filter: OperationFilter,
-    /// Field mappings for this entity
-    pub field_mappings: Vec<FieldMapping>,
-}
-
-impl EntityMapping {
-    /// Create a new entity mapping
-    pub fn new(
-        source_entity: impl Into<String>,
-        target_entity: impl Into<String>,
-        priority: u32,
-    ) -> Self {
-        EntityMapping {
-            id: None,
-            source_entity: source_entity.into(),
-            target_entity: target_entity.into(),
-            priority,
-            operation_filter: OperationFilter::default(),
-            field_mappings: Vec::new(),
-        }
-    }
-
-    /// Create a same-entity mapping (source = target)
-    pub fn same_entity(entity: impl Into<String>, priority: u32) -> Self {
-        let entity = entity.into();
-        EntityMapping::new(entity.clone(), entity, priority)
-    }
-
-    /// Add a field mapping
-    pub fn add_field_mapping(&mut self, mapping: FieldMapping) {
-        self.field_mappings.push(mapping);
-    }
-
-    /// Find a field mapping by target field name
-    pub fn find_field_mapping(&self, target_field: &str) -> Option<&FieldMapping> {
-        self.field_mappings
-            .iter()
-            .find(|m| m.target_field == target_field)
-    }
-
-    /// Find a field mapping by target field name (mutable)
-    pub fn find_field_mapping_mut(&mut self, target_field: &str) -> Option<&mut FieldMapping> {
-        self.field_mappings
-            .iter_mut()
-            .find(|m| m.target_field == target_field)
-    }
-
-    /// Get the number of field mappings
-    pub fn field_count(&self) -> usize {
-        self.field_mappings.len()
     }
 }
 

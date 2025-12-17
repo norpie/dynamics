@@ -52,10 +52,10 @@ impl TransformEngine {
             &config.target_env,
         );
 
-        // Build resolver context from config's resolvers and target data
-        let resolver_ctx = ResolverContext::build(&config.resolvers, target_data, primary_keys);
-
         for entity_mapping in config.entity_mappings_by_priority() {
+            // Build resolver context from this entity's resolvers
+            let resolver_ctx = ResolverContext::build(&entity_mapping.resolvers, target_data, primary_keys);
+
             let source_records = source_data
                 .get(&entity_mapping.source_entity)
                 .map(|v| v.as_slice())
