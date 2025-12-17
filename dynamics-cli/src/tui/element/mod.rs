@@ -232,6 +232,8 @@ pub enum Element<Msg> {
         id: FocusId,
         all_options: Vec<String>,           // Full list to filter against
         current_input: String,              // Current input text
+        cursor_pos: usize,                  // Cursor position in text
+        scroll_offset: usize,               // Horizontal scroll offset
         placeholder: Option<String>,        // Placeholder text when empty
         is_open: bool,                      // Dropdown open?
         filtered_options: Vec<String>,      // Filtered options (top 15)
@@ -759,6 +761,8 @@ impl<Msg> Element<Msg> {
             id: id.into(),
             all_options,
             current_input,
+            cursor_pos: state.input_state().cursor_pos(),
+            scroll_offset: state.input_state().scroll_offset(),
             placeholder: None,
             is_open: state.is_open(),
             filtered_options: state.filtered_options(),

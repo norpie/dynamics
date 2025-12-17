@@ -1,4 +1,4 @@
-use ratatui::{Frame, style::{Style, Stylize}, widgets::Paragraph, layout::Rect};
+use ratatui::{Frame, style::{Style, Stylize}, widgets::Paragraph, layout::Rect, text::{Line, Span}};
 use crossterm::event::{KeyCode, KeyEvent};
 use crate::tui::{Element, Theme};
 use crate::tui::element::FocusId;
@@ -78,7 +78,7 @@ pub fn autocomplete_on_key_event<Msg: Clone + Send + 'static>(
 /// Render Autocomplete element
 pub fn render_autocomplete<Msg: Clone + Send + 'static>(
     frame: &mut Frame,
-    
+
     registry: &mut InteractionRegistry<Msg>,
     focus_registry: &mut FocusRegistry<Msg>,
     dropdown_registry: &mut DropdownRegistry<Msg>,
@@ -86,6 +86,8 @@ pub fn render_autocomplete<Msg: Clone + Send + 'static>(
     id: &FocusId,
     all_options: &[String],
     current_input: &str,
+    cursor_pos: usize,
+    scroll_offset: usize,
     placeholder: &Option<String>,
     is_open: bool,
     filtered_options: &[String],
@@ -118,39 +120,70 @@ pub fn render_autocomplete<Msg: Clone + Send + 'static>(
 
     let is_focused = focused_id == Some(id);
 
-    // Calculate visible width
+    // Calculate visible width (area width - 2 for minimal padding)
     let visible_width = area.width.saturating_sub(2) as usize;
 
-    // Build display text
-    let display_text = if current_input.is_empty() && !is_focused {
+    // Get visible portion of text with scroll support
+    let chars: Vec<char> = current_input.chars().collect();
+    let start_idx = scroll_offset;
+    let end_idx = (start_idx + visible_width).min(chars.len());
+    let visible_text: String = chars.get(start_idx..end_idx)
+        .map(|c| c.iter().collect())
+        .unwrap_or_default();
+
+    // Calculate cursor position in visible area
+    let cursor_in_visible = cursor_pos.saturating_sub(start_idx);
+
+    // Build display with styled spans for block cursor (matching TextInput)
+    let widget = if current_input.is_empty() && !is_focused {
         // Show placeholder
-        if let Some(ph) = placeholder {
+        let placeholder_text = if let Some(ph) = placeholder {
             format!(" {}", ph)
         } else {
             String::from(" ")
-        }
-    } else {
-        // Show current input with cursor if focused
-        if is_focused {
-            // Simple cursor at end (no scroll support for now)
-            let visible_text: String = current_input.chars().take(visible_width - 2).collect();
-            format!(" {}│", visible_text)
+        };
+        let placeholder_style = Style::default().fg(theme.border_primary).italic();
+        Paragraph::new(placeholder_text).style(placeholder_style)
+    } else if is_focused && cursor_in_visible <= visible_text.len() {
+        // Show text with block cursor
+        let chars: Vec<char> = visible_text.chars().collect();
+
+        // Split into: before cursor, at cursor, after cursor
+        let before: String = chars[..cursor_in_visible].iter().collect();
+        let cursor_char = if cursor_in_visible < chars.len() {
+            chars[cursor_in_visible].to_string()
         } else {
-            let visible_text: String = current_input.chars().take(visible_width - 1).collect();
-            format!(" {}", visible_text)
+            " ".to_string()  // Cursor at end - use space
+        };
+        let after: String = if cursor_in_visible < chars.len() {
+            chars[cursor_in_visible + 1..].iter().collect()
+        } else {
+            String::new()
+        };
+
+        // Create styled spans
+        let text_style = Style::default().fg(theme.text_primary);
+        let cursor_style = Style::default()
+            .fg(theme.text_primary)
+            .bg(theme.border_primary);  // Block cursor with inverted colors
+
+        let mut spans = vec![Span::raw(" ")];  // Left padding
+        if !before.is_empty() {
+            spans.push(Span::styled(before, text_style));
         }
-    };
+        spans.push(Span::styled(cursor_char, cursor_style));
+        if !after.is_empty() {
+            spans.push(Span::styled(after, text_style));
+        }
 
-    // Determine text style
-    let text_style = if current_input.is_empty() && !is_focused {
-        Style::default().fg(theme.border_primary).italic()
+        Paragraph::new(Line::from(spans))
     } else {
-        Style::default().fg(theme.text_primary)
+        // Not focused or cursor out of view - show text normally
+        let text_style = Style::default().fg(theme.text_primary);
+        Paragraph::new(format!(" {}", visible_text)).style(text_style)
     };
 
-    // Render text without border (like TextInput/Select)
-    let text_widget = Paragraph::new(display_text).style(text_style);
-    frame.render_widget(text_widget, area);
+    frame.render_widget(widget, area);
 
     // If open, register dropdown for overlay rendering
     if is_open && !filtered_options.is_empty() {

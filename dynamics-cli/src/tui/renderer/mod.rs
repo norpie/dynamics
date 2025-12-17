@@ -423,6 +423,8 @@ impl Renderer {
                 id,
                 all_options: _,
                 current_input,
+                cursor_pos,
+                scroll_offset,
                 placeholder,
                 is_open,
                 filtered_options,
@@ -434,7 +436,7 @@ impl Renderer {
                 on_focus,
                 on_blur,
             } => {
-                render_autocomplete(frame, registry, focus_registry, dropdown_registry, focused_id, id, &[], current_input, placeholder, *is_open, filtered_options, *highlight, on_input, on_select, on_navigate, on_event, on_focus, on_blur, area, inside_panel);
+                render_autocomplete(frame, registry, focus_registry, dropdown_registry, focused_id, id, &[], current_input, *cursor_pos, *scroll_offset, placeholder, *is_open, filtered_options, *highlight, on_input, on_select, on_navigate, on_event, on_focus, on_blur, area, inside_panel);
             }
 
             Element::MultiSelect {
