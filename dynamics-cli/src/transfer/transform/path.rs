@@ -21,15 +21,19 @@ pub fn resolve_path(record: &serde_json::Value, path: &FieldPath) -> Value {
         match current.get(segment.as_str()) {
             Some(val) => current = val,
             None => {
-                // For the first segment (base field), try OData lookup value format: _fieldname_value
-                // This handles cases where we're copying a lookup field's GUID value
-                if i == 0 && segments.len() == 1 {
-                    let value_field = format!("_{}_value", segment);
-                    if let Some(val) = record.get(&value_field) {
+                // Try OData lookup value format: _fieldname_value
+                // This handles lookup fields at any nesting level (e.g., cgk_deadlineid.cgk_projectmanagerid)
+                let value_field = format!("_{}_value", segment);
+                if let Some(val) = current.get(&value_field) {
+                    // If this is the final segment, return the value
+                    if i == segments.len() - 1 {
                         return Value::from_json(val);
                     }
+                    // Otherwise continue navigating (though _value fields are terminal, so this is unlikely)
+                    current = val;
+                } else {
+                    return Value::Null;
                 }
-                return Value::Null;
             }
         }
     }
@@ -170,5 +174,40 @@ mod tests {
         let path = FieldPath::parse("ownerid.name").unwrap();
         let value = resolve_path(&record, &path);
         assert_eq!(value, Value::Null);
+    }
+
+    #[test]
+    fn test_resolve_nested_lookup_odata_value_format() {
+        use uuid::Uuid;
+
+        // Simulates OData response where expanded entity has lookup GUIDs as _fieldname_value
+        let record = json!({
+            "cgk_deadlineid": {
+                "cgk_name": "Test Deadline",
+                "_cgk_projectmanagerid_value": "ed9ceb9d-6c0f-e911-a957-000d3ab5228b",
+                "_cgk_commissionid_value": "83577a7c-e621-e811-8114-5065f38b4641"
+            }
+        });
+
+        // User writes path as schema field name, but data has _value format
+        let path = FieldPath::parse("cgk_deadlineid.cgk_projectmanagerid").unwrap();
+        let value = resolve_path(&record, &path);
+        assert_eq!(
+            value,
+            Value::Guid(Uuid::parse_str("ed9ceb9d-6c0f-e911-a957-000d3ab5228b").unwrap())
+        );
+
+        // Also test another nested lookup
+        let path = FieldPath::parse("cgk_deadlineid.cgk_commissionid").unwrap();
+        let value = resolve_path(&record, &path);
+        assert_eq!(
+            value,
+            Value::Guid(Uuid::parse_str("83577a7c-e621-e811-8114-5065f38b4641").unwrap())
+        );
+
+        // Regular field in expanded entity should still work
+        let path = FieldPath::parse("cgk_deadlineid.cgk_name").unwrap();
+        let value = resolve_path(&record, &path);
+        assert_eq!(value, Value::String("Test Deadline".into()));
     }
 }
