@@ -119,7 +119,7 @@ fn render_preview(
         .build();
 
     // Table header
-    let header = render_table_header(entity, theme);
+    let header = render_table_header(state, entity, theme);
 
     // Table content (list of records)
     let table = render_record_table(state, entity, theme);
@@ -164,32 +164,47 @@ fn get_filtered_records<'a>(entity: &'a ResolvedEntity, filter: RecordFilter, se
 }
 
 /// Render table header row
-fn render_table_header(entity: &ResolvedEntity, theme: &Theme) -> Element<Msg> {
+fn render_table_header(state: &State, entity: &ResolvedEntity, theme: &Theme) -> Element<Msg> {
+    log::trace!("render_table_header: column_widths={:?}, terminal_width={}, horizontal_scroll={}",
+        state.column_widths, state.terminal_width, state.horizontal_scroll);
+
     let header_style = Style::default()
         .fg(theme.text_secondary)
         .add_modifier(Modifier::BOLD);
 
-    // Build header columns: [checkbox] Action | Source ID | field1 | field2 | ...
-    let mut header_parts = vec![
-        Span::styled("    ", header_style), // Space for checkbox [✓] or [ ]
-        Span::styled(format!("{:<10}", "Action"), header_style),
-        Span::raw(" │ "),
-        Span::styled(format!("{:<12}", "Source ID"), header_style),
-    ];
+    // Build header columns: [scroll indicator] [checkbox] Action | Source ID | field1 | field2 | ... [scroll indicator]
+    let mut header_parts = vec![];
 
-    // Add field columns (limit to first 5 fields to fit screen)
-    let max_fields = 5;
-    for field in entity.field_names.iter().take(max_fields) {
+    // Left scroll indicator
+    if state.has_columns_left() {
+        header_parts.push(Span::styled("◀ ", Style::default().fg(theme.accent_secondary)));
+    } else {
+        header_parts.push(Span::styled("  ", header_style));
+    }
+
+    header_parts.push(Span::styled("    ", header_style)); // Space for checkbox [✓] or [ ]
+    header_parts.push(Span::styled(format!("{:<10}", "Action"), header_style));
+    header_parts.push(Span::raw(" │ "));
+    header_parts.push(Span::styled(format!("{:<36}", "Source ID"), header_style));
+
+    // Get visible column range
+    let visible_range = state.visible_column_range(entity.field_names.len());
+    log::trace!("render_table_header: visible_range={:?} for {} fields", visible_range, entity.field_names.len());
+
+    // Add field columns based on visible range and calculated widths
+    for i in visible_range.clone() {
+        let field = &entity.field_names[i];
+        let width = state.column_widths.get(i).copied().unwrap_or(15);
         header_parts.push(Span::raw(" │ "));
         header_parts.push(Span::styled(
-            format!("{:<15}", truncate_str(field, 15)),
+            format!("{:<width$}", truncate_str(field, width), width = width),
             header_style,
         ));
     }
 
-    if entity.field_names.len() > max_fields {
-        header_parts.push(Span::raw(" │ "));
-        header_parts.push(Span::styled("...", header_style));
+    // Right scroll indicator
+    if state.has_columns_right(entity.field_names.len()) {
+        header_parts.push(Span::styled(" ▶", Style::default().fg(theme.accent_secondary)));
     }
 
     Element::styled_text(Line::from(header_parts))
@@ -217,6 +232,11 @@ fn render_record_table(state: &State, entity: &ResolvedEntity, theme: &Theme) ->
     let start_idx = scroll_offset;
     let end_idx = (scroll_offset + viewport).min(total_count);
 
+    // Get visible column range for horizontal scrolling
+    let visible_range = state.visible_column_range(entity.field_names.len());
+    let has_columns_left = state.has_columns_left();
+    let has_columns_right = state.has_columns_right(entity.field_names.len());
+
     // Create list items ONLY for visible range
     let visible_items: Vec<RecordListItem> = filtered_records[start_idx..end_idx]
         .iter()
@@ -226,6 +246,10 @@ fn render_record_table(state: &State, entity: &ResolvedEntity, theme: &Theme) ->
             RecordListItem {
                 record: (*record).clone(),
                 field_names: entity.field_names.clone(),
+                column_widths: state.column_widths.clone(),
+                visible_range: visible_range.clone(),
+                has_columns_left,
+                has_columns_right,
                 is_dirty: entity.is_dirty(record.source_id),
                 theme: theme.clone(),
                 global_index: global_idx,
@@ -267,6 +291,10 @@ fn render_record_table(state: &State, entity: &ResolvedEntity, theme: &Theme) ->
 struct RecordListItem {
     record: ResolvedRecord,
     field_names: Vec<String>,
+    column_widths: Vec<usize>,
+    visible_range: std::ops::Range<usize>,
+    has_columns_left: bool,
+    has_columns_right: bool,
     is_dirty: bool,
     theme: Theme,
     global_index: usize, // Index in the full filtered list (for virtual scrolling)
@@ -279,29 +307,38 @@ impl ListItem for RecordListItem {
     fn to_element(&self, is_selected: bool, is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
         let base_style = self.get_row_style(is_selected);
 
-        // Build the row: [checkbox] Action | Source ID (truncated) | field values
+        // Build the row: [scroll indicator] [checkbox] Action | Source ID (truncated) | field values [scroll indicator]
+        let mut spans = vec![];
+
+        // Left scroll indicator (matches header)
+        if self.has_columns_left {
+            spans.push(Span::styled("◀ ", Style::default().fg(self.theme.accent_secondary)));
+        } else {
+            spans.push(Span::styled("  ", base_style));
+        }
+
         let checkbox = if is_multi_selected {
             Span::styled("[✓] ", Style::default().fg(self.theme.accent_primary))
         } else {
             Span::styled("[ ] ", Style::default().fg(self.theme.text_tertiary))
         };
 
-        let mut spans = vec![
-            checkbox,
-            self.action_span(),
-            Span::styled(" │ ", base_style),
-            self.source_id_span(base_style),
-        ];
+        spans.push(checkbox);
+        spans.push(self.action_span());
+        spans.push(Span::styled(" │ ", base_style));
+        spans.push(self.source_id_span(base_style));
 
-        // Add field values (limit to first 5)
-        let max_fields = 5;
-        for field in self.field_names.iter().take(max_fields) {
+        // Add field values based on visible range and calculated widths
+        for i in self.visible_range.clone() {
+            let field = &self.field_names[i];
+            let width = self.column_widths.get(i).copied().unwrap_or(15);
             spans.push(Span::styled(" │ ", base_style));
-            spans.push(self.field_value_span(field, base_style));
+            spans.push(self.field_value_span_with_width(field, width, base_style));
         }
 
-        if self.field_names.len() > max_fields {
-            spans.push(Span::styled(" │ ...", base_style));
+        // Right scroll indicator (matches header)
+        if self.has_columns_right {
+            spans.push(Span::styled(" ▶", Style::default().fg(self.theme.accent_secondary)));
         }
 
         // For error records, append the error message
@@ -359,14 +396,14 @@ impl RecordListItem {
         Span::styled(text.to_string(), Style::default().fg(color))
     }
 
-    /// Render the source ID column (truncated UUID)
+    /// Render the source ID column (full UUID)
     fn source_id_span(&self, base_style: Style) -> Span<'static> {
-        let short_id = format!("{:.12}", self.record.source_id.to_string());
-        Span::styled(short_id, base_style)
+        let id = self.record.source_id.to_string();
+        Span::styled(format!("{:<36}", id), base_style)
     }
 
-    /// Render a field value column
-    fn field_value_span(&self, field: &str, base_style: Style) -> Span<'static> {
+    /// Render a field value column with dynamic width
+    fn field_value_span_with_width(&self, field: &str, width: usize, base_style: Style) -> Span<'static> {
         let value = self.record.fields.get(field);
 
         // Check if this field is a lookup that will be bound
@@ -381,10 +418,10 @@ impl RecordListItem {
                     .map(|info| info.target_entity_set.as_str())
                     .unwrap_or("?");
 
-                // Show as "→entity(guid...)" to indicate it will be bound
-                let display = format!("→{}({:.6})", target, guid);
+                // Show as "→entity(guid)" - use full guid, truncate_str will handle overflow
+                let display = format!("→{}({})", target, guid);
                 return Span::styled(
-                    format!("{:<15}", truncate_str(&display, 15)),
+                    format!("{:<width$}", truncate_str(&display, width), width = width),
                     Style::default().fg(self.theme.accent_secondary),
                 );
             } else if let Some(Value::String(s)) = value {
@@ -395,9 +432,9 @@ impl RecordListItem {
                         .map(|info| info.target_entity_set.as_str())
                         .unwrap_or("?");
 
-                    let display = format!("→{}({:.6})", target, s);
+                    let display = format!("→{}({})", target, s);
                     return Span::styled(
-                        format!("{:<15}", truncate_str(&display, 15)),
+                        format!("{:<width$}", truncate_str(&display, width), width = width),
                         Style::default().fg(self.theme.accent_secondary),
                     );
                 }
@@ -409,7 +446,7 @@ impl RecordListItem {
             .unwrap_or_else(|| "(null)".to_string());
 
         Span::styled(
-            format!("{:<15}", truncate_str(&value_str, 15)),
+            format!("{:<width$}", truncate_str(&value_str, width), width = width),
             base_style,
         )
     }
@@ -585,6 +622,10 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
 
     // Filtering
     subs.push(Subscription::keyboard(KeyCode::Char('f'), "Cycle filter", Msg::CycleFilter));
+
+    // Horizontal scrolling (columns)
+    subs.push(Subscription::keyboard(KeyCode::Left, "Scroll left", Msg::ScrollLeft));
+    subs.push(Subscription::keyboard(KeyCode::Right, "Scroll right", Msg::ScrollRight));
 
     // Record actions
     subs.push(Subscription::keyboard(KeyCode::Enter, "View details", Msg::ViewDetails));

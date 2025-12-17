@@ -251,8 +251,12 @@ pub struct State {
     pub search_field: TextInputField,
     /// List state for record table
     pub list_state: ListState,
-    /// Horizontal scroll offset for wide tables
+    /// Horizontal scroll offset (column index) for wide tables
     pub horizontal_scroll: usize,
+    /// Calculated column widths for each field (excluding fixed columns)
+    pub column_widths: Vec<usize>,
+    /// Terminal width for calculating visible columns
+    pub terminal_width: usize,
     /// Currently active modal
     pub active_modal: Option<PreviewModal>,
     /// Viewport height for virtual scrolling (updated by on_render)
@@ -296,6 +300,8 @@ impl Default for State {
             search_field: TextInputField::new(),
             list_state: ListState::with_selection(),
             horizontal_scroll: 0,
+            column_widths: Vec::new(),
+            terminal_width: 120, // Reasonable default
             active_modal: None,
             viewport_height: 50, // Reasonable default until on_render provides actual value
             record_detail_state: None,
@@ -440,6 +446,9 @@ pub enum Msg {
     // Navigation
     ListEvent(crate::tui::widgets::ListEvent),
     ViewportHeightChanged(usize), // For virtual scrolling
+    TerminalWidthChanged(usize),  // For horizontal scrolling
+    ScrollLeft,
+    ScrollRight,
     NextEntity,
     PrevEntity,
     SelectEntity(usize),
@@ -551,5 +560,122 @@ impl BulkActionScope {
             BulkActionScope::All => "All",
             BulkActionScope::Selected => "Selected",
         }
+    }
+}
+
+/// Column width configuration
+pub const MIN_COLUMN_WIDTH: usize = 8;
+pub const MAX_COLUMN_WIDTH: usize = 50; // Needs to fit lookup format: →entity(uuid) ~47 chars
+/// Source ID display width (full UUID is 36 chars, show more)
+pub const SOURCE_ID_WIDTH: usize = 36;
+/// Fixed columns: scroll_indicator(2) + checkbox(4) + action(10) + separator(3) + source_id(36) + separator(3)
+pub const FIXED_COLUMNS_WIDTH: usize = 58;
+
+/// Calculate column widths based on field names and values (free function to avoid borrow issues)
+pub fn calculate_column_widths(entity: &crate::transfer::ResolvedEntity) -> Vec<usize> {
+    log::debug!("calculate_column_widths: starting for entity with {} fields, {} records",
+        entity.field_names.len(), entity.records.len());
+
+    let mut widths: Vec<usize> = Vec::with_capacity(entity.field_names.len());
+
+    for field_name in &entity.field_names {
+        // Start with header width
+        let mut max_width = field_name.chars().count();
+
+        // Check all record values for this field
+        for record in &entity.records {
+            if let Some(value) = record.fields.get(field_name) {
+                let value_len = format_value_for_width(value).chars().count();
+                max_width = max_width.max(value_len);
+            }
+        }
+
+        // Clamp to min/max
+        let width = max_width.clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH);
+        widths.push(width);
+    }
+
+    log::debug!("calculate_column_widths: calculated {} widths: {:?}", widths.len(), widths);
+    widths
+}
+
+impl State {
+    /// Get current terminal width (with fallback)
+    fn get_terminal_width() -> usize {
+        crossterm::terminal::size()
+            .map(|(w, _)| w as usize)
+            .unwrap_or(120)
+    }
+
+    /// Get the number of visible columns based on terminal width and scroll offset
+    pub fn visible_column_range(&self, field_count: usize) -> std::ops::Range<usize> {
+        if self.column_widths.is_empty() {
+            // Fallback: show first 5 columns
+            return 0..field_count.min(5);
+        }
+
+        let terminal_width = Self::get_terminal_width();
+        let mut available_width = terminal_width.saturating_sub(FIXED_COLUMNS_WIDTH);
+        let start = self.horizontal_scroll.min(field_count.saturating_sub(1));
+        let mut end = start;
+
+        // Count how many columns fit
+        for (i, &width) in self.column_widths.iter().enumerate().skip(start) {
+            let col_width = width + 3; // +3 for " │ " separator
+            if col_width > available_width {
+                break;
+            }
+            available_width -= col_width;
+            end = i + 1;
+        }
+
+        // Ensure at least one column is visible
+        if end == start && start < field_count {
+            end = start + 1;
+        }
+
+        start..end
+    }
+
+    /// Check if there are more columns to the left
+    pub fn has_columns_left(&self) -> bool {
+        self.horizontal_scroll > 0
+    }
+
+    /// Check if there are more columns to the right
+    pub fn has_columns_right(&self, field_count: usize) -> bool {
+        let range = self.visible_column_range(field_count);
+        range.end < field_count
+    }
+
+    /// Scroll left by one column
+    pub fn scroll_left(&mut self) {
+        self.horizontal_scroll = self.horizontal_scroll.saturating_sub(1);
+    }
+
+    /// Scroll right by one column
+    pub fn scroll_right(&mut self, field_count: usize) {
+        if self.horizontal_scroll < field_count.saturating_sub(1) {
+            self.horizontal_scroll += 1;
+        }
+    }
+}
+
+/// Format a Value for width calculation
+/// Note: GUIDs may be displayed as lookups (→entity(uuid)) which is ~47 chars
+fn format_value_for_width(value: &crate::transfer::Value) -> String {
+    use crate::transfer::Value;
+    match value {
+        Value::Null => "(null)".to_string(),
+        Value::String(s) => s.clone(),
+        Value::Int(n) => n.to_string(),
+        Value::Float(f) => format!("{:.2}", f),
+        Value::Bool(b) => b.to_string(),
+        Value::DateTime(dt) => dt.format("%Y-%m-%d").to_string(),
+        // GUIDs displayed as lookups need ~47 chars: →entity(36-char-uuid)
+        // Use placeholder that represents typical lookup display width
+        Value::Guid(_) => "→entities(xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)".to_string(),
+        Value::OptionSet(n) => n.to_string(),
+        Value::Dynamic(dv) => format!("{:?}", dv),
     }
 }

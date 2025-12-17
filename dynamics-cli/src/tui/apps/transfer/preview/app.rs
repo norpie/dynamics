@@ -635,6 +635,13 @@ impl App for TransferPreviewApp {
                     // Keep source_data and target_data for future refresh comparisons
                     // (Previously cleared here, but we need them for refresh)
 
+                    // Calculate column widths for the current entity
+                    if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                        state.column_widths = super::state::calculate_column_widths(entity);
+                        log::debug!("RunTransform: column_widths calculated: {:?}", state.column_widths);
+                    }
+                    state.horizontal_scroll = 0;
+
                     state.resolved = Resource::Success(resolved);
                 }
                 Command::None
@@ -672,10 +679,28 @@ impl App for TransferPreviewApp {
             }
 
             Msg::ResolvedLoaded(result) => {
+                log::debug!("ResolvedLoaded: received result");
                 state.resolved = match result {
-                    Ok(resolved) => Resource::Success(resolved),
-                    Err(e) => Resource::Failure(e),
+                    Ok(resolved) => {
+                        log::debug!("ResolvedLoaded: success with {} entities", resolved.entities.len());
+                        Resource::Success(resolved)
+                    }
+                    Err(e) => {
+                        log::debug!("ResolvedLoaded: failure: {}", e);
+                        Resource::Failure(e)
+                    }
                 };
+                // Calculate column widths for the current entity
+                if let Resource::Success(resolved) = &state.resolved {
+                    log::debug!("ResolvedLoaded: calculating column widths for entity idx {}", state.current_entity_idx);
+                    if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                        state.column_widths = super::state::calculate_column_widths(entity);
+                        log::debug!("ResolvedLoaded: column_widths set to {:?}", state.column_widths);
+                    } else {
+                        log::debug!("ResolvedLoaded: no entity at index {}", state.current_entity_idx);
+                    }
+                }
+                state.horizontal_scroll = 0;
                 Command::None
             }
 
@@ -716,11 +741,39 @@ impl App for TransferPreviewApp {
                 Command::None
             }
 
+            // Terminal width changed (for horizontal scrolling)
+            Msg::TerminalWidthChanged(width) => {
+                state.terminal_width = width;
+                Command::None
+            }
+
+            // Horizontal scrolling
+            Msg::ScrollLeft => {
+                state.scroll_left();
+                Command::None
+            }
+
+            Msg::ScrollRight => {
+                if let Resource::Success(resolved) = &state.resolved {
+                    let field_count = resolved.entities
+                        .get(state.current_entity_idx)
+                        .map(|e| e.field_names.len())
+                        .unwrap_or(0);
+                    state.scroll_right(field_count);
+                }
+                Command::None
+            }
+
             Msg::NextEntity => {
                 if let Resource::Success(resolved) = &state.resolved {
                     if state.current_entity_idx + 1 < resolved.entities.len() {
                         state.current_entity_idx += 1;
                         state.list_state = crate::tui::widgets::ListState::with_selection();
+                        state.horizontal_scroll = 0;
+                        // Recalculate column widths for new entity
+                        if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                            state.column_widths = super::state::calculate_column_widths(entity);
+                        }
                     }
                 }
                 Command::None
@@ -730,6 +783,13 @@ impl App for TransferPreviewApp {
                 if state.current_entity_idx > 0 {
                     state.current_entity_idx -= 1;
                     state.list_state = crate::tui::widgets::ListState::with_selection();
+                    state.horizontal_scroll = 0;
+                    // Recalculate column widths for new entity
+                    if let Resource::Success(resolved) = &state.resolved {
+                        if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                            state.column_widths = super::state::calculate_column_widths(entity);
+                        }
+                    }
                 }
                 Command::None
             }
@@ -739,6 +799,11 @@ impl App for TransferPreviewApp {
                     if idx < resolved.entities.len() {
                         state.current_entity_idx = idx;
                         state.list_state = crate::tui::widgets::ListState::with_selection();
+                        state.horizontal_scroll = 0;
+                        // Recalculate column widths for new entity
+                        if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                            state.column_widths = super::state::calculate_column_widths(entity);
+                        }
                     }
                 }
                 Command::None
