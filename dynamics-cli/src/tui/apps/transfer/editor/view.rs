@@ -1169,8 +1169,8 @@ fn render_resolver_modal(
 
     Element::panel(Element::container(form_content).padding(1).build())
         .title(title)
-        .width(65)
-        .height(modal_height.min(45))
+        .width(90)
+        .height(modal_height.min(55))
         .build()
 }
 
