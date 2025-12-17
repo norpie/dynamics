@@ -1,12 +1,13 @@
 //! UI building functions for the queue app
 
-use crate::tui::element::{Element, FocusId};
-use crate::tui::widgets::ScrollableState;
-use super::app::{State, Msg};
+use crate::tui::element::{Element, FocusId, LayoutConstraint};
+use crate::tui::widgets::{ScrollableState, FileBrowserState};
+use super::app::{State, Msg, ImportModalState, ImportSettings};
 use super::models::OperationStatus;
 use ratatui::style::Style;
 use ratatui::text::{Line as RataLine, Span};
 use ratatui::prelude::Stylize;
+use crate::{col, row, use_constraints};
 
 pub fn build_details_panel(state: &State, scroll_state: &ScrollableState) -> Element<Msg> {
     let start = std::time::Instant::now();
@@ -607,4 +608,281 @@ pub fn build_interruption_warning_modal(state: &State) -> Element<Msg> {
     }
 
     modal.build()
+}
+
+/// Build import file browser modal
+pub fn build_import_file_browser(browser: &FileBrowserState) -> Element<Msg> {
+    use_constraints!();
+    let theme = &crate::global_runtime_config().theme;
+
+    // Header with current path
+    let path_label = Element::styled_text(RataLine::from(vec![
+        Span::styled("Path:", Style::default().fg(theme.accent_muted).bold()),
+    ])).build();
+
+    let path_value = Element::styled_text(RataLine::from(vec![
+        Span::styled(
+            browser.current_path().display().to_string(),
+            Style::default().fg(theme.text_primary)
+        ),
+    ])).build();
+
+    // File browser widget wrapped in panel
+    let file_list = Element::file_browser("import-browser", browser, theme)
+        .on_navigate(Msg::ImportFileNavigate)
+        .build();
+
+    let file_panel = Element::panel(file_list)
+        .title("Files")
+        .build();
+
+    // Instructions
+    let instructions = Element::styled_text(RataLine::from(vec![
+        Span::styled("↑↓ ", Style::default().fg(theme.accent_tertiary)),
+        Span::styled("Navigate  ", Style::default().fg(theme.border_primary)),
+        Span::styled("Enter ", Style::default().fg(theme.accent_tertiary)),
+        Span::styled("Select/Open  ", Style::default().fg(theme.border_primary)),
+        Span::styled("Backspace ", Style::default().fg(theme.accent_tertiary)),
+        Span::styled("Go up  ", Style::default().fg(theme.border_primary)),
+        Span::styled("Esc ", Style::default().fg(theme.accent_tertiary)),
+        Span::styled("Cancel", Style::default().fg(theme.border_primary)),
+    ])).build();
+
+    // Cancel button
+    let cancel_btn = Element::button("import-cancel", " Cancel ")
+        .on_press(Msg::ImportCancel)
+        .build();
+
+    let footer = row![
+        instructions => Fill(1),
+        cancel_btn => Length(12),
+    ];
+
+    let content = col![
+        path_label => Length(1),
+        path_value => Length(1),
+        Element::None => Length(1),
+        file_panel => Fill(1),
+        Element::None => Length(1),
+        footer => Length(3),
+    ];
+
+    Element::panel(content)
+        .title("Select Excel File (.xlsx)")
+        .build()
+}
+
+/// Build import settings modal
+pub fn build_import_settings(settings: &ImportSettings) -> Element<Msg> {
+    use_constraints!();
+    let theme = &crate::global_runtime_config().theme;
+
+    // File info
+    let file_info = Element::styled_text(RataLine::from(vec![
+        Span::styled("File: ", Style::default().fg(theme.border_primary)),
+        Span::styled(
+            settings.file_path.file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Unknown".to_string()),
+            Style::default().fg(theme.text_primary)
+        ),
+    ])).build();
+
+    // Operation summary
+    let mut summary_lines = vec![
+        Element::styled_text(RataLine::from(vec![
+            Span::styled("Operations:", Style::default().fg(theme.accent_muted).bold()),
+        ])).build(),
+    ];
+
+    for sheet in &settings.parsed.sheets {
+        summary_lines.push(Element::styled_text(RataLine::from(vec![
+            Span::styled("  • ", Style::default().fg(theme.border_primary)),
+            Span::styled(
+                format!("{} {}: {} operations", sheet.operation_type, sheet.entity, sheet.operations.len()),
+                Style::default().fg(theme.text_primary)
+            ),
+        ])).build());
+    }
+
+    summary_lines.push(Element::styled_text(RataLine::from(vec![
+        Span::styled("  Total: ", Style::default().fg(theme.border_primary)),
+        Span::styled(
+            format!("{} operations", settings.parsed.total_count),
+            Style::default().fg(theme.accent_success)
+        ),
+    ])).build());
+
+    // Calculate batches
+    let total_batches: usize = settings.parsed.sheets.iter()
+        .map(|s| (s.operations.len() + settings.batch_size - 1) / settings.batch_size)
+        .sum();
+
+    summary_lines.push(Element::styled_text(RataLine::from(vec![
+        Span::styled("  Batches: ", Style::default().fg(theme.border_primary)),
+        Span::styled(
+            format!("{} queue items", total_batches),
+            Style::default().fg(theme.text_primary)
+        ),
+    ])).build());
+
+    let summary = Element::column(summary_lines).spacing(0).build();
+
+    // Batch size control - wrap in panel for proper sizing
+    let batch_dec = Element::button("batch-dec", " - ")
+        .on_press(Msg::ImportSetBatchSize(settings.batch_size.saturating_sub(10).max(1)))
+        .build();
+    let batch_inc = Element::button("batch-inc", " + ")
+        .on_press(Msg::ImportSetBatchSize((settings.batch_size + 10).min(1000)))
+        .build();
+    let batch_value = Element::styled_text(RataLine::from(vec![
+        Span::styled(
+            format!("{}", settings.batch_size),
+            Style::default().fg(theme.text_primary)
+        ),
+    ])).build();
+
+    let batch_controls = row![
+        batch_dec => Length(7),
+        Element::None => Length(1),
+        batch_value => Fill(1),
+        Element::None => Length(1),
+        batch_inc => Length(7),
+    ];
+    let batch_panel = Element::panel(batch_controls)
+        .title("Batch Size")
+        .build();
+
+    // Priority control - wrap in panel
+    let priority_dec = Element::button("priority-dec", " - ")
+        .on_press(Msg::ImportSetPriority(settings.priority.saturating_sub(1)))
+        .build();
+    let priority_inc = Element::button("priority-inc", " + ")
+        .on_press(Msg::ImportSetPriority(settings.priority.saturating_add(1)))
+        .build();
+    let priority_value = Element::styled_text(RataLine::from(vec![
+        Span::styled(
+            format!("{}", settings.priority),
+            Style::default().fg(theme.text_primary)
+        ),
+    ])).build();
+
+    let priority_controls = row![
+        priority_dec => Length(7),
+        Element::None => Length(1),
+        priority_value => Fill(1),
+        Element::None => Length(1),
+        priority_inc => Length(7),
+    ];
+    let priority_panel = Element::panel(priority_controls)
+        .title("Priority")
+        .build();
+
+    // Environment selector - wrap in panel
+    let current_idx = settings.available_environments.iter()
+        .position(|e| e == &settings.environment)
+        .unwrap_or(0);
+    let prev_idx = if current_idx == 0 {
+        settings.available_environments.len().saturating_sub(1)
+    } else {
+        current_idx - 1
+    };
+    let next_idx = (current_idx + 1) % settings.available_environments.len().max(1);
+
+    let prev_env = settings.available_environments.get(prev_idx)
+        .cloned()
+        .unwrap_or_else(|| settings.environment.clone());
+    let next_env = settings.available_environments.get(next_idx)
+        .cloned()
+        .unwrap_or_else(|| settings.environment.clone());
+
+    let env_prev = Element::button("env-prev", " < ")
+        .on_press(Msg::ImportSetEnvironment(prev_env))
+        .build();
+    let env_next = Element::button("env-next", " > ")
+        .on_press(Msg::ImportSetEnvironment(next_env))
+        .build();
+    let env_value = Element::styled_text(RataLine::from(vec![
+        Span::styled(
+            settings.environment.clone(),
+            Style::default().fg(theme.accent_secondary)
+        ),
+    ])).build();
+
+    let env_controls = row![
+        env_prev => Length(7),
+        Element::None => Length(1),
+        env_value => Fill(1),
+        Element::None => Length(1),
+        env_next => Length(7),
+    ];
+    let env_panel = Element::panel(env_controls)
+        .title("Environment")
+        .build();
+
+    // Action buttons
+    let back_btn = Element::button("import-back", " Cancel ")
+        .on_press(Msg::ImportCancel)
+        .build();
+    let confirm_btn = Element::button("import-confirm", " Import ")
+        .on_press(Msg::ImportConfirm)
+        .build();
+
+    let buttons = row![
+        back_btn => Length(12),
+        Element::None => Fill(1),
+        confirm_btn => Length(12),
+    ];
+
+    // Summary height: 1 (header) + sheets + 2 (total + batches)
+    let summary_height = (settings.parsed.sheets.len() + 3) as u16;
+
+    let content = col![
+        file_info => Length(1),
+        Element::None => Length(1),
+        summary => Length(summary_height),
+        Element::None => Length(1),
+        batch_panel => Length(5),      // panel: 2 border + 3 content
+        priority_panel => Length(5),
+        env_panel => Length(5),
+        Element::None => Length(1),
+        buttons => Length(3),          // button: 2 border + 1 content
+    ];
+
+    Element::panel(content)
+        .title("Import Settings")
+        .build()
+}
+
+/// Build import confirmation modal (currently unused - settings modal has confirm)
+pub fn build_import_confirmation(settings: &ImportSettings) -> Element<Msg> {
+    use crate::tui::modals::ConfirmationModal;
+
+    let batches = settings.parsed.sheets.iter()
+        .map(|s| (s.operations.len() + settings.batch_size - 1) / settings.batch_size)
+        .sum::<usize>();
+
+    let message = format!(
+        "Ready to import {} operations in {} batches.\n\
+        Entity: {}\n\
+        Environment: {}\n\
+        Priority: {}",
+        settings.parsed.total_count,
+        batches,
+        settings.parsed.sheets.iter()
+            .map(|s| s.entity.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
+        settings.environment,
+        settings.priority
+    );
+
+    ConfirmationModal::new("Confirm Import")
+        .message(message)
+        .confirm_text("Import")
+        .cancel_text("Cancel")
+        .on_confirm(Msg::ImportConfirm)
+        .on_cancel(Msg::ImportCancel)
+        .width(60)
+        .build()
 }

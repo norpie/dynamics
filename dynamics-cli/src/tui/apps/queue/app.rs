@@ -7,19 +7,21 @@ use crate::tui::{
     subscription::Subscription,
     state::theme::Theme,
     renderer::LayeredView,
-    widgets::{TreeState, TreeEvent, ScrollableState},
+    widgets::{TreeState, TreeEvent, ScrollableState, FileBrowserState},
     ModalState,
 };
 use crate::{col, row, use_constraints};
 use crate::api::resilience::ResilienceConfig;
+use crate::transfer::excel::{read_operations_excel, ParsedOperations};
 use ratatui::text::Line;
 use std::collections::{HashSet, VecDeque};
+use std::path::PathBuf;
 use std::sync::Arc;
-use super::models::{QueueItem, QueueFilter, SortMode, OperationStatus, QueueResult};
+use super::models::{QueueItem, QueueFilter, SortMode, OperationStatus, QueueResult, QueueMetadata};
 use super::tree_nodes::QueueTreeNode;
 use super::commands::{save_settings_command, execute_next_if_available, execute_up_to_max};
 use super::utils::estimate_remaining_time;
-use super::views::{build_details_panel, build_clear_confirm_modal, build_delete_confirm_modal, build_interruption_warning_modal};
+use super::views::{build_details_panel, build_clear_confirm_modal, build_delete_confirm_modal, build_interruption_warning_modal, build_import_file_browser, build_import_settings, build_import_confirmation};
 
 pub struct OperationQueueApp;
 
@@ -83,6 +85,20 @@ pub enum Msg {
 
     // Navigation
     Back,
+
+    // Import modal
+    OpenImportModal,
+    ImportFileNavigate(crossterm::event::KeyCode),
+    ImportFileSelected(PathBuf),
+    ImportFileParsed(Result<ParsedOperations, String>),
+    ImportSettingsReady(ImportSettings),
+    ImportSetBatchSize(usize),
+    ImportSetPriority(u8),
+    ImportSetEnvironment(String),
+    ImportConfirm,
+    ImportCancel,
+    ImportGoBack,
+    EnvironmentsLoaded(Result<Vec<String>, String>),
 }
 
 pub struct State {
@@ -115,8 +131,43 @@ pub struct State {
     pub delete_confirm_modal: ModalState<()>,
     pub interruption_warning_modal: ModalState<Vec<QueueItem>>,
 
+    // Import modal state
+    pub import_modal: ImportModalState,
+
     // Loading state
     pub is_loading: bool,
+}
+
+/// State for the import modal
+#[derive(Debug, Clone)]
+pub enum ImportModalState {
+    Closed,
+    FileBrowser(FileBrowserState),
+    Settings(ImportSettings),
+    Confirmation(ImportSettings),
+}
+
+impl Default for ImportModalState {
+    fn default() -> Self {
+        ImportModalState::Closed
+    }
+}
+
+impl ImportModalState {
+    pub fn is_open(&self) -> bool {
+        !matches!(self, ImportModalState::Closed)
+    }
+}
+
+/// Settings for importing operations
+#[derive(Debug, Clone)]
+pub struct ImportSettings {
+    pub file_path: PathBuf,
+    pub parsed: ParsedOperations,
+    pub batch_size: usize,
+    pub priority: u8,
+    pub environment: String,
+    pub available_environments: Vec<String>,
 }
 
 impl Default for State {
@@ -141,6 +192,7 @@ impl Default for State {
             clear_confirm_modal: ModalState::Closed,
             delete_confirm_modal: ModalState::Closed,
             interruption_warning_modal: ModalState::Closed,
+            import_modal: ImportModalState::Closed,
             is_loading: true,
         }
     }
@@ -1121,7 +1173,216 @@ impl App for OperationQueueApp {
                 Command::None
             }
 
-            Msg::Back => Command::navigate_to(AppId::AppLauncher),
+            Msg::Back => {
+                // If import modal is open, close it instead of navigating away
+                if state.import_modal.is_open() {
+                    state.import_modal = ImportModalState::Closed;
+                    return Command::set_focus(FocusId::new("queue-tree"));
+                }
+                Command::navigate_to(AppId::AppLauncher)
+            }
+
+            // Import modal handlers
+            Msg::OpenImportModal => {
+                let initial_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                let mut browser = FileBrowserState::new(initial_path);
+                // Filter to show only directories and .xlsx files
+                browser.set_filter(|entry| {
+                    entry.is_dir || entry.name.to_lowercase().ends_with(".xlsx")
+                });
+                state.import_modal = ImportModalState::FileBrowser(browser);
+
+                // Load environments in background
+                Command::perform(
+                    async {
+                        let config = crate::global_config();
+                        config.list_environments().await
+                            .map_err(|e| format!("Failed to load environments: {}", e))
+                    },
+                    Msg::EnvironmentsLoaded,
+                )
+            }
+
+            Msg::EnvironmentsLoaded(result) => {
+                // Store environments for later use when moving to settings
+                // For now we just log - environments will be loaded when file is selected
+                if let Err(e) = &result {
+                    log::warn!("Failed to load environments: {}", e);
+                }
+                Command::None
+            }
+
+            Msg::ImportFileNavigate(key) => {
+                use crossterm::event::KeyCode;
+                use crate::tui::widgets::FileBrowserAction;
+
+                // Handle Escape to close modal
+                if key == KeyCode::Esc {
+                    state.import_modal = ImportModalState::Closed;
+                    return Command::set_focus(FocusId::new("queue-tree"));
+                }
+
+                if let ImportModalState::FileBrowser(browser) = &mut state.import_modal {
+                    let event = match key {
+                        KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown |
+                        KeyCode::Home | KeyCode::End => {
+                            crate::tui::widgets::FileBrowserEvent::Navigate(key)
+                        }
+                        KeyCode::Enter => crate::tui::widgets::FileBrowserEvent::Activate,
+                        KeyCode::Backspace => crate::tui::widgets::FileBrowserEvent::GoUp,
+                        _ => return Command::None,
+                    };
+
+                    if let Some(action) = browser.handle_event(event) {
+                        match action {
+                            FileBrowserAction::FileSelected(path) => {
+                                return Self::update(state, Msg::ImportFileSelected(path));
+                            }
+                            FileBrowserAction::DirectoryEntered(_) |
+                            FileBrowserAction::DirectoryChanged(_) => {}
+                        }
+                    }
+                }
+                Command::None
+            }
+
+            Msg::ImportFileSelected(path) => {
+                // Parse the Excel file
+                let path_clone = path.clone();
+                Command::perform(
+                    async move {
+                        read_operations_excel(&path_clone)
+                            .map_err(|e| format!("Failed to parse Excel: {}", e))
+                    },
+                    Msg::ImportFileParsed,
+                )
+            }
+
+            Msg::ImportFileParsed(result) => {
+                match result {
+                    Ok(parsed) => {
+                        if parsed.total_count == 0 {
+                            log::warn!("No operations found in Excel file");
+                            state.import_modal = ImportModalState::Closed;
+                            return Command::set_focus(FocusId::new("queue-tree"));
+                        }
+
+                        // Get file path from browser state before transitioning
+                        let file_path = if let ImportModalState::FileBrowser(browser) = &state.import_modal {
+                            browser.selected_entry()
+                                .map(|e| e.path.clone())
+                                .unwrap_or_default()
+                        } else {
+                            PathBuf::new()
+                        };
+
+                        // Load environments and move to settings
+                        let parsed_clone = parsed;
+                        let file_path_clone = file_path;
+                        Command::perform(
+                            async {
+                                let config = crate::global_config();
+                                let envs = config.list_environments().await
+                                    .unwrap_or_default();
+                                let current = config.get_current_environment().await
+                                    .ok()
+                                    .flatten()
+                                    .unwrap_or_default();
+                                Ok::<_, String>(ImportSettings {
+                                    file_path: file_path_clone,
+                                    parsed: parsed_clone,
+                                    batch_size: 50,
+                                    priority: 10,
+                                    environment: current,
+                                    available_environments: envs,
+                                })
+                            },
+                            |result| {
+                                match result {
+                                    Ok(settings) => Msg::ImportSettingsReady(settings),
+                                    Err(e) => Msg::ImportCancel, // Fallback
+                                }
+                            },
+                        )
+                    }
+                    Err(e) => {
+                        log::error!("Failed to parse Excel: {}", e);
+                        state.import_modal = ImportModalState::Closed;
+                        Command::set_focus(FocusId::new("queue-tree"))
+                    }
+                }
+            }
+
+            Msg::ImportSettingsReady(settings) => {
+                state.import_modal = ImportModalState::Settings(settings);
+                Command::set_focus(FocusId::new("import-confirm"))
+            }
+
+            Msg::ImportSetBatchSize(size) => {
+                if let ImportModalState::Settings(settings) = &mut state.import_modal {
+                    settings.batch_size = size.max(1).min(1000);
+                }
+                Command::None
+            }
+
+            Msg::ImportSetPriority(priority) => {
+                if let ImportModalState::Settings(settings) = &mut state.import_modal {
+                    settings.priority = priority;
+                }
+                Command::None
+            }
+
+            Msg::ImportSetEnvironment(env) => {
+                // This is also used to transition from FileBrowser to Settings after parsing
+                if let ImportModalState::FileBrowser(browser) = &state.import_modal {
+                    // Need to get the file path and create settings - but we don't have parsed here
+                    // This case shouldn't happen in normal flow
+                    return Command::None;
+                }
+
+                if let ImportModalState::Settings(settings) = &mut state.import_modal {
+                    settings.environment = env;
+                }
+                Command::None
+            }
+
+            Msg::ImportConfirm => {
+                if let ImportModalState::Settings(settings) = &state.import_modal {
+                    // Create queue items from parsed operations
+                    let queue_items = create_queue_items_from_import(settings);
+
+                    // Add to queue
+                    let add_cmd = Self::update(state, Msg::AddItems(queue_items));
+
+                    // Close modal
+                    state.import_modal = ImportModalState::Closed;
+
+                    return Command::Batch(vec![
+                        add_cmd,
+                        Command::set_focus(FocusId::new("queue-tree")),
+                    ]);
+                }
+                state.import_modal = ImportModalState::Closed;
+                Command::set_focus(FocusId::new("queue-tree"))
+            }
+
+            Msg::ImportCancel => {
+                state.import_modal = ImportModalState::Closed;
+                Command::set_focus(FocusId::new("queue-tree"))
+            }
+
+            Msg::ImportGoBack => {
+                // Go back from settings to file browser
+                if let ImportModalState::Settings(_) = &state.import_modal {
+                    let initial_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                    let mut browser = FileBrowserState::new(initial_path);
+                    browser.set_filter(|entry| {
+                        entry.is_dir || entry.name.to_lowercase().ends_with(".xlsx")
+                    });
+                    state.import_modal = ImportModalState::FileBrowser(browser);
+                }
+                Command::None
+            }
         }
     }
 
@@ -1272,6 +1533,23 @@ impl App for OperationQueueApp {
             view = view.with_app_modal(modal, Alignment::Center);
         }
 
+        // Add import modal if open
+        match &state.import_modal {
+            ImportModalState::Closed => {}
+            ImportModalState::FileBrowser(browser) => {
+                let modal = build_import_file_browser(browser);
+                view = view.with_app_modal(modal, Alignment::Center);
+            }
+            ImportModalState::Settings(settings) => {
+                let modal = build_import_settings(settings);
+                view = view.with_app_modal(modal, Alignment::Center);
+            }
+            ImportModalState::Confirmation(settings) => {
+                let modal = build_import_confirmation(settings);
+                view = view.with_app_modal(modal, Alignment::Center);
+            }
+        }
+
         let total_elapsed = view_start.elapsed();
         if total_elapsed.as_millis() > 5 {
             log::warn!(
@@ -1304,6 +1582,7 @@ impl App for OperationQueueApp {
             Subscription::keyboard(KeyBinding::new(KeyCode::Char('d')), "Delete (selected)", Msg::RequestDeleteSelected),
             Subscription::keyboard(KeyBinding::new(KeyCode::Char('c')), "Clear interruption warning (selected)", Msg::ClearInterruptionFlagSelected),
             Subscription::keyboard(KeyBinding::new(KeyCode::Char('f')), "Cycle filter", Msg::CycleFilter),
+            Subscription::keyboard(KeyBinding::new(KeyCode::Char('I')), "Import from Excel", Msg::OpenImportModal),
 
             // Event subscriptions
             Subscription::subscribe("queue:add_items", |value| {
@@ -1375,4 +1654,55 @@ impl App for OperationQueueApp {
     fn suspend_policy() -> crate::tui::SuspendPolicy {
         crate::tui::SuspendPolicy::AlwaysActive
     }
+}
+
+/// Create queue items from import settings
+/// Each sheet becomes separate batches, operations within a sheet are batched by batch_size
+fn create_queue_items_from_import(settings: &ImportSettings) -> Vec<QueueItem> {
+    use crate::api::operations::Operations;
+
+    let mut queue_items = Vec::new();
+    let file_name = settings.file_path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "import".to_string());
+
+    for sheet in &settings.parsed.sheets {
+        // Batch operations within each sheet
+        // Different operation types (sheets) are never mixed
+        for (batch_idx, chunk) in sheet.operations.chunks(settings.batch_size).enumerate() {
+            let batch_num = batch_idx + 1;
+            let total_batches = (sheet.operations.len() + settings.batch_size - 1) / settings.batch_size;
+
+            let description = if total_batches > 1 {
+                format!("{}: {} {} (batch {}/{})",
+                    file_name,
+                    sheet.operation_type,
+                    sheet.entity,
+                    batch_num,
+                    total_batches
+                )
+            } else {
+                format!("{}: {} {}",
+                    file_name,
+                    sheet.operation_type,
+                    sheet.entity
+                )
+            };
+
+            let metadata = QueueMetadata {
+                source: format!("Excel Import: {}", file_name),
+                entity_type: sheet.entity.clone(),
+                description,
+                row_number: None,
+                environment_name: settings.environment.clone(),
+            };
+
+            let operations = Operations::from_operations(chunk.to_vec());
+            let item = QueueItem::new(operations, metadata, settings.priority);
+            queue_items.push(item);
+        }
+    }
+
+    queue_items
 }
