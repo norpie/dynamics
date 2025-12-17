@@ -52,9 +52,10 @@ impl AutocompleteState {
     /// Set cursor to end of text (used after programmatically setting value)
     pub fn set_cursor_to_end(&mut self, text: &str) {
         self.input_state = TextInputState::new();
-        let char_count = text.chars().count();
         // Use End key logic to move cursor to end
         self.input_state.handle_key(crossterm::event::KeyCode::End, text, None);
+        // Update scroll to keep cursor visible at end
+        self.input_state.update_scroll(Self::DEFAULT_VISIBLE_WIDTH, text);
     }
 
     /// Get whether dropdown is open
@@ -165,8 +166,17 @@ impl AutocompleteState {
         current_value: &str,
         max_length: Option<usize>,
     ) -> Option<String> {
-        self.input_state.handle_key(key, current_value, max_length)
+        let result = self.input_state.handle_key(key, current_value, max_length);
+        // Update scroll to keep cursor visible
+        // Use the new value if changed, otherwise current value
+        let text = result.as_deref().unwrap_or(current_value);
+        self.input_state.update_scroll(Self::DEFAULT_VISIBLE_WIDTH, text);
+        result
     }
+
+    /// Default visible width for scroll calculations
+    /// This is an estimate - actual width depends on render area
+    const DEFAULT_VISIBLE_WIDTH: usize = 40;
 
     /// Handle navigation in dropdown
     /// Returns true if the key was handled

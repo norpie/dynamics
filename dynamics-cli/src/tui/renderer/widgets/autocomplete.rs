@@ -123,10 +123,29 @@ pub fn render_autocomplete<Msg: Clone + Send + 'static>(
     // Calculate visible width (area width - 2 for minimal padding)
     let visible_width = area.width.saturating_sub(2) as usize;
 
-    // Get visible portion of text with scroll support
+    // Recalculate scroll offset to ensure cursor is always visible
+    // This overrides the passed-in scroll_offset with a corrected value
     let chars: Vec<char> = current_input.chars().collect();
-    let start_idx = scroll_offset;
-    let end_idx = (start_idx + visible_width).min(chars.len());
+    let char_count = chars.len();
+    let corrected_scroll = {
+        let mut scroll = scroll_offset;
+        if visible_width > 0 {
+            // Ensure cursor is within visible window
+            if cursor_pos < scroll {
+                scroll = cursor_pos;
+            } else if cursor_pos >= scroll + visible_width {
+                scroll = cursor_pos.saturating_sub(visible_width - 1);
+            }
+            // Clamp to valid range
+            let max_offset = char_count.saturating_sub(visible_width);
+            scroll = scroll.min(max_offset);
+        }
+        scroll
+    };
+
+    // Get visible portion of text with corrected scroll
+    let start_idx = corrected_scroll;
+    let end_idx = (start_idx + visible_width).min(char_count);
     let visible_text: String = chars.get(start_idx..end_idx)
         .map(|c| c.iter().collect())
         .unwrap_or_default();
