@@ -1045,6 +1045,7 @@ fn is_virtual_field(field: &FieldMetadata) -> bool {
 }
 
 /// Build the source field options for autocomplete, including nested lookup paths
+/// Supports multi-level nesting (e.g., cgk_deadlineid.cgk_projectmanagerid.emailaddress1)
 fn get_source_options(state: &State) -> Vec<String> {
     let mut options = Vec::new();
 
@@ -1058,11 +1059,12 @@ fn get_source_options(state: &State) -> Vec<String> {
     }
 
     // Add nested paths for loaded related entities (also excluding virtual fields)
-    for (lookup_field, resource) in &state.related_fields {
+    // The key is now the full path prefix (e.g., "cgk_deadlineid" or "cgk_deadlineid.cgk_projectmanagerid")
+    for (path_prefix, resource) in &state.related_fields {
         if let Resource::Success(related_fields) = resource {
             for f in related_fields {
                 if !is_virtual_field(f) {
-                    options.push(format!("{}.{}", lookup_field, f.logical_name));
+                    options.push(format!("{}.{}", path_prefix, f.logical_name));
                 }
             }
         }
@@ -1074,62 +1076,82 @@ fn get_source_options(state: &State) -> Vec<String> {
 /// Check if the current source path value contains a lookup field reference
 /// that requires loading the related entity's fields.
 /// Returns a Command to load the related entity if needed.
+/// Supports multi-level nesting (e.g., cgk_deadlineid.cgk_projectmanagerid.emailaddress1)
 fn check_for_nested_lookup(state: &mut State, current_value: &str) -> Command<Msg> {
     if !current_value.contains('.') {
         return Command::None;
     }
 
-    let base_field = current_value.split('.').next().unwrap();
-    log::debug!("check_for_nested_lookup: looking for base_field '{}'", base_field);
+    let segments: Vec<&str> = current_value.split('.').collect();
+    log::debug!("check_for_nested_lookup: segments = {:?}", segments);
 
-    // Find the lookup field in source_fields
-    let lookup_info = if let Resource::Success(fields) = &state.source_fields {
-        // First, find if there's a field matching this name
-        if let Some(field) = fields.iter().find(|f| f.logical_name == base_field) {
-            log::debug!("  Found field '{}' with type {:?}, related_entity: {:?}",
-                field.logical_name, field.field_type, field.related_entity);
-        } else {
-            log::debug!("  No field found matching '{}'", base_field);
+    // We need to check each level of nesting and load the deepest unloaded one
+    // For "a.b.c", we check: "a" (level 0), "a.b" (level 1)
+    // The last segment is the field we're trying to access, not a lookup to expand
+
+    for depth in 0..segments.len().saturating_sub(1) {
+        let path_prefix = segments[..=depth].join(".");
+        let field_to_check = segments[depth];
+
+        // Skip if already loaded for this path prefix
+        if state.related_fields.contains_key(&path_prefix) {
+            continue;
         }
 
-        fields.iter()
-            .find(|f| f.logical_name == base_field && f.field_type == FieldType::Lookup)
-            .and_then(|f| f.related_entity.clone().map(|e| (base_field.to_string(), e)))
-    } else {
-        log::debug!("  source_fields not loaded yet");
-        None
-    };
-
-    if let Some((field_name, related_entity)) = lookup_info {
-        // Check if already loaded or loading
-        if state.related_fields.contains_key(&field_name) {
-            return Command::None;
-        }
-
-        // Get source env name from config
-        let source_env = if let Resource::Success(config) = &state.config {
-            config.source_env.clone()
+        // Find the field metadata to check if it's a lookup
+        let lookup_info = if depth == 0 {
+            // First level: look in source_fields
+            if let Resource::Success(fields) = &state.source_fields {
+                if let Some(field) = fields.iter().find(|f| f.logical_name == field_to_check) {
+                    log::debug!("  Found field '{}' with type {:?}, related_entity: {:?}",
+                        field.logical_name, field.field_type, field.related_entity);
+                }
+                fields.iter()
+                    .find(|f| f.logical_name == field_to_check && f.field_type == FieldType::Lookup)
+                    .and_then(|f| f.related_entity.clone().map(|e| (path_prefix.clone(), e)))
+            } else {
+                log::debug!("  source_fields not loaded yet");
+                None
+            }
         } else {
-            return Command::None;
+            // Deeper levels: look in previously loaded related fields
+            let parent_prefix = segments[..depth].join(".");
+            if let Some(Resource::Success(fields)) = state.related_fields.get(&parent_prefix) {
+                fields.iter()
+                    .find(|f| f.logical_name == field_to_check && f.field_type == FieldType::Lookup)
+                    .and_then(|f| f.related_entity.clone().map(|e| (path_prefix.clone(), e)))
+            } else {
+                // Parent level not loaded yet, can't proceed deeper
+                None
+            }
         };
 
-        state.related_fields.insert(field_name.clone(), Resource::Loading);
+        if let Some((path_prefix, related_entity)) = lookup_info {
+            // Get source env name from config
+            let source_env = if let Resource::Success(config) = &state.config {
+                config.source_env.clone()
+            } else {
+                return Command::None;
+            };
 
-        // Use loading screen for fetch
-        return Command::perform_parallel()
-            .add_task(
-                format!("Loading fields from {}", related_entity),
-                load_entity_fields(source_env, related_entity),
-            )
-            .with_title("Loading Related Entity")
-            .on_complete(AppId::TransferMappingEditor)
-            .build(move |_task_idx, result| {
-                let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
-                Msg::RelatedFieldsLoaded {
-                    lookup_field: field_name.clone(),
-                    result: *data,
-                }
-            });
+            state.related_fields.insert(path_prefix.clone(), Resource::Loading);
+
+            // Use loading screen for fetch
+            return Command::perform_parallel()
+                .add_task(
+                    format!("Loading fields from {}", related_entity),
+                    load_entity_fields(source_env, related_entity),
+                )
+                .with_title("Loading Related Entity")
+                .on_complete(AppId::TransferMappingEditor)
+                .build(move |_task_idx, result| {
+                    let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                    Msg::RelatedFieldsLoaded {
+                        lookup_field: path_prefix.clone(),
+                        result: *data,
+                    }
+                });
+        }
     }
 
     Command::None
@@ -1175,6 +1197,7 @@ fn check_resolver_entity_selection(state: &mut State) -> Command<Msg> {
 
 /// Build autocomplete options for resolver source_path field
 /// Includes base source entity fields and nested paths for loaded related entities
+/// Supports multi-level nesting (e.g., cgk_deadlineid.cgk_projectmanagerid.emailaddress1)
 fn build_resolver_source_options(state: &State) -> Vec<String> {
     let mut options = Vec::new();
 
@@ -1188,11 +1211,12 @@ fn build_resolver_source_options(state: &State) -> Vec<String> {
     }
 
     // Add nested paths for loaded related entities
-    for (lookup_field, resource) in &state.resolver_related_fields {
+    // The key is now the full path prefix (e.g., "cgk_deadlineid" or "cgk_deadlineid.cgk_projectmanagerid")
+    for (path_prefix, resource) in &state.resolver_related_fields {
         if let Resource::Success(related_fields) = resource {
             for f in related_fields {
                 if !is_virtual_field(f) {
-                    options.push(format!("{}.{}", lookup_field, f.logical_name));
+                    options.push(format!("{}.{}", path_prefix, f.logical_name));
                 }
             }
         }
@@ -1203,52 +1227,76 @@ fn build_resolver_source_options(state: &State) -> Vec<String> {
 
 /// Check if the current resolver source_path value contains a lookup field reference
 /// that requires loading the related entity's fields.
+/// Supports multi-level nesting (e.g., cgk_deadlineid.cgk_projectmanagerid.emailaddress1)
 fn check_resolver_nested_lookup(state: &mut State, current_value: &str) -> Command<Msg> {
     if !current_value.contains('.') {
         return Command::None;
     }
 
-    let base_field = current_value.split('.').next().unwrap();
+    let segments: Vec<&str> = current_value.split('.').collect();
 
-    // Find the lookup field in resolver_source_fields
-    let lookup_info = if let Resource::Success(fields) = &state.resolver_source_fields {
-        fields.iter()
-            .find(|f| f.logical_name == base_field && f.field_type == FieldType::Lookup)
-            .and_then(|f| f.related_entity.clone().map(|e| (base_field.to_string(), e)))
-    } else {
-        None
-    };
+    // We need to check each level of nesting and load the deepest unloaded one
+    // For "a.b.c", we check: "a" (level 0), "a.b" (level 1)
+    // The last segment is the field we're trying to access, not a lookup to expand
 
-    if let Some((field_name, related_entity)) = lookup_info {
-        // Check if already loaded or loading
-        if state.resolver_related_fields.contains_key(&field_name) {
-            return Command::None;
+    for depth in 0..segments.len().saturating_sub(1) {
+        let path_prefix = segments[..=depth].join(".");
+        let field_to_check = segments[depth];
+
+        // Skip if already loaded for this path prefix
+        if state.resolver_related_fields.contains_key(&path_prefix) {
+            continue;
         }
 
-        // Get source env name from config (resolver source_path is from the transfer source entity)
-        let source_env = if let Resource::Success(config) = &state.config {
-            config.source_env.clone()
+        // Find the field metadata to check if it's a lookup
+        let lookup_info = if depth == 0 {
+            // First level: look in resolver_source_fields
+            if let Resource::Success(fields) = &state.resolver_source_fields {
+                fields.iter()
+                    .find(|f| f.logical_name == field_to_check && f.field_type == FieldType::Lookup)
+                    .and_then(|f| f.related_entity.clone().map(|e| (path_prefix.clone(), e)))
+            } else {
+                None
+            }
         } else {
-            return Command::None;
+            // Deeper levels: look in previously loaded related fields
+            let parent_prefix = segments[..depth].join(".");
+            if let Some(Resource::Success(fields)) = state.resolver_related_fields.get(&parent_prefix) {
+                fields.iter()
+                    .find(|f| f.logical_name == field_to_check && f.field_type == FieldType::Lookup)
+                    .and_then(|f| f.related_entity.clone().map(|e| (path_prefix.clone(), e)))
+            } else {
+                // Parent level not loaded yet, can't proceed deeper
+                None
+            }
         };
 
-        state.resolver_related_fields.insert(field_name.clone(), Resource::Loading);
+        if let Some((path_prefix, related_entity)) = lookup_info {
+            // Get source env name from config (resolver source_path is from the transfer source entity)
+            let source_env = if let Resource::Success(config) = &state.config {
+                config.source_env.clone()
+            } else {
+                return Command::None;
+            };
 
-        // Use loading screen for fetch
-        return Command::perform_parallel()
-            .add_task(
-                format!("Loading fields from {}", related_entity),
-                load_entity_fields(source_env, related_entity),
-            )
-            .with_title("Loading Related Entity")
-            .on_complete(AppId::TransferMappingEditor)
-            .build(move |_task_idx, result| {
-                let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
-                Msg::ResolverRelatedFieldsLoaded {
-                    lookup_field: field_name.clone(),
-                    result: *data,
-                }
-            });
+            state.resolver_related_fields.insert(path_prefix.clone(), Resource::Loading);
+
+            // Use loading screen for fetch
+            return Command::perform_parallel()
+                .add_task(
+                    format!("Loading fields from {}", related_entity),
+                    load_entity_fields(source_env, related_entity),
+                )
+                .with_title("Loading Related Entity")
+                .on_complete(AppId::TransferMappingEditor)
+                .build(move |_task_idx, result| {
+                    let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                    Msg::ResolverRelatedFieldsLoaded {
+                        lookup_field: path_prefix.clone(),
+                        result: *data,
+                    }
+                });
+        }
     }
 
     Command::None
