@@ -30,6 +30,12 @@
               openssl
               pkg-config
               sqlite
+              (python3.withPackages (ps: with ps; [
+                requests
+                pandas
+                openpyxl
+              ]))
+              jq
             ];
 
             shellHook = ''
