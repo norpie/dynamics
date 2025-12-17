@@ -69,13 +69,14 @@ impl App for MappingEditorApp {
                         state.tree_state.invalidate_cache();
 
                         // Load entity lists with loading screen
+                        // Use unique task names even when source_env == target_env
                         Command::perform_parallel()
                             .add_task(
-                                format!("Loading entities from {}", source_env),
+                                format!("Loading source entities from {}", source_env),
                                 load_entities_for_env(source_env),
                             )
                             .add_task(
-                                format!("Loading entities from {}", target_env),
+                                format!("Loading target entities from {}", target_env),
                                 load_entities_for_env(target_env),
                             )
                             .with_title("Loading Entity Metadata")
@@ -299,14 +300,14 @@ impl App for MappingEditorApp {
                     state.target_fields = Resource::Loading;
 
                     // Use loading screen for field metadata fetch
-                    // Include env name to ensure unique task names (important when source/target have same entity)
+                    // Use "source"/"target" prefix to ensure unique task names even when same entity/env
                     return Command::perform_parallel()
                         .add_task(
-                            format!("Loading {} fields ({})", source_entity, source_env),
+                            format!("Loading source fields for {} ({})", source_entity, source_env),
                             load_entity_fields(source_env.clone(), source_entity),
                         )
                         .add_task(
-                            format!("Loading {} fields ({})", target_entity, target_env),
+                            format!("Loading target fields for {} ({})", target_entity, target_env),
                             load_entity_fields(target_env.clone(), target_entity),
                         )
                         .with_title("Loading Field Metadata")
@@ -364,14 +365,14 @@ impl App for MappingEditorApp {
                     state.target_fields = Resource::Loading;
 
                     // Use loading screen for field metadata fetch
-                    // Include env name to ensure unique task names (important when source/target have same entity)
+                    // Use "source"/"target" prefix to ensure unique task names even when same entity/env
                     return Command::perform_parallel()
                         .add_task(
-                            format!("Loading {} fields ({})", source_entity, source_env),
+                            format!("Loading source fields for {} ({})", source_entity, source_env),
                             load_entity_fields(source_env.clone(), source_entity),
                         )
                         .add_task(
-                            format!("Loading {} fields ({})", target_entity, target_env),
+                            format!("Loading target fields for {} ({})", target_entity, target_env),
                             load_entity_fields(target_env.clone(), target_entity),
                         )
                         .with_title("Loading Field Metadata")
