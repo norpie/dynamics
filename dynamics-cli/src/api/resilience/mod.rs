@@ -11,7 +11,7 @@ pub mod logging;
 pub mod metrics;
 
 pub use retry::{RetryPolicy, RetryConfig, RetryableError};
-pub use config::{ResilienceConfig, RateLimitConfig, ConcurrencyConfig, MonitoringConfig, LogLevel};
+pub use config::{ResilienceConfig, RateLimitConfig, ConcurrencyConfig, MonitoringConfig, LogLevel, BypassConfig};
 pub use rate_limiter::{RateLimiter, RateLimiterStats};
 pub use concurrency::{ConcurrencyLimiter, ConcurrencyStats};
 pub use logging::{ApiLogger, OperationContext, OperationMetrics};

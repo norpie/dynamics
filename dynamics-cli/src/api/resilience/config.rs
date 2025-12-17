@@ -13,6 +13,7 @@ pub struct ResilienceConfig {
     pub rate_limit: RateLimitConfig,
     pub concurrency: ConcurrencyConfig,
     pub monitoring: MonitoringConfig,
+    pub bypass: BypassConfig,
 }
 
 /// Concurrency limiting configuration
@@ -52,6 +53,53 @@ pub enum LogLevel {
     Trace,
 }
 
+/// Configuration for bypassing Dynamics 365 custom business logic
+///
+/// These options allow bypassing plugins, workflows, and Power Automate flows
+/// during API operations. Useful for data migrations and bulk operations.
+///
+/// Note: Most bypass options require the user to have the `prvBypassCustomBusinessLogic`
+/// privilege in Dynamics 365. Only `power_automate_flows` bypass requires no special privilege.
+#[derive(Debug, Clone)]
+pub struct BypassConfig {
+    /// Bypass synchronous custom plugins and real-time workflows
+    pub custom_sync: bool,
+    /// Bypass asynchronous custom plugins and workflows (not Power Automate flows)
+    pub custom_async: bool,
+    /// Bypass specific plugin steps by GUID (max 3 by default, configurable up to 10)
+    pub step_ids: Vec<String>,
+    /// Bypass Power Automate flows triggered by Dataverse events (no privilege required)
+    pub power_automate_flows: bool,
+}
+
+impl Default for BypassConfig {
+    fn default() -> Self {
+        Self {
+            custom_sync: false,
+            custom_async: false,
+            step_ids: Vec::new(),
+            power_automate_flows: false,
+        }
+    }
+}
+
+impl BypassConfig {
+    /// Check if any bypass options are enabled
+    pub fn is_enabled(&self) -> bool {
+        self.custom_sync || self.custom_async || !self.step_ids.is_empty() || self.power_automate_flows
+    }
+
+    /// Create a config that bypasses all custom logic (plugins, workflows, flows)
+    pub fn all() -> Self {
+        Self {
+            custom_sync: true,
+            custom_async: true,
+            step_ids: Vec::new(),
+            power_automate_flows: true,
+        }
+    }
+}
+
 impl Default for ResilienceConfig {
     fn default() -> Self {
         Self {
@@ -59,6 +107,7 @@ impl Default for ResilienceConfig {
             rate_limit: RateLimitConfig::default(),
             concurrency: ConcurrencyConfig::default(),
             monitoring: MonitoringConfig::default(),
+            bypass: BypassConfig::default(),
         }
     }
 }
@@ -120,6 +169,7 @@ impl ResilienceConfig {
                 performance_metrics: true,
                 log_level: LogLevel::Warn, // Less verbose in production
             },
+            bypass: BypassConfig::default(),
         }
     }
 
@@ -143,6 +193,7 @@ impl ResilienceConfig {
                 performance_metrics: true,
                 log_level: LogLevel::Debug, // More verbose for debugging
             },
+            bypass: BypassConfig::default(),
         }
     }
 
@@ -172,6 +223,36 @@ impl ResilienceConfig {
                 performance_metrics: false,
                 log_level: LogLevel::Error,
             },
+            bypass: BypassConfig::default(),
+        }
+    }
+
+    /// Config optimized for data migrations - bypasses all custom business logic
+    ///
+    /// Use this when performing bulk data operations where you want to skip
+    /// plugins, workflows, and Power Automate flows.
+    ///
+    /// Note: Requires `prvBypassCustomBusinessLogic` privilege for plugin/workflow bypass.
+    pub fn migration() -> Self {
+        Self {
+            retry: RetryConfig::conservative(),
+            rate_limit: RateLimitConfig {
+                requests_per_minute: 600,
+                burst_capacity: 30,
+                enabled: true,
+            },
+            concurrency: ConcurrencyConfig {
+                max_concurrent_requests: 20,
+                max_queue_items: 10,
+                enabled: true,
+            },
+            monitoring: MonitoringConfig {
+                correlation_ids: true,
+                request_logging: true,
+                performance_metrics: true,
+                log_level: LogLevel::Info,
+            },
+            bypass: BypassConfig::all(),
         }
     }
 
@@ -228,6 +309,21 @@ impl ResilienceConfig {
             _ => LogLevel::Info,
         };
 
+        // Load bypass options
+        let bypass_custom_sync = config.options.get_bool("api.bypass.custom_sync").await
+            .unwrap_or(false);
+        let bypass_custom_async = config.options.get_bool("api.bypass.custom_async").await
+            .unwrap_or(false);
+        let bypass_power_automate = config.options.get_bool("api.bypass.power_automate").await
+            .unwrap_or(false);
+        let bypass_step_ids_str = config.options.get_string("api.bypass.step_ids").await
+            .unwrap_or_default();
+        let bypass_step_ids: Vec<String> = if bypass_step_ids_str.is_empty() {
+            Vec::new()
+        } else {
+            bypass_step_ids_str.split(',').map(|s| s.trim().to_string()).collect()
+        };
+
         Ok(Self {
             retry: RetryConfig {
                 max_attempts: if retry_enabled { max_attempts } else { 1 },
@@ -251,6 +347,12 @@ impl ResilienceConfig {
                 request_logging,
                 performance_metrics,
                 log_level,
+            },
+            bypass: BypassConfig {
+                custom_sync: bypass_custom_sync,
+                custom_async: bypass_custom_async,
+                step_ids: bypass_step_ids,
+                power_automate_flows: bypass_power_automate,
             },
         })
     }
@@ -350,6 +452,42 @@ impl ResilienceConfigBuilder {
     /// Set logging level
     pub fn log_level(mut self, level: LogLevel) -> Self {
         self.config.monitoring.log_level = level;
+        self
+    }
+
+    /// Configure bypass settings
+    pub fn bypass_config(mut self, bypass: BypassConfig) -> Self {
+        self.config.bypass = bypass;
+        self
+    }
+
+    /// Enable/disable bypassing synchronous custom plugins and real-time workflows
+    pub fn bypass_custom_sync(mut self, enabled: bool) -> Self {
+        self.config.bypass.custom_sync = enabled;
+        self
+    }
+
+    /// Enable/disable bypassing asynchronous custom plugins and workflows
+    pub fn bypass_custom_async(mut self, enabled: bool) -> Self {
+        self.config.bypass.custom_async = enabled;
+        self
+    }
+
+    /// Set specific plugin step IDs to bypass
+    pub fn bypass_step_ids(mut self, ids: Vec<String>) -> Self {
+        self.config.bypass.step_ids = ids;
+        self
+    }
+
+    /// Enable/disable bypassing Power Automate flows
+    pub fn bypass_power_automate(mut self, enabled: bool) -> Self {
+        self.config.bypass.power_automate_flows = enabled;
+        self
+    }
+
+    /// Enable bypassing all custom business logic (sync, async, and Power Automate)
+    pub fn bypass_all_custom_logic(mut self) -> Self {
+        self.config.bypass = BypassConfig::all();
         self
     }
 

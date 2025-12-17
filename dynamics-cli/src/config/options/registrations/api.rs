@@ -140,6 +140,39 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .build()?
     )?;
 
-    log::info!("Registered {} API options", 16);
+    // Bypass options - for skipping custom business logic during data operations
+    registry.register(
+        OptionDefBuilder::new("api", "bypass.custom_sync")
+            .display_name("Bypass Sync Plugins")
+            .description("Bypass synchronous custom plugins and real-time workflows (requires prvBypassCustomBusinessLogic privilege)")
+            .bool_type(false)
+            .build()?
+    )?;
+
+    registry.register(
+        OptionDefBuilder::new("api", "bypass.custom_async")
+            .display_name("Bypass Async Plugins")
+            .description("Bypass asynchronous custom plugins and workflows (requires prvBypassCustomBusinessLogic privilege)")
+            .bool_type(false)
+            .build()?
+    )?;
+
+    registry.register(
+        OptionDefBuilder::new("api", "bypass.power_automate")
+            .display_name("Bypass Power Automate")
+            .description("Bypass Power Automate flows triggered by Dataverse events (no privilege required)")
+            .bool_type(false)
+            .build()?
+    )?;
+
+    registry.register(
+        OptionDefBuilder::new("api", "bypass.step_ids")
+            .display_name("Bypass Step IDs")
+            .description("Comma-separated GUIDs of specific plugin steps to bypass (max 3 by default)")
+            .string_type("", Some(500))
+            .build()?
+    )?;
+
+    log::info!("Registered {} API options", 20);
     Ok(())
 }

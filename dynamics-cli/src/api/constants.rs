@@ -45,6 +45,17 @@ pub mod headers {
 
     /// Correlation ID header for request tracking
     pub const X_CORRELATION_ID: &str = "x-correlation-id";
+
+    // Bypass business logic headers
+    /// Bypass synchronous and/or asynchronous custom plugins and workflows
+    /// Values: "CustomSync", "CustomAsync", or "CustomSync,CustomAsync"
+    pub const BYPASS_BUSINESS_LOGIC: &str = "MSCRM.BypassBusinessLogicExecution";
+
+    /// Bypass specific plugin steps by GUID (comma-separated, max 3 by default)
+    pub const BYPASS_STEP_IDS: &str = "MSCRM.BypassBusinessLogicExecutionStepIds";
+
+    /// Bypass Power Automate flows triggered by Dataverse events (no privilege required)
+    pub const SUPPRESS_POWER_AUTOMATE: &str = "MSCRM.SuppressCallbackRegistrationExpanderJob";
 }
 
 /// HTTP methods for operations

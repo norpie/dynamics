@@ -1,10 +1,39 @@
 use super::constants::{self, headers, methods};
 use super::operations::{Operation, OperationResult, BatchRequestBuilder, BatchResponseParser};
 use super::query::{Query, QueryResult, QueryResponse};
-use super::resilience::{RetryPolicy, RetryConfig, ResilienceConfig, RateLimiter, ConcurrencyLimiter, ApiLogger, OperationContext, OperationMetrics, MetricsCollector};
+use super::resilience::{RetryPolicy, RetryConfig, ResilienceConfig, RateLimiter, ConcurrencyLimiter, ApiLogger, OperationContext, OperationMetrics, MetricsCollector, BypassConfig};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
+
+/// Build HTTP headers for bypassing Dynamics 365 custom business logic
+fn build_bypass_headers(config: &BypassConfig) -> Vec<(&'static str, String)> {
+    let mut bypass_headers = Vec::new();
+
+    // Build BypassBusinessLogicExecution value (CustomSync, CustomAsync, or both)
+    let mut bypass_values = Vec::new();
+    if config.custom_sync {
+        bypass_values.push("CustomSync");
+    }
+    if config.custom_async {
+        bypass_values.push("CustomAsync");
+    }
+    if !bypass_values.is_empty() {
+        bypass_headers.push((headers::BYPASS_BUSINESS_LOGIC, bypass_values.join(",")));
+    }
+
+    // Specific plugin step IDs to bypass
+    if !config.step_ids.is_empty() {
+        bypass_headers.push((headers::BYPASS_STEP_IDS, config.step_ids.join(",")));
+    }
+
+    // Power Automate flows (no privilege required)
+    if config.power_automate_flows {
+        bypass_headers.push((headers::SUPPRESS_POWER_AUTOMATE, "true".to_string()));
+    }
+
+    bypass_headers
+}
 
 /// Modern Dynamics 365 Web API client with connection pooling
 #[derive(Clone)]
@@ -457,17 +486,22 @@ impl DynamicsClient {
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let request_start = std::time::Instant::now();
+        let bypass_headers = build_bypass_headers(&resilience.bypass);
         let response = retry_policy.execute(|| async {
-            self.http_client
+            let mut request = self.http_client
                 .post(&url)
                 .bearer_auth(&self.access_token)
                 .header("Content-Type", headers::CONTENT_TYPE_JSON)
                 .header("OData-Version", headers::ODATA_VERSION)
                 .header("Prefer", headers::PREFER_RETURN_REPRESENTATION)
-                .header(headers::X_CORRELATION_ID, &correlation_id)
-                .json(data)
-                .send()
-                .await
+                .header(headers::X_CORRELATION_ID, &correlation_id);
+
+            // Apply bypass headers if configured
+            for (name, value) in &bypass_headers {
+                request = request.header(*name, value);
+            }
+
+            request.json(data).send().await
         }).await?;
 
         // Log response details
@@ -510,18 +544,23 @@ impl DynamicsClient {
         let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
+        let bypass_headers = build_bypass_headers(&resilience.bypass);
         let response = retry_policy.execute(|| async {
-            self.http_client
+            let mut request = self.http_client
                 .patch(&url)
                 .bearer_auth(&self.access_token)
                 .header("Content-Type", headers::CONTENT_TYPE_JSON)
                 .header("OData-Version", headers::ODATA_VERSION)
                 .header("If-Match", headers::IF_MATCH_ANY)
                 .header("Prefer", headers::PREFER_RETURN_REPRESENTATION)
-                .header(headers::X_CORRELATION_ID, &correlation_id)
-                .json(data)
-                .send()
-                .await
+                .header(headers::X_CORRELATION_ID, &correlation_id);
+
+            // Apply bypass headers if configured
+            for (name, value) in &bypass_headers {
+                request = request.header(*name, value);
+            }
+
+            request.json(data).send().await
         }).await?;
 
         self.parse_response(Operation::Update {
@@ -540,14 +579,20 @@ impl DynamicsClient {
         let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
+        let bypass_headers = build_bypass_headers(&resilience.bypass);
         let response = retry_policy.execute(|| async {
-            self.http_client
+            let mut request = self.http_client
                 .delete(&url)
                 .bearer_auth(&self.access_token)
                 .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id)
-                .send()
-                .await
+                .header(headers::X_CORRELATION_ID, &correlation_id);
+
+            // Apply bypass headers if configured
+            for (name, value) in &bypass_headers {
+                request = request.header(*name, value);
+            }
+
+            request.send().await
         }).await?;
 
         self.parse_response(Operation::Delete {
@@ -565,17 +610,22 @@ impl DynamicsClient {
         let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
+        let bypass_headers = build_bypass_headers(&resilience.bypass);
         let response = retry_policy.execute(|| async {
-            self.http_client
+            let mut request = self.http_client
                 .patch(&url)
                 .bearer_auth(&self.access_token)
                 .header("Content-Type", headers::CONTENT_TYPE_JSON)
                 .header("OData-Version", headers::ODATA_VERSION)
                 .header("Prefer", headers::PREFER_RETURN_REPRESENTATION)
-                .header(headers::X_CORRELATION_ID, &correlation_id)
-                .json(data)
-                .send()
-                .await
+                .header(headers::X_CORRELATION_ID, &correlation_id);
+
+            // Apply bypass headers if configured
+            for (name, value) in &bypass_headers {
+                request = request.header(*name, value);
+            }
+
+            request.json(data).send().await
         }).await?;
 
         self.parse_response(Operation::Upsert {
@@ -600,16 +650,21 @@ impl DynamicsClient {
         });
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
+        let bypass_headers = build_bypass_headers(&resilience.bypass);
         let response = retry_policy.execute(|| async {
-            self.http_client
+            let mut request = self.http_client
                 .post(&url)
                 .bearer_auth(&self.access_token)
                 .header("Content-Type", headers::CONTENT_TYPE_JSON)
                 .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id)
-                .json(&body)
-                .send()
-                .await
+                .header(headers::X_CORRELATION_ID, &correlation_id);
+
+            // Apply bypass headers if configured
+            for (name, value) in &bypass_headers {
+                request = request.header(*name, value);
+            }
+
+            request.json(&body).send().await
         }).await?;
 
         self.parse_response(Operation::AssociateRef {
@@ -630,14 +685,20 @@ impl DynamicsClient {
         let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
+        let bypass_headers = build_bypass_headers(&resilience.bypass);
         let response = retry_policy.execute(|| async {
-            self.http_client
+            let mut request = self.http_client
                 .delete(&url)
                 .bearer_auth(&self.access_token)
                 .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id)
-                .send()
-                .await
+                .header(headers::X_CORRELATION_ID, &correlation_id);
+
+            // Apply bypass headers if configured
+            for (name, value) in &bypass_headers {
+                request = request.header(*name, value);
+            }
+
+            request.send().await
         }).await?;
 
         self.parse_response(Operation::DisassociateRef {
@@ -777,17 +838,22 @@ impl DynamicsClient {
         log::debug!("Batch request: {} operations (correlation_id: {})", operations.len(), correlation_id);
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
+        let bypass_headers = build_bypass_headers(&resilience.bypass);
         let request_start = std::time::Instant::now();
         let response = retry_policy.execute(|| async {
-            self.http_client
+            let mut request = self.http_client
                 .post(&url)
                 .bearer_auth(&self.access_token)
                 .header("Content-Type", content_type.clone())
                 .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id)
-                .body(body.clone())
-                .send()
-                .await
+                .header(headers::X_CORRELATION_ID, &correlation_id);
+
+            // Apply bypass headers if configured
+            for (name, value) in &bypass_headers {
+                request = request.header(*name, value);
+            }
+
+            request.body(body.clone()).send().await
         }).await?;
 
         let request_duration = request_start.elapsed();
