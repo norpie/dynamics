@@ -83,10 +83,27 @@ impl ExpandTree {
     fn build_node_string(field: &str, node: &ExpandNode) -> String {
         let mut parts = Vec::new();
 
-        // Add $select if there are leaf fields
-        if !node.selects.is_empty() {
-            let fields: Vec<&str> = node.selects.iter().map(|s| s.as_str()).collect();
+        // Build select fields, converting lookup fields to OData _value format
+        // A field that's also in children is a lookup (navigation property) - use _fieldname_value
+        let select_fields: Vec<String> = node.selects.iter()
+            .map(|s| {
+                if node.children.contains_key(s) {
+                    // This field is also being expanded - it's a lookup, use _value format for the GUID
+                    format!("_{}_value", s)
+                } else {
+                    s.clone()
+                }
+            })
+            .collect();
+
+        // Add $select for leaf fields OR use the field name as PK to minimize intermediate level data
+        if !select_fields.is_empty() {
+            let fields: Vec<&str> = select_fields.iter().map(|s| s.as_str()).collect();
             parts.push(format!("$select={}", fields.join(",")));
+        } else if !node.children.is_empty() {
+            // Intermediate node with no direct selects - add $select={field} to minimize returned fields
+            // The field name (navigation property) usually matches the target entity's primary key
+            parts.push(format!("$select={}", field));
         }
 
         // Add nested $expand if there are children
@@ -159,9 +176,10 @@ mod tests {
 
         let clauses = tree.build_expand_clauses();
         assert_eq!(clauses.len(), 1);
+        // Intermediate level gets $select={field} to minimize data returned
         assert_eq!(
             clauses[0],
-            "userid($expand=contactid($select=emailaddress1))"
+            "userid($select=userid;$expand=contactid($select=emailaddress1))"
         );
     }
 
@@ -174,9 +192,10 @@ mod tests {
 
         let clauses = tree.build_expand_clauses();
         assert_eq!(clauses.len(), 1);
+        // All intermediate levels get $select={field} to minimize data
         assert_eq!(
             clauses[0],
-            "userid($expand=contactid($expand=parentcustomerid_account($select=name)))"
+            "userid($select=userid;$expand=contactid($select=contactid;$expand=parentcustomerid_account($select=name)))"
         );
     }
 
@@ -223,9 +242,27 @@ mod tests {
         let clauses = tree.build_expand_clauses();
         assert_eq!(clauses.len(), 2);
         assert_eq!(clauses[0], "accountid($select=name)");
+        // contactid is NOT in selects, only in children, so no _value conversion needed
         assert_eq!(
             clauses[1],
             "userid($select=email;$expand=contactid($select=firstname,lastname))"
+        );
+    }
+
+    #[test]
+    fn test_lookup_field_both_selected_and_expanded() {
+        let mut tree = ExpandTree::new();
+        // Path 1: wants the GUID of projectmanagerid (adds to selects)
+        tree.add_path(&FieldPath::parse("deadlineid.projectmanagerid").unwrap());
+        // Path 2: wants to traverse into projectmanagerid (adds to children)
+        tree.add_path(&FieldPath::parse("deadlineid.projectmanagerid.email").unwrap());
+
+        let clauses = tree.build_expand_clauses();
+        assert_eq!(clauses.len(), 1);
+        // projectmanagerid is both selected AND expanded, so select uses _value format
+        assert_eq!(
+            clauses[0],
+            "deadlineid($select=_projectmanagerid_value;$expand=projectmanagerid($select=email))"
         );
     }
 }
