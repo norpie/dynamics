@@ -39,11 +39,13 @@ pub fn apply_transform(
                             ));
                         };
 
-                        // Single-field resolver: use Transform's source_path to get the value
-                        // Compound key resolver: use resolver's match_fields to get values
+                        // Both single-field and compound key resolvers use MatchField source_paths
+                        // The Transform's source_path is for the final value, MatchField source_paths are for lookup matching
                         if match_fields.len() == 1 {
-                            // Single-field: use the Transform's source_path
-                            let value = resolve_path(record, source_path);
+                            // Single-field: use the MatchField's source_path (NOT the Transform's source_path!)
+                            // Transform source_path might point to expanded object, but MatchField source_path
+                            // points to the specific field value we need for matching
+                            let value = resolve_path(record, &match_fields[0].source_path);
                             let json_value = value.to_json();
                             let target_field = match_fields[0].target_field.as_str();
                             let pairs = [(target_field, &json_value)];
