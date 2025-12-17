@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OrphanHandling, Transform, Resolver, ResolverFallback};
+use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OperationFilter, Transform, Resolver, ResolverFallback};
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField};
 use crate::tui::widgets::events::{TreeEvent, AutocompleteEvent, TextInputEvent};
@@ -101,13 +101,30 @@ pub enum DeleteTarget {
     Resolver(usize),
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct EntityMappingForm {
     pub source_entity: AutocompleteField,
     pub target_entity: AutocompleteField,
     pub priority: TextInputField,
-    /// Index into OrphanHandling::all_variants() for select widget
-    pub orphan_handling_idx: usize,
+    /// Operation filter - which operations to allow
+    pub allow_creates: bool,
+    pub allow_updates: bool,
+    pub allow_deletes: bool,
+    pub allow_deactivates: bool,
+}
+
+impl Default for EntityMappingForm {
+    fn default() -> Self {
+        Self {
+            source_entity: AutocompleteField::default(),
+            target_entity: AutocompleteField::default(),
+            priority: TextInputField::default(),
+            allow_creates: true,
+            allow_updates: true,
+            allow_deletes: false,
+            allow_deactivates: false,
+        }
+    }
 }
 
 impl EntityMappingForm {
@@ -122,7 +139,10 @@ impl EntityMappingForm {
         form.source_entity.value = mapping.source_entity.clone();
         form.target_entity.value = mapping.target_entity.clone();
         form.priority.value = mapping.priority.to_string();
-        form.orphan_handling_idx = mapping.orphan_handling.to_index();
+        form.allow_creates = mapping.operation_filter.creates;
+        form.allow_updates = mapping.operation_filter.updates;
+        form.allow_deletes = mapping.operation_filter.deletes;
+        form.allow_deactivates = mapping.operation_filter.deactivates;
         form
     }
 
@@ -132,7 +152,12 @@ impl EntityMappingForm {
             source_entity: self.source_entity.value.trim().to_string(),
             target_entity: self.target_entity.value.trim().to_string(),
             priority: self.priority.value.trim().parse().unwrap_or(0),
-            orphan_handling: OrphanHandling::from_index(self.orphan_handling_idx),
+            operation_filter: OperationFilter {
+                creates: self.allow_creates,
+                updates: self.allow_updates,
+                deletes: self.allow_deletes,
+                deactivates: self.allow_deactivates,
+            },
             field_mappings: vec![],
         }
     }
@@ -902,7 +927,10 @@ pub enum Msg {
     EntityFormSource(AutocompleteEvent),
     EntityFormTarget(AutocompleteEvent),
     EntityFormPriority(TextInputEvent),
-    EntityFormCycleOrphanHandling, // Cycle to next option
+    EntityFormToggleCreates,
+    EntityFormToggleUpdates,
+    EntityFormToggleDeletes,
+    EntityFormToggleDeactivates,
 
     // Field mapping actions
     AddField(usize), // entity_idx

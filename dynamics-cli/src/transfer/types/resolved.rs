@@ -114,9 +114,9 @@ pub struct ResolvedEntity {
     pub primary_key_field: String,
     /// All field names in order (for table display)
     pub field_names: Vec<String>,
-    /// How to handle target-only records (from config)
+    /// Filter controlling which operations are executed
     #[serde(default)]
-    pub orphan_handling: super::OrphanHandling,
+    pub operation_filter: super::OperationFilter,
     /// Resolved records
     pub records: Vec<ResolvedRecord>,
     /// Set of record IDs that have been manually edited
@@ -144,7 +144,7 @@ impl ResolvedEntity {
             priority,
             primary_key_field: primary_key_field.into(),
             field_names: Vec::new(),
-            orphan_handling: super::OrphanHandling::default(),
+            operation_filter: super::OperationFilter::default(),
             records: Vec::new(),
             dirty_record_ids: HashSet::new(),
             lookup_context: None,
@@ -152,9 +152,9 @@ impl ResolvedEntity {
         }
     }
 
-    /// Set the orphan handling mode
-    pub fn set_orphan_handling(&mut self, handling: super::OrphanHandling) {
-        self.orphan_handling = handling;
+    /// Set the operation filter
+    pub fn set_operation_filter(&mut self, filter: super::OperationFilter) {
+        self.operation_filter = filter;
     }
 
     /// Set the lookup binding context
@@ -446,7 +446,7 @@ pub enum RecordAction {
     Update,
     /// No changes needed (target already matches)
     NoChange,
-    /// Record exists only in target (not in source) - action depends on OrphanHandling config
+    /// Record exists only in target (not in source) - action depends on OperationFilter config
     TargetOnly,
     /// Skipped by user
     Skip,

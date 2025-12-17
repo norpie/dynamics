@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::api::operations::{Operation, Operations};
-use crate::transfer::{LookupBindingContext, OrphanHandling, RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
+use crate::transfer::{LookupBindingContext, OrphanAction, RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
 use crate::tui::apps::queue::models::{QueueItem, QueueMetadata};
 
 /// Base priority for transfer operations (start low to maximize priority space)
@@ -143,8 +143,8 @@ fn build_entity_queue_items(
 ) -> Vec<QueueItem> {
     let mut items = Vec::new();
 
-    // Handle target-only records first (phase 0) - only if not ignoring
-    if entity.orphan_handling != OrphanHandling::Ignore {
+    // Handle target-only records first (phase 0) - only if delete or deactivate is enabled
+    if entity.operation_filter.has_orphan_action() {
         let target_only: Vec<_> = entity
             .records
             .iter()
@@ -161,36 +161,39 @@ fn build_entity_queue_items(
         }
     }
 
-    // Separate creates and updates
-    let creates: Vec<_> = entity
-        .records
-        .iter()
-        .filter(|r| r.action == RecordAction::Create)
-        .collect();
+    // Build queue items for creates (phase 1) - only if creates are enabled
+    if entity.operation_filter.creates {
+        let creates: Vec<_> = entity
+            .records
+            .iter()
+            .filter(|r| r.action == RecordAction::Create)
+            .collect();
 
-    let updates: Vec<_> = entity
-        .records
-        .iter()
-        .filter(|r| r.action == RecordAction::Update)
-        .collect();
+        items.extend(build_phase_queue_items(
+            entity,
+            transfer,
+            &creates,
+            Phase::Create,
+            options,
+        ));
+    }
 
-    // Build queue items for creates (phase 1)
-    items.extend(build_phase_queue_items(
-        entity,
-        transfer,
-        &creates,
-        Phase::Create,
-        options,
-    ));
+    // Build queue items for updates (phase 2) - only if updates are enabled
+    if entity.operation_filter.updates {
+        let updates: Vec<_> = entity
+            .records
+            .iter()
+            .filter(|r| r.action == RecordAction::Update)
+            .collect();
 
-    // Build queue items for updates (phase 2)
-    items.extend(build_phase_queue_items(
-        entity,
-        transfer,
-        &updates,
-        Phase::Update,
-        options,
-    ));
+        items.extend(build_phase_queue_items(
+            entity,
+            transfer,
+            &updates,
+            Phase::Update,
+            options,
+        ));
+    }
 
     items
 }
@@ -293,7 +296,7 @@ fn build_phase_queue_items(
         .collect()
 }
 
-/// Build queue items for target-only records based on orphan_handling config
+/// Build queue items for target-only records based on operation_filter config
 fn build_target_only_queue_items(
     entity: &ResolvedEntity,
     transfer: &ResolvedTransfer,
@@ -303,6 +306,12 @@ fn build_target_only_queue_items(
     if records.is_empty() {
         return Vec::new();
     }
+
+    // Get the orphan action (deletes takes precedence over deactivates)
+    let orphan_action = match entity.operation_filter.orphan_action() {
+        Some(action) => action,
+        None => return Vec::new(), // No orphan action configured
+    };
 
     // Calculate priority (same as build_phase_queue_items but for phase 0)
     let priority = BASE_PRIORITY
@@ -316,19 +325,15 @@ fn build_target_only_queue_items(
         .as_ref()
         .unwrap_or(&entity.entity_name);
 
-    // Build operations based on orphan_handling config
+    // Build operations based on orphan action
     let operations: Vec<Operation> = records
         .iter()
         .map(|record| {
-            match entity.orphan_handling {
-                OrphanHandling::Ignore => {
-                    // Shouldn't happen - we filter these out earlier
-                    unreachable!("Ignore orphan_handling should not reach build_target_only_queue_items")
-                }
-                OrphanHandling::Delete => {
+            match orphan_action {
+                OrphanAction::Delete => {
                     Operation::delete(entity_set, record.source_id.to_string())
                 }
-                OrphanHandling::Deactivate => {
+                OrphanAction::Deactivate => {
                     // PATCH with statecode = 1 (inactive)
                     let mut payload = serde_json::Map::new();
                     payload.insert("statecode".to_string(), serde_json::Value::Number(1.into()));
@@ -353,10 +358,9 @@ fn build_target_only_queue_items(
     let chunks: Vec<_> = operations.chunks(batch_size).collect();
     let total_batches = chunks.len();
 
-    let action_label = match entity.orphan_handling {
-        OrphanHandling::Delete => "delete",
-        OrphanHandling::Deactivate => "deactivate",
-        OrphanHandling::Ignore => "ignore",
+    let action_label = match orphan_action {
+        OrphanAction::Delete => "delete",
+        OrphanAction::Deactivate => "deactivate",
     };
 
     chunks

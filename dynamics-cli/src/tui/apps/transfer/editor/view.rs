@@ -3,7 +3,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::api::FieldMetadata;
-use crate::transfer::{OrphanHandling, ResolverFallback};
+use crate::transfer::ResolverFallback;
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::modals::ConfirmationModal;
 use crate::tui::resource::Resource;
@@ -241,15 +241,37 @@ fn render_entity_modal(
     .build();
     let priority_panel = Element::panel(priority_input).title("Priority (lower = first)").build();
 
-    // Orphan handling button (click to cycle)
-    let current_orphan = OrphanHandling::from_index(form.orphan_handling_idx);
-    let orphan_btn_label = format!("Target-Only: {}", current_orphan.label());
-    let orphan_btn = Element::button(
-        FocusId::new("entity-orphan-handling"),
-        &orphan_btn_label,
-    )
-    .on_press(Msg::EntityFormCycleOrphanHandling)
-    .build();
+    // Operation filter toggles
+    let creates_label = if form.allow_creates { "[x] Creates" } else { "[ ] Creates" };
+    let creates_btn = Element::button(FocusId::new("entity-creates"), creates_label)
+        .on_press(Msg::EntityFormToggleCreates)
+        .build();
+
+    let updates_label = if form.allow_updates { "[x] Updates" } else { "[ ] Updates" };
+    let updates_btn = Element::button(FocusId::new("entity-updates"), updates_label)
+        .on_press(Msg::EntityFormToggleUpdates)
+        .build();
+
+    let deletes_label = if form.allow_deletes { "[x] Deletes" } else { "[ ] Deletes" };
+    let deletes_btn = Element::button(FocusId::new("entity-deletes"), deletes_label)
+        .on_press(Msg::EntityFormToggleDeletes)
+        .build();
+
+    let deactivates_label = if form.allow_deactivates { "[x] Deactivates" } else { "[ ] Deactivates" };
+    let deactivates_btn = Element::button(FocusId::new("entity-deactivates"), deactivates_label)
+        .on_press(Msg::EntityFormToggleDeactivates)
+        .build();
+
+    // Operation filter row
+    let op_filter_row = RowBuilder::new()
+        .add(creates_btn, LayoutConstraint::Length(14))
+        .add(updates_btn, LayoutConstraint::Length(14))
+        .add(deletes_btn, LayoutConstraint::Length(14))
+        .add(deactivates_btn, LayoutConstraint::Length(16))
+        .spacing(1)
+        .build();
+
+    let op_filter_panel = Element::panel(op_filter_row).title("Operations").build();
 
     // Buttons
     let cancel_btn = Element::button(FocusId::new("entity-cancel"), "Cancel")
@@ -274,7 +296,7 @@ fn render_entity_modal(
         .add(source_panel, LayoutConstraint::Length(3))
         .add(target_panel, LayoutConstraint::Length(3))
         .add(priority_panel, LayoutConstraint::Length(3))
-        .add(orphan_btn, LayoutConstraint::Length(3))
+        .add(op_filter_panel, LayoutConstraint::Length(5))
         .add(Element::text(""), LayoutConstraint::Fill(1))
         .add(button_row, LayoutConstraint::Length(3))
         .spacing(1)
@@ -282,8 +304,8 @@ fn render_entity_modal(
 
     Element::panel(Element::container(form_content).padding(1).build())
         .title(title)
-        .width(50)
-        .height(24)
+        .width(65)
+        .height(26)
         .build()
 }
 

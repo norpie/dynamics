@@ -1,5 +1,5 @@
 use crate::config::repository::transfer::{get_transfer_config, save_transfer_config};
-use crate::transfer::{OrphanHandling, ResolverFallback, TransferConfig};
+use crate::transfer::{ResolverFallback, TransferConfig};
 use crate::tui::element::FocusId;
 use crate::tui::resource::Resource;
 use crate::tui::widgets::TreeState;
@@ -240,10 +240,23 @@ impl App for MappingEditorApp {
                 Command::None
             }
 
-            Msg::EntityFormCycleOrphanHandling => {
-                let num_variants = OrphanHandling::all_variants().len();
-                state.entity_form.orphan_handling_idx =
-                    (state.entity_form.orphan_handling_idx + 1) % num_variants;
+            Msg::EntityFormToggleCreates => {
+                state.entity_form.allow_creates = !state.entity_form.allow_creates;
+                Command::None
+            }
+
+            Msg::EntityFormToggleUpdates => {
+                state.entity_form.allow_updates = !state.entity_form.allow_updates;
+                Command::None
+            }
+
+            Msg::EntityFormToggleDeletes => {
+                state.entity_form.allow_deletes = !state.entity_form.allow_deletes;
+                Command::None
+            }
+
+            Msg::EntityFormToggleDeactivates => {
+                state.entity_form.allow_deactivates = !state.entity_form.allow_deactivates;
                 Command::None
             }
 

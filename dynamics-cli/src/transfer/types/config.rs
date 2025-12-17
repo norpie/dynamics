@@ -54,6 +54,100 @@ impl OrphanHandling {
             OrphanHandling::Deactivate => 2,
         }
     }
+
+    /// Convert to OperationFilter (for migration)
+    pub fn to_operation_filter(&self) -> OperationFilter {
+        match self {
+            OrphanHandling::Ignore => OperationFilter::default(),
+            OrphanHandling::Delete => OperationFilter {
+                deletes: true,
+                ..Default::default()
+            },
+            OrphanHandling::Deactivate => OperationFilter {
+                deactivates: true,
+                ..Default::default()
+            },
+        }
+    }
+}
+
+/// Filter controlling which operation types are executed for an entity
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationFilter {
+    /// Allow creating new records in target
+    #[serde(default = "default_true")]
+    pub creates: bool,
+    /// Allow updating existing records in target
+    #[serde(default = "default_true")]
+    pub updates: bool,
+    /// Allow deleting target-only records (orphans)
+    #[serde(default)]
+    pub deletes: bool,
+    /// Allow deactivating target-only records (orphans) - statecode = 1
+    #[serde(default)]
+    pub deactivates: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for OperationFilter {
+    fn default() -> Self {
+        OperationFilter {
+            creates: true,
+            updates: true,
+            deletes: false,
+            deactivates: false,
+        }
+    }
+}
+
+impl OperationFilter {
+    /// Get a human-readable label summarizing the filter
+    pub fn label(&self) -> String {
+        let mut parts = Vec::new();
+        if self.creates {
+            parts.push("C");
+        }
+        if self.updates {
+            parts.push("U");
+        }
+        if self.deletes {
+            parts.push("D");
+        }
+        if self.deactivates {
+            parts.push("X");
+        }
+        if parts.is_empty() {
+            "None".to_string()
+        } else {
+            parts.join("/")
+        }
+    }
+
+    /// Check if any target-only (orphan) operation is enabled
+    pub fn has_orphan_action(&self) -> bool {
+        self.deletes || self.deactivates
+    }
+
+    /// Get the orphan action type (deletes takes precedence)
+    pub fn orphan_action(&self) -> Option<OrphanAction> {
+        if self.deletes {
+            Some(OrphanAction::Delete)
+        } else if self.deactivates {
+            Some(OrphanAction::Deactivate)
+        } else {
+            None
+        }
+    }
+}
+
+/// Action to take on orphan (target-only) records
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrphanAction {
+    Delete,
+    Deactivate,
 }
 
 /// Top-level transfer configuration
@@ -194,9 +288,9 @@ pub struct EntityMapping {
     /// Execution priority (lower = runs first)
     /// Used to handle dependencies (e.g., accounts before contacts)
     pub priority: u32,
-    /// How to handle records that exist in target but not in source
+    /// Filter controlling which operations are executed
     #[serde(default)]
-    pub orphan_handling: OrphanHandling,
+    pub operation_filter: OperationFilter,
     /// Field mappings for this entity
     pub field_mappings: Vec<FieldMapping>,
 }
@@ -213,7 +307,7 @@ impl EntityMapping {
             source_entity: source_entity.into(),
             target_entity: target_entity.into(),
             priority,
-            orphan_handling: OrphanHandling::default(),
+            operation_filter: OperationFilter::default(),
             field_mappings: Vec::new(),
         }
     }

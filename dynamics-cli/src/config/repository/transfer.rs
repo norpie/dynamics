@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use sqlx::{Row, SqlitePool};
 
 use crate::transfer::{
-    EntityMapping, FieldMapping, FieldPath, MatchField, OrphanHandling, Resolver, ResolverFallback,
+    EntityMapping, FieldMapping, FieldPath, MatchField, OperationFilter, Resolver, ResolverFallback,
     Transform, TransferConfig,
 };
 
@@ -73,7 +73,8 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
     // Get entity mappings
     let entity_rows = sqlx::query(
         r#"
-        SELECT id, source_entity, target_entity, priority, orphan_handling
+        SELECT id, source_entity, target_entity, priority,
+               allow_creates, allow_updates, allow_deletes, allow_deactivates
         FROM transfer_entity_mappings
         WHERE config_id = ?
         ORDER BY priority, source_entity
@@ -115,12 +116,12 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
             });
         }
 
-        // Parse orphan_handling from string
-        let orphan_handling_str: String = entity_row.try_get("orphan_handling")?;
-        let orphan_handling = match orphan_handling_str.as_str() {
-            "delete" => OrphanHandling::Delete,
-            "deactivate" => OrphanHandling::Deactivate,
-            _ => OrphanHandling::Ignore,
+        // Parse operation filter from boolean columns
+        let operation_filter = OperationFilter {
+            creates: entity_row.try_get::<i64, _>("allow_creates")? != 0,
+            updates: entity_row.try_get::<i64, _>("allow_updates")? != 0,
+            deletes: entity_row.try_get::<i64, _>("allow_deletes")? != 0,
+            deactivates: entity_row.try_get::<i64, _>("allow_deactivates")? != 0,
         };
 
         entity_mappings.push(EntityMapping {
@@ -128,7 +129,7 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
             source_entity: entity_row.try_get("source_entity")?,
             target_entity: entity_row.try_get("target_entity")?,
             priority: entity_row.try_get::<i64, _>("priority")? as u32,
-            orphan_handling,
+            operation_filter,
             field_mappings,
         });
     }
@@ -250,24 +251,23 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
 
     // Insert entity mappings
     for entity in &config.entity_mappings {
-        // Serialize orphan_handling to string
-        let orphan_handling_str = match entity.orphan_handling {
-            OrphanHandling::Ignore => "ignore",
-            OrphanHandling::Delete => "delete",
-            OrphanHandling::Deactivate => "deactivate",
-        };
-
         let entity_result = sqlx::query(
             r#"
-            INSERT INTO transfer_entity_mappings (config_id, source_entity, target_entity, priority, orphan_handling)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO transfer_entity_mappings (
+                config_id, source_entity, target_entity, priority,
+                allow_creates, allow_updates, allow_deletes, allow_deactivates
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(config_id)
         .bind(&entity.source_entity)
         .bind(&entity.target_entity)
         .bind(entity.priority as i64)
-        .bind(orphan_handling_str)
+        .bind(if entity.operation_filter.creates { 1i64 } else { 0i64 })
+        .bind(if entity.operation_filter.updates { 1i64 } else { 0i64 })
+        .bind(if entity.operation_filter.deletes { 1i64 } else { 0i64 })
+        .bind(if entity.operation_filter.deactivates { 1i64 } else { 0i64 })
         .execute(&mut *tx)
         .await
         .context("Failed to insert entity mapping")?;

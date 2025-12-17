@@ -102,7 +102,7 @@ impl TransformEngine {
             mapping.priority,
             &ctx.target_pk_field,
         );
-        resolved.set_orphan_handling(mapping.orphan_handling);
+        resolved.set_operation_filter(mapping.operation_filter);
 
         // Collect field names from mappings
         let field_names: Vec<String> = mapping
@@ -352,7 +352,7 @@ impl TransformEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transfer::{FieldPath, OrphanHandling, Transform};
+    use crate::transfer::{FieldPath, OperationFilter, Transform};
     use serde_json::json;
 
     fn make_ctx() -> TransformContext {
@@ -511,7 +511,7 @@ mod tests {
             source_entity: "account".to_string(),
             target_entity: "account".to_string(),
             priority: 1,
-            orphan_handling: OrphanHandling::default(),
+            operation_filter: OperationFilter::default(),
             field_mappings: vec![
                 FieldMapping::new("name", Transform::Copy {
                     source_path: FieldPath::simple("name"),
@@ -544,7 +544,7 @@ mod tests {
                     source_entity: "account".to_string(),
                     target_entity: "account".to_string(),
                     priority: 1,
-                    orphan_handling: OrphanHandling::default(),
+                    operation_filter: OperationFilter::default(),
                     field_mappings: vec![
                         FieldMapping::new("name", Transform::Copy {
                             source_path: FieldPath::simple("name"),
@@ -933,7 +933,7 @@ mod tests {
                     source_entity: "account".to_string(),
                     target_entity: "account".to_string(),
                     priority: 1,
-                    orphan_handling: OrphanHandling::default(),
+                    operation_filter: OperationFilter::default(),
                     field_mappings: vec![
                         FieldMapping::new("name", Transform::Copy {
                             source_path: FieldPath::simple("name"),
