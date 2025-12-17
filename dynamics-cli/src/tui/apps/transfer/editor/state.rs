@@ -377,12 +377,22 @@ pub struct FieldMappingForm {
     // Format transform fields
     pub format_template: TextInputField,
     pub format_null_handling: NullHandlingType,
+
+    // Replace transform fields
+    pub replace_source: AutocompleteField,
+    pub replace_entries: Vec<ReplaceEntry>,
 }
 
 #[derive(Clone, Default)]
 pub struct ValueMapEntry {
     pub source_value: TextInputField,
     pub target_value: TextInputField,
+}
+
+#[derive(Clone, Default)]
+pub struct ReplaceEntry {
+    pub pattern: TextInputField,
+    pub replacement: TextInputField,
 }
 
 #[derive(Clone, Default, PartialEq, Copy)]
@@ -393,6 +403,7 @@ pub enum TransformType {
     Conditional,
     ValueMap,
     Format,
+    Replace,
 }
 
 impl TransformType {
@@ -402,7 +413,8 @@ impl TransformType {
             TransformType::Constant => TransformType::Conditional,
             TransformType::Conditional => TransformType::ValueMap,
             TransformType::ValueMap => TransformType::Format,
-            TransformType::Format => TransformType::Copy,
+            TransformType::Format => TransformType::Replace,
+            TransformType::Replace => TransformType::Copy,
         }
     }
 
@@ -413,6 +425,7 @@ impl TransformType {
             TransformType::Conditional => "Conditional",
             TransformType::ValueMap => "Value Map",
             TransformType::Format => "Format",
+            TransformType::Replace => "Replace",
         }
     }
 }
@@ -521,6 +534,11 @@ impl FieldMappingForm {
                     && !self.value_map_entries.is_empty()
             }
             TransformType::Format => !self.format_template.value.trim().is_empty(),
+            TransformType::Replace => {
+                !self.replace_source.value.trim().is_empty()
+                    && !self.replace_entries.is_empty()
+                    && self.replace_entries.iter().all(|e| !e.pattern.value.trim().is_empty())
+            }
         };
         target_valid && transform_valid
     }
@@ -667,6 +685,27 @@ impl FieldMappingForm {
                     validation.transform_error = Some(format!("Invalid template: {}", e));
                 }
             }
+
+            TransformType::Replace => {
+                let source_path = self.replace_source.value.trim();
+                if source_path.is_empty() {
+                    validation.source_error = Some("Source field is required".into());
+                    return validation;
+                }
+
+                if self.replace_entries.is_empty() {
+                    validation.transform_error = Some("At least one replacement is required".into());
+                    return validation;
+                }
+
+                // Check that all patterns are non-empty
+                for (i, entry) in self.replace_entries.iter().enumerate() {
+                    if entry.pattern.value.trim().is_empty() {
+                        validation.transform_error = Some(format!("Pattern {} is empty", i + 1));
+                        return validation;
+                    }
+                }
+            }
         }
 
         validation
@@ -807,6 +846,16 @@ impl FieldMappingForm {
                     NullHandling::Zero => NullHandlingType::Zero,
                 };
             }
+            Transform::Replace { source_path, replacements } => {
+                form.transform_type = TransformType::Replace;
+                form.replace_source.value = source_path.to_string();
+                form.replace_entries = replacements.iter().map(|(p, r)| {
+                    ReplaceEntry {
+                        pattern: TextInputField { value: p.clone(), ..Default::default() },
+                        replacement: TextInputField { value: r.clone(), ..Default::default() },
+                    }
+                }).collect();
+            }
         }
         form
     }
@@ -874,6 +923,14 @@ impl FieldMappingForm {
                 };
                 Transform::Format { template, null_handling }
             }
+            TransformType::Replace => {
+                let source_path = FieldPath::parse(self.replace_source.value.trim()).ok()?;
+                let replacements: Vec<(String, String)> = self.replace_entries.iter()
+                    .filter(|e| !e.pattern.value.trim().is_empty())
+                    .map(|e| (e.pattern.value.trim().to_string(), e.replacement.value.trim().to_string()))
+                    .collect();
+                Transform::Replace { source_path, replacements }
+            }
         };
 
         Some(FieldMapping {
@@ -898,6 +955,16 @@ impl FieldMappingForm {
                     self.value_map_selected = Some(self.value_map_entries.len() - 1);
                 }
             }
+        }
+    }
+
+    pub fn add_replace_entry(&mut self) {
+        self.replace_entries.push(ReplaceEntry::default());
+    }
+
+    pub fn remove_replace_entry(&mut self, idx: usize) {
+        if idx < self.replace_entries.len() {
+            self.replace_entries.remove(idx);
         }
     }
 }
@@ -975,6 +1042,13 @@ pub enum Msg {
     // Format transform fields
     FieldFormFormatTemplate(TextInputEvent),
     FieldFormToggleNullHandling,
+
+    // Replace transform fields
+    FieldFormReplaceSource(AutocompleteEvent),
+    FieldFormAddReplace,
+    FieldFormRemoveReplace(usize),
+    FieldFormReplacePattern(usize, TextInputEvent),
+    FieldFormReplaceReplacement(usize, TextInputEvent),
 
     // Resolver modal actions
     /// AddResolver(entity_idx)

@@ -753,6 +753,191 @@ fn render_field_modal(
 
             (content, 20)
         }
+        TransformType::Replace => {
+            // Source field autocomplete
+            let source_input = Element::autocomplete(
+                FocusId::new("replace-source"),
+                source_options,
+                form.replace_source.value.clone(),
+                &mut form.replace_source.state,
+            )
+            .placeholder(if fields_loading { "Loading..." } else { "Source field" })
+            .on_event(Msg::FieldFormReplaceSource)
+            .build();
+            let source_panel = Element::panel(source_input).title("Source Field").build();
+
+            // Replacements header + add button
+            let add_btn = Element::button(FocusId::new("replace-add"), "+ Add")
+                .on_press(Msg::FieldFormAddReplace)
+                .build();
+            let replacements_header = RowBuilder::new()
+                .add(Element::styled_text(Line::from(vec![
+                    Span::styled("Replacements:", Style::default().fg(theme.text_secondary)),
+                ])).build(), LayoutConstraint::Fill(1))
+                .add(add_btn, LayoutConstraint::Length(10))
+                .build();
+
+            // Replacement entries (show up to 4)
+            let mut entries_col = ColumnBuilder::new();
+            let entries_len = form.replace_entries.len();
+
+            // Entry 0
+            if entries_len > 0 {
+                let entry = &mut form.replace_entries[0];
+                let pattern_input = Element::text_input(
+                    FocusId::new("replace-pat-0"),
+                    &entry.pattern.value,
+                    &mut entry.pattern.state,
+                )
+                .placeholder("Pattern")
+                .on_event(|e| Msg::FieldFormReplacePattern(0, e))
+                .build();
+
+                let replacement_input = Element::text_input(
+                    FocusId::new("replace-rep-0"),
+                    &entry.replacement.value,
+                    &mut entry.replacement.state,
+                )
+                .placeholder("Replacement")
+                .on_event(|e| Msg::FieldFormReplaceReplacement(0, e))
+                .build();
+
+                let del_btn = Element::button(FocusId::new("replace-del-0"), "×")
+                    .on_press(Msg::FieldFormRemoveReplace(0))
+                    .build();
+
+                let entry_row = RowBuilder::new()
+                    .add(pattern_input, LayoutConstraint::Fill(1))
+                    .add(Element::text(" → "), LayoutConstraint::Length(4))
+                    .add(replacement_input, LayoutConstraint::Fill(1))
+                    .add(del_btn, LayoutConstraint::Length(5))
+                    .build();
+                entries_col = entries_col.add(entry_row, LayoutConstraint::Length(3));
+            }
+
+            // Entry 1
+            if entries_len > 1 {
+                let entry = &mut form.replace_entries[1];
+                let pattern_input = Element::text_input(
+                    FocusId::new("replace-pat-1"),
+                    &entry.pattern.value,
+                    &mut entry.pattern.state,
+                )
+                .placeholder("Pattern")
+                .on_event(|e| Msg::FieldFormReplacePattern(1, e))
+                .build();
+
+                let replacement_input = Element::text_input(
+                    FocusId::new("replace-rep-1"),
+                    &entry.replacement.value,
+                    &mut entry.replacement.state,
+                )
+                .placeholder("Replacement")
+                .on_event(|e| Msg::FieldFormReplaceReplacement(1, e))
+                .build();
+
+                let del_btn = Element::button(FocusId::new("replace-del-1"), "×")
+                    .on_press(Msg::FieldFormRemoveReplace(1))
+                    .build();
+
+                let entry_row = RowBuilder::new()
+                    .add(pattern_input, LayoutConstraint::Fill(1))
+                    .add(Element::text(" → "), LayoutConstraint::Length(4))
+                    .add(replacement_input, LayoutConstraint::Fill(1))
+                    .add(del_btn, LayoutConstraint::Length(5))
+                    .build();
+                entries_col = entries_col.add(entry_row, LayoutConstraint::Length(3));
+            }
+
+            // Entry 2
+            if entries_len > 2 {
+                let entry = &mut form.replace_entries[2];
+                let pattern_input = Element::text_input(
+                    FocusId::new("replace-pat-2"),
+                    &entry.pattern.value,
+                    &mut entry.pattern.state,
+                )
+                .placeholder("Pattern")
+                .on_event(|e| Msg::FieldFormReplacePattern(2, e))
+                .build();
+
+                let replacement_input = Element::text_input(
+                    FocusId::new("replace-rep-2"),
+                    &entry.replacement.value,
+                    &mut entry.replacement.state,
+                )
+                .placeholder("Replacement")
+                .on_event(|e| Msg::FieldFormReplaceReplacement(2, e))
+                .build();
+
+                let del_btn = Element::button(FocusId::new("replace-del-2"), "×")
+                    .on_press(Msg::FieldFormRemoveReplace(2))
+                    .build();
+
+                let entry_row = RowBuilder::new()
+                    .add(pattern_input, LayoutConstraint::Fill(1))
+                    .add(Element::text(" → "), LayoutConstraint::Length(4))
+                    .add(replacement_input, LayoutConstraint::Fill(1))
+                    .add(del_btn, LayoutConstraint::Length(5))
+                    .build();
+                entries_col = entries_col.add(entry_row, LayoutConstraint::Length(3));
+            }
+
+            // Entry 3
+            if entries_len > 3 {
+                let entry = &mut form.replace_entries[3];
+                let pattern_input = Element::text_input(
+                    FocusId::new("replace-pat-3"),
+                    &entry.pattern.value,
+                    &mut entry.pattern.state,
+                )
+                .placeholder("Pattern")
+                .on_event(|e| Msg::FieldFormReplacePattern(3, e))
+                .build();
+
+                let replacement_input = Element::text_input(
+                    FocusId::new("replace-rep-3"),
+                    &entry.replacement.value,
+                    &mut entry.replacement.state,
+                )
+                .placeholder("Replacement")
+                .on_event(|e| Msg::FieldFormReplaceReplacement(3, e))
+                .build();
+
+                let del_btn = Element::button(FocusId::new("replace-del-3"), "×")
+                    .on_press(Msg::FieldFormRemoveReplace(3))
+                    .build();
+
+                let entry_row = RowBuilder::new()
+                    .add(pattern_input, LayoutConstraint::Fill(1))
+                    .add(Element::text(" → "), LayoutConstraint::Length(4))
+                    .add(replacement_input, LayoutConstraint::Fill(1))
+                    .add(del_btn, LayoutConstraint::Length(5))
+                    .build();
+                entries_col = entries_col.add(entry_row, LayoutConstraint::Length(3));
+            }
+
+            if entries_len > 4 {
+                let more_text = format!("... and {} more", entries_len - 4);
+                entries_col = entries_col.add(
+                    Element::styled_text(Line::from(vec![
+                        Span::styled(more_text, Style::default().fg(theme.text_tertiary)),
+                    ])).build(),
+                    LayoutConstraint::Length(1),
+                );
+            }
+
+            let content = ColumnBuilder::new()
+                .add(source_panel, LayoutConstraint::Length(3))
+                .add(replacements_header, LayoutConstraint::Length(3))
+                .add(entries_col.build(), LayoutConstraint::Fill(1))
+                .spacing(1)
+                .build();
+
+            let base_height: u16 = 22;
+            let entries_height = (entries_len.min(4) * 4) as u16;
+            (content, (base_height + entries_height).min(40))
+        }
     };
 
     // Run validation
@@ -1202,6 +1387,9 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
             }
             TransformType::Format => {
                 subs.push(Subscription::ctrl_key(KeyCode::Char('n'), "Cycle null handling", Msg::FieldFormToggleNullHandling));
+            }
+            TransformType::Replace => {
+                subs.push(Subscription::ctrl_key(KeyCode::Char('a'), "Add replacement", Msg::FieldFormAddReplace));
             }
             _ => {}
         }

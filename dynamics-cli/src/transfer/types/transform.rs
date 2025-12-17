@@ -52,6 +52,13 @@ pub enum Transform {
         #[serde(default)]
         null_handling: NullHandling,
     },
+    /// String replacement operations applied in order
+    Replace {
+        /// Source field to transform
+        source_path: FieldPath,
+        /// Replacement pairs (pattern, replacement) applied in order
+        replacements: Vec<(String, String)>,
+    },
 }
 
 impl Transform {
@@ -116,6 +123,9 @@ impl Transform {
                     format!("format(\"{}\")", s)
                 }
             }
+            Transform::Replace { source_path, replacements } => {
+                format!("replace({}) [{} rules]", source_path, replacements.len())
+            }
         }
     }
 
@@ -128,6 +138,7 @@ impl Transform {
             Transform::Conditional { source_path, .. } => vec![source_path.base_field()],
             Transform::ValueMap { source_path, .. } => vec![source_path.base_field()],
             Transform::Format { template, .. } => template.base_fields(),
+            Transform::Replace { source_path, .. } => vec![source_path.base_field()],
         }
     }
 
@@ -165,6 +176,13 @@ impl Transform {
             }
             #[allow(deprecated)]
             Transform::Format { template, .. } => template.expand_specs(),
+            Transform::Replace { source_path, .. } => {
+                if let Some(target) = source_path.lookup_field() {
+                    vec![(source_path.base_field(), target)]
+                } else {
+                    vec![]
+                }
+            }
         }
     }
 
@@ -195,6 +213,13 @@ impl Transform {
                 }
             }
             Transform::Format { template, .. } => template.lookup_paths(),
+            Transform::Replace { source_path, .. } => {
+                if source_path.is_lookup_traversal() {
+                    vec![source_path]
+                } else {
+                    vec![]
+                }
+            }
         }
     }
 

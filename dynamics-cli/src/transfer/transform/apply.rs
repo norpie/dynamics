@@ -142,6 +142,24 @@ pub fn apply_transform(
             let result = super::format::evaluate(template, record, *null_handling)?;
             Ok(Value::String(result))
         }
+
+        Transform::Replace { source_path, replacements } => {
+            let source_value = resolve_path(record, source_path);
+            match source_value {
+                Value::String(s) => {
+                    let mut result = s;
+                    for (pattern, replacement) in replacements {
+                        result = result.replace(pattern, replacement);
+                    }
+                    Ok(Value::String(result))
+                }
+                Value::Null => Ok(Value::Null),
+                other => Err(format!(
+                    "Replace transform requires string value, got: {}",
+                    other
+                )),
+            }
+        }
     }
 }
 
@@ -334,6 +352,53 @@ mod tests {
             fallback: Fallback::Error,
         };
 
+        let result = apply_transform(&transform, &record, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_apply_replace_single() {
+        let record = json!({"name": "Hello World"});
+        let transform = Transform::Replace {
+            source_path: FieldPath::simple("name"),
+            replacements: vec![("World".to_string(), "Universe".to_string())],
+        };
+        let result = apply_transform(&transform, &record, None).unwrap();
+        assert_eq!(result, Value::String("Hello Universe".into()));
+    }
+
+    #[test]
+    fn test_apply_replace_multiple_in_order() {
+        let record = json!({"name": "foo bar baz"});
+        let transform = Transform::Replace {
+            source_path: FieldPath::simple("name"),
+            replacements: vec![
+                ("foo".to_string(), "bar".to_string()),  // "bar bar baz"
+                ("bar".to_string(), "qux".to_string()),  // "qux qux baz"
+            ],
+        };
+        let result = apply_transform(&transform, &record, None).unwrap();
+        assert_eq!(result, Value::String("qux qux baz".into()));
+    }
+
+    #[test]
+    fn test_apply_replace_null() {
+        let record = json!({"name": null});
+        let transform = Transform::Replace {
+            source_path: FieldPath::simple("name"),
+            replacements: vec![("a".to_string(), "b".to_string())],
+        };
+        let result = apply_transform(&transform, &record, None).unwrap();
+        assert_eq!(result, Value::Null);
+    }
+
+    #[test]
+    fn test_apply_replace_non_string_error() {
+        let record = json!({"count": 42});
+        let transform = Transform::Replace {
+            source_path: FieldPath::simple("count"),
+            replacements: vec![("a".to_string(), "b".to_string())],
+        };
         let result = apply_transform(&transform, &record, None);
         assert!(result.is_err());
     }

@@ -574,6 +574,38 @@ impl App for MappingEditorApp {
                 Command::None
             }
 
+            // Replace transform fields
+            Msg::FieldFormReplaceSource(event) => {
+                let options = get_source_options(state);
+                state.field_form.replace_source.handle_event::<Msg>(event, &options);
+                // Check if we need to load related entity fields
+                check_for_nested_lookup(state, &state.field_form.replace_source.value.clone())
+            }
+
+            Msg::FieldFormAddReplace => {
+                state.field_form.add_replace_entry();
+                Command::None
+            }
+
+            Msg::FieldFormRemoveReplace(idx) => {
+                state.field_form.remove_replace_entry(idx);
+                Command::None
+            }
+
+            Msg::FieldFormReplacePattern(idx, event) => {
+                if let Some(entry) = state.field_form.replace_entries.get_mut(idx) {
+                    entry.pattern.handle_event(event, Some(200));
+                }
+                Command::None
+            }
+
+            Msg::FieldFormReplaceReplacement(idx, event) => {
+                if let Some(entry) = state.field_form.replace_entries.get_mut(idx) {
+                    entry.replacement.handle_event(event, Some(200));
+                }
+                Command::None
+            }
+
             // Resolver modal
             Msg::AddResolver(entity_idx) => {
                 if let Resource::Success(config) = &state.config {
