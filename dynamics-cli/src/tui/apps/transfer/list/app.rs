@@ -2,7 +2,7 @@ use crate::config::repository::transfer::{
     delete_transfer_config, get_transfer_config, list_transfer_configs, save_transfer_config,
     transfer_config_exists, TransferConfigSummary,
 };
-use crate::transfer::TransferConfig;
+use crate::transfer::{TransferConfig, TransferMode};
 use crate::tui::element::FocusId;
 use crate::tui::resource::Resource;
 use crate::tui::widgets::ListState;
@@ -121,6 +121,11 @@ impl App for TransferConfigListApp {
                 Command::None
             }
 
+            Msg::CreateFormToggleMode => {
+                state.create_form.toggle_mode();
+                Command::None
+            }
+
             Msg::SaveNewConfig => {
                 if !state.create_form.is_valid() {
                     return Command::None;
@@ -129,23 +134,24 @@ impl App for TransferConfigListApp {
                 let name = state.create_form.name.value.trim().to_string();
                 let source_env = state.create_form.source_env.value.trim().to_string();
                 let target_env = state.create_form.target_env.value.trim().to_string();
+                let mode = state.create_form.mode;
 
                 state.show_create_modal = false;
 
                 Command::perform(
-                    create_config(name, source_env, target_env),
+                    create_config(name, source_env, target_env, mode),
                     Msg::ConfigCreated,
                 )
             }
 
             Msg::ConfigCreated(result) => {
                 match result {
-                    Ok(name) => {
-                        // Refresh the list, then navigate to editor
+                    Ok((name, mode)) => {
+                        // Refresh the list, then navigate to appropriate editor based on mode
                         state.configs = Resource::Loading;
                         Command::batch(vec![
                             Command::perform(load_configs(), Msg::ConfigsLoaded),
-                            navigate_to_editor(&name),
+                            navigate_to_editor_by_mode(&name, mode),
                         ])
                     }
                     Err(_e) => {
@@ -407,7 +413,7 @@ async fn delete_config(name: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-async fn create_config(name: String, source_env: String, target_env: String) -> Result<String, String> {
+async fn create_config(name: String, source_env: String, target_env: String, mode: TransferMode) -> Result<(String, TransferMode), String> {
     let pool = &crate::global_config().pool;
 
     let config = TransferConfig {
@@ -415,7 +421,7 @@ async fn create_config(name: String, source_env: String, target_env: String) -> 
         name: name.clone(),
         source_env,
         target_env,
-        mode: crate::transfer::TransferMode::Declarative,
+        mode,
         lua_script: None,
         lua_script_path: None,
         entity_mappings: vec![],
@@ -423,7 +429,7 @@ async fn create_config(name: String, source_env: String, target_env: String) -> 
 
     save_transfer_config(pool, &config)
         .await
-        .map(|_| name)
+        .map(|_| (name, mode))
         .map_err(|e| e.to_string())
 }
 
@@ -545,4 +551,30 @@ fn navigate_to_editor(config_name: &str) -> Command<Msg> {
             config_name: config_name.to_string(),
         },
     )
+}
+
+fn navigate_to_editor_by_mode(config_name: &str, mode: TransferMode) -> Command<Msg> {
+    use crate::tui::AppId;
+    use crate::tui::apps::transfer::EditorParams;
+
+    match mode {
+        TransferMode::Declarative => {
+            Command::start_app(
+                AppId::TransferMappingEditor,
+                EditorParams {
+                    config_name: config_name.to_string(),
+                },
+            )
+        }
+        TransferMode::Lua => {
+            // TODO: Navigate to LuaScriptApp when implemented (Phase 4)
+            // For now, just navigate to the declarative editor as a placeholder
+            Command::start_app(
+                AppId::TransferMappingEditor,
+                EditorParams {
+                    config_name: config_name.to_string(),
+                },
+            )
+        }
+    }
 }

@@ -3,6 +3,7 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::config::repository::transfer::TransferConfigSummary;
+use crate::transfer::TransferMode;
 use crate::tui::element::{ColumnBuilder, FocusId};
 use crate::tui::modals::ConfirmationModal;
 use crate::tui::resource::Resource;
@@ -214,6 +215,29 @@ fn render_create_modal(
     .build();
     let target_panel = Element::panel(target_input).title("Target Environment").build();
 
+    // Mode selector (toggle button)
+    let (mode_text, mode_button_label) = match form.mode {
+        TransferMode::Declarative => ("Declarative (field mappings)", "[ ] Lua"),
+        TransferMode::Lua => ("Lua Script", "[x] Lua"),
+    };
+    let mode_row = RowBuilder::new()
+        .add(
+            Element::styled_text(Line::from(vec![
+                Span::styled("Mode: ", Style::default().fg(theme.text_secondary)),
+                Span::styled(mode_text, Style::default().fg(theme.text_primary)),
+            ]))
+            .build(),
+            LayoutConstraint::Fill(1),
+        )
+        .add(
+            Element::button(FocusId::new("create-mode-toggle"), mode_button_label)
+                .on_press(Msg::CreateFormToggleMode)
+                .build(),
+            LayoutConstraint::Length(10),
+        )
+        .build();
+    let mode_panel = Element::panel(mode_row).title("Transform Mode").build();
+
     // Button row
     let cancel_btn = Element::button(FocusId::new("create-cancel"), "Cancel")
         .on_press(Msg::CloseCreateModal)
@@ -236,6 +260,7 @@ fn render_create_modal(
         .add(name_panel, LayoutConstraint::Length(3))
         .add(source_panel, LayoutConstraint::Length(3))
         .add(target_panel, LayoutConstraint::Length(3))
+        .add(mode_panel, LayoutConstraint::Length(3))
         .add(Element::text(""), LayoutConstraint::Fill(1))
         .add(button_row, LayoutConstraint::Length(3))
         .spacing(1)
@@ -244,7 +269,7 @@ fn render_create_modal(
     Element::panel(Element::container(form_content).padding(1).build())
         .title("New Transfer Config")
         .width(50)
-        .height(20)
+        .height(23)
         .build()
 }
 

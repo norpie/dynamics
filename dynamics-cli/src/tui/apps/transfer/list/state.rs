@@ -1,6 +1,7 @@
 use crossterm::event::KeyCode;
 
 use crate::config::repository::transfer::TransferConfigSummary;
+use crate::transfer::TransferMode;
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{ListState, AutocompleteField, TextInputField};
 use crate::tui::widgets::events::{AutocompleteEvent, ListEvent, TextInputEvent};
@@ -30,11 +31,23 @@ pub struct State {
     pub merge_error: Option<String>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct CreateConfigForm {
     pub name: TextInputField,
     pub source_env: AutocompleteField,
     pub target_env: AutocompleteField,
+    pub mode: TransferMode,
+}
+
+impl Default for CreateConfigForm {
+    fn default() -> Self {
+        Self {
+            name: TextInputField::default(),
+            source_env: AutocompleteField::default(),
+            target_env: AutocompleteField::default(),
+            mode: TransferMode::Declarative,
+        }
+    }
 }
 
 impl CreateConfigForm {
@@ -42,6 +55,13 @@ impl CreateConfigForm {
         !self.name.value.trim().is_empty()
             && !self.source_env.value.trim().is_empty()
             && !self.target_env.value.trim().is_empty()
+    }
+
+    pub fn toggle_mode(&mut self) {
+        self.mode = match self.mode {
+            TransferMode::Declarative => TransferMode::Lua,
+            TransferMode::Lua => TransferMode::Declarative,
+        };
     }
 }
 
@@ -93,8 +113,9 @@ pub enum Msg {
     CreateFormName(TextInputEvent),
     CreateFormSourceEnv(AutocompleteEvent),
     CreateFormTargetEnv(AutocompleteEvent),
+    CreateFormToggleMode,
     SaveNewConfig,
-    ConfigCreated(Result<String, String>),
+    ConfigCreated(Result<(String, TransferMode), String>),
 
     // Clone modal
     CloneSelected,
