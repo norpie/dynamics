@@ -18,6 +18,11 @@ pub struct State {
     pub show_create_modal: bool,
     pub create_form: CreateConfigForm,
     pub environments: Resource<Vec<String>>,
+
+    // Clone modal
+    pub show_clone_modal: bool,
+    pub clone_form: CloneConfigForm,
+    pub selected_for_clone: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -32,6 +37,17 @@ impl CreateConfigForm {
         !self.name.value.trim().is_empty()
             && !self.source_env.value.trim().is_empty()
             && !self.target_env.value.trim().is_empty()
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct CloneConfigForm {
+    pub name: TextInputField,
+}
+
+impl CloneConfigForm {
+    pub fn is_valid(&self) -> bool {
+        !self.name.value.trim().is_empty()
     }
 }
 
@@ -63,4 +79,11 @@ pub enum Msg {
     CreateFormTargetEnv(AutocompleteEvent),
     SaveNewConfig,
     ConfigCreated(Result<String, String>),
+
+    // Clone modal
+    CloneSelected,
+    CloseCloneModal,
+    CloneFormName(TextInputEvent),
+    SaveClone,
+    CloneResult(Result<String, String>),
 }

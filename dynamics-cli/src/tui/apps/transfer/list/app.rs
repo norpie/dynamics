@@ -1,5 +1,6 @@
 use crate::config::repository::transfer::{
-    delete_transfer_config, list_transfer_configs, save_transfer_config, TransferConfigSummary,
+    delete_transfer_config, get_transfer_config, list_transfer_configs, save_transfer_config,
+    transfer_config_exists, TransferConfigSummary,
 };
 use crate::transfer::TransferConfig;
 use crate::tui::element::FocusId;
@@ -7,7 +8,7 @@ use crate::tui::resource::Resource;
 use crate::tui::widgets::ListState;
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
-use super::state::{CreateConfigForm, Msg, State};
+use super::state::{CloneConfigForm, CreateConfigForm, Msg, State};
 use super::view;
 
 pub struct TransferConfigListApp;
@@ -28,6 +29,9 @@ impl App for TransferConfigListApp {
             show_create_modal: false,
             create_form: CreateConfigForm::default(),
             environments: Resource::NotAsked,
+            show_clone_modal: false,
+            clone_form: CloneConfigForm::default(),
+            selected_for_clone: None,
         };
 
         let cmd = Command::perform(load_configs(), Msg::ConfigsLoaded);
@@ -199,6 +203,62 @@ impl App for TransferConfigListApp {
                 state.configs = Resource::Loading;
                 Command::perform(load_configs(), Msg::ConfigsLoaded)
             }
+
+            Msg::CloneSelected => {
+                if let Resource::Success(configs) = &state.configs {
+                    if let Some(idx) = state.list_state.selected() {
+                        if let Some(config) = configs.get(idx) {
+                            state.show_clone_modal = true;
+                            state.selected_for_clone = Some(config.name.clone());
+                            state.clone_form = CloneConfigForm::default();
+                            state.clone_form.name.value = format!("{} (Copy)", config.name);
+                            return Command::set_focus(FocusId::new("clone-name"));
+                        }
+                    }
+                }
+                Command::None
+            }
+
+            Msg::CloseCloneModal => {
+                state.show_clone_modal = false;
+                state.selected_for_clone = None;
+                Command::set_focus(FocusId::new("config-list"))
+            }
+
+            Msg::CloneFormName(event) => {
+                state.clone_form.name.handle_event(event, Some(100));
+                Command::None
+            }
+
+            Msg::SaveClone => {
+                if !state.clone_form.is_valid() {
+                    return Command::None;
+                }
+
+                if let Some(original_name) = state.selected_for_clone.take() {
+                    let new_name = state.clone_form.name.value.trim().to_string();
+                    state.show_clone_modal = false;
+                    return Command::perform(
+                        clone_config(original_name, new_name),
+                        Msg::CloneResult,
+                    );
+                }
+                Command::None
+            }
+
+            Msg::CloneResult(result) => match result {
+                Ok(name) => {
+                    state.configs = Resource::Loading;
+                    Command::batch(vec![
+                        Command::perform(load_configs(), Msg::ConfigsLoaded),
+                        navigate_to_editor(&name),
+                    ])
+                }
+                Err(_e) => {
+                    // TODO: show error modal
+                    Command::None
+                }
+            },
         }
     }
 
@@ -253,6 +313,44 @@ async fn create_config(name: String, source_env: String, target_env: String) -> 
     save_transfer_config(pool, &config)
         .await
         .map(|_| name)
+        .map_err(|e| e.to_string())
+}
+
+async fn clone_config(original_name: String, new_name: String) -> Result<String, String> {
+    let pool = &crate::global_config().pool;
+
+    // Check if new name already exists
+    if transfer_config_exists(pool, &new_name)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Err(format!("Config '{}' already exists", new_name));
+    }
+
+    // Load original config
+    let original = get_transfer_config(pool, &original_name)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Config '{}' not found", original_name))?;
+
+    // Clone and reset IDs
+    let mut cloned = original.clone();
+    cloned.id = None;
+    cloned.name = new_name.clone();
+    for entity in &mut cloned.entity_mappings {
+        entity.id = None;
+        for resolver in &mut entity.resolvers {
+            resolver.id = None;
+        }
+        for field in &mut entity.field_mappings {
+            field.id = None;
+        }
+    }
+
+    // Save the cloned config
+    save_transfer_config(pool, &cloned)
+        .await
+        .map(|_| new_name)
         .map_err(|e| e.to_string())
 }
 
