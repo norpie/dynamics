@@ -16,6 +16,8 @@ pub struct BatchRequestBuilder {
     changeset_id: String,
     base_url: String,
     requests: Vec<BatchItem>,
+    /// Bypass headers to apply to each operation in the batch
+    bypass_headers: Vec<(String, String)>,
 }
 
 /// Individual item in a batch request
@@ -52,7 +54,19 @@ impl BatchRequestBuilder {
             changeset_id: format!("changeset_{}", Uuid::new_v4().to_string().replace('-', "_")),
             base_url: base_url.into(),
             requests: Vec::new(),
+            bypass_headers: Vec::new(),
         }
+    }
+
+    /// Set bypass headers to apply to each operation in the batch
+    ///
+    /// Dynamics 365 requires bypass headers on each individual request within
+    /// a batch, not just on the outer HTTP request.
+    pub fn with_bypass_headers(mut self, headers: Vec<(&str, String)>) -> Self {
+        self.bypass_headers = headers.into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect();
+        self
     }
 
     /// Add operations as a changeset (transactional)
@@ -79,6 +93,16 @@ impl BatchRequestBuilder {
         self.add_changeset(&[operation.clone()])
     }
 
+    /// Build operation headers, including bypass headers if configured
+    fn build_op_headers(&self, base_headers: Vec<(String, String)>) -> Vec<(String, String)> {
+        let mut headers = base_headers;
+        // Add bypass headers to each operation
+        for (name, value) in &self.bypass_headers {
+            headers.push((name.clone(), value.clone()));
+        }
+        headers
+    }
+
     /// Convert an Operation to a ChangeSetOperation
     fn operation_to_changeset_operation(&self, operation: &Operation, content_id: u32) -> ChangeSetOperation {
         match operation {
@@ -90,10 +114,10 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::POST.to_string(),
                     path,
-                    headers: vec![
+                    headers: self.build_op_headers(vec![
                         ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
                         ("Prefer".to_string(), headers::PREFER_RETURN_REPRESENTATION.to_string()),
-                    ],
+                    ]),
                     body: Some(body),
                 }
             }
@@ -114,10 +138,10 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::POST.to_string(),
                     path,
-                    headers: vec![
+                    headers: self.build_op_headers(vec![
                         ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
                         ("Prefer".to_string(), headers::PREFER_RETURN_REPRESENTATION.to_string()),
-                    ],
+                    ]),
                     body: Some(body),
                 }
             }
@@ -129,11 +153,11 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::PATCH.to_string(),
                     path,
-                    headers: vec![
+                    headers: self.build_op_headers(vec![
                         ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
                         ("If-Match".to_string(), headers::IF_MATCH_ANY.to_string()),
                         ("Prefer".to_string(), headers::PREFER_RETURN_REPRESENTATION.to_string()),
-                    ],
+                    ]),
                     body: Some(body),
                 }
             }
@@ -144,7 +168,7 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::DELETE.to_string(),
                     path,
-                    headers: vec![],
+                    headers: self.build_op_headers(vec![]),
                     body: None,
                 }
             }
@@ -156,10 +180,10 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::PATCH.to_string(),
                     path,
-                    headers: vec![
+                    headers: self.build_op_headers(vec![
                         ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
                         ("Prefer".to_string(), headers::PREFER_RETURN_REPRESENTATION.to_string()),
-                    ],
+                    ]),
                     body: Some(body),
                 }
             }
@@ -193,9 +217,9 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::POST.to_string(),
                     path,
-                    headers: vec![
+                    headers: self.build_op_headers(vec![
                         ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
-                    ],
+                    ]),
                     body: Some(body),
                 }
             }
@@ -213,7 +237,7 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::DELETE.to_string(),
                     path,
-                    headers: vec![],
+                    headers: self.build_op_headers(vec![]),
                     body: None,
                 }
             }
@@ -234,7 +258,7 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::POST.to_string(),
                     path,
-                    headers: op_headers,
+                    headers: self.build_op_headers(op_headers),
                     body: Some(body),
                 }
             }
@@ -247,9 +271,9 @@ impl BatchRequestBuilder {
                     content_id,
                     method: "PUT".to_string(), // Schema updates use PUT
                     path,
-                    headers: vec![
+                    headers: self.build_op_headers(vec![
                         ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
-                    ],
+                    ]),
                     body: Some(body),
                 }
             }
@@ -261,7 +285,7 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::DELETE.to_string(),
                     path,
-                    headers: vec![],
+                    headers: self.build_op_headers(vec![]),
                     body: None,
                 }
             }
@@ -272,9 +296,9 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::POST.to_string(),
                     path,
-                    headers: vec![
+                    headers: self.build_op_headers(vec![
                         ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
-                    ],
+                    ]),
                     body: None,
                 }
             }

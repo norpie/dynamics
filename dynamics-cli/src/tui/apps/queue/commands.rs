@@ -136,7 +136,13 @@ pub fn execute_next_if_available(state: &mut State) -> Command<Msg> {
                         }
                     };
 
-                    let resilience = ResilienceConfig::default();
+                    let resilience = match ResilienceConfig::load_from_options().await {
+                        Ok(config) => config,
+                        Err(e) => {
+                            log::warn!("Failed to load resilience config from options: {}, using defaults", e);
+                            ResilienceConfig::default()
+                        }
+                    };
                     log::info!("Queue item {} - executing {} operations", item.id, op_count);
                     let result = item.operations.execute(&client, &resilience).await;
                     log::info!("Queue item {} - completed in {:?}", item.id, start.elapsed());

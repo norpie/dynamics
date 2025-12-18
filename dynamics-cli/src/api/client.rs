@@ -32,6 +32,13 @@ fn build_bypass_headers(config: &BypassConfig) -> Vec<(&'static str, String)> {
         bypass_headers.push((headers::SUPPRESS_POWER_AUTOMATE, "true".to_string()));
     }
 
+    // Log bypass headers if any are configured
+    if !bypass_headers.is_empty() {
+        log::debug!("Bypass headers configured: {:?}", bypass_headers);
+    } else {
+        log::debug!("No bypass headers configured");
+    }
+
     bypass_headers
 }
 
@@ -827,8 +834,12 @@ impl DynamicsClient {
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
 
+        // Build bypass headers to include on each operation within the batch
+        let bypass_headers = build_bypass_headers(&resilience.bypass);
+
         // Build the batch request using the proper builder
         let batch_request = BatchRequestBuilder::new(&self.base_url)
+            .with_bypass_headers(bypass_headers.clone())
             .add_changeset(operations)
             .build();
 
@@ -836,9 +847,11 @@ impl DynamicsClient {
         let body = batch_request.body().to_string();
 
         log::debug!("Batch request: {} operations (correlation_id: {})", operations.len(), correlation_id);
+        if !bypass_headers.is_empty() {
+            log::debug!("Batch request includes bypass headers on each operation: {:?}", bypass_headers);
+        }
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
-        let bypass_headers = build_bypass_headers(&resilience.bypass);
         let request_start = std::time::Instant::now();
         let response = retry_policy.execute(|| async {
             let mut request = self.http_client

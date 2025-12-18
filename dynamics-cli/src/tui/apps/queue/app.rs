@@ -713,7 +713,8 @@ impl App for OperationQueueApp {
                                 }
                             };
 
-                            let resilience = ResilienceConfig::default();
+                            let resilience = ResilienceConfig::load_from_options().await
+                                .unwrap_or_default();
                             let result = ops_to_execute.execute(&client, &resilience).await;
                             let duration_ms = start.elapsed().as_millis() as u64;
 
