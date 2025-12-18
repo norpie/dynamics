@@ -43,16 +43,23 @@ impl ListItem for TransferConfigSummary {
             format!("{} entities", self.entity_count)
         };
 
+        // Last used time - format as relative time
+        let last_used_str = format_relative_time(self.last_used_at);
+
         let line = Line::from(vec![
             checkbox,
             Span::styled(mode_label, Style::default().fg(mode_color)),
-            Span::styled(format!("{:<30}", self.name), Style::default().fg(fg_color)),
+            Span::styled(format!("{:<28}", self.name), Style::default().fg(fg_color)),
             Span::styled(
                 format!("{} -> {}", self.source_env, self.target_env),
                 Style::default().fg(theme.text_secondary),
             ),
             Span::styled(
                 format!("  ({})", entity_info),
+                Style::default().fg(theme.text_tertiary),
+            ),
+            Span::styled(
+                format!("  {}", last_used_str),
                 Style::default().fg(theme.text_tertiary),
             ),
         ]);
@@ -62,6 +69,52 @@ impl ListItem for TransferConfigSummary {
             builder = builder.background(bg);
         }
         builder.build()
+    }
+}
+
+/// Format a datetime as a human-readable relative time
+fn format_relative_time(dt: Option<chrono::DateTime<chrono::Utc>>) -> String {
+    let dt = match dt {
+        Some(d) => d,
+        None => return String::new(),
+    };
+
+    let now = chrono::Utc::now();
+    let duration = now.signed_duration_since(dt);
+
+    if duration.num_seconds() < 60 {
+        "just now".to_string()
+    } else if duration.num_minutes() < 60 {
+        let mins = duration.num_minutes();
+        if mins == 1 {
+            "1 min ago".to_string()
+        } else {
+            format!("{} mins ago", mins)
+        }
+    } else if duration.num_hours() < 24 {
+        let hours = duration.num_hours();
+        if hours == 1 {
+            "1 hour ago".to_string()
+        } else {
+            format!("{} hours ago", hours)
+        }
+    } else if duration.num_days() < 7 {
+        let days = duration.num_days();
+        if days == 1 {
+            "yesterday".to_string()
+        } else {
+            format!("{} days ago", days)
+        }
+    } else if duration.num_weeks() < 4 {
+        let weeks = duration.num_weeks();
+        if weeks == 1 {
+            "1 week ago".to_string()
+        } else {
+            format!("{} weeks ago", weeks)
+        }
+    } else {
+        // Just show the date
+        dt.format("%Y-%m-%d").to_string()
     }
 }
 

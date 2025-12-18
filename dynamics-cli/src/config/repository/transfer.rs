@@ -17,9 +17,11 @@ pub struct TransferConfigSummary {
     pub target_env: String,
     pub mode: TransferMode,
     pub entity_count: usize,
+    pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 /// List all transfer configs (summary only)
+/// Orders by last_used_at descending (most recent first), then by name
 pub async fn list_transfer_configs(pool: &SqlitePool) -> Result<Vec<TransferConfigSummary>> {
     let rows = sqlx::query(
         r#"
@@ -29,11 +31,12 @@ pub async fn list_transfer_configs(pool: &SqlitePool) -> Result<Vec<TransferConf
             tc.source_env,
             tc.target_env,
             tc.mode,
+            tc.last_used_at,
             COUNT(tem.id) as entity_count
         FROM transfer_configs tc
         LEFT JOIN transfer_entity_mappings tem ON tc.id = tem.config_id
         GROUP BY tc.id
-        ORDER BY tc.name
+        ORDER BY tc.last_used_at DESC NULLS LAST, tc.name
         "#,
     )
     .fetch_all(pool)
@@ -43,6 +46,13 @@ pub async fn list_transfer_configs(pool: &SqlitePool) -> Result<Vec<TransferConf
     let mut configs = Vec::new();
     for row in rows {
         let mode_str: String = row.try_get("mode")?;
+        let last_used_str: Option<String> = row.try_get("last_used_at")?;
+        let last_used_at = last_used_str.and_then(|s| {
+            chrono::DateTime::parse_from_rfc3339(&s)
+                .ok()
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+        });
+
         configs.push(TransferConfigSummary {
             id: row.try_get("id")?,
             name: row.try_get("name")?,
@@ -50,10 +60,23 @@ pub async fn list_transfer_configs(pool: &SqlitePool) -> Result<Vec<TransferConf
             target_env: row.try_get("target_env")?,
             mode: TransferMode::from_db_str(&mode_str),
             entity_count: row.try_get::<i64, _>("entity_count")? as usize,
+            last_used_at,
         });
     }
 
     Ok(configs)
+}
+
+/// Update the last_used_at timestamp for a config
+pub async fn touch_transfer_config(pool: &SqlitePool, name: &str) -> Result<()> {
+    let now = chrono::Utc::now().to_rfc3339();
+    sqlx::query("UPDATE transfer_configs SET last_used_at = ? WHERE name = ?")
+        .bind(&now)
+        .bind(name)
+        .execute(pool)
+        .await
+        .context("Failed to update last_used_at")?;
+    Ok(())
 }
 
 /// Get a transfer config by name (full structure with all mappings)

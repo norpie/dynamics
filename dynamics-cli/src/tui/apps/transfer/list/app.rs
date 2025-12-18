@@ -1,6 +1,6 @@
 use crate::config::repository::transfer::{
     delete_transfer_config, get_transfer_config, list_transfer_configs, save_transfer_config,
-    transfer_config_exists, TransferConfigSummary,
+    touch_transfer_config, transfer_config_exists, TransferConfigSummary,
 };
 use crate::transfer::{TransferConfig, TransferMode};
 use crate::tui::element::FocusId;
@@ -546,6 +546,15 @@ async fn merge_configs(config_names: Vec<String>, new_name: String) -> Result<St
 fn navigate_to_editor_by_mode(config_name: &str, mode: TransferMode) -> Command<Msg> {
     use crate::tui::AppId;
     use crate::tui::apps::transfer::{EditorParams, LuaScriptParams};
+
+    // Touch the config to update last_used_at timestamp
+    let name = config_name.to_string();
+    tokio::spawn(async move {
+        let pool = &crate::global_config().pool;
+        if let Err(e) = crate::config::repository::transfer::touch_transfer_config(pool, &name).await {
+            log::warn!("Failed to update last_used_at for {}: {}", name, e);
+        }
+    });
 
     match mode {
         TransferMode::Declarative => {
