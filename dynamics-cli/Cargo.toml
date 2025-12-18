@@ -28,6 +28,7 @@ path = "src/main.rs"
 default = []
 migration = []
 deadlines = []
+luajit = ["mlua/luajit"]
 
 [dependencies]
 dynamics-lib-macros = { path = "../dynamics-lib-macros" }
@@ -70,3 +71,4 @@ include_dir = "0.7"
 self_update = { version = "0.42", default-features = false, features = ["archive-tar", "archive-zip", "compression-flate2", "compression-zip-deflate", "compression-zip-bzip2", "rustls"] }
 semver = "1.0"
 unicode-width = "0.2"
+mlua = { version = "0.10", features = ["lua54", "serialize", "send", "vendored"] }
