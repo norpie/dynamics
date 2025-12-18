@@ -4,7 +4,7 @@ use crossterm::event::KeyCode;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
-use crate::tui::element::{ColumnBuilder, LayoutConstraint};
+use crate::tui::element::{ColumnBuilder, FocusId, LayoutConstraint, RowBuilder};
 use crate::tui::resource::Resource;
 use crate::tui::{Element, LayeredView, Subscription};
 
@@ -60,6 +60,20 @@ fn render_main_view(
 }
 
 fn render_no_script_view(theme: &crate::tui::Theme) -> Element<Msg> {
+    // Button row
+    let load_btn = Element::button(FocusId::new("lua-load-file"), "Load File")
+        .on_press(Msg::OpenFileBrowser)
+        .build();
+    let back_btn = Element::button(FocusId::new("lua-back"), "Back")
+        .on_press(Msg::GoBack)
+        .build();
+
+    let button_row = RowBuilder::new()
+        .add(back_btn, LayoutConstraint::Length(10))
+        .add(Element::text(""), LayoutConstraint::Fill(1))
+        .add(load_btn, LayoutConstraint::Length(14))
+        .build();
+
     let content = ColumnBuilder::new()
         .add(Element::text(""), LayoutConstraint::Fill(1))
         .add(
@@ -72,14 +86,13 @@ fn render_no_script_view(theme: &crate::tui::Theme) -> Element<Msg> {
         .add(Element::text(""), LayoutConstraint::Length(1))
         .add(
             Element::styled_text(Line::from(vec![
-                Span::styled("Press ", Style::default().fg(theme.text_secondary)),
-                Span::styled("[f]", Style::default().fg(theme.accent_primary)),
-                Span::styled(" to select a Lua script file.", Style::default().fg(theme.text_secondary)),
+                Span::styled("Select a Lua script file to configure the transform.", Style::default().fg(theme.text_tertiary)),
             ]))
             .build(),
             LayoutConstraint::Length(1),
         )
         .add(Element::text(""), LayoutConstraint::Fill(1))
+        .add(button_row, LayoutConstraint::Length(3))
         .build();
 
     Element::container(content).padding(2).build()
@@ -267,6 +280,38 @@ fn render_script_view(
     }
 
     rows.push((Element::text(""), LayoutConstraint::Fill(1)));
+
+    // Button row
+    let is_valid = matches!(&state.validation, Resource::Success(r) if r.is_valid);
+
+    let back_btn = Element::button(FocusId::new("lua-back"), "Back")
+        .on_press(Msg::GoBack)
+        .build();
+    let load_btn = Element::button(FocusId::new("lua-load-file"), "Load File")
+        .on_press(Msg::OpenFileBrowser)
+        .build();
+    let validate_btn = Element::button(FocusId::new("lua-validate"), "Validate")
+        .on_press(Msg::Validate)
+        .build();
+    let preview_btn = if is_valid {
+        Element::button(FocusId::new("lua-preview"), "Preview")
+            .on_press(Msg::StartPreview)
+            .build()
+    } else {
+        Element::button(FocusId::new("lua-preview"), "Preview").build() // Disabled
+    };
+
+    let button_row = RowBuilder::new()
+        .add(back_btn, LayoutConstraint::Length(10))
+        .add(Element::text(""), LayoutConstraint::Length(1))
+        .add(load_btn, LayoutConstraint::Length(14))
+        .add(Element::text(""), LayoutConstraint::Fill(1))
+        .add(validate_btn, LayoutConstraint::Length(12))
+        .add(Element::text(""), LayoutConstraint::Length(1))
+        .add(preview_btn, LayoutConstraint::Length(12))
+        .build();
+
+    rows.push((button_row, LayoutConstraint::Length(3)));
 
     let mut builder = ColumnBuilder::new();
     for (element, constraint) in rows {

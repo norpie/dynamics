@@ -2704,11 +2704,12 @@ fn handle_lua_mode_config(state: &mut State, config: TransferConfig) -> Command<
         let entity = entity_name.clone();
         let fields = entity_decl.fields.clone();
         let filter = entity_decl.filter.clone();
+        let expand = if entity_decl.expand.is_empty() { None } else { Some(entity_decl.expand.clone()) };
         let top = entity_decl.top;
 
         builder = builder.add_task(
             format!("Source: {}", entity),
-            fetch_lua_data(env, entity, fields, filter, top, true),
+            fetch_lua_data(env, entity, fields, filter, expand, top, true),
         );
     }
 
@@ -2718,11 +2719,12 @@ fn handle_lua_mode_config(state: &mut State, config: TransferConfig) -> Command<
         let entity = entity_name.clone();
         let fields = entity_decl.fields.clone();
         let filter = entity_decl.filter.clone();
+        let expand = if entity_decl.expand.is_empty() { None } else { Some(entity_decl.expand.clone()) };
         let top = entity_decl.top;
 
         builder = builder.add_task(
             format!("Target: {}", entity),
-            fetch_lua_data(env, entity, fields, filter, top, false),
+            fetch_lua_data(env, entity, fields, filter, expand, top, false),
         );
     }
 
@@ -2736,12 +2738,13 @@ fn handle_lua_mode_config(state: &mut State, config: TransferConfig) -> Command<
         })
 }
 
-/// Fetch data for Lua mode (simpler than declarative - just entity, fields, filter)
+/// Fetch data for Lua mode with pagination support
 async fn fetch_lua_data(
     env_name: String,
     entity_name: String,
     fields: Vec<String>,
     filter: Option<String>,
+    expand: Option<Vec<String>>,
     top: Option<usize>,
     is_source: bool,
 ) -> Result<(String, bool, Vec<serde_json::Value>), String> {
@@ -2755,6 +2758,8 @@ async fn fetch_lua_data(
         .map_err(|e| format!("Failed to get client for {}: {}", env_name, e))?;
 
     let entity_set = pluralize_entity_name(&entity_name);
+
+    const PAGE_SIZE: u32 = 500;
 
     // Build query
     let mut builder = QueryBuilder::new(&entity_set);
@@ -2771,38 +2776,84 @@ async fn fetch_lua_data(
         builder = builder.select(&field_refs);
     }
 
+    // Apply expand for lookup traversals
+    if let Some(ref expands) = expand {
+        if !expands.is_empty() {
+            let expand_refs: Vec<&str> = expands.iter().map(|s| s.as_str()).collect();
+            builder = builder.expand(&expand_refs);
+            log::info!("[Lua][{}] Query will expand: {:?}", entity_name, expands);
+        }
+    }
+
     // Apply filter
     if let Some(ref f) = filter {
         use crate::api::query::filters::Filter;
         builder = builder.filter(Filter::Raw(f.clone()));
     }
 
-    // Apply top (default to 5000 if not specified)
-    let limit = top.unwrap_or(5000) as u32;
-    builder = builder.top(limit);
+    // Use page size for pagination, but respect top limit if specified
+    let max_records = top;
+    builder = builder.top(PAGE_SIZE);
 
     let query = builder.build();
     log::info!("[Lua][{}] Query: {:?}", entity_name, query);
 
-    // Fetch records
-    let result = client
+    // Fetch data with pagination
+    let mut all_records = Vec::new();
+    let mut page = 0;
+    let fetch_start = std::time::Instant::now();
+
+    let mut result = client
         .execute_query(&query)
         .await
         .map_err(|e| format!("Query failed for {}: {}", entity_name, e))?;
 
-    let records = result.data
-        .map(|d| d.value)
-        .unwrap_or_default();
+    loop {
+        page += 1;
 
+        if let Some(ref data) = result.data {
+            all_records.extend(data.value.clone());
+        }
+
+        log::info!(
+            "[Lua][{}] Page {} fetched ({} records total)",
+            entity_name,
+            page,
+            all_records.len()
+        );
+
+        // Check if we've hit the user-specified limit
+        if let Some(max) = max_records {
+            if all_records.len() >= max {
+                all_records.truncate(max);
+                break;
+            }
+        }
+
+        // Check if there's more data via nextLink
+        if !result.has_more() {
+            break;
+        }
+
+        // Fetch next page
+        result = result
+            .next_page(&client, Some(PAGE_SIZE))
+            .await
+            .map_err(|e| format!("Pagination failed for {}: {}", entity_name, e))?
+            .ok_or_else(|| format!("nextLink returned no data for {}", entity_name))?;
+    }
+
+    let total_time = fetch_start.elapsed();
     log::info!(
-        "[Lua][{}] Fetched {} {} records from {}",
+        "[Lua][{}] Fetched {} {} records from {} in {}ms",
         entity_name,
-        records.len(),
+        all_records.len(),
         if is_source { "source" } else { "target" },
-        env_name
+        env_name,
+        total_time.as_millis()
     );
 
-    Ok((entity_name, is_source, records))
+    Ok((entity_name, is_source, all_records))
 }
 
 /// Run the Lua transform after data is loaded
