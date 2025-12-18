@@ -2881,7 +2881,7 @@ fn build_lua_data_fetch_commands(state: &mut State) -> Command<Msg> {
         })
 }
 
-/// Fetch data for Lua mode with pagination support and progress reporting
+/// Fetch data for Lua mode with pagination support, caching, and progress reporting
 async fn fetch_lua_data(
     env_name: String,
     entity_name: String,
@@ -2894,6 +2894,34 @@ async fn fetch_lua_data(
 ) -> Result<(String, bool, Vec<serde_json::Value>), String> {
     use crate::api::pluralization::pluralize_entity_name;
     use crate::api::query::QueryBuilder;
+
+    let config = crate::global_config();
+
+    // Check cache first (1 hour TTL)
+    if let Some(ref tx) = progress {
+        let _ = tx.send("Checking cache...".to_string());
+    }
+
+    match config.get_entity_data_cache(&env_name, &entity_name, 1).await {
+        Ok(Some(cached_data)) => {
+            log::info!(
+                "[Lua][{}] Using cached data from {} ({} records)",
+                entity_name,
+                env_name,
+                cached_data.len()
+            );
+            if let Some(ref tx) = progress {
+                let _ = tx.send(format!("{} (cached)", cached_data.len()));
+            }
+            return Ok((entity_name, is_source, cached_data));
+        }
+        Ok(None) => {
+            log::info!("[Lua][{}] No valid cache, fetching from API", entity_name);
+        }
+        Err(e) => {
+            log::warn!("[Lua][{}] Cache check failed, fetching from API: {}", entity_name, e);
+        }
+    }
 
     let manager = crate::client_manager();
     let client = manager
@@ -3018,6 +3046,13 @@ async fn fetch_lua_data(
         env_name,
         total_time.as_millis()
     );
+
+    // Save to cache for future use
+    if let Err(e) = config.set_entity_data_cache(&env_name, &entity_name, &all_records).await {
+        log::warn!("[Lua][{}] Failed to cache data: {}", entity_name, e);
+    } else {
+        log::info!("[Lua][{}] Cached {} records", entity_name, all_records.len());
+    }
 
     Ok((entity_name, is_source, all_records))
 }
