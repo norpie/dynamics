@@ -30,15 +30,29 @@ impl ListItem for TransferConfigSummary {
             Span::styled("[ ] ", Style::default().fg(theme.text_tertiary))
         };
 
+        // Mode indicator with color
+        let (mode_label, mode_color) = match self.mode {
+            TransferMode::Declarative => ("", theme.text_tertiary), // No label for default mode
+            TransferMode::Lua => ("[Lua] ", theme.accent_warning),
+        };
+
+        // Entity count - for Lua mode without entity mappings, show "lua" instead
+        let entity_info = if self.mode == TransferMode::Lua && self.entity_count == 0 {
+            "lua".to_string()
+        } else {
+            format!("{} entities", self.entity_count)
+        };
+
         let line = Line::from(vec![
             checkbox,
+            Span::styled(mode_label, Style::default().fg(mode_color)),
             Span::styled(format!("{:<30}", self.name), Style::default().fg(fg_color)),
             Span::styled(
                 format!("{} -> {}", self.source_env, self.target_env),
                 Style::default().fg(theme.text_secondary),
             ),
             Span::styled(
-                format!("  ({} entities)", self.entity_count),
+                format!("  ({})", entity_info),
                 Style::default().fg(theme.text_tertiary),
             ),
         ]);
