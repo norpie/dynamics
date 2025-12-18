@@ -4,7 +4,7 @@ use crossterm::event::KeyCode;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::transfer::{LookupBindingContext, RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
+use crate::transfer::{LookupBindingContext, OperationFilter, RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{ListEvent, ListItem, TextInputEvent};
@@ -254,6 +254,7 @@ fn render_record_table(state: &State, entity: &ResolvedEntity, theme: &Theme) ->
                 theme: theme.clone(),
                 global_index: global_idx,
                 lookup_context: entity.lookup_context.clone(),
+                operation_filter: entity.operation_filter,
             }
         })
         .collect();
@@ -299,6 +300,7 @@ struct RecordListItem {
     theme: Theme,
     global_index: usize, // Index in the full filtered list (for virtual scrolling)
     lookup_context: Option<LookupBindingContext>, // For showing lookup bind indicators
+    operation_filter: OperationFilter, // For showing disabled operations with strikethrough
 }
 
 impl ListItem for RecordListItem {
@@ -362,6 +364,16 @@ impl ListItem for RecordListItem {
 }
 
 impl RecordListItem {
+    /// Check if this record's operation is disabled by the entity's operation filter
+    fn is_operation_disabled(&self) -> bool {
+        match self.record.action {
+            RecordAction::Create => !self.operation_filter.creates,
+            RecordAction::Update => !self.operation_filter.updates,
+            RecordAction::TargetOnly => !self.operation_filter.has_orphan_action(),
+            _ => false, // NoChange, Skip, Error are not affected by operation filter
+        }
+    }
+
     /// Get the base style for this row based on action type
     fn get_row_style(&self, is_selected: bool) -> Style {
         let bg = if is_selected {
@@ -369,6 +381,14 @@ impl RecordListItem {
         } else {
             self.theme.bg_base
         };
+
+        // If operation is disabled by filter, use gray + strikethrough
+        if self.is_operation_disabled() {
+            return Style::default()
+                .fg(self.theme.text_tertiary)
+                .add_modifier(Modifier::CROSSED_OUT)
+                .bg(bg);
+        }
 
         match self.record.action {
             RecordAction::Create => Style::default().fg(self.theme.text_primary).bg(bg),
@@ -393,6 +413,17 @@ impl RecordListItem {
             RecordAction::Skip => ("skip      ", self.theme.accent_warning),
             RecordAction::Error => ("error     ", self.theme.accent_error),
         };
+
+        // If operation is disabled by filter, use gray + strikethrough
+        if self.is_operation_disabled() {
+            return Span::styled(
+                text.to_string(),
+                Style::default()
+                    .fg(self.theme.text_tertiary)
+                    .add_modifier(Modifier::CROSSED_OUT),
+            );
+        }
+
         Span::styled(text.to_string(), Style::default().fg(color))
     }
 

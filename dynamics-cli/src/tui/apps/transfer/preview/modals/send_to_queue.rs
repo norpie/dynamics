@@ -11,84 +11,132 @@ use super::super::state::Msg;
 
 /// Render the send to queue confirmation modal
 pub fn render(resolved: &ResolvedTransfer, theme: &Theme) -> Element<Msg> {
-    let create_count = resolved.create_count();
-    let update_count = resolved.update_count();
-    let skip_count = resolved.skip_count();
-    let nochange_count = resolved.nochange_count();
-    let target_only_count = resolved.target_only_count();
-    let total_actionable = create_count + update_count;
+    // Calculate counts per entity and totals
+    let mut total_creates = 0usize;
+    let mut total_updates = 0usize;
+    let mut total_disabled = 0usize;
 
-    // Summary by entity
     let mut entity_lines: Vec<Element<Msg>> = vec![];
+
     for entity in &resolved.entities {
-        let entity_creates = entity.create_count();
-        let entity_updates = entity.update_count();
-        let entity_total = entity_creates + entity_updates;
+        let raw_creates = entity.create_count();
+        let raw_updates = entity.update_count();
 
-        if entity_total > 0 {
-            let line = Element::styled_text(Line::from(vec![
-                Span::styled(
-                    format!("  {:<20}", entity.entity_name),
-                    Style::default().fg(theme.text_primary),
-                ),
-                Span::styled(
-                    format!("{} create", entity_creates),
-                    Style::default().fg(theme.accent_success),
-                ),
-                Span::raw(" + "),
-                Span::styled(
-                    format!("{} update", entity_updates),
-                    Style::default().fg(theme.accent_secondary),
-                ),
-            ]))
-            .build();
-            entity_lines.push(line);
+        // Skip entities with no operations
+        if raw_creates == 0 && raw_updates == 0 {
+            continue;
         }
-    }
 
-    // Total summary
-    let total_line = Element::styled_text(Line::from(vec![
-        Span::styled(
-            format!("Total: {} operations", total_actionable),
+        // Calculate filtered counts based on operation filter
+        let (filtered_creates, disabled_creates) = if entity.operation_filter.creates {
+            (raw_creates, 0)
+        } else {
+            (0, raw_creates)
+        };
+        let (filtered_updates, disabled_updates) = if entity.operation_filter.updates {
+            (raw_updates, 0)
+        } else {
+            (0, raw_updates)
+        };
+
+        total_creates += filtered_creates;
+        total_updates += filtered_updates;
+        total_disabled += disabled_creates + disabled_updates;
+
+        // Entity name line
+        let entity_header = Element::styled_text(Line::from(vec![Span::styled(
+            format!("  {}", entity.entity_name),
             Style::default()
                 .fg(theme.text_primary)
                 .add_modifier(Modifier::BOLD),
+        )]))
+        .build();
+        entity_lines.push(entity_header);
+
+        // Create line
+        if raw_creates > 0 {
+            let create_line = if entity.operation_filter.creates {
+                Element::styled_text(Line::from(vec![
+                    Span::styled("    - ", Style::default().fg(theme.text_tertiary)),
+                    Span::styled(
+                        format!("{} records to create", filtered_creates),
+                        Style::default().fg(theme.accent_success),
+                    ),
+                ]))
+                .build()
+            } else {
+                Element::styled_text(Line::from(vec![
+                    Span::styled("    - ", Style::default().fg(theme.text_tertiary)),
+                    Span::styled(
+                        format!("{} records to create (disabled)", raw_creates),
+                        Style::default()
+                            .fg(theme.text_tertiary)
+                            .add_modifier(Modifier::CROSSED_OUT),
+                    ),
+                ]))
+                .build()
+            };
+            entity_lines.push(create_line);
+        }
+
+        // Update line
+        if raw_updates > 0 {
+            let update_line = if entity.operation_filter.updates {
+                Element::styled_text(Line::from(vec![
+                    Span::styled("    - ", Style::default().fg(theme.text_tertiary)),
+                    Span::styled(
+                        format!("{} records to update", filtered_updates),
+                        Style::default().fg(theme.accent_secondary),
+                    ),
+                ]))
+                .build()
+            } else {
+                Element::styled_text(Line::from(vec![
+                    Span::styled("    - ", Style::default().fg(theme.text_tertiary)),
+                    Span::styled(
+                        format!("{} records to update (disabled)", raw_updates),
+                        Style::default()
+                            .fg(theme.text_tertiary)
+                            .add_modifier(Modifier::CROSSED_OUT),
+                    ),
+                ]))
+                .build()
+            };
+            entity_lines.push(update_line);
+        }
+    }
+
+    let total_actionable = total_creates + total_updates;
+
+    // Summary section
+    let summary_header = Element::styled_text(Line::from(vec![Span::styled(
+        "Summary",
+        Style::default()
+            .fg(theme.text_primary)
+            .add_modifier(Modifier::BOLD),
+    )]))
+    .build();
+
+    let total_line = Element::styled_text(Line::from(vec![
+        Span::styled("  - ", Style::default().fg(theme.text_tertiary)),
+        Span::styled(
+            format!("{} operations to execute", total_actionable),
+            Style::default().fg(theme.text_primary),
         ),
-        Span::raw(" ("),
-        Span::styled(format!("{} create", create_count), Style::default().fg(theme.accent_success)),
-        Span::raw(", "),
-        Span::styled(format!("{} update", update_count), Style::default().fg(theme.accent_secondary)),
-        Span::raw(")"),
     ]))
     .build();
 
-    // Skipped info
-    let skipped_line = Element::styled_text(Line::from(vec![
-        Span::styled(
-            format!("Skipped: {} records", skip_count),
-            Style::default().fg(theme.accent_warning),
-        ),
-        Span::raw(", "),
-        Span::styled(
-            format!("Unchanged: {}", nochange_count),
-            Style::default().fg(theme.text_tertiary),
-        ),
-        Span::raw(", "),
-        Span::styled(
-            format!("Target-only: {}", target_only_count),
-            Style::default().fg(theme.accent_primary),
-        ),
-    ]))
-    .build();
+    // Not queued section (only if there's something to show)
+    let skip_count = resolved.skip_count();
+    let nochange_count = resolved.nochange_count();
+    let has_not_queued = skip_count > 0 || nochange_count > 0 || total_disabled > 0;
 
     // Target environment
     let target_line = Element::styled_text(Line::from(vec![
-        Span::raw("Target: "),
+        Span::styled("  - Target: ", Style::default().fg(theme.text_tertiary)),
         Span::styled(
             resolved.target_env.clone(),
-            Style::default()
-                .fg(theme.accent_primary)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(theme.accent_primary),
         ),
     ]))
     .build();
@@ -112,23 +160,91 @@ pub fn render(resolved: &ResolvedTransfer, theme: &Theme) -> Element<Msg> {
     let mut builder = ColumnBuilder::new();
 
     // Add entity lines
-    for entity_line in entity_lines {
-        builder = builder.add(entity_line, LayoutConstraint::Length(1));
+    for entity_line in &entity_lines {
+        builder = builder.add(entity_line.clone(), LayoutConstraint::Length(1));
     }
 
-    let content = builder
-        .add(Element::text(""), LayoutConstraint::Length(1)) // Spacer
+    // Add spacer and summary
+    builder = builder
+        .add(Element::text(""), LayoutConstraint::Length(1))
+        .add(summary_header, LayoutConstraint::Length(1))
         .add(total_line, LayoutConstraint::Length(1))
-        .add(skipped_line, LayoutConstraint::Length(1))
-        .add(Element::text(""), LayoutConstraint::Length(1)) // Spacer
-        .add(target_line, LayoutConstraint::Length(1))
-        .add(Element::text(""), LayoutConstraint::Fill(1)) // Spacer
+        .add(target_line, LayoutConstraint::Length(1));
+
+    // Add "not queued" info if applicable
+    if has_not_queued {
+        builder = builder.add(Element::text(""), LayoutConstraint::Length(1));
+
+        let not_queued_header = Element::styled_text(Line::from(vec![Span::styled(
+            "Not queued",
+            Style::default()
+                .fg(theme.text_secondary)
+                .add_modifier(Modifier::BOLD),
+        )]))
+        .build();
+        builder = builder.add(not_queued_header, LayoutConstraint::Length(1));
+
+        if nochange_count > 0 {
+            let nochange_line = Element::styled_text(Line::from(vec![
+                Span::styled("  - ", Style::default().fg(theme.text_tertiary)),
+                Span::styled(
+                    format!("{} unchanged", nochange_count),
+                    Style::default().fg(theme.text_tertiary),
+                ),
+            ]))
+            .build();
+            builder = builder.add(nochange_line, LayoutConstraint::Length(1));
+        }
+
+        if skip_count > 0 {
+            let skip_line = Element::styled_text(Line::from(vec![
+                Span::styled("  - ", Style::default().fg(theme.text_tertiary)),
+                Span::styled(
+                    format!("{} skipped", skip_count),
+                    Style::default().fg(theme.accent_warning),
+                ),
+            ]))
+            .build();
+            builder = builder.add(skip_line, LayoutConstraint::Length(1));
+        }
+
+        if total_disabled > 0 {
+            let disabled_line = Element::styled_text(Line::from(vec![
+                Span::styled("  - ", Style::default().fg(theme.text_tertiary)),
+                Span::styled(
+                    format!("{} disabled by filter", total_disabled),
+                    Style::default()
+                        .fg(theme.text_tertiary)
+                        .add_modifier(Modifier::CROSSED_OUT),
+                ),
+            ]))
+            .build();
+            builder = builder.add(disabled_line, LayoutConstraint::Length(1));
+        }
+    }
+
+    // Add spacer and buttons
+    let content = builder
+        .add(Element::text(""), LayoutConstraint::Fill(1))
         .add(button_row, LayoutConstraint::Length(3))
         .build();
 
+    // Calculate dynamic height based on content
+    let entity_line_count = entity_lines.len();
+    let not_queued_line_count = if has_not_queued {
+        1 + (if nochange_count > 0 { 1 } else { 0 })
+            + (if skip_count > 0 { 1 } else { 0 })
+            + (if total_disabled > 0 { 1 } else { 0 })
+    } else {
+        0
+    };
+    let base_height = 10; // Panel chrome + summary + buttons
+    let content_height = entity_line_count + not_queued_line_count;
+    let height = (base_height + content_height).min(25) as u16;
+
     Element::panel(content)
         .title("Send to Queue")
-        .width(50)
-        .height((14 + resolved.entities.len().min(5)) as u16)
+        .width(45)
+        .height(height)
         .build()
 }
