@@ -538,6 +538,9 @@ mod tests {
             name: "test-migration".to_string(),
             source_env: "dev".to_string(),
             target_env: "prod".to_string(),
+            mode: crate::transfer::TransferMode::Declarative,
+            lua_script: None,
+            lua_script_path: None,
             entity_mappings: vec![
                 EntityMapping {
                     id: None,
@@ -925,6 +928,9 @@ mod tests {
             name: "test-with-resolver".to_string(),
             source_env: "dev".to_string(),
             target_env: "prod".to_string(),
+            mode: crate::transfer::TransferMode::Declarative,
+            lua_script: None,
+            lua_script_path: None,
             entity_mappings: vec![
                 EntityMapping {
                     id: None,

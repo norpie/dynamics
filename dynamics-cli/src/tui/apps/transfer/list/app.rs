@@ -415,6 +415,9 @@ async fn create_config(name: String, source_env: String, target_env: String) -> 
         name: name.clone(),
         source_env,
         target_env,
+        mode: crate::transfer::TransferMode::Declarative,
+        lua_script: None,
+        lua_script_path: None,
         entity_mappings: vec![],
     };
 
@@ -505,6 +508,9 @@ async fn merge_configs(config_names: Vec<String>, new_name: String) -> Result<St
         name: new_name.clone(),
         source_env: first.source_env.clone(),
         target_env: first.target_env.clone(),
+        mode: crate::transfer::TransferMode::Declarative,
+        lua_script: None,
+        lua_script_path: None,
         entity_mappings: Vec::new(),
     };
 

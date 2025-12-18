@@ -5,7 +5,7 @@ use sqlx::{Row, SqlitePool};
 
 use crate::transfer::{
     EntityMapping, FieldMapping, MatchField, OperationFilter, Resolver, ResolverFallback,
-    Transform, TransferConfig,
+    Transform, TransferConfig, TransferMode,
 };
 
 /// Summary of a transfer config (for listing)
@@ -15,6 +15,7 @@ pub struct TransferConfigSummary {
     pub name: String,
     pub source_env: String,
     pub target_env: String,
+    pub mode: TransferMode,
     pub entity_count: usize,
 }
 
@@ -27,6 +28,7 @@ pub async fn list_transfer_configs(pool: &SqlitePool) -> Result<Vec<TransferConf
             tc.name,
             tc.source_env,
             tc.target_env,
+            tc.mode,
             COUNT(tem.id) as entity_count
         FROM transfer_configs tc
         LEFT JOIN transfer_entity_mappings tem ON tc.id = tem.config_id
@@ -40,11 +42,13 @@ pub async fn list_transfer_configs(pool: &SqlitePool) -> Result<Vec<TransferConf
 
     let mut configs = Vec::new();
     for row in rows {
+        let mode_str: String = row.try_get("mode")?;
         configs.push(TransferConfigSummary {
             id: row.try_get("id")?,
             name: row.try_get("name")?,
             source_env: row.try_get("source_env")?,
             target_env: row.try_get("target_env")?,
+            mode: TransferMode::from_db_str(&mode_str),
             entity_count: row.try_get::<i64, _>("entity_count")? as usize,
         });
     }
@@ -56,7 +60,7 @@ pub async fn list_transfer_configs(pool: &SqlitePool) -> Result<Vec<TransferConf
 pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option<TransferConfig>> {
     // Get the config
     let config_row = sqlx::query(
-        "SELECT id, name, source_env, target_env FROM transfer_configs WHERE name = ?",
+        "SELECT id, name, source_env, target_env, mode, lua_script, lua_script_path FROM transfer_configs WHERE name = ?",
     )
     .bind(name)
     .fetch_optional(pool)
@@ -69,6 +73,10 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
     };
 
     let config_id: i64 = config_row.try_get("id")?;
+    let mode_str: String = config_row.try_get("mode")?;
+    let mode = TransferMode::from_db_str(&mode_str);
+    let lua_script: Option<String> = config_row.try_get("lua_script")?;
+    let lua_script_path: Option<String> = config_row.try_get("lua_script_path")?;
 
     // Get entity mappings
     let entity_rows = sqlx::query(
@@ -183,6 +191,9 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
         name: config_row.try_get("name")?,
         source_env: config_row.try_get("source_env")?,
         target_env: config_row.try_get("target_env")?,
+        mode,
+        lua_script,
+        lua_script_path,
         entity_mappings,
     }))
 }
@@ -198,13 +209,16 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
         sqlx::query(
             r#"
             UPDATE transfer_configs
-            SET name = ?, source_env = ?, target_env = ?, updated_at = CURRENT_TIMESTAMP
+            SET name = ?, source_env = ?, target_env = ?, mode = ?, lua_script = ?, lua_script_path = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             "#,
         )
         .bind(&config.name)
         .bind(&config.source_env)
         .bind(&config.target_env)
+        .bind(config.mode.to_db_str())
+        .bind(&config.lua_script)
+        .bind(&config.lua_script_path)
         .bind(id)
         .execute(&mut *tx)
         .await
@@ -222,13 +236,16 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
         // Insert new
         let result = sqlx::query(
             r#"
-            INSERT INTO transfer_configs (name, source_env, target_env)
-            VALUES (?, ?, ?)
+            INSERT INTO transfer_configs (name, source_env, target_env, mode, lua_script, lua_script_path)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&config.name)
         .bind(&config.source_env)
         .bind(&config.target_env)
+        .bind(config.mode.to_db_str())
+        .bind(&config.lua_script)
+        .bind(&config.lua_script_path)
         .execute(&mut *tx)
         .await
         .context("Failed to insert transfer config")?;

@@ -4,6 +4,65 @@ use serde::{Deserialize, Serialize};
 
 use super::{Resolver, Transform};
 
+/// Mode for transfer configuration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransferMode {
+    /// Declarative field mappings (default)
+    #[default]
+    Declarative,
+    /// Lua script-based transformation
+    Lua,
+}
+
+impl TransferMode {
+    /// Get display label for UI
+    pub fn label(&self) -> &'static str {
+        match self {
+            TransferMode::Declarative => "Declarative",
+            TransferMode::Lua => "Lua Script",
+        }
+    }
+
+    /// Get all variants for UI selection
+    pub fn all_variants() -> &'static [TransferMode] {
+        &[TransferMode::Declarative, TransferMode::Lua]
+    }
+
+    /// Convert from index (for UI selection)
+    pub fn from_index(idx: usize) -> Self {
+        match idx {
+            0 => TransferMode::Declarative,
+            1 => TransferMode::Lua,
+            _ => TransferMode::Declarative,
+        }
+    }
+
+    /// Convert to index (for UI selection)
+    pub fn to_index(&self) -> usize {
+        match self {
+            TransferMode::Declarative => 0,
+            TransferMode::Lua => 1,
+        }
+    }
+
+    /// Convert from database string
+    pub fn from_db_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "lua" => TransferMode::Lua,
+            _ => TransferMode::Declarative,
+        }
+    }
+
+    /// Convert to database string
+    pub fn to_db_str(&self) -> &'static str {
+        match self {
+            TransferMode::Declarative => "declarative",
+            TransferMode::Lua => "lua",
+        }
+    }
+}
+
 /// How to handle records that exist in target but not in source
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -162,20 +221,56 @@ pub struct TransferConfig {
     pub source_env: String,
     /// Target environment name
     pub target_env: String,
-    /// Entity mappings (resolvers are now per-entity)
+    /// Transform mode (declarative or lua)
+    #[serde(default)]
+    pub mode: TransferMode,
+    /// Lua script content (only used when mode == Lua)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lua_script: Option<String>,
+    /// Original file path for Lua script (for "refresh from file" feature)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lua_script_path: Option<String>,
+    /// Entity mappings (resolvers are now per-entity, only used when mode == Declarative)
     pub entity_mappings: Vec<EntityMapping>,
 }
 
 impl TransferConfig {
-    /// Create a new transfer config
+    /// Create a new transfer config (declarative mode)
     pub fn new(name: impl Into<String>, source_env: impl Into<String>, target_env: impl Into<String>) -> Self {
         TransferConfig {
             id: None,
             name: name.into(),
             source_env: source_env.into(),
             target_env: target_env.into(),
+            mode: TransferMode::Declarative,
+            lua_script: None,
+            lua_script_path: None,
             entity_mappings: Vec::new(),
         }
+    }
+
+    /// Create a new Lua mode transfer config
+    pub fn new_lua(name: impl Into<String>, source_env: impl Into<String>, target_env: impl Into<String>) -> Self {
+        TransferConfig {
+            id: None,
+            name: name.into(),
+            source_env: source_env.into(),
+            target_env: target_env.into(),
+            mode: TransferMode::Lua,
+            lua_script: None,
+            lua_script_path: None,
+            entity_mappings: Vec::new(),
+        }
+    }
+
+    /// Check if this config uses Lua mode
+    pub fn is_lua_mode(&self) -> bool {
+        self.mode == TransferMode::Lua
+    }
+
+    /// Check if this config uses declarative mode
+    pub fn is_declarative_mode(&self) -> bool {
+        self.mode == TransferMode::Declarative
     }
 
     /// Add an entity mapping
@@ -212,6 +307,9 @@ impl Default for TransferConfig {
             name: String::new(),
             source_env: String::new(),
             target_env: String::new(),
+            mode: TransferMode::Declarative,
+            lua_script: None,
+            lua_script_path: None,
             entity_mappings: Vec::new(),
         }
     }
