@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 
 use crate::api::metadata::FieldMetadata;
 use crate::config::repository::transfer::get_transfer_config;
-use crate::transfer::{ExpandTree, LookupBindingContext, RecordAction, ResolvedTransfer, TransferConfig, TransformEngine};
+use crate::transfer::{ExpandTree, LookupBindingContext, RecordAction, ResolvedTransfer, TransferConfig, TransferMode, TransformEngine};
 use crate::tui::resource::Resource;
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
@@ -48,7 +48,14 @@ impl App for TransferPreviewApp {
             Msg::ConfigLoaded(result) => {
                 match result {
                     Ok(config) => {
-                        // Get unique source entities that need metadata
+                        state.config = Some(config.clone());
+
+                        // Branch based on mode
+                        if config.mode == TransferMode::Lua {
+                            return handle_lua_mode_config(state, config);
+                        }
+
+                        // Declarative mode: Get unique source entities that need metadata
                         let source_entities: Vec<String> = config
                             .entity_mappings
                             .iter()
@@ -69,7 +76,6 @@ impl App for TransferPreviewApp {
 
                         state.pending_source_metadata_fetches = source_entities.len();
                         state.pending_target_metadata_fetches = target_entities.len();
-                        state.config = Some(config.clone());
 
                         log::info!(
                             "Fetching metadata for {} source + {} target entities before records",
@@ -773,6 +779,58 @@ impl App for TransferPreviewApp {
                     }
                 }
                 state.horizontal_scroll = 0;
+                Command::None
+            }
+
+            // Lua mode data loading - accumulate fetched data
+            Msg::LuaFetchResult(result) => {
+                match result {
+                    Ok((entity_name, is_source, records)) => {
+                        log::info!(
+                            "[Lua] Fetched {} {} records for {}",
+                            records.len(),
+                            if is_source { "source" } else { "target" },
+                            entity_name
+                        );
+                        if is_source {
+                            state.source_data.insert(entity_name, records);
+                        } else {
+                            state.target_data.insert(entity_name, records);
+                        }
+                        state.pending_lua_fetches = state.pending_lua_fetches.saturating_sub(1);
+
+                        // When all data is loaded, run the transform
+                        if state.pending_lua_fetches == 0 {
+                            return Command::perform(async { () }, |_| Msg::RunLuaTransform);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("[Lua] Fetch failed: {}", e);
+                        state.resolved = Resource::Failure(e);
+                        state.pending_lua_fetches = 0;
+                    }
+                }
+                Command::None
+            }
+
+            // Lua mode - run transform after data is loaded
+            Msg::RunLuaTransform => {
+                if let Some(ref config) = state.config {
+                    let resolved = run_lua_transform_with_data(
+                        config,
+                        &state.source_data,
+                        &state.target_data,
+                    );
+                    state.resolved = Resource::Success(resolved);
+
+                    // Calculate column widths
+                    if let Resource::Success(resolved) = &state.resolved {
+                        if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                            state.column_widths = super::state::calculate_column_widths(entity);
+                        }
+                    }
+                    state.horizontal_scroll = 0;
+                }
                 Command::None
             }
 
@@ -2592,6 +2650,195 @@ async fn fetch_entity_metadata(
 }
 
 /// Merge dirty records from old resolved state into new resolved state.
+/// Handle Lua mode config - run declare() and fetch data
+fn handle_lua_mode_config(state: &mut State, config: TransferConfig) -> Command<Msg> {
+    use crate::transfer::lua::run_declare;
+
+    let script = match &config.lua_script {
+        Some(s) => s.clone(),
+        None => {
+            state.resolved = Resource::Failure("Lua mode config has no script".to_string());
+            return Command::None;
+        }
+    };
+
+    // Run declare() to get what data we need
+    let declaration = match run_declare(&script) {
+        Ok(d) => d,
+        Err(e) => {
+            state.resolved = Resource::Failure(format!("Failed to run declare(): {}", e));
+            return Command::None;
+        }
+    };
+
+    log::info!(
+        "Lua declare(): {} source entities, {} target entities",
+        declaration.source.len(),
+        declaration.target.len()
+    );
+
+    // Count total fetches needed
+    let total_fetches = declaration.source.len() + declaration.target.len();
+    if total_fetches == 0 {
+        // No data to fetch, run transform immediately with empty data
+        state.resolved = Resource::Loading;
+        let config_name = config.name.clone();
+        return Command::perform(
+            run_lua_transform(config_name),
+            Msg::ResolvedLoaded,
+        );
+    }
+
+    state.pending_lua_fetches = total_fetches;
+
+    // Build parallel fetch tasks
+    let mut builder = Command::perform_parallel()
+        .with_title("Fetching Data for Lua Transform");
+
+    let source_env = config.source_env.clone();
+    let target_env = config.target_env.clone();
+
+    // Fetch source entities
+    for (entity_name, entity_decl) in &declaration.source {
+        let env = source_env.clone();
+        let entity = entity_name.clone();
+        let fields = entity_decl.fields.clone();
+        let filter = entity_decl.filter.clone();
+        let top = entity_decl.top;
+
+        builder = builder.add_task(
+            format!("Source: {}", entity),
+            fetch_lua_data(env, entity, fields, filter, top, true),
+        );
+    }
+
+    // Fetch target entities
+    for (entity_name, entity_decl) in &declaration.target {
+        let env = target_env.clone();
+        let entity = entity_name.clone();
+        let fields = entity_decl.fields.clone();
+        let filter = entity_decl.filter.clone();
+        let top = entity_decl.top;
+
+        builder = builder.add_task(
+            format!("Target: {}", entity),
+            fetch_lua_data(env, entity, fields, filter, top, false),
+        );
+    }
+
+    builder
+        .on_complete(AppId::TransferPreview)
+        .build(|_task_idx, result| {
+            let data = result
+                .downcast::<Result<(String, bool, Vec<serde_json::Value>), String>>()
+                .unwrap();
+            Msg::LuaFetchResult(*data)
+        })
+}
+
+/// Fetch data for Lua mode (simpler than declarative - just entity, fields, filter)
+async fn fetch_lua_data(
+    env_name: String,
+    entity_name: String,
+    fields: Vec<String>,
+    filter: Option<String>,
+    top: Option<usize>,
+    is_source: bool,
+) -> Result<(String, bool, Vec<serde_json::Value>), String> {
+    use crate::api::pluralization::pluralize_entity_name;
+    use crate::api::query::QueryBuilder;
+
+    let manager = crate::client_manager();
+    let client = manager
+        .get_client(&env_name)
+        .await
+        .map_err(|e| format!("Failed to get client for {}: {}", env_name, e))?;
+
+    let entity_set = pluralize_entity_name(&entity_name);
+
+    // Build query
+    let mut builder = QueryBuilder::new(&entity_set);
+
+    // Select fields (if provided, otherwise select all)
+    if !fields.is_empty() {
+        // Always include primary key
+        let pk_field = format!("{}id", entity_name);
+        let mut all_fields = fields.clone();
+        if !all_fields.contains(&pk_field) {
+            all_fields.push(pk_field);
+        }
+        let field_refs: Vec<&str> = all_fields.iter().map(|s| s.as_str()).collect();
+        builder = builder.select(&field_refs);
+    }
+
+    // Apply filter
+    if let Some(ref f) = filter {
+        use crate::api::query::filters::Filter;
+        builder = builder.filter(Filter::Raw(f.clone()));
+    }
+
+    // Apply top (default to 5000 if not specified)
+    let limit = top.unwrap_or(5000) as u32;
+    builder = builder.top(limit);
+
+    let query = builder.build();
+    log::info!("[Lua][{}] Query: {:?}", entity_name, query);
+
+    // Fetch records
+    let result = client
+        .execute_query(&query)
+        .await
+        .map_err(|e| format!("Query failed for {}: {}", entity_name, e))?;
+
+    let records = result.data
+        .map(|d| d.value)
+        .unwrap_or_default();
+
+    log::info!(
+        "[Lua][{}] Fetched {} {} records from {}",
+        entity_name,
+        records.len(),
+        if is_source { "source" } else { "target" },
+        env_name
+    );
+
+    Ok((entity_name, is_source, records))
+}
+
+/// Run the Lua transform after data is loaded
+async fn run_lua_transform(config_name: String) -> Result<ResolvedTransfer, String> {
+    let pool = &crate::global_config().pool;
+
+    // Load config
+    let config = get_transfer_config(pool, &config_name)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Config '{}' not found", config_name))?;
+
+    // This function is called when we have no data to fetch
+    // Pass empty data to transform
+    let source_data = HashMap::new();
+    let target_data = HashMap::new();
+    let primary_keys = HashMap::new();
+
+    Ok(TransformEngine::transform_all(&config, &source_data, &target_data, &primary_keys))
+}
+
+/// Run the Lua transform with accumulated data
+fn run_lua_transform_with_data(
+    config: &TransferConfig,
+    source_data: &HashMap<String, Vec<serde_json::Value>>,
+    target_data: &HashMap<String, Vec<serde_json::Value>>,
+) -> ResolvedTransfer {
+    // Build primary keys map (entity_name -> pk_field_name)
+    let mut primary_keys = HashMap::new();
+    for entity_name in source_data.keys().chain(target_data.keys()) {
+        primary_keys.insert(entity_name.clone(), format!("{}id", entity_name));
+    }
+
+    TransformEngine::transform_all(config, source_data, target_data, &primary_keys)
+}
+
 /// Dirty records preserve their user-edited action and field values.
 fn merge_dirty_records(new_resolved: &mut ResolvedTransfer, old_resolved: &ResolvedTransfer) {
     for (new_entity, old_entity) in new_resolved.entities.iter_mut().zip(old_resolved.entities.iter()) {

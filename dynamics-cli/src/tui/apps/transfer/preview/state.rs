@@ -231,6 +231,8 @@ pub struct State {
     pub pending_target_metadata_fetches: usize,
     /// Number of pending related entity metadata fetch tasks (for lookup traversals)
     pub pending_related_metadata_fetches: usize,
+    /// Number of pending Lua mode data fetches
+    pub pending_lua_fetches: usize,
     /// Whether we're currently refreshing (vs initial load)
     pub is_refreshing: bool,
     /// Accumulated source records by entity name (kept for refresh comparison)
@@ -291,6 +293,7 @@ impl Default for State {
             pending_source_metadata_fetches: 0,
             pending_target_metadata_fetches: 0,
             pending_related_metadata_fetches: 0,
+            pending_lua_fetches: 0,
             is_refreshing: false,
             source_data: std::collections::HashMap::new(),
             target_data: std::collections::HashMap::new(),
@@ -447,6 +450,10 @@ pub enum Msg {
     MetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, entity_set_name)
     RunTransform, // Triggered after loading screen returns
     ResolvedLoaded(Result<ResolvedTransfer, String>),
+
+    // Lua mode data loading
+    LuaFetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
+    RunLuaTransform, // Triggered after Lua data is loaded
 
     // Navigation
     ListEvent(crate::tui::widgets::ListEvent),

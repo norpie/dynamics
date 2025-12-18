@@ -65,6 +65,16 @@ impl ResolvedTransfer {
         self.count_by_action(RecordAction::Update)
     }
 
+    /// Get total delete count
+    pub fn delete_count(&self) -> usize {
+        self.count_by_action(RecordAction::Delete)
+    }
+
+    /// Get total deactivate count
+    pub fn deactivate_count(&self) -> usize {
+        self.count_by_action(RecordAction::Deactivate)
+    }
+
     /// Get total no-change count (records that match target)
     pub fn nochange_count(&self) -> usize {
         self.count_by_action(RecordAction::NoChange)
@@ -190,6 +200,16 @@ impl ResolvedEntity {
     /// Get update count (existing records to modify)
     pub fn update_count(&self) -> usize {
         self.count_by_action(RecordAction::Update)
+    }
+
+    /// Get delete count
+    pub fn delete_count(&self) -> usize {
+        self.count_by_action(RecordAction::Delete)
+    }
+
+    /// Get deactivate count
+    pub fn deactivate_count(&self) -> usize {
+        self.count_by_action(RecordAction::Deactivate)
     }
 
     /// Get no-change count
@@ -336,6 +356,28 @@ impl ResolvedRecord {
         }
     }
 
+    /// Create a delete record
+    pub fn delete(source_id: Uuid) -> Self {
+        ResolvedRecord {
+            action: RecordAction::Delete,
+            source_id,
+            fields: HashMap::new(),
+            changed_fields: None,
+            error: None,
+        }
+    }
+
+    /// Create a deactivate record
+    pub fn deactivate(source_id: Uuid) -> Self {
+        ResolvedRecord {
+            action: RecordAction::Deactivate,
+            source_id,
+            fields: HashMap::new(),
+            changed_fields: None,
+            error: None,
+        }
+    }
+
     /// Create a skipped record
     pub fn skip(source_id: Uuid, fields: HashMap<String, Value>) -> Self {
         ResolvedRecord {
@@ -377,6 +419,16 @@ impl ResolvedRecord {
     /// Check if this record will be updated
     pub fn is_update(&self) -> bool {
         self.action == RecordAction::Update
+    }
+
+    /// Check if this record will be deleted
+    pub fn is_delete(&self) -> bool {
+        self.action == RecordAction::Delete
+    }
+
+    /// Check if this record will be deactivated
+    pub fn is_deactivate(&self) -> bool {
+        self.action == RecordAction::Deactivate
     }
 
     /// Check if this record has no changes
@@ -444,6 +496,10 @@ pub enum RecordAction {
     Create,
     /// Update existing record in target (exists but differs)
     Update,
+    /// Delete record from target
+    Delete,
+    /// Deactivate record in target (set statecode = 1)
+    Deactivate,
     /// No changes needed (target already matches)
     NoChange,
     /// Record exists only in target (not in source) - action depends on OperationFilter config
@@ -459,6 +515,8 @@ impl std::fmt::Display for RecordAction {
         match self {
             RecordAction::Create => write!(f, "create"),
             RecordAction::Update => write!(f, "update"),
+            RecordAction::Delete => write!(f, "delete"),
+            RecordAction::Deactivate => write!(f, "deactivate"),
             RecordAction::NoChange => write!(f, "nochange"),
             RecordAction::TargetOnly => write!(f, "target-only"),
             RecordAction::Skip => write!(f, "skip"),

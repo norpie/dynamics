@@ -72,6 +72,8 @@ fn format_action(action: &RecordAction) -> &'static str {
     match action {
         RecordAction::Create => "create",
         RecordAction::Update => "update",
+        RecordAction::Delete => "delete",
+        RecordAction::Deactivate => "deactivate",
         RecordAction::NoChange => "nochange",
         RecordAction::TargetOnly => "target-only",
         RecordAction::Skip => "skip",

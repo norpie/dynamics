@@ -5,7 +5,8 @@ use uuid::Uuid;
 
 use crate::transfer::{
     EntityMapping, FieldMapping, RecordAction, ResolvedEntity, ResolvedRecord,
-    ResolvedTransfer, ResolverContext, TransferConfig, Value,
+    ResolvedTransfer, ResolverContext, TransferConfig, TransferMode, Value,
+    lua::{LuaOperation, OperationType},
 };
 
 use super::apply::apply_transform;
@@ -46,6 +47,11 @@ impl TransformEngine {
         target_data: &HashMap<String, Vec<serde_json::Value>>,
         primary_keys: &HashMap<String, String>,
     ) -> ResolvedTransfer {
+        // For Lua mode, use the Lua transform engine
+        if config.mode == TransferMode::Lua {
+            return Self::transform_all_lua(config, source_data, target_data, primary_keys);
+        }
+
         let mut resolved = ResolvedTransfer::new(
             &config.name,
             &config.source_env,
@@ -345,6 +351,118 @@ impl TransformEngine {
                     .unwrap_or(false)
             }
             _ => false,
+        }
+    }
+
+    /// Transform using Lua mode - runs the Lua script and converts operations to resolved records
+    fn transform_all_lua(
+        config: &TransferConfig,
+        source_data: &HashMap<String, Vec<serde_json::Value>>,
+        target_data: &HashMap<String, Vec<serde_json::Value>>,
+        primary_keys: &HashMap<String, String>,
+    ) -> ResolvedTransfer {
+        use crate::transfer::lua::{LuaRuntime, execute_transform_sync};
+
+        let mut resolved = ResolvedTransfer::new(
+            &config.name,
+            &config.source_env,
+            &config.target_env,
+        );
+
+        let script = match &config.lua_script {
+            Some(s) => s,
+            None => {
+                log::error!("Lua mode config has no script");
+                return resolved;
+            }
+        };
+
+        // Convert source/target data to JSON for Lua
+        let source_json = serde_json::to_value(source_data).unwrap_or_default();
+        let target_json = serde_json::to_value(target_data).unwrap_or_default();
+
+        // Execute the Lua transform
+        let operations = match execute_transform_sync(script, &source_json, &target_json) {
+            Ok(ops) => ops,
+            Err(e) => {
+                log::error!("Lua transform failed: {}", e);
+                return resolved;
+            }
+        };
+
+        // Convert Lua operations to resolved entities/records
+        Self::lua_operations_to_resolved(&mut resolved, operations, primary_keys);
+
+        resolved
+    }
+
+    /// Convert Lua operations to resolved entities and records
+    fn lua_operations_to_resolved(
+        resolved: &mut ResolvedTransfer,
+        operations: Vec<LuaOperation>,
+        primary_keys: &HashMap<String, String>,
+    ) {
+        use std::collections::BTreeMap;
+
+        // Group operations by entity
+        let mut by_entity: BTreeMap<String, Vec<LuaOperation>> = BTreeMap::new();
+        for op in operations {
+            by_entity.entry(op.entity.clone()).or_default().push(op);
+        }
+
+        // Convert each entity's operations to a ResolvedEntity
+        for (entity_name, ops) in by_entity {
+            let pk_field = primary_keys
+                .get(&entity_name)
+                .cloned()
+                .unwrap_or_else(|| format!("{}id", entity_name));
+
+            let mut entity = ResolvedEntity::new(&entity_name, 1, &pk_field);
+
+            // Collect all field names from create/update operations
+            let mut field_names: HashSet<String> = HashSet::new();
+            for op in &ops {
+                for field_name in op.fields.keys() {
+                    field_names.insert(field_name.clone());
+                }
+            }
+            entity.set_field_names(field_names.into_iter().collect());
+
+            // Convert each operation to a resolved record
+            for op in ops {
+                let record = Self::lua_operation_to_record(op, &pk_field);
+                entity.add_record(record);
+            }
+
+            resolved.add_entity(entity);
+        }
+    }
+
+    /// Convert a single Lua operation to a resolved record
+    fn lua_operation_to_record(op: LuaOperation, pk_field: &str) -> ResolvedRecord {
+        let id = op.id.unwrap_or_else(Uuid::new_v4);
+
+        // Convert JSON fields to Value
+        let fields: HashMap<String, Value> = op.fields
+            .into_iter()
+            .map(|(k, v)| (k, Value::from_json(&v)))
+            .collect();
+
+        match op.operation {
+            OperationType::Create => ResolvedRecord::create(id, fields),
+            OperationType::Update => ResolvedRecord::update(id, fields),
+            OperationType::Delete => ResolvedRecord::delete(id),
+            OperationType::Deactivate => ResolvedRecord::deactivate(id),
+            OperationType::Skip => {
+                let mut record = ResolvedRecord::skip(id, fields);
+                if let Some(reason) = op.reason {
+                    record.error = Some(reason);
+                }
+                record
+            }
+            OperationType::Error => {
+                ResolvedRecord::error(id, op.error.unwrap_or_else(|| "Unknown error".to_string()))
+            }
         }
     }
 }

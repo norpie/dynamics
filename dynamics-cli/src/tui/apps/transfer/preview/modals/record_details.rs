@@ -401,6 +401,8 @@ fn action_color(action: RecordAction, theme: &Theme) -> ratatui::style::Color {
     match action {
         RecordAction::Create => theme.accent_success,
         RecordAction::Update => theme.accent_secondary,
+        RecordAction::Delete => theme.accent_error,
+        RecordAction::Deactivate => theme.accent_warning,
         RecordAction::NoChange => theme.text_tertiary,
         RecordAction::TargetOnly => theme.accent_primary,
         RecordAction::Skip => theme.accent_warning,

@@ -86,5 +86,6 @@ pub use stdlib::{LogMessage, StatusUpdate, StdlibContext};
 pub use validate::{ValidationError, ValidationResult, validate_script, validate_script_execution};
 pub use execute::{
     ExecutionContext, ExecutionResult, ExecutionUpdate,
-    execute_transform, execute_transform_async, run_declare, validate_operations,
+    execute_transform, execute_transform_async, execute_transform_sync,
+    run_declare, validate_operations,
 };

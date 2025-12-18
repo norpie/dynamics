@@ -212,6 +212,18 @@ fn execute_transform_with_updates(
     })
 }
 
+/// Execute a Lua transform script synchronously (simple wrapper for engine integration)
+///
+/// Returns just the operations, without logs/cancellation support.
+pub fn execute_transform_sync(
+    script: &str,
+    source_data: &serde_json::Value,
+    target_data: &serde_json::Value,
+) -> Result<Vec<LuaOperation>> {
+    let result = execute_transform(script, source_data, target_data)?;
+    Ok(result.operations)
+}
+
 /// Run only the declare phase of a script
 pub fn run_declare(script: &str) -> Result<Declaration> {
     let runtime = LuaRuntime::new().context("Failed to create Lua runtime")?;

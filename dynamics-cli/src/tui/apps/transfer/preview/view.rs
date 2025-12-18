@@ -393,6 +393,8 @@ impl RecordListItem {
         match self.record.action {
             RecordAction::Create => Style::default().fg(self.theme.text_primary).bg(bg),
             RecordAction::Update => Style::default().fg(self.theme.text_primary).bg(bg),
+            RecordAction::Delete => Style::default().fg(self.theme.accent_error).bg(bg),
+            RecordAction::Deactivate => Style::default().fg(self.theme.accent_warning).bg(bg),
             RecordAction::NoChange => Style::default().fg(self.theme.text_tertiary).bg(bg),
             RecordAction::TargetOnly => Style::default().fg(self.theme.text_tertiary).bg(bg),
             RecordAction::Skip => Style::default()
@@ -408,6 +410,8 @@ impl RecordListItem {
         let (text, color) = match self.record.action {
             RecordAction::Create => ("create    ", self.theme.accent_success),
             RecordAction::Update => ("update    ", self.theme.accent_secondary),
+            RecordAction::Delete => ("delete    ", self.theme.accent_error),
+            RecordAction::Deactivate => ("deactivate", self.theme.accent_warning),
             RecordAction::NoChange => ("nochange  ", self.theme.text_tertiary),
             RecordAction::TargetOnly => ("targetonly", self.theme.accent_primary),
             RecordAction::Skip => ("skip      ", self.theme.accent_warning),
