@@ -782,6 +782,39 @@ impl App for TransferPreviewApp {
                 Command::None
             }
 
+            // Lua mode metadata loading - accumulate metadata for lookup binding
+            Msg::LuaMetadataResult(result) => {
+                match result {
+                    Ok((entity_name, fields, entity_set)) => {
+                        log::info!(
+                            "[Lua] Metadata loaded for {}: {} fields, entity_set={}",
+                            entity_name,
+                            fields.len(),
+                            entity_set
+                        );
+                        state.target_metadata.insert(entity_name.clone(), fields);
+                        state.entity_set_map.insert(entity_name, entity_set);
+                        state.pending_lua_metadata_fetches = state.pending_lua_metadata_fetches.saturating_sub(1);
+
+                        // When all metadata is loaded, start fetching data
+                        if state.pending_lua_metadata_fetches == 0 {
+                            return Command::perform(async { () }, |_| Msg::LuaFetchRecords);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("[Lua] Metadata fetch failed: {}", e);
+                        state.resolved = Resource::Failure(e);
+                        state.pending_lua_metadata_fetches = 0;
+                    }
+                }
+                Command::None
+            }
+
+            // Lua mode - start fetching records after metadata is loaded
+            Msg::LuaFetchRecords => {
+                build_lua_data_fetch_commands(state)
+            }
+
             // Lua mode data loading - accumulate fetched data
             Msg::LuaFetchResult(result) => {
                 match result {
@@ -816,11 +849,48 @@ impl App for TransferPreviewApp {
             // Lua mode - run transform after data is loaded
             Msg::RunLuaTransform => {
                 if let Some(ref config) = state.config {
-                    let resolved = run_lua_transform_with_data(
+                    let mut resolved = run_lua_transform_with_data(
                         config,
                         &state.source_data,
                         &state.target_data,
                     );
+
+                    // Build lookup context for each entity using fetched metadata
+                    for entity in &mut resolved.entities {
+                        // Set entity_set_name for API calls
+                        if let Some(entity_set) = state.entity_set_map.get(&entity.entity_name) {
+                            entity.set_entity_set_name(entity_set.clone());
+                        }
+
+                        // Build lookup context from metadata
+                        // For Lua mode, we include ALL fields since the script can output any field
+                        if let Some(all_fields) = state.target_metadata.get(&entity.entity_name) {
+                            match LookupBindingContext::from_field_metadata(all_fields, &state.entity_set_map) {
+                                Ok(ctx) => {
+                                    log::info!(
+                                        "[Lua][{}] Built lookup context with {} lookup fields",
+                                        entity.entity_name,
+                                        ctx.lookups.len()
+                                    );
+                                    entity.set_lookup_context(ctx);
+                                }
+                                Err(e) => {
+                                    log::warn!(
+                                        "[Lua][{}] Failed to build lookup context: {} (lookups may not work)",
+                                        entity.entity_name,
+                                        e
+                                    );
+                                    // Don't fail - just warn. The entity might not have lookups.
+                                }
+                            }
+                        } else {
+                            log::warn!(
+                                "[Lua][{}] No metadata available - lookups will not be converted to @odata.bind",
+                                entity.entity_name
+                            );
+                        }
+                    }
+
                     state.resolved = Resource::Success(resolved);
 
                     // Calculate column widths
@@ -2649,8 +2719,7 @@ async fn fetch_entity_metadata(
     Ok((entity_name, fields, entity_info.entity_set_name))
 }
 
-/// Merge dirty records from old resolved state into new resolved state.
-/// Handle Lua mode config - run declare() and fetch data
+/// Handle Lua mode config - first fetch metadata, then fetch data
 fn handle_lua_mode_config(state: &mut State, config: TransferConfig) -> Command<Msg> {
     use crate::transfer::lua::run_declare;
 
@@ -2677,6 +2746,9 @@ fn handle_lua_mode_config(state: &mut State, config: TransferConfig) -> Command<
         declaration.target.len()
     );
 
+    // Store declaration for later use during data fetch phase
+    state.lua_declaration = Some(declaration.clone());
+
     // Count total fetches needed
     let total_fetches = declaration.source.len() + declaration.target.len();
     if total_fetches == 0 {
@@ -2689,6 +2761,77 @@ fn handle_lua_mode_config(state: &mut State, config: TransferConfig) -> Command<
         );
     }
 
+    // Get unique target entities that need metadata (for LookupBindingContext)
+    // We need metadata for ALL entities that will be written to (target entities in operations)
+    // The Lua script's declare().target tells us what entities it reads from target,
+    // but operations may write to ANY entity. So we need metadata for all entities
+    // mentioned in the declaration (both source and target).
+    let mut all_entities: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for entity_name in declaration.source.keys() {
+        all_entities.insert(entity_name.clone());
+    }
+    for entity_name in declaration.target.keys() {
+        all_entities.insert(entity_name.clone());
+    }
+
+    let target_env = config.target_env.clone();
+    let metadata_entities: Vec<String> = all_entities.into_iter().collect();
+
+    if metadata_entities.is_empty() {
+        // No metadata to fetch, go straight to data fetching
+        return Command::perform(async { () }, |_| Msg::LuaFetchRecords);
+    }
+
+    state.pending_lua_metadata_fetches = metadata_entities.len();
+
+    log::info!(
+        "Lua mode: fetching metadata for {} entities before data",
+        metadata_entities.len()
+    );
+
+    // Build parallel metadata fetch tasks
+    let mut builder = Command::perform_parallel()
+        .with_title("Fetching Entity Metadata");
+
+    for entity_name in metadata_entities {
+        let env = target_env.clone();
+        let entity = entity_name.clone();
+
+        builder = builder.add_task(
+            format!("Metadata: {}", entity),
+            fetch_target_metadata(env, entity),
+        );
+    }
+
+    builder
+        .on_complete(AppId::TransferPreview)
+        .build(|_task_idx, result| {
+            let data = result
+                .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String>>()
+                .unwrap();
+            Msg::LuaMetadataResult(*data)
+        })
+}
+
+/// Build fetch commands for Lua mode data after metadata is loaded
+fn build_lua_data_fetch_commands(state: &mut State) -> Command<Msg> {
+    let config = match &state.config {
+        Some(c) => c.clone(),
+        None => {
+            state.resolved = Resource::Failure("No config loaded".to_string());
+            return Command::None;
+        }
+    };
+
+    let declaration = match &state.lua_declaration {
+        Some(d) => d.clone(),
+        None => {
+            state.resolved = Resource::Failure("No Lua declaration available".to_string());
+            return Command::None;
+        }
+    };
+
+    let total_fetches = declaration.source.len() + declaration.target.len();
     state.pending_lua_fetches = total_fetches;
 
     // Build parallel fetch tasks

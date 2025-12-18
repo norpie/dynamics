@@ -233,6 +233,10 @@ pub struct State {
     pub pending_related_metadata_fetches: usize,
     /// Number of pending Lua mode data fetches
     pub pending_lua_fetches: usize,
+    /// Number of pending Lua mode metadata fetches
+    pub pending_lua_metadata_fetches: usize,
+    /// Cached Lua declaration for data fetching phase
+    pub lua_declaration: Option<crate::transfer::lua::Declaration>,
     /// Whether we're currently refreshing (vs initial load)
     pub is_refreshing: bool,
     /// Accumulated source records by entity name (kept for refresh comparison)
@@ -294,6 +298,8 @@ impl Default for State {
             pending_target_metadata_fetches: 0,
             pending_related_metadata_fetches: 0,
             pending_lua_fetches: 0,
+            pending_lua_metadata_fetches: 0,
+            lua_declaration: None,
             is_refreshing: false,
             source_data: std::collections::HashMap::new(),
             target_data: std::collections::HashMap::new(),
@@ -452,6 +458,8 @@ pub enum Msg {
     ResolvedLoaded(Result<ResolvedTransfer, String>),
 
     // Lua mode data loading
+    LuaMetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, entity_set_name)
+    LuaFetchRecords, // Triggered after Lua metadata is loaded
     LuaFetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
     RunLuaTransform, // Triggered after Lua data is loaded
 
