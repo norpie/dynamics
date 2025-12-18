@@ -8,7 +8,7 @@ use crate::tui::resource::Resource;
 use crate::tui::widgets::ListState;
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
-use super::state::{CloneConfigForm, CreateConfigForm, Msg, State};
+use super::state::{CloneConfigForm, CreateConfigForm, MergeConfigForm, Msg, State};
 use super::view;
 
 pub struct TransferConfigListApp;
@@ -32,6 +32,9 @@ impl App for TransferConfigListApp {
             show_clone_modal: false,
             clone_form: CloneConfigForm::default(),
             selected_for_clone: None,
+            show_merge_modal: false,
+            merge_form: MergeConfigForm::default(),
+            merge_error: None,
         };
 
         let cmd = Command::perform(load_configs(), Msg::ConfigsLoaded);
@@ -254,11 +257,116 @@ impl App for TransferConfigListApp {
                         navigate_to_editor(&name),
                     ])
                 }
-                Err(_e) => {
-                    // TODO: show error modal
+                Err(e) => {
+                    state.merge_error = Some(e);
                     Command::None
                 }
             },
+
+            // Multi-select
+            Msg::ListMultiSelect(event) => {
+                if let Resource::Success(configs) = &state.configs {
+                    let visible_height = 20;
+                    state
+                        .list_state
+                        .handle_event(event, configs.len(), visible_height);
+                }
+                Command::None
+            }
+
+            // Merge
+            Msg::MergeSelected => {
+                // Get all selected indices
+                let selected_indices = state.list_state.all_selected();
+
+                // Require at least 2 configs
+                if selected_indices.len() < 2 {
+                    state.merge_error = Some("Select at least 2 configs to merge".to_string());
+                    return Command::None;
+                }
+
+                if let Resource::Success(configs) = &state.configs {
+                    let selected_configs: Vec<_> = selected_indices
+                        .iter()
+                        .filter_map(|&i| configs.get(i))
+                        .collect();
+
+                    // Validate same source/target environments
+                    if let Some(first) = selected_configs.first() {
+                        let env_mismatch = selected_configs.iter().any(|c| {
+                            c.source_env != first.source_env || c.target_env != first.target_env
+                        });
+
+                        if env_mismatch {
+                            state.merge_error = Some(
+                                "All configs must have the same source and target environments"
+                                    .to_string(),
+                            );
+                            return Command::None;
+                        }
+
+                        // Show merge modal
+                        state.show_merge_modal = true;
+                        state.merge_form = MergeConfigForm::default();
+                        state.merge_form.name.value = format!("{} (Merged)", first.name);
+                        return Command::set_focus(FocusId::new("merge-name"));
+                    }
+                }
+                Command::None
+            }
+
+            Msg::CloseMergeModal => {
+                state.show_merge_modal = false;
+                Command::set_focus(FocusId::new("config-list"))
+            }
+
+            Msg::MergeFormName(event) => {
+                state.merge_form.name.handle_event(event, Some(100));
+                Command::None
+            }
+
+            Msg::SaveMerge => {
+                if !state.merge_form.is_valid() {
+                    return Command::None;
+                }
+
+                let selected_indices = state.list_state.all_selected();
+                if let Resource::Success(configs) = &state.configs {
+                    let config_names: Vec<String> = selected_indices
+                        .iter()
+                        .filter_map(|&i| configs.get(i).map(|c| c.name.clone()))
+                        .collect();
+
+                    let new_name = state.merge_form.name.value.trim().to_string();
+                    state.show_merge_modal = false;
+
+                    return Command::perform(
+                        merge_configs(config_names, new_name),
+                        Msg::MergeResult,
+                    );
+                }
+                Command::None
+            }
+
+            Msg::MergeResult(result) => match result {
+                Ok(name) => {
+                    state.list_state.clear_multi_selection();
+                    state.configs = Resource::Loading;
+                    Command::batch(vec![
+                        Command::perform(load_configs(), Msg::ConfigsLoaded),
+                        navigate_to_editor(&name),
+                    ])
+                }
+                Err(e) => {
+                    state.merge_error = Some(e);
+                    Command::None
+                }
+            },
+
+            Msg::CloseErrorModal => {
+                state.merge_error = None;
+                Command::None
+            }
         }
     }
 
@@ -349,6 +457,73 @@ async fn clone_config(original_name: String, new_name: String) -> Result<String,
 
     // Save the cloned config
     save_transfer_config(pool, &cloned)
+        .await
+        .map(|_| new_name)
+        .map_err(|e| e.to_string())
+}
+
+async fn merge_configs(config_names: Vec<String>, new_name: String) -> Result<String, String> {
+    use std::collections::HashSet;
+
+    let pool = &crate::global_config().pool;
+
+    // Check if new name already exists
+    if transfer_config_exists(pool, &new_name)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Err(format!("Config '{}' already exists", new_name));
+    }
+
+    // Load all configs
+    let mut configs = Vec::new();
+    for name in &config_names {
+        let config = get_transfer_config(pool, name)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Config '{}' not found", name))?;
+        configs.push(config);
+    }
+
+    // Check for duplicate source entities across configs
+    let mut seen_entities: HashSet<String> = HashSet::new();
+    for config in &configs {
+        for mapping in &config.entity_mappings {
+            if !seen_entities.insert(mapping.source_entity.clone()) {
+                return Err(format!(
+                    "Duplicate entity mapping for '{}' found across configs",
+                    mapping.source_entity
+                ));
+            }
+        }
+    }
+
+    // Create merged config (use first config's environments)
+    let first = &configs[0];
+    let mut merged = TransferConfig {
+        id: None,
+        name: new_name.clone(),
+        source_env: first.source_env.clone(),
+        target_env: first.target_env.clone(),
+        entity_mappings: Vec::new(),
+    };
+
+    // Collect all entity mappings, resetting IDs
+    for config in configs {
+        for mut entity in config.entity_mappings {
+            entity.id = None;
+            for resolver in &mut entity.resolvers {
+                resolver.id = None;
+            }
+            for field in &mut entity.field_mappings {
+                field.id = None;
+            }
+            merged.entity_mappings.push(entity);
+        }
+    }
+
+    // Save the merged config
+    save_transfer_config(pool, &merged)
         .await
         .map(|_| new_name)
         .map_err(|e| e.to_string())

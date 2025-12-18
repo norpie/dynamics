@@ -14,7 +14,7 @@ use super::state::{Msg, State};
 impl ListItem for TransferConfigSummary {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Msg> {
+    fn to_element(&self, is_selected: bool, is_multi_selected: bool, _is_hovered: bool) -> Element<Msg> {
         let theme = &crate::global_runtime_config().theme;
         let (fg_color, bg_style) = if is_selected {
             (theme.accent_primary, Some(Style::default().bg(theme.bg_surface)))
@@ -22,10 +22,18 @@ impl ListItem for TransferConfigSummary {
             (theme.text_primary, None)
         };
 
+        // Checkbox indicator for multi-selection
+        let checkbox = if is_multi_selected {
+            Span::styled("[x] ", Style::default().fg(theme.accent_primary))
+        } else {
+            Span::styled("[ ] ", Style::default().fg(theme.text_tertiary))
+        };
+
         let line = Line::from(vec![
-            Span::styled(format!("  {:<30}", self.name), Style::default().fg(fg_color)),
+            checkbox,
+            Span::styled(format!("{:<30}", self.name), Style::default().fg(fg_color)),
             Span::styled(
-                format!("{} → {}", self.source_env, self.target_env),
+                format!("{} -> {}", self.source_env, self.target_env),
                 Style::default().fg(theme.text_secondary),
             ),
             Span::styled(
@@ -107,6 +115,33 @@ pub fn render(state: &mut State, theme: &crate::tui::Theme) -> LayeredView<Msg> 
                 crate::tui::Alignment::Center,
             );
         }
+    }
+
+    // Show merge modal
+    if state.show_merge_modal {
+        if let Resource::Success(configs) = &state.configs {
+            let selected_names: Vec<String> = state
+                .list_state
+                .all_selected()
+                .iter()
+                .filter_map(|&i| configs.get(i).map(|c| c.name.clone()))
+                .collect();
+            let env_info = configs.first().map(|c| format!("{} -> {}", c.source_env, c.target_env));
+            view = view.with_app_modal(
+                render_merge_modal(&mut state.merge_form, &selected_names, env_info.as_deref(), theme),
+                crate::tui::Alignment::Center,
+            );
+        }
+    }
+
+    // Show error modal
+    if let Some(error) = &state.merge_error {
+        let modal = ConfirmationModal::new("Error")
+            .message(error)
+            .confirm_text("OK")
+            .on_confirm(Msg::CloseErrorModal)
+            .build();
+        view = view.with_app_modal(modal, crate::tui::Alignment::Center);
     }
 
     view
@@ -272,10 +307,111 @@ fn render_clone_modal(
         .build()
 }
 
+fn render_merge_modal(
+    form: &mut super::state::MergeConfigForm,
+    config_names: &[String],
+    env_info: Option<&str>,
+    theme: &crate::tui::Theme,
+) -> Element<Msg> {
+    use crate::tui::element::RowBuilder;
+
+    // Info text showing configs being merged
+    let merge_info = Element::styled_text(Line::from(vec![
+        Span::styled(
+            format!("Merging {} configs", config_names.len()),
+            Style::default().fg(theme.text_secondary),
+        ),
+    ]))
+    .build();
+
+    // List of config names
+    let names_text = config_names.join(", ");
+    let names_display = if names_text.len() > 44 {
+        format!("{}...", &names_text[..41])
+    } else {
+        names_text
+    };
+    let configs_list = Element::styled_text(Line::from(vec![Span::styled(
+        names_display,
+        Style::default().fg(theme.accent_primary),
+    )]))
+    .build();
+
+    // Environment info
+    let env_text = Element::styled_text(Line::from(vec![
+        Span::styled("Environment: ", Style::default().fg(theme.text_secondary)),
+        Span::styled(
+            env_info.unwrap_or("N/A").to_string(),
+            Style::default().fg(theme.text_primary),
+        ),
+    ]))
+    .build();
+
+    // Name input
+    let name_input = Element::text_input(
+        FocusId::new("merge-name"),
+        &form.name.value,
+        &mut form.name.state,
+    )
+    .placeholder("Enter merged config name")
+    .on_event(Msg::MergeFormName)
+    .build();
+    let name_panel = Element::panel(name_input).title("New Name").build();
+
+    // Button row
+    let cancel_btn = Element::button(FocusId::new("merge-cancel"), "Cancel")
+        .on_press(Msg::CloseMergeModal)
+        .build();
+    let merge_btn = if form.is_valid() {
+        Element::button(FocusId::new("merge-save"), "Merge")
+            .on_press(Msg::SaveMerge)
+            .build()
+    } else {
+        Element::button(FocusId::new("merge-save"), "Merge").build() // Disabled
+    };
+
+    let button_row = RowBuilder::new()
+        .add(cancel_btn, LayoutConstraint::Length(12))
+        .add(Element::text(""), LayoutConstraint::Fill(1))
+        .add(merge_btn, LayoutConstraint::Length(12))
+        .build();
+
+    let form_content = ColumnBuilder::new()
+        .add(merge_info, LayoutConstraint::Length(1))
+        .add(configs_list, LayoutConstraint::Length(1))
+        .add(env_text, LayoutConstraint::Length(1))
+        .add(Element::text(""), LayoutConstraint::Length(1))
+        .add(name_panel, LayoutConstraint::Length(3))
+        .add(Element::text(""), LayoutConstraint::Fill(1))
+        .add(button_row, LayoutConstraint::Length(3))
+        .spacing(1)
+        .build();
+
+    Element::panel(Element::container(form_content).padding(1).build())
+        .title("Merge Transfer Configs")
+        .width(50)
+        .height(18)
+        .build()
+}
+
 pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
+    use crate::tui::widgets::events::ListEvent;
+
     let mut subs = vec![];
 
-    if state.show_delete_confirm {
+    if state.merge_error.is_some() {
+        // Error modal - just allow closing
+        subs.push(Subscription::keyboard(
+            KeyCode::Enter,
+            "OK",
+            Msg::CloseErrorModal,
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Esc,
+            "OK",
+            Msg::CloseErrorModal,
+        ));
+    } else if state.show_delete_confirm {
         // ConfirmationModal handles its own button clicks,
         // but we still register keyboard shortcuts for accessibility
         subs.push(Subscription::keyboard(
@@ -310,7 +446,19 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
             "Save clone",
             Msg::SaveClone,
         ));
+    } else if state.show_merge_modal {
+        subs.push(Subscription::keyboard(
+            KeyCode::Esc,
+            "Cancel",
+            Msg::CloseMergeModal,
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Enter,
+            "Save merge",
+            Msg::SaveMerge,
+        ));
     } else {
+        // Main list view
         subs.push(Subscription::keyboard(
             KeyCode::Char('n'),
             "New config",
@@ -335,6 +483,40 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
             KeyCode::Char('r'),
             "Refresh list",
             Msg::Refresh,
+        ));
+
+        // Multi-select shortcuts
+        subs.push(Subscription::keyboard(
+            KeyCode::Char(' '),
+            "Toggle select",
+            Msg::ListMultiSelect(ListEvent::ToggleMultiSelect),
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Char('*'),
+            "Select all",
+            Msg::ListMultiSelect(ListEvent::SelectAll),
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Char('-'),
+            "Clear selection",
+            Msg::ListMultiSelect(ListEvent::ClearMultiSelection),
+        ));
+        subs.push(Subscription::shift_key(
+            KeyCode::Up,
+            "Extend selection up",
+            Msg::ListMultiSelect(ListEvent::ExtendSelectionUp),
+        ));
+        subs.push(Subscription::shift_key(
+            KeyCode::Down,
+            "Extend selection down",
+            Msg::ListMultiSelect(ListEvent::ExtendSelectionDown),
+        ));
+
+        // Merge shortcut
+        subs.push(Subscription::keyboard(
+            KeyCode::Char('m'),
+            "Merge selected",
+            Msg::MergeSelected,
         ));
     }
 

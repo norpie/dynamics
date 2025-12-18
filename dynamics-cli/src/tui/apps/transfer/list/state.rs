@@ -3,7 +3,7 @@ use crossterm::event::KeyCode;
 use crate::config::repository::transfer::TransferConfigSummary;
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{ListState, AutocompleteField, TextInputField};
-use crate::tui::widgets::events::{AutocompleteEvent, TextInputEvent};
+use crate::tui::widgets::events::{AutocompleteEvent, ListEvent, TextInputEvent};
 
 #[derive(Default)]
 pub struct State {
@@ -23,6 +23,11 @@ pub struct State {
     pub show_clone_modal: bool,
     pub clone_form: CloneConfigForm,
     pub selected_for_clone: Option<String>,
+
+    // Merge modal
+    pub show_merge_modal: bool,
+    pub merge_form: MergeConfigForm,
+    pub merge_error: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -46,6 +51,17 @@ pub struct CloneConfigForm {
 }
 
 impl CloneConfigForm {
+    pub fn is_valid(&self) -> bool {
+        !self.name.value.trim().is_empty()
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct MergeConfigForm {
+    pub name: TextInputField,
+}
+
+impl MergeConfigForm {
     pub fn is_valid(&self) -> bool {
         !self.name.value.trim().is_empty()
     }
@@ -86,4 +102,15 @@ pub enum Msg {
     CloneFormName(TextInputEvent),
     SaveClone,
     CloneResult(Result<String, String>),
+
+    // Multi-select
+    ListMultiSelect(ListEvent),
+
+    // Merge modal
+    MergeSelected,
+    CloseMergeModal,
+    MergeFormName(TextInputEvent),
+    SaveMerge,
+    MergeResult(Result<String, String>),
+    CloseErrorModal,
 }
