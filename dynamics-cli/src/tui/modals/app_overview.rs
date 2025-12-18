@@ -81,6 +81,7 @@ impl<Msg: Clone> AppOverviewModal<Msg> {
             AppId::TransferConfigList => "Data Transfer",
             AppId::TransferMappingEditor => "Mapping Editor",
             AppId::TransferPreview => "Transfer Preview",
+            AppId::TransferLuaScript => "Lua Script Editor",
         }
     }
 

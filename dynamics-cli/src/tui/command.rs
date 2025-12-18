@@ -127,6 +127,7 @@ pub enum AppId {
     TransferConfigList,
     TransferMappingEditor,
     TransferPreview,
+    TransferLuaScript,
 }
 
 impl<Msg> Command<Msg> {

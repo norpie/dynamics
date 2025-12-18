@@ -122,7 +122,7 @@ pub enum Msg {
     CloseCloneModal,
     CloneFormName(TextInputEvent),
     SaveClone,
-    CloneResult(Result<String, String>),
+    CloneResult(Result<(String, TransferMode), String>),
 
     // Multi-select
     ListMultiSelect(ListEvent),

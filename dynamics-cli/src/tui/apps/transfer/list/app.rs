@@ -74,7 +74,7 @@ impl App for TransferConfigListApp {
             Msg::SelectConfig(idx) => {
                 if let Resource::Success(configs) = &state.configs {
                     if let Some(config) = configs.get(idx) {
-                        return navigate_to_editor(&config.name);
+                        return navigate_to_editor_by_mode(&config.name, config.mode);
                     }
                 }
                 Command::None
@@ -165,7 +165,7 @@ impl App for TransferConfigListApp {
                 if let Resource::Success(configs) = &state.configs {
                     if let Some(idx) = state.list_state.selected() {
                         if let Some(config) = configs.get(idx) {
-                            return navigate_to_editor(&config.name);
+                            return navigate_to_editor_by_mode(&config.name, config.mode);
                         }
                     }
                 }
@@ -256,11 +256,11 @@ impl App for TransferConfigListApp {
             }
 
             Msg::CloneResult(result) => match result {
-                Ok(name) => {
+                Ok((name, mode)) => {
                     state.configs = Resource::Loading;
                     Command::batch(vec![
                         Command::perform(load_configs(), Msg::ConfigsLoaded),
-                        navigate_to_editor(&name),
+                        navigate_to_editor_by_mode(&name, mode),
                     ])
                 }
                 Err(e) => {
@@ -358,9 +358,10 @@ impl App for TransferConfigListApp {
                 Ok(name) => {
                     state.list_state.clear_multi_selection();
                     state.configs = Resource::Loading;
+                    // Merge always creates a Declarative config
                     Command::batch(vec![
                         Command::perform(load_configs(), Msg::ConfigsLoaded),
-                        navigate_to_editor(&name),
+                        navigate_to_editor_by_mode(&name, TransferMode::Declarative),
                     ])
                 }
                 Err(e) => {
@@ -433,7 +434,7 @@ async fn create_config(name: String, source_env: String, target_env: String, mod
         .map_err(|e| e.to_string())
 }
 
-async fn clone_config(original_name: String, new_name: String) -> Result<String, String> {
+async fn clone_config(original_name: String, new_name: String) -> Result<(String, TransferMode), String> {
     let pool = &crate::global_config().pool;
 
     // Check if new name already exists
@@ -452,6 +453,7 @@ async fn clone_config(original_name: String, new_name: String) -> Result<String,
 
     // Clone and reset IDs
     let mut cloned = original.clone();
+    let mode = cloned.mode;
     cloned.id = None;
     cloned.name = new_name.clone();
     for entity in &mut cloned.entity_mappings {
@@ -467,7 +469,7 @@ async fn clone_config(original_name: String, new_name: String) -> Result<String,
     // Save the cloned config
     save_transfer_config(pool, &cloned)
         .await
-        .map(|_| new_name)
+        .map(|_| (new_name, mode))
         .map_err(|e| e.to_string())
 }
 
@@ -541,21 +543,9 @@ async fn merge_configs(config_names: Vec<String>, new_name: String) -> Result<St
         .map_err(|e| e.to_string())
 }
 
-fn navigate_to_editor(config_name: &str) -> Command<Msg> {
-    use crate::tui::AppId;
-    use crate::tui::apps::transfer::EditorParams;
-
-    Command::start_app(
-        AppId::TransferMappingEditor,
-        EditorParams {
-            config_name: config_name.to_string(),
-        },
-    )
-}
-
 fn navigate_to_editor_by_mode(config_name: &str, mode: TransferMode) -> Command<Msg> {
     use crate::tui::AppId;
-    use crate::tui::apps::transfer::EditorParams;
+    use crate::tui::apps::transfer::{EditorParams, LuaScriptParams};
 
     match mode {
         TransferMode::Declarative => {
@@ -567,11 +557,9 @@ fn navigate_to_editor_by_mode(config_name: &str, mode: TransferMode) -> Command<
             )
         }
         TransferMode::Lua => {
-            // TODO: Navigate to LuaScriptApp when implemented (Phase 4)
-            // For now, just navigate to the declarative editor as a placeholder
             Command::start_app(
-                AppId::TransferMappingEditor,
-                EditorParams {
+                AppId::TransferLuaScript,
+                LuaScriptParams {
                     config_name: config_name.to_string(),
                 },
             )
