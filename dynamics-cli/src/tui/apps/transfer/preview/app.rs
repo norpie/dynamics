@@ -2850,9 +2850,9 @@ fn build_lua_data_fetch_commands(state: &mut State) -> Command<Msg> {
         let expand = if entity_decl.expand.is_empty() { None } else { Some(entity_decl.expand.clone()) };
         let top = entity_decl.top;
 
-        builder = builder.add_task(
+        builder = builder.add_task_with_progress(
             format!("Source: {}", entity),
-            fetch_lua_data(env, entity, fields, filter, expand, top, true),
+            move |progress| fetch_lua_data(env, entity, fields, filter, expand, top, true, Some(progress)),
         );
     }
 
@@ -2865,9 +2865,9 @@ fn build_lua_data_fetch_commands(state: &mut State) -> Command<Msg> {
         let expand = if entity_decl.expand.is_empty() { None } else { Some(entity_decl.expand.clone()) };
         let top = entity_decl.top;
 
-        builder = builder.add_task(
+        builder = builder.add_task_with_progress(
             format!("Target: {}", entity),
-            fetch_lua_data(env, entity, fields, filter, expand, top, false),
+            move |progress| fetch_lua_data(env, entity, fields, filter, expand, top, false, Some(progress)),
         );
     }
 
@@ -2881,7 +2881,7 @@ fn build_lua_data_fetch_commands(state: &mut State) -> Command<Msg> {
         })
 }
 
-/// Fetch data for Lua mode with pagination support
+/// Fetch data for Lua mode with pagination support and progress reporting
 async fn fetch_lua_data(
     env_name: String,
     entity_name: String,
@@ -2890,6 +2890,7 @@ async fn fetch_lua_data(
     expand: Option<Vec<String>>,
     top: Option<usize>,
     is_source: bool,
+    progress: Option<crate::tui::command::ProgressSender>,
 ) -> Result<(String, bool, Vec<serde_json::Value>), String> {
     use crate::api::pluralization::pluralize_entity_name;
     use crate::api::query::QueryBuilder;
@@ -2903,6 +2904,11 @@ async fn fetch_lua_data(
     let entity_set = pluralize_entity_name(&entity_name);
 
     const PAGE_SIZE: u32 = 500;
+
+    // Send initial progress
+    if let Some(ref tx) = progress {
+        let _ = tx.send("Starting...".to_string());
+    }
 
     // Build query
     let mut builder = QueryBuilder::new(&entity_set);
@@ -2965,6 +2971,18 @@ async fn fetch_lua_data(
             all_records.len()
         );
 
+        // Report progress
+        if let Some(ref tx) = progress {
+            let progress_msg = match max_records {
+                Some(max) => {
+                    let pct = (all_records.len() as f64 / max as f64 * 100.0).min(100.0);
+                    format!("{}/{} ({:.0}%)", all_records.len(), max, pct)
+                }
+                None => format!("{} records", all_records.len()),
+            };
+            let _ = tx.send(progress_msg);
+        }
+
         // Check if we've hit the user-specified limit
         if let Some(max) = max_records {
             if all_records.len() >= max {
@@ -2984,6 +3002,11 @@ async fn fetch_lua_data(
             .await
             .map_err(|e| format!("Pagination failed for {}: {}", entity_name, e))?
             .ok_or_else(|| format!("nextLink returned no data for {}", entity_name))?;
+    }
+
+    // Final progress update
+    if let Some(ref tx) = progress {
+        let _ = tx.send(format!("{} records", all_records.len()));
     }
 
     let total_time = fetch_start.elapsed();
