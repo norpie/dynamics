@@ -487,15 +487,28 @@ impl RecordListItem {
 fn format_value(value: &Value) -> String {
     match value {
         Value::Null => "(null)".to_string(),
-        Value::String(s) => s.clone(),
+        Value::String(s) => sanitize_for_display(s),
         Value::Int(n) => n.to_string(),
         Value::Float(f) => format!("{:.2}", f),
         Value::Bool(b) => b.to_string(),
         Value::DateTime(dt) => dt.format("%Y-%m-%d").to_string(),
         Value::Guid(g) => format!("{:.8}...", g),
         Value::OptionSet(n) => n.to_string(),
-        Value::Dynamic(dv) => format!("{:?}", dv),
+        Value::Dynamic(dv) => sanitize_for_display(&format!("{:?}", dv)),
     }
+}
+
+/// Sanitize a string for display in the table by replacing control characters
+pub(super) fn sanitize_for_display(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            '\n' => '↵',  // Newline indicator
+            '\r' => ' ',  // Carriage return
+            '\t' => '→',  // Tab indicator
+            c if c.is_control() => '·', // Other control characters
+            c => c,
+        })
+        .collect()
 }
 
 /// Truncate a string to max length with ellipsis (UTF-8 safe)

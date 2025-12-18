@@ -9,6 +9,7 @@ use crate::tui::widgets::TextInputEvent;
 use crate::tui::{Element, LayoutConstraint, Theme};
 
 use super::super::state::{Msg, RecordDetailState};
+use super::super::view::sanitize_for_display;
 
 /// Render the record details/edit modal
 pub fn render(
@@ -181,7 +182,7 @@ fn render_fields_view(
                 let target = lookup_target.unwrap_or("?");
                 format!("→ {}({})", target, truncate_str(field.input.value(), 20))
             } else {
-                field.input.value().to_string()
+                sanitize_for_display(field.input.value())
             };
 
             let dirty_indicator = if field.is_dirty {
@@ -302,14 +303,14 @@ fn render_fields_edit(
 
             builder = builder.add(row, LayoutConstraint::Length(1));
         } else {
-            // Show value as text
+            // Show value as text (sanitized for display)
             let value_display = if field.input.value().is_empty() {
                 "(null)".to_string()
             } else if is_lookup && is_guid_string(field.input.value()) {
                 let target = lookup_target.unwrap_or("?");
                 format!("→ {}({})", target, truncate_str(field.input.value(), 20))
             } else {
-                field.input.value().to_string()
+                sanitize_for_display(field.input.value())
             };
 
             let value_style = if is_focused {
