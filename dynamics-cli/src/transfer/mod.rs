@@ -7,6 +7,7 @@ pub mod types;
 pub mod transform;
 pub mod excel;
 pub mod queue;
+pub mod lua;
 
 pub use types::*;
 pub use transform::{ExpandTree, TransformEngine, TransformContext, TransformError};
