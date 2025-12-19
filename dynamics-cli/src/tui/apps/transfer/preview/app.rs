@@ -846,60 +846,122 @@ impl App for TransferPreviewApp {
                 Command::None
             }
 
-            // Lua mode - run transform after data is loaded
+            // Lua mode - run transform after data is loaded (with progress streaming)
             Msg::RunLuaTransform => {
                 if let Some(ref config) = state.config {
-                    let mut resolved = run_lua_transform_with_data(
-                        config,
-                        &state.source_data,
-                        &state.target_data,
-                    );
-
-                    // Build lookup context for each entity using fetched metadata
-                    for entity in &mut resolved.entities {
-                        // Set entity_set_name for API calls
-                        if let Some(entity_set) = state.entity_set_map.get(&entity.entity_name) {
-                            entity.set_entity_set_name(entity_set.clone());
+                    let script = match &config.lua_script {
+                        Some(s) => s.clone(),
+                        None => {
+                            state.resolved = Resource::Failure("Lua mode config has no script".to_string());
+                            return Command::None;
                         }
+                    };
 
-                        // Build lookup context from metadata
-                        // For Lua mode, we include ALL fields since the script can output any field
-                        if let Some(all_fields) = state.target_metadata.get(&entity.entity_name) {
-                            match LookupBindingContext::from_field_metadata(all_fields, &state.entity_set_map) {
-                                Ok(ctx) => {
-                                    log::info!(
-                                        "[Lua][{}] Built lookup context with {} lookup fields",
-                                        entity.entity_name,
-                                        ctx.lookups.len()
-                                    );
-                                    entity.set_lookup_context(ctx);
+                    let source_data = state.source_data.clone();
+                    let target_data = state.target_data.clone();
+
+                    // Use parallel command to show loading screen with progress
+                    return Command::perform_parallel()
+                        .with_title("Running Lua Transform")
+                        .add_task_with_progress(
+                            "Lua Transform",
+                            move |progress| run_lua_transform_with_progress(
+                                script, source_data, target_data, progress
+                            ),
+                        )
+                        .on_complete(AppId::TransferPreview)
+                        .build(|_idx, result| {
+                            let data = result
+                                .downcast::<Result<(Vec<crate::transfer::lua::LuaOperation>, Vec<crate::transfer::lua::LogMessage>), String>>()
+                                .unwrap();
+                            Msg::LuaTransformComplete(*data)
+                        });
+                }
+                Command::None
+            }
+
+            // Lua mode - transform complete, build resolved transfer
+            Msg::LuaTransformComplete(result) => {
+                match result {
+                    Ok((operations, logs)) => {
+                        // Log all captured messages
+                        for log_msg in &logs {
+                            match log_msg {
+                                crate::transfer::lua::LogMessage::Info(msg) => {
+                                    log::debug!("[Lua] {}", msg);
                                 }
-                                Err(e) => {
-                                    log::warn!(
-                                        "[Lua][{}] Failed to build lookup context: {} (lookups may not work)",
-                                        entity.entity_name,
-                                        e
-                                    );
-                                    // Don't fail - just warn. The entity might not have lookups.
+                                crate::transfer::lua::LogMessage::Warn(msg) => {
+                                    log::debug!("[Lua WARN] {}", msg);
                                 }
                             }
-                        } else {
-                            log::warn!(
-                                "[Lua][{}] No metadata available - lookups will not be converted to @odata.bind",
-                                entity.entity_name
-                            );
                         }
-                    }
+                        log::info!("[Lua] Transform complete: {} operations, {} log messages", operations.len(), logs.len());
 
-                    state.resolved = Resource::Success(resolved);
-
-                    // Calculate column widths
-                    if let Resource::Success(resolved) = &state.resolved {
-                        if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
-                            state.column_widths = super::state::calculate_column_widths(entity);
+                        // Build primary keys map
+                        let mut primary_keys = HashMap::new();
+                        for entity_name in state.source_data.keys().chain(state.target_data.keys()) {
+                            primary_keys.insert(entity_name.clone(), format!("{}id", entity_name));
                         }
+
+                        // Create resolved transfer and convert operations
+                        let config = state.config.as_ref().unwrap();
+                        let mut resolved = ResolvedTransfer::new(
+                            &config.name,
+                            &config.source_env,
+                            &config.target_env,
+                        );
+
+                        // Convert Lua operations to resolved entities/records
+                        TransformEngine::lua_operations_to_resolved(&mut resolved, operations, &primary_keys);
+
+                        // Build lookup context for each entity using fetched metadata
+                        for entity in &mut resolved.entities {
+                            // Set entity_set_name for API calls
+                            if let Some(entity_set) = state.entity_set_map.get(&entity.entity_name) {
+                                entity.set_entity_set_name(entity_set.clone());
+                            }
+
+                            // Build lookup context from metadata
+                            if let Some(all_fields) = state.target_metadata.get(&entity.entity_name) {
+                                match LookupBindingContext::from_field_metadata(all_fields, &state.entity_set_map) {
+                                    Ok(ctx) => {
+                                        log::info!(
+                                            "[Lua][{}] Built lookup context with {} lookup fields",
+                                            entity.entity_name,
+                                            ctx.lookups.len()
+                                        );
+                                        entity.set_lookup_context(ctx);
+                                    }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "[Lua][{}] Failed to build lookup context: {} (lookups may not work)",
+                                            entity.entity_name,
+                                            e
+                                        );
+                                    }
+                                }
+                            } else {
+                                log::warn!(
+                                    "[Lua][{}] No metadata available - lookups will not be converted to @odata.bind",
+                                    entity.entity_name
+                                );
+                            }
+                        }
+
+                        state.resolved = Resource::Success(resolved);
+
+                        // Calculate column widths
+                        if let Resource::Success(resolved) = &state.resolved {
+                            if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                                state.column_widths = super::state::calculate_column_widths(entity);
+                            }
+                        }
+                        state.horizontal_scroll = 0;
                     }
-                    state.horizontal_scroll = 0;
+                    Err(e) => {
+                        log::error!("[Lua] Transform failed: {}", e);
+                        state.resolved = Resource::Failure(e);
+                    }
                 }
                 Command::None
             }
@@ -3076,7 +3138,7 @@ async fn run_lua_transform(config_name: String) -> Result<ResolvedTransfer, Stri
     Ok(TransformEngine::transform_all(&config, &source_data, &target_data, &primary_keys))
 }
 
-/// Run the Lua transform with accumulated data
+/// Run the Lua transform with accumulated data (synchronous, no progress)
 fn run_lua_transform_with_data(
     config: &TransferConfig,
     source_data: &HashMap<String, Vec<serde_json::Value>>,
@@ -3089,6 +3151,73 @@ fn run_lua_transform_with_data(
     }
 
     TransformEngine::transform_all(config, source_data, target_data, &primary_keys)
+}
+
+/// Run the Lua transform with progress streaming to the loading screen
+/// 
+/// This function executes the Lua transform asynchronously and forwards
+/// status updates from `lib.status()` and `lib.progress()` to the loading screen.
+async fn run_lua_transform_with_progress(
+    script: String,
+    source_data: HashMap<String, Vec<serde_json::Value>>,
+    target_data: HashMap<String, Vec<serde_json::Value>>,
+    progress: crate::tui::command::ProgressSender,
+) -> Result<(Vec<crate::transfer::lua::LuaOperation>, Vec<crate::transfer::lua::LogMessage>), String> {
+    use crate::transfer::lua::{execute_transform_async, ExecutionContext, ExecutionUpdate};
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
+    // Send initial status
+    let _ = progress.send("Starting Lua transform...".to_string());
+
+    // Create execution context with channel for updates
+    let (update_tx, mut update_rx) = tokio::sync::mpsc::channel::<ExecutionUpdate>(100);
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let ctx = ExecutionContext::new(update_tx, cancel_flag);
+
+    // Convert data to JSON
+    let source_json = serde_json::to_value(&source_data).unwrap_or_default();
+    let target_json = serde_json::to_value(&target_data).unwrap_or_default();
+
+    // Spawn a task to forward execution updates to the progress sender
+    let progress_clone = progress.clone();
+    let forward_task = tokio::spawn(async move {
+        while let Some(update) = update_rx.recv().await {
+            match update {
+                ExecutionUpdate::Status(msg) => {
+                    let _ = progress_clone.send(msg);
+                }
+                ExecutionUpdate::Started => {
+                    let _ = progress_clone.send("Running transform...".to_string());
+                }
+                ExecutionUpdate::Completed { operation_count } => {
+                    let _ = progress_clone.send(format!("Complete: {} operations", operation_count));
+                }
+                ExecutionUpdate::Failed(err) => {
+                    let _ = progress_clone.send(format!("Failed: {}", err));
+                }
+                // Log and Warn are captured, not shown on progress
+                ExecutionUpdate::Log(_) | ExecutionUpdate::Warn(_) | ExecutionUpdate::Progress { .. } => {}
+            }
+        }
+    });
+
+    // Execute the transform
+    let result = execute_transform_async(script, source_json, target_json, ctx).await;
+
+    // Wait for forward task to complete
+    let _ = forward_task.await;
+
+    match result {
+        Ok(exec_result) => {
+            if exec_result.was_cancelled {
+                Err("Transform was cancelled".to_string())
+            } else {
+                Ok((exec_result.operations, exec_result.logs))
+            }
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Dirty records preserve their user-edited action and field values.

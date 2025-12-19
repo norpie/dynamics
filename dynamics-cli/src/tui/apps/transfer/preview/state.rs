@@ -462,6 +462,7 @@ pub enum Msg {
     LuaFetchRecords, // Triggered after Lua metadata is loaded
     LuaFetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
     RunLuaTransform, // Triggered after Lua data is loaded
+    LuaTransformComplete(Result<(Vec<crate::transfer::lua::LuaOperation>, Vec<crate::transfer::lua::LogMessage>), String>), // (operations, logs)
 
     // Navigation
     ListEvent(crate::tui::widgets::ListEvent),

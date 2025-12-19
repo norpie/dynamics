@@ -21,12 +21,33 @@ pub enum StatusUpdate {
 }
 
 /// Context for stdlib functions that need to communicate with the host
-#[derive(Debug, Default)]
 pub struct StdlibContext {
     /// Captured log messages
     pub logs: Vec<LogMessage>,
-    /// Latest status update
+    /// Latest status update (for polling after completion)
     pub status: Option<StatusUpdate>,
+    /// Real-time status sender (for streaming during execution)
+    pub status_tx: Option<std::sync::mpsc::Sender<StatusUpdate>>,
+}
+
+impl Default for StdlibContext {
+    fn default() -> Self {
+        Self {
+            logs: Vec::new(),
+            status: None,
+            status_tx: None,
+        }
+    }
+}
+
+impl std::fmt::Debug for StdlibContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StdlibContext")
+            .field("logs", &self.logs)
+            .field("status", &self.status)
+            .field("status_tx", &self.status_tx.is_some())
+            .finish()
+    }
 }
 
 /// Register the `lib` table with all standard library functions
@@ -359,7 +380,13 @@ fn create_warn_fn(lua: &Lua, context: Arc<Mutex<StdlibContext>>) -> LuaResult<Fu
 fn create_status_fn(lua: &Lua, context: Arc<Mutex<StdlibContext>>) -> LuaResult<Function> {
     lua.create_function(move |_, msg: String| {
         if let Ok(mut ctx) = context.lock() {
-            ctx.status = Some(StatusUpdate::Status(msg));
+            let update = StatusUpdate::Status(msg);
+            // Send to real-time channel if present
+            if let Some(ref tx) = ctx.status_tx {
+                let _ = tx.send(update.clone());
+            }
+            // Also store for polling
+            ctx.status = Some(update);
         }
         Ok(())
     })
@@ -369,7 +396,13 @@ fn create_status_fn(lua: &Lua, context: Arc<Mutex<StdlibContext>>) -> LuaResult<
 fn create_progress_fn(lua: &Lua, context: Arc<Mutex<StdlibContext>>) -> LuaResult<Function> {
     lua.create_function(move |_, (current, total): (usize, usize)| {
         if let Ok(mut ctx) = context.lock() {
-            ctx.status = Some(StatusUpdate::Progress { current, total });
+            let update = StatusUpdate::Progress { current, total };
+            // Send to real-time channel if present
+            if let Some(ref tx) = ctx.status_tx {
+                let _ = tx.send(update.clone());
+            }
+            // Also store for polling
+            ctx.status = Some(update);
         }
         Ok(())
     })

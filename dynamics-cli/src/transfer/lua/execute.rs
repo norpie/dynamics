@@ -141,7 +141,36 @@ pub async fn execute_transform_async(
     result
 }
 
-/// Internal function that runs transform and sends updates
+/// Format a progress message combining status and progress info
+/// 
+/// Output format: "{status} - {current}/{total} ({pct:.1}%)"
+fn format_progress_message(
+    status: &Option<String>,
+    progress: &Option<(usize, usize)>,
+) -> String {
+    match (status, progress) {
+        (Some(s), Some((current, total))) => {
+            let pct = if *total > 0 {
+                (*current as f64 / *total as f64) * 100.0
+            } else {
+                0.0
+            };
+            format!("{} - {}/{} ({:.1}%)", s, current, total, pct)
+        }
+        (Some(s), None) => s.clone(),
+        (None, Some((current, total))) => {
+            let pct = if *total > 0 {
+                (*current as f64 / *total as f64) * 100.0
+            } else {
+                0.0
+            };
+            format!("{}/{} ({:.1}%)", current, total, pct)
+        }
+        (None, None) => String::new(),
+    }
+}
+
+/// Internal function that runs transform and sends updates in real-time
 fn execute_transform_with_updates(
     script: &str,
     source_data: &serde_json::Value,
@@ -160,6 +189,11 @@ fn execute_transform_with_updates(
 
     let runtime = LuaRuntime::new().context("Failed to create Lua runtime")?;
 
+    // Set up real-time status channel
+    // Using std::sync::mpsc because Lua runs synchronously
+    let (status_tx, status_rx) = std::sync::mpsc::channel::<StatusUpdate>();
+    runtime.set_status_channel(status_tx);
+
     let module = runtime
         .load_script(script)
         .context("Failed to load script")?;
@@ -173,37 +207,50 @@ fn execute_transform_with_updates(
         });
     }
 
-    // Run the transform
+    // Spawn a thread to forward status updates to the async channel
+    // This thread runs concurrently with the Lua transform
+    let update_tx_clone = update_tx.clone();
+    let forward_handle = std::thread::spawn(move || {
+        let mut last_status: Option<String> = None;
+        let mut last_progress: Option<(usize, usize)> = None;
+
+        // Block on receiving status updates until channel closes
+        while let Ok(update) = status_rx.recv() {
+            match update {
+                StatusUpdate::Status(msg) => {
+                    last_status = Some(msg);
+                }
+                StatusUpdate::Progress { current, total } => {
+                    last_progress = Some((current, total));
+                }
+            }
+
+            // Format combined message and send to UI
+            let message = format_progress_message(&last_status, &last_progress);
+            if !message.is_empty() {
+                let _ = update_tx_clone.try_send(ExecutionUpdate::Status(message));
+            }
+        }
+    });
+
+    // Run the transform (this blocks until complete)
     let operations = runtime
         .run_transform(&module, source_data, target_data)
         .context("Failed to run transform")?;
 
-    // Get captured logs and status updates
-    let (logs, final_status) = {
+    // Get captured logs before dropping runtime
+    let logs = {
         let ctx = runtime.context();
         let guard = ctx.lock().map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
-        (guard.logs.clone(), guard.status.clone())
+        guard.logs.clone()
     };
 
-    // Send any captured log messages
-    for log in &logs {
-        let update = match log {
-            LogMessage::Info(msg) => ExecutionUpdate::Log(msg.clone()),
-            LogMessage::Warn(msg) => ExecutionUpdate::Warn(msg.clone()),
-        };
-        let _ = update_tx.try_send(update);
-    }
+    // Drop runtime to close the status channel (status_tx is inside context)
+    // This will cause the forward thread to exit
+    drop(runtime);
 
-    // Send final status if present
-    if let Some(status) = final_status {
-        let update = match status {
-            StatusUpdate::Status(msg) => ExecutionUpdate::Status(msg),
-            StatusUpdate::Progress { current, total } => {
-                ExecutionUpdate::Progress { current, total }
-            }
-        };
-        let _ = update_tx.try_send(update);
-    }
+    // Wait for forward thread to finish
+    let _ = forward_handle.join();
 
     Ok(ExecutionResult {
         operations,

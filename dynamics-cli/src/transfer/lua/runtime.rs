@@ -316,6 +316,16 @@ impl LuaRuntime {
         }
     }
 
+    /// Set a channel for real-time status updates
+    /// 
+    /// When set, calls to `lib.status()` and `lib.progress()` will immediately
+    /// send updates through this channel in addition to storing them in context.
+    pub fn set_status_channel(&self, tx: std::sync::mpsc::Sender<super::stdlib::StatusUpdate>) {
+        if let Ok(mut ctx) = self.context.lock() {
+            ctx.status_tx = Some(tx);
+        }
+    }
+
     /// Get access to the underlying Lua instance
     pub fn lua(&self) -> &Lua {
         &self.lua

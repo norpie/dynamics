@@ -397,7 +397,10 @@ impl TransformEngine {
     }
 
     /// Convert Lua operations to resolved entities and records
-    fn lua_operations_to_resolved(
+    /// 
+    /// This is public so it can be called from the preview app after
+    /// the Lua transform completes with progress streaming.
+    pub fn lua_operations_to_resolved(
         resolved: &mut ResolvedTransfer,
         operations: Vec<LuaOperation>,
         primary_keys: &HashMap<String, String>,
