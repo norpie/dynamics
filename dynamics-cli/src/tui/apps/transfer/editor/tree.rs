@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use crate::api::{FieldMetadata, FieldType};
 use crate::transfer::{EntityMapping, FieldMapping, Resolver};
 use crate::tui::{Element, widgets::TreeItem};
 use ratatui::{style::Style, text::{Line, Span}};
@@ -44,10 +47,13 @@ impl TreeItem for MappingTreeItem {
 
                 // Then add field mappings
                 for (idx, fm) in node.field_mappings.iter().enumerate() {
+                    // Look up field type from cache
+                    let field_type = node.field_types.get(&fm.target_field).cloned();
                     children.push(Self::Field(FieldNode {
                         entity_idx: node.idx,
                         field_idx: idx,
                         mapping: fm.clone(),
+                        field_type,
                     }));
                 }
 
@@ -177,10 +183,22 @@ pub struct EntityNode {
     pub priority: u32,
     pub resolvers: Vec<Resolver>,
     pub field_mappings: Vec<FieldMapping>,
+    /// Field name -> field type (for displaying in tree)
+    pub field_types: HashMap<String, FieldType>,
 }
 
 impl EntityNode {
-    pub fn from_mapping(idx: usize, mapping: &EntityMapping) -> Self {
+    pub fn from_mapping(idx: usize, mapping: &EntityMapping, field_metadata: Option<&[FieldMetadata]>) -> Self {
+        // Build field type lookup from metadata if available
+        let field_types: HashMap<String, FieldType> = field_metadata
+            .map(|fields| {
+                fields
+                    .iter()
+                    .map(|f| (f.logical_name.clone(), f.field_type.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Self {
             idx,
             source_entity: mapping.source_entity.clone(),
@@ -188,6 +206,7 @@ impl EntityNode {
             priority: mapping.priority,
             resolvers: mapping.resolvers.clone(),
             field_mappings: mapping.field_mappings.clone(),
+            field_types,
         }
     }
 
@@ -261,11 +280,29 @@ pub struct FieldNode {
     pub entity_idx: usize,
     pub field_idx: usize,
     pub mapping: FieldMapping,
+    pub field_type: Option<FieldType>,
 }
 
 impl FieldNode {
     fn id(&self) -> String {
         format!("field_{}_{}", self.entity_idx, self.field_idx)
+    }
+
+    fn format_field_type(ft: &FieldType) -> &'static str {
+        match ft {
+            FieldType::String => "String",
+            FieldType::Integer => "Integer",
+            FieldType::Decimal => "Decimal",
+            FieldType::Boolean => "Boolean",
+            FieldType::DateTime => "DateTime",
+            FieldType::Lookup => "Lookup",
+            FieldType::OptionSet => "OptionSet",
+            FieldType::MultiSelectOptionSet => "MultiSelect",
+            FieldType::Money => "Money",
+            FieldType::Memo => "Memo",
+            FieldType::UniqueIdentifier => "GUID",
+            FieldType::Other(_) => "Other",
+        }
     }
 
     fn to_element(
@@ -290,6 +327,14 @@ impl FieldNode {
             Style::default().fg(theme.text_primary),
         ));
 
+        // Field type (if available)
+        if let Some(ft) = &self.field_type {
+            spans.push(Span::styled(
+                format!(" [{}]", Self::format_field_type(ft)),
+                Style::default().fg(theme.accent_tertiary),
+            ));
+        }
+
         // Transform description
         spans.push(Span::styled(
             format!(" ← {}", self.mapping.transform.describe()),
@@ -307,12 +352,17 @@ impl FieldNode {
 }
 
 /// Build tree items from a TransferConfig
-pub fn build_tree(config: &crate::transfer::TransferConfig) -> Vec<MappingTreeItem> {
+/// `field_cache` maps entity_idx to field metadata (for showing types in tree)
+pub fn build_tree(
+    config: &crate::transfer::TransferConfig,
+    field_cache: &HashMap<usize, Vec<FieldMetadata>>,
+) -> Vec<MappingTreeItem> {
     let mut items = Vec::new();
 
     // Add entity mappings (resolvers are now children of entities)
     for (idx, em) in config.entity_mappings.iter().enumerate() {
-        items.push(MappingTreeItem::Entity(EntityNode::from_mapping(idx, em)));
+        let field_metadata = field_cache.get(&idx).map(|v| v.as_slice());
+        items.push(MappingTreeItem::Entity(EntityNode::from_mapping(idx, em, field_metadata)));
     }
 
     items

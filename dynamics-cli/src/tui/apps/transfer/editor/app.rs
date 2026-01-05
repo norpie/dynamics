@@ -52,6 +52,7 @@ impl App for MappingEditorApp {
             quick_fields_list_state: ListState::with_selection(),
             quick_fields_entity_idx: None,
             pending_quick_fields: false,
+            entity_target_fields_cache: std::collections::HashMap::new(),
         };
 
         // Load config first (fast, local DB), then load entities with loading screen
@@ -140,7 +141,15 @@ impl App for MappingEditorApp {
 
             Msg::TargetFieldsLoaded(result) => {
                 state.target_fields = match result {
-                    Ok(fields) => Resource::Success(fields),
+                    Ok(fields) => {
+                        // Cache fields for this entity (for showing types in tree)
+                        if let Some(entity_idx) = state.current_field_entity_idx {
+                            state.entity_target_fields_cache.insert(entity_idx, fields.clone());
+                            // Invalidate tree cache so field types show up
+                            state.tree_state.invalidate_cache();
+                        }
+                        Resource::Success(fields)
+                    },
                     Err(e) => Resource::Failure(e),
                 };
                 // Check if we should open the field modal now

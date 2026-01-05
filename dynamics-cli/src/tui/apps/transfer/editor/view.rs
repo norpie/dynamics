@@ -174,7 +174,7 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
 
 fn render_editor(state: &mut State, source_env: &str, target_env: &str, theme: &Theme) -> Element<Msg> {
     let items = match &state.config {
-        Resource::Success(config) => build_tree(config),
+        Resource::Success(config) => build_tree(config, &state.entity_target_fields_cache),
         _ => vec![],
     };
 

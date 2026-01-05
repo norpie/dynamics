@@ -76,6 +76,10 @@ pub struct State {
     pub quick_fields_list_state: ListState,
     pub quick_fields_entity_idx: Option<usize>,
     pub pending_quick_fields: bool,
+
+    // Per-entity field metadata cache (for showing types in tree)
+    // Key: entity_idx, Value: target entity's field metadata
+    pub entity_target_fields_cache: HashMap<usize, Vec<FieldMetadata>>,
 }
 
 impl Default for State {
@@ -112,6 +116,7 @@ impl Default for State {
             quick_fields_list_state: ListState::with_selection(),
             quick_fields_entity_idx: None,
             pending_quick_fields: false,
+            entity_target_fields_cache: HashMap::new(),
         }
     }
 }
