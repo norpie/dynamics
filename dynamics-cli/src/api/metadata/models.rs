@@ -15,6 +15,10 @@ pub struct FieldMetadata {
     pub is_primary_key: bool,
     pub max_length: Option<i32>,
     pub related_entity: Option<String>, // For lookups
+    /// Navigation property name for OData $expand (e.g., "ownerid", "parentcustomerid_account")
+    /// This comes from ManyToOneRelationships.ReferencingEntityNavigationPropertyName
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub navigation_property_name: Option<String>,
     /// Option values for OptionSet/MultiSelectOptionSet fields
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub option_values: Vec<OptionSetValue>,

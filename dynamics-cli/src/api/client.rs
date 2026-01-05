@@ -1089,6 +1089,7 @@ impl DynamicsClient {
                     is_primary_key: false, // TODO: detect from Key element
                     max_length: None,
                     related_entity: None,
+                    navigation_property_name: None, // Not available in XML metadata
                     option_values: vec![], // Not available in XML metadata
                 });
             }
@@ -1136,6 +1137,7 @@ impl DynamicsClient {
                     is_primary_key: false,
                     max_length: None,
                     related_entity,
+                    navigation_property_name: Some(field_name.to_string()), // Nav prop name is the property name
                     option_values: vec![], // Not available in XML metadata
                 });
             }
@@ -1248,7 +1250,7 @@ impl DynamicsClient {
         Ok(result)
     }
 
-    /// Fetch entity field definitions from EntityDefinitions endpoint (attributes only, no navigation properties)
+    /// Fetch entity field definitions from EntityDefinitions endpoint (includes navigation property names)
     pub async fn fetch_entity_fields_alt(&self, entity_name: &str) -> anyhow::Result<Vec<super::metadata::FieldMetadata>> {
         let url = format!(
             "{}/{}/EntityDefinitions(LogicalName='{}')/Attributes",
@@ -1259,6 +1261,9 @@ impl DynamicsClient {
 
         // Fetch picklist option sets in parallel (requires type-specific endpoint)
         let optionset_map = self.fetch_picklist_optionsets(entity_name).await.unwrap_or_default();
+
+        // Fetch navigation property names from ManyToOneRelationships
+        let nav_prop_map = self.fetch_navigation_property_names(entity_name).await.unwrap_or_default();
 
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
@@ -1339,6 +1344,13 @@ impl DynamicsClient {
                         vec![]
                     };
 
+                    // Get navigation property name for lookup fields
+                    let navigation_property_name = if related_entity.is_some() {
+                        nav_prop_map.get(&logical_name).cloned()
+                    } else {
+                        None
+                    };
+
                     Some(super::metadata::FieldMetadata {
                         logical_name,
                         schema_name,
@@ -1348,6 +1360,7 @@ impl DynamicsClient {
                         is_primary_key,
                         max_length,
                         related_entity,
+                        navigation_property_name,
                         option_values,
                     })
                 })
@@ -1357,6 +1370,53 @@ impl DynamicsClient {
         } else {
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
             anyhow::bail!("Field metadata fetch failed with status {}: {}", status, error_text)
+        }
+    }
+
+    /// Fetch navigation property names for lookup fields from ManyToOneRelationships
+    /// Returns a HashMap mapping logical_name (ReferencingAttribute) to navigation property name
+    async fn fetch_navigation_property_names(&self, entity_name: &str) -> anyhow::Result<HashMap<String, String>> {
+        let url = format!(
+            "{}/{}/EntityDefinitions(LogicalName='{}')/ManyToOneRelationships?$select=ReferencingAttribute,ReferencingEntityNavigationPropertyName",
+            self.base_url,
+            constants::api_path(),
+            entity_name
+        );
+
+        // Apply rate limiting before making the request
+        let _permit = self.apply_rate_limiting().await?;
+
+        let response = self.retry_policy.execute(|| async {
+            self.http_client
+                .get(&url)
+                .bearer_auth(&self.access_token)
+                .header("Accept", headers::CONTENT_TYPE_JSON)
+                .header("OData-Version", headers::ODATA_VERSION)
+                .send()
+                .await
+        }).await?;
+
+        let status = response.status();
+        if status.is_success() {
+            let json: Value = response.json().await?;
+            let relationships = json["value"].as_array()
+                .ok_or_else(|| anyhow::anyhow!("Expected 'value' array in response"))?;
+
+            let mut nav_prop_map = HashMap::new();
+            for rel in relationships {
+                if let (Some(attr), Some(nav_prop)) = (
+                    rel["ReferencingAttribute"].as_str(),
+                    rel["ReferencingEntityNavigationPropertyName"].as_str()
+                ) {
+                    nav_prop_map.insert(attr.to_string(), nav_prop.to_string());
+                }
+            }
+
+            Ok(nav_prop_map)
+        } else {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            log::warn!("Navigation property fetch failed for {}: {} - {}", entity_name, status, error_text);
+            Ok(HashMap::new()) // Return empty map on failure, don't fail the whole metadata fetch
         }
     }
 

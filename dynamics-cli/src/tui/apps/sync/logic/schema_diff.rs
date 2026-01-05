@@ -207,6 +207,7 @@ mod tests {
             is_primary_key: false,
             max_length: None,
             related_entity: None,
+            navigation_property_name: None,
             option_values: vec![],
         }
     }
@@ -221,6 +222,7 @@ mod tests {
             is_primary_key: false,
             max_length: None,
             related_entity: Some(target.to_string()),
+            navigation_property_name: None,
             option_values: vec![],
         }
     }

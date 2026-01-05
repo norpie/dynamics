@@ -304,11 +304,11 @@ impl App for TransferPreviewApp {
                                 })
                                 .collect();
 
-                            // Build nav prop map: logical_name -> schema_name for lookups
+                            // Build nav prop map: logical_name -> navigation_property_name for lookups
                             let map: std::collections::HashMap<String, String> = fields
                                 .iter()
-                                .filter(|f| f.related_entity.is_some() && f.schema_name.is_some())
-                                .map(|f| (f.logical_name.clone(), f.schema_name.clone().unwrap()))
+                                .filter(|f| f.related_entity.is_some() && f.navigation_property_name.is_some())
+                                .map(|f| (f.logical_name.clone(), f.navigation_property_name.clone().unwrap()))
                                 .collect();
 
                             // Build lookup_fields set from ALL source_metadata (including related entities)
@@ -1865,11 +1865,11 @@ impl App for TransferPreviewApp {
                             })
                             .collect();
 
-                        // Build nav prop map: logical_name -> schema_name for lookups
+                        // Build nav prop map: logical_name -> navigation_property_name for lookups
                         let map: std::collections::HashMap<String, String> = fields
                             .iter()
-                            .filter(|f| f.related_entity.is_some() && f.schema_name.is_some())
-                            .map(|f| (f.logical_name.clone(), f.schema_name.clone().unwrap()))
+                            .filter(|f| f.related_entity.is_some() && f.navigation_property_name.is_some())
+                            .map(|f| (f.logical_name.clone(), f.navigation_property_name.clone().unwrap()))
                             .collect();
 
                         // Build lookup_fields set from ALL source_metadata (including related entities)

@@ -665,6 +665,7 @@ mod tests {
                 }),
             ],
             resolvers: Vec::new(),
+            source_filter: None,
         };
 
         let result = TransformEngine::transform_entity(
@@ -701,6 +702,7 @@ mod tests {
                         }),
                     ],
                     resolvers: Vec::new(),
+                    source_filter: None,
                 },
             ],
         };
@@ -1097,6 +1099,7 @@ mod tests {
                     resolvers: vec![
                         Resolver::new("contact_by_email", "contact", "emailaddress1"),
                     ],
+                    source_filter: None,
                 },
             ],
         };

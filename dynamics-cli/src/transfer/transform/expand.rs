@@ -8,6 +8,26 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::transfer::types::{FieldPath, Transform};
 
+/// Case-insensitive lookup in a HashMap - returns the VALUE (navigation property name)
+fn get_case_insensitive<'a>(map: &'a std::collections::HashMap<String, String>, key: &str) -> Option<&'a String> {
+    let key_lower = key.to_lowercase();
+    map.iter()
+        .find(|(k, _)| k.to_lowercase() == key_lower)
+        .map(|(_, v)| v)
+}
+
+/// Case-insensitive contains check in a HashSet
+fn contains_case_insensitive(set: &std::collections::HashSet<String>, key: &str) -> bool {
+    let key_lower = key.to_lowercase();
+    set.iter().any(|k| k.to_lowercase() == key_lower)
+}
+
+/// Case-insensitive contains check in a BTreeMap
+fn btree_contains_key_case_insensitive<V>(map: &BTreeMap<String, V>, key: &str) -> bool {
+    let key_lower = key.to_lowercase();
+    map.keys().any(|k| k.to_lowercase() == key_lower)
+}
+
 /// A tree structure for building nested OData expand clauses
 #[derive(Debug, Default)]
 pub struct ExpandTree {
@@ -88,7 +108,7 @@ impl ExpandTree {
             .iter()
             .map(|(field, node)| {
                 let nav_prop_name = nav_prop_map
-                    .and_then(|m| m.get(field))
+                    .and_then(|m| get_case_insensitive(m, field))
                     .map(|s| s.as_str())
                     .unwrap_or(field);
                 Self::build_node_string(nav_prop_name, field, node, nav_prop_map, lookup_fields)
@@ -119,9 +139,9 @@ impl ExpandTree {
         // 2. It's in the lookup_fields set (known to be a lookup on a related entity)
         let select_fields: Vec<String> = node.selects.iter()
             .map(|s| {
-                let is_expanded = node.children.contains_key(s);
+                let is_expanded = btree_contains_key_case_insensitive(&node.children, s);
                 let is_known_lookup = lookup_fields
-                    .map(|lf| lf.contains(s))
+                    .map(|lf| contains_case_insensitive(lf, s))
                     .unwrap_or(false);
 
                 if is_expanded || is_known_lookup {
@@ -149,7 +169,7 @@ impl ExpandTree {
                 .iter()
                 .map(|(child_field, child_node)| {
                     let child_nav_prop = nav_prop_map
-                        .and_then(|m| m.get(child_field))
+                        .and_then(|m| get_case_insensitive(m, child_field))
                         .map(|s| s.as_str())
                         .unwrap_or(child_field);
                     Self::build_node_string(child_nav_prop, child_field, child_node, nav_prop_map, lookup_fields)
@@ -383,5 +403,39 @@ mod tests {
         let clauses = tree.build_expand_clauses(Some(&nav_prop_map), Some(&lookup_fields));
         // Navigation property should be schema-cased, and lookup field should use _value format
         assert_eq!(clauses[0], "nrq_DeadlineId($select=_nrq_typeid_value)");
+    }
+
+    #[test]
+    fn test_case_insensitive_nav_prop_lookup() {
+        use std::collections::HashMap;
+
+        let mut tree = ExpandTree::new();
+        // Path uses PascalCase
+        tree.add_path(&FieldPath::parse("OwnerId.domainname").unwrap());
+
+        // Map has lowercase key
+        let mut nav_prop_map = HashMap::new();
+        nav_prop_map.insert("ownerid".to_string(), "ownerid".to_string());
+
+        let clauses = tree.build_expand_clauses(Some(&nav_prop_map), None);
+        // Should find the nav prop despite case mismatch
+        assert_eq!(clauses[0], "ownerid($select=domainname)");
+    }
+
+    #[test]
+    fn test_case_insensitive_lookup_fields() {
+        use std::collections::HashSet;
+
+        let mut tree = ExpandTree::new();
+        // Path uses lowercase
+        tree.add_path(&FieldPath::parse("accountid.primarycontactid").unwrap());
+
+        // Set has PascalCase
+        let mut lookup_fields = HashSet::new();
+        lookup_fields.insert("PrimaryContactId".to_string());
+
+        let clauses = tree.build_expand_clauses(None, Some(&lookup_fields));
+        // Should detect as lookup field despite case mismatch
+        assert_eq!(clauses[0], "accountid($select=_primarycontactid_value)");
     }
 }
