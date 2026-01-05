@@ -93,20 +93,15 @@ impl TreeItem for QueueTreeNode {
     fn children(&self) -> Vec<Self> {
         match self {
             Self::Parent { item, .. } => {
-                // Convert operations to child nodes
-                // For single operations, show the operation as child for inspection
-                // For batches (2+), first operation is shown in parent, rest are children
-                let skip_count = if item.operations.len() == 1 { 0 } else { 1 };
-
+                // Convert all operations to child nodes
                 item.operations
                     .operations()
                     .iter()
-                    .skip(skip_count)
                     .enumerate()
                     .map(|(idx, op)| Self::Child {
                         operation: op.clone(),
                         parent_id: item.id.clone(),
-                        index: idx + skip_count, // Correct index based on skip count
+                        index: idx,
                     })
                     .collect()
             }
