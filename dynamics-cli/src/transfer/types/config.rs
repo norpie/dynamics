@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Resolver, Transform};
+use super::{Condition, FieldPath, Resolver, Transform};
 
 /// Mode for transfer configuration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -315,6 +315,37 @@ impl Default for TransferConfig {
     }
 }
 
+/// Filter for source records - only matching records are processed
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SourceFilter {
+    /// Field to evaluate
+    pub field_path: FieldPath,
+    /// Condition to check
+    pub condition: Condition,
+}
+
+impl SourceFilter {
+    /// Create a new source filter
+    pub fn new(field_path: FieldPath, condition: Condition) -> Self {
+        SourceFilter { field_path, condition }
+    }
+
+    /// Evaluate filter against a record - returns true if record should be processed
+    pub fn matches(&self, record: &serde_json::Value) -> bool {
+        use crate::transfer::transform::resolve_path;
+        let value = resolve_path(record, &self.field_path);
+        let result = self.condition.evaluate(&value);
+        log::debug!(
+            "Filter check: field={} actual={:?} condition={} result={}",
+            self.field_path,
+            value,
+            self.condition,
+            result
+        );
+        result
+    }
+}
+
 /// Mapping from a source entity to a target entity
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntityMapping {
@@ -331,6 +362,9 @@ pub struct EntityMapping {
     /// Filter controlling which operations are executed
     #[serde(default)]
     pub operation_filter: OperationFilter,
+    /// Optional filter for source records - only matching records are processed
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_filter: Option<SourceFilter>,
     /// Resolvers for lookup field resolution (scoped to this entity)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub resolvers: Vec<Resolver>,
@@ -351,6 +385,7 @@ impl EntityMapping {
             target_entity: target_entity.into(),
             priority,
             operation_filter: OperationFilter::default(),
+            source_filter: None,
             resolvers: Vec::new(),
             field_mappings: Vec::new(),
         }

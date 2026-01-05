@@ -143,22 +143,36 @@ fn build_entity_queue_items(
 ) -> Vec<QueueItem> {
     let mut items = Vec::new();
 
-    // Handle target-only records first (phase 0) - only if delete or deactivate is enabled
-    if entity.operation_filter.has_orphan_action() {
-        let target_only: Vec<_> = entity
-            .records
-            .iter()
-            .filter(|r| r.action == RecordAction::TargetOnly)
-            .collect();
+    // Handle delete records first (phase 0)
+    let deletes: Vec<_> = entity
+        .records
+        .iter()
+        .filter(|r| r.action == RecordAction::Delete)
+        .collect();
 
-        if !target_only.is_empty() {
-            items.extend(build_target_only_queue_items(
-                entity,
-                transfer,
-                &target_only,
-                options,
-            ));
-        }
+    if !deletes.is_empty() {
+        items.extend(build_delete_queue_items(
+            entity,
+            transfer,
+            &deletes,
+            options,
+        ));
+    }
+
+    // Handle deactivate records (also phase 0)
+    let deactivates: Vec<_> = entity
+        .records
+        .iter()
+        .filter(|r| r.action == RecordAction::Deactivate)
+        .collect();
+
+    if !deactivates.is_empty() {
+        items.extend(build_deactivate_queue_items(
+            entity,
+            transfer,
+            &deactivates,
+            options,
+        ));
     }
 
     // Build queue items for creates (phase 1) - only if creates are enabled
@@ -277,6 +291,168 @@ fn build_phase_queue_items(
                     transfer.config_name,
                     entity.entity_name,
                     phase.label(),
+                    i + 1,
+                    total_batches,
+                    chunk.len()
+                )
+            };
+
+            let metadata = QueueMetadata {
+                source: "Transfer".to_string(),
+                entity_type: format!("transfer: {}", entity.entity_name),
+                description,
+                row_number: None,
+                environment_name: transfer.target_env.clone(),
+            };
+
+            QueueItem::new(ops, metadata, priority)
+        })
+        .collect()
+}
+
+/// Build queue items for delete records
+fn build_delete_queue_items(
+    entity: &ResolvedEntity,
+    transfer: &ResolvedTransfer,
+    records: &[&ResolvedRecord],
+    options: &QueueBuildOptions,
+) -> Vec<QueueItem> {
+    if records.is_empty() {
+        return Vec::new();
+    }
+
+    // Calculate priority (phase 0 - deletes first)
+    let priority = BASE_PRIORITY
+        .saturating_add((entity.priority as u8).saturating_mul(3))
+        .saturating_add(Phase::TargetOnly.priority_offset())
+        .min(127);
+
+    // Use entity_set_name for API calls
+    let entity_set = entity
+        .entity_set_name
+        .as_ref()
+        .unwrap_or(&entity.entity_name);
+
+    // Build delete operations
+    let operations: Vec<Operation> = records
+        .iter()
+        .map(|record| Operation::delete(entity_set, record.source_id.to_string()))
+        .collect();
+
+    // Determine batch size
+    let batch_size = if options.batch_size == 0 {
+        operations.len()
+    } else {
+        options.batch_size
+    };
+
+    // Split into batches
+    let chunks: Vec<_> = operations.chunks(batch_size).collect();
+    let total_batches = chunks.len();
+
+    chunks
+        .into_iter()
+        .enumerate()
+        .map(|(i, chunk)| {
+            let ops = Operations::from_operations(chunk.to_vec());
+
+            let description = if total_batches == 1 {
+                format!(
+                    "{}: {} delete ({} records)",
+                    transfer.config_name,
+                    entity.entity_name,
+                    chunk.len()
+                )
+            } else {
+                format!(
+                    "{}: {} delete batch {}/{} ({} records)",
+                    transfer.config_name,
+                    entity.entity_name,
+                    i + 1,
+                    total_batches,
+                    chunk.len()
+                )
+            };
+
+            let metadata = QueueMetadata {
+                source: "Transfer".to_string(),
+                entity_type: format!("transfer: {}", entity.entity_name),
+                description,
+                row_number: None,
+                environment_name: transfer.target_env.clone(),
+            };
+
+            QueueItem::new(ops, metadata, priority)
+        })
+        .collect()
+}
+
+/// Build queue items for deactivate records
+fn build_deactivate_queue_items(
+    entity: &ResolvedEntity,
+    transfer: &ResolvedTransfer,
+    records: &[&ResolvedRecord],
+    options: &QueueBuildOptions,
+) -> Vec<QueueItem> {
+    if records.is_empty() {
+        return Vec::new();
+    }
+
+    // Calculate priority (phase 0 - deactivates first)
+    let priority = BASE_PRIORITY
+        .saturating_add((entity.priority as u8).saturating_mul(3))
+        .saturating_add(Phase::TargetOnly.priority_offset())
+        .min(127);
+
+    // Use entity_set_name for API calls
+    let entity_set = entity
+        .entity_set_name
+        .as_ref()
+        .unwrap_or(&entity.entity_name);
+
+    // Build deactivate operations (PATCH with statecode = 1)
+    let operations: Vec<Operation> = records
+        .iter()
+        .map(|record| {
+            let mut payload = serde_json::Map::new();
+            payload.insert("statecode".to_string(), serde_json::Value::Number(1.into()));
+            Operation::update(
+                entity_set,
+                record.source_id.to_string(),
+                serde_json::Value::Object(payload),
+            )
+        })
+        .collect();
+
+    // Determine batch size
+    let batch_size = if options.batch_size == 0 {
+        operations.len()
+    } else {
+        options.batch_size
+    };
+
+    // Split into batches
+    let chunks: Vec<_> = operations.chunks(batch_size).collect();
+    let total_batches = chunks.len();
+
+    chunks
+        .into_iter()
+        .enumerate()
+        .map(|(i, chunk)| {
+            let ops = Operations::from_operations(chunk.to_vec());
+
+            let description = if total_batches == 1 {
+                format!(
+                    "{}: {} deactivate ({} records)",
+                    transfer.config_name,
+                    entity.entity_name,
+                    chunk.len()
+                )
+            } else {
+                format!(
+                    "{}: {} deactivate batch {}/{} ({} records)",
+                    transfer.config_name,
+                    entity.entity_name,
                     i + 1,
                     total_batches,
                     chunk.len()

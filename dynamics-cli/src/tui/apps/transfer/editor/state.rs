@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OperationFilter, Transform, Replacement, Resolver, ResolverFallback};
+use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OperationFilter, Transform, Replacement, Resolver, ResolverFallback, SourceFilter, FieldPath, Condition};
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField, ScrollableState};
 use crate::tui::widgets::events::{TreeEvent, AutocompleteEvent, TextInputEvent};
@@ -122,6 +122,11 @@ pub struct EntityMappingForm {
     pub allow_updates: bool,
     pub allow_deletes: bool,
     pub allow_deactivates: bool,
+    /// Source record filter
+    pub filter_enabled: bool,
+    pub filter_field: AutocompleteField,
+    pub filter_condition_type: ConditionType,
+    pub filter_value: TextInputField,
 }
 
 impl Default for EntityMappingForm {
@@ -134,6 +139,10 @@ impl Default for EntityMappingForm {
             allow_updates: true,
             allow_deletes: false,
             allow_deactivates: false,
+            filter_enabled: false,
+            filter_field: AutocompleteField::default(),
+            filter_condition_type: ConditionType::default(),
+            filter_value: TextInputField::default(),
         }
     }
 }
@@ -154,10 +163,34 @@ impl EntityMappingForm {
         form.allow_updates = mapping.operation_filter.updates;
         form.allow_deletes = mapping.operation_filter.deletes;
         form.allow_deactivates = mapping.operation_filter.deactivates;
+
+        // Load source filter if present
+        if let Some(filter) = &mapping.source_filter {
+            form.filter_enabled = true;
+            form.filter_field.value = filter.field_path.to_string();
+            form.filter_condition_type = ConditionType::from_condition(&filter.condition);
+            form.filter_value.value = match &filter.condition {
+                Condition::Equals { value } | Condition::NotEquals { value } => {
+                    value.to_string()
+                }
+                Condition::IsNull | Condition::IsNotNull => String::new(),
+            };
+        }
+
         form
     }
 
     pub fn to_mapping(&self) -> EntityMapping {
+        // Build source filter if enabled
+        let source_filter = if self.filter_enabled && !self.filter_field.value.trim().is_empty() {
+            let field_path = FieldPath::parse(self.filter_field.value.trim())
+                .unwrap_or_else(|_| FieldPath::simple(self.filter_field.value.trim()));
+            let condition = self.filter_condition_type.to_condition(&self.filter_value.value);
+            Some(SourceFilter::new(field_path, condition))
+        } else {
+            None
+        };
+
         EntityMapping {
             id: None,
             source_entity: self.source_entity.value.trim().to_string(),
@@ -169,6 +202,7 @@ impl EntityMappingForm {
                 deletes: self.allow_deletes,
                 deactivates: self.allow_deactivates,
             },
+            source_filter,
             resolvers: vec![],
             field_mappings: vec![],
         }
@@ -488,6 +522,30 @@ impl ConditionType {
 
     pub fn needs_value(&self) -> bool {
         matches!(self, ConditionType::Equals | ConditionType::NotEquals)
+    }
+
+    /// Convert from a Condition enum value
+    pub fn from_condition(condition: &Condition) -> Self {
+        match condition {
+            Condition::Equals { .. } => ConditionType::Equals,
+            Condition::NotEquals { .. } => ConditionType::NotEquals,
+            Condition::IsNull => ConditionType::IsNull,
+            Condition::IsNotNull => ConditionType::IsNotNull,
+        }
+    }
+
+    /// Convert to a Condition enum value
+    pub fn to_condition(&self, value_str: &str) -> Condition {
+        match self {
+            ConditionType::Equals => Condition::Equals {
+                value: parse_value(value_str),
+            },
+            ConditionType::NotEquals => Condition::NotEquals {
+                value: parse_value(value_str),
+            },
+            ConditionType::IsNull => Condition::IsNull,
+            ConditionType::IsNotNull => Condition::IsNotNull,
+        }
     }
 }
 
@@ -1073,6 +1131,12 @@ pub enum Msg {
     EntityFormToggleUpdates,
     EntityFormToggleDeletes,
     EntityFormToggleDeactivates,
+
+    // Entity source filter
+    EntityFormToggleFilter,
+    EntityFormFilterField(AutocompleteEvent),
+    EntityFormToggleFilterCondition,
+    EntityFormFilterValue(TextInputEvent),
 
     // Field mapping actions
     AddField(usize), // entity_idx

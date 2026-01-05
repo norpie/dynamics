@@ -47,12 +47,17 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
             Resource::Success(e) => e.as_slice(),
             _ => &[],
         };
+        let source_fields_for_filter = match &state.source_fields {
+            Resource::Success(f) => f.as_slice(),
+            _ => &[],
+        };
         view = view.with_app_modal(
             render_entity_modal(
                 &mut state.entity_form,
                 state.editing_entity_idx.is_some(),
                 source_entities,
                 target_entities,
+                source_fields_for_filter,
                 theme,
             ),
             Alignment::Center,
@@ -214,8 +219,10 @@ fn render_entity_modal(
     is_edit: bool,
     source_entities: &[String],
     target_entities: &[String],
+    source_fields: &[FieldMetadata],
     theme: &Theme,
 ) -> Element<Msg> {
+    use super::state::ConditionType;
     let title = if is_edit { "Edit Entity Mapping" } else { "Add Entity Mapping" };
 
     // Source entity autocomplete
@@ -285,6 +292,63 @@ fn render_entity_modal(
 
     let op_filter_panel = Element::panel(op_filter_row).title("Operations").build();
 
+    // Source filter section
+    let filter_toggle_label = if form.filter_enabled { "[x] Source Filter" } else { "[ ] Source Filter" };
+    let filter_toggle_btn = Element::button(FocusId::new("entity-filter-toggle"), filter_toggle_label)
+        .on_press(Msg::EntityFormToggleFilter)
+        .build();
+
+    let filter_panel = if form.filter_enabled {
+        // Field autocomplete
+        let field_options: Vec<String> = source_fields.iter().map(|f| f.logical_name.clone()).collect();
+        let field_input = Element::autocomplete(
+            FocusId::new("entity-filter-field"),
+            field_options,
+            form.filter_field.value.clone(),
+            &mut form.filter_field.state,
+        )
+        .placeholder(if source_fields.is_empty() { "Select source entity first..." } else { "Select field..." })
+        .on_event(Msg::EntityFormFilterField)
+        .build();
+
+        // Condition type button
+        let condition_label = format!("{} (click to change)", form.filter_condition_type.label());
+        let condition_btn = Element::button(FocusId::new("entity-filter-condition"), condition_label)
+            .on_press(Msg::EntityFormToggleFilterCondition)
+            .build();
+
+        // Value input (only for Equals/NotEquals)
+        let filter_content = if form.filter_condition_type.needs_value() {
+            let value_input = Element::text_input(
+                FocusId::new("entity-filter-value"),
+                &form.filter_value.value,
+                &mut form.filter_value.state,
+            )
+            .placeholder("Filter value...")
+            .on_event(Msg::EntityFormFilterValue)
+            .build();
+
+            ColumnBuilder::new()
+                .add(filter_toggle_btn, LayoutConstraint::Length(3))
+                .add(field_input, LayoutConstraint::Length(3))
+                .add(condition_btn, LayoutConstraint::Length(3))
+                .add(value_input, LayoutConstraint::Length(3))
+                .spacing(1)
+                .build()
+        } else {
+            ColumnBuilder::new()
+                .add(filter_toggle_btn, LayoutConstraint::Length(3))
+                .add(field_input, LayoutConstraint::Length(3))
+                .add(condition_btn, LayoutConstraint::Length(3))
+                .spacing(1)
+                .build()
+        };
+
+        Element::panel(filter_content).title("Source Record Filter").build()
+    } else {
+        Element::panel(filter_toggle_btn).title("Source Record Filter").build()
+    };
+
     // Buttons
     let cancel_btn = Element::button(FocusId::new("entity-cancel"), "Cancel")
         .on_press(Msg::CloseEntityModal)
@@ -304,20 +368,31 @@ fn render_entity_modal(
         .add(save_btn, LayoutConstraint::Length(12))
         .build();
 
+    // Calculate filter panel height (3 per element + spacing + panel border)
+    let filter_panel_height = if form.filter_enabled {
+        if form.filter_condition_type.needs_value() { 18 } else { 14 }
+    } else {
+        5
+    };
+
     let form_content = ColumnBuilder::new()
         .add(source_panel, LayoutConstraint::Length(3))
         .add(target_panel, LayoutConstraint::Length(3))
         .add(priority_panel, LayoutConstraint::Length(3))
         .add(op_filter_panel, LayoutConstraint::Length(5))
+        .add(filter_panel, LayoutConstraint::Length(filter_panel_height as u16))
         .add(Element::text(""), LayoutConstraint::Fill(1))
         .add(button_row, LayoutConstraint::Length(3))
         .spacing(1)
         .build();
 
+    // Adjust modal height based on filter state
+    let modal_height = 26 + filter_panel_height;
+
     Element::panel(Element::container(form_content).padding(1).build())
         .title(title)
         .width(65)
-        .height(26)
+        .height(modal_height as u16)
         .build()
 }
 

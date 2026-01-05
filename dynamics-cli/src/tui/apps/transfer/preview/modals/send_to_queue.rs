@@ -14,6 +14,8 @@ pub fn render(resolved: &ResolvedTransfer, theme: &Theme) -> Element<Msg> {
     // Calculate counts per entity and totals
     let mut total_creates = 0usize;
     let mut total_updates = 0usize;
+    let mut total_deletes = 0usize;
+    let mut total_deactivates = 0usize;
     let mut total_disabled = 0usize;
 
     let mut entity_lines: Vec<Element<Msg>> = vec![];
@@ -21,9 +23,11 @@ pub fn render(resolved: &ResolvedTransfer, theme: &Theme) -> Element<Msg> {
     for entity in &resolved.entities {
         let raw_creates = entity.create_count();
         let raw_updates = entity.update_count();
+        let raw_deletes = entity.delete_count();
+        let raw_deactivates = entity.deactivate_count();
 
         // Skip entities with no operations
-        if raw_creates == 0 && raw_updates == 0 {
+        if raw_creates == 0 && raw_updates == 0 && raw_deletes == 0 && raw_deactivates == 0 {
             continue;
         }
 
@@ -38,9 +42,14 @@ pub fn render(resolved: &ResolvedTransfer, theme: &Theme) -> Element<Msg> {
         } else {
             (0, raw_updates)
         };
+        // Deletes and deactivates are always enabled if they exist (they're created based on the filter)
+        let filtered_deletes = raw_deletes;
+        let filtered_deactivates = raw_deactivates;
 
         total_creates += filtered_creates;
         total_updates += filtered_updates;
+        total_deletes += filtered_deletes;
+        total_deactivates += filtered_deactivates;
         total_disabled += disabled_creates + disabled_updates;
 
         // Entity name line
@@ -104,9 +113,35 @@ pub fn render(resolved: &ResolvedTransfer, theme: &Theme) -> Element<Msg> {
             };
             entity_lines.push(update_line);
         }
+
+        // Delete line
+        if raw_deletes > 0 {
+            let delete_line = Element::styled_text(Line::from(vec![
+                Span::styled("    - ", Style::default().fg(theme.text_tertiary)),
+                Span::styled(
+                    format!("{} records to delete", filtered_deletes),
+                    Style::default().fg(theme.accent_error),
+                ),
+            ]))
+            .build();
+            entity_lines.push(delete_line);
+        }
+
+        // Deactivate line
+        if raw_deactivates > 0 {
+            let deactivate_line = Element::styled_text(Line::from(vec![
+                Span::styled("    - ", Style::default().fg(theme.text_tertiary)),
+                Span::styled(
+                    format!("{} records to deactivate", filtered_deactivates),
+                    Style::default().fg(theme.accent_warning),
+                ),
+            ]))
+            .build();
+            entity_lines.push(deactivate_line);
+        }
     }
 
-    let total_actionable = total_creates + total_updates;
+    let total_actionable = total_creates + total_updates + total_deletes + total_deactivates;
 
     // Summary section
     let summary_header = Element::styled_text(Line::from(vec![Span::styled(

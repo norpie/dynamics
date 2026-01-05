@@ -167,7 +167,19 @@ impl App for MappingEditorApp {
                         state.show_entity_modal = true;
                         state.editing_entity_idx = Some(idx);
                         state.entity_form = EntityMappingForm::from_mapping(mapping);
-                        return Command::set_focus(FocusId::new("entity-source"));
+
+                        // Load source fields for filter autocomplete
+                        let source_entity = mapping.source_entity.clone();
+                        let source_env = config.source_env.clone();
+                        state.source_fields = Resource::Loading;
+
+                        return Command::batch(vec![
+                            Command::set_focus(FocusId::new("entity-source")),
+                            Command::perform(
+                                load_entity_fields(source_env, source_entity),
+                                Msg::SourceFieldsLoaded,
+                            ),
+                        ]);
                     }
                 }
                 Command::None
@@ -194,9 +206,10 @@ impl App for MappingEditorApp {
                     let mut new_mapping = state.entity_form.to_mapping();
 
                     if let Some(idx) = state.editing_entity_idx {
-                        // Editing: preserve field mappings
+                        // Editing: preserve field mappings and resolvers
                         if let Some(existing) = config.entity_mappings.get(idx) {
                             new_mapping.field_mappings = existing.field_mappings.clone();
+                            new_mapping.resolvers = existing.resolvers.clone();
                         }
                         config.entity_mappings[idx] = new_mapping;
                     } else {
@@ -226,7 +239,31 @@ impl App for MappingEditorApp {
                     Resource::Success(entities) => entities.clone(),
                     _ => vec![],
                 };
+
+                // Check if this is a selection event that should trigger field loading
+                let should_load_fields = matches!(
+                    &event,
+                    crate::tui::widgets::AutocompleteEvent::Select(_) |
+                    crate::tui::widgets::AutocompleteEvent::Navigate(crossterm::event::KeyCode::Enter)
+                );
+
                 state.entity_form.source_entity.handle_event::<Msg>(event, &options);
+
+                // Load source entity fields for filter autocomplete when entity is selected
+                if should_load_fields {
+                    let entity_name = state.entity_form.source_entity.value.trim().to_string();
+                    if !entity_name.is_empty() && options.contains(&entity_name) {
+                        if let Resource::Success(config) = &state.config {
+                            let source_env = config.source_env.clone();
+                            state.source_fields = Resource::Loading;
+                            return Command::perform(
+                                load_entity_fields(source_env, entity_name),
+                                Msg::SourceFieldsLoaded,
+                            );
+                        }
+                    }
+                }
+
                 Command::None
             }
 
@@ -261,6 +298,31 @@ impl App for MappingEditorApp {
 
             Msg::EntityFormToggleDeactivates => {
                 state.entity_form.allow_deactivates = !state.entity_form.allow_deactivates;
+                Command::None
+            }
+
+            // Entity source filter
+            Msg::EntityFormToggleFilter => {
+                state.entity_form.filter_enabled = !state.entity_form.filter_enabled;
+                Command::None
+            }
+
+            Msg::EntityFormFilterField(event) => {
+                let options = match &state.source_fields {
+                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
+                    _ => vec![],
+                };
+                state.entity_form.filter_field.handle_event::<Msg>(event, &options);
+                Command::None
+            }
+
+            Msg::EntityFormToggleFilterCondition => {
+                state.entity_form.filter_condition_type = state.entity_form.filter_condition_type.next();
+                Command::None
+            }
+
+            Msg::EntityFormFilterValue(event) => {
+                state.entity_form.filter_value.handle_event(event, Some(200));
                 Command::None
             }
 

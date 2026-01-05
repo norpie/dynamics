@@ -5,7 +5,7 @@ use sqlx::{Row, SqlitePool};
 
 use crate::transfer::{
     EntityMapping, FieldMapping, MatchField, OperationFilter, Resolver, ResolverFallback,
-    Transform, TransferConfig, TransferMode,
+    SourceFilter, Transform, TransferConfig, TransferMode,
 };
 
 /// Summary of a transfer config (for listing)
@@ -105,7 +105,8 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
     let entity_rows = sqlx::query(
         r#"
         SELECT id, source_entity, target_entity, priority,
-               allow_creates, allow_updates, allow_deletes, allow_deactivates
+               allow_creates, allow_updates, allow_deletes, allow_deactivates,
+               source_filter_json
         FROM transfer_entity_mappings
         WHERE config_id = ?
         ORDER BY priority, source_entity
@@ -198,12 +199,18 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
             });
         }
 
+        // Parse source filter from JSON if present
+        let source_filter: Option<SourceFilter> = entity_row
+            .try_get::<Option<String>, _>("source_filter_json")?
+            .and_then(|json| serde_json::from_str(&json).ok());
+
         entity_mappings.push(EntityMapping {
             id: Some(entity_id),
             source_entity: entity_row.try_get("source_entity")?,
             target_entity: entity_row.try_get("target_entity")?,
             priority: entity_row.try_get::<i64, _>("priority")? as u32,
             operation_filter,
+            source_filter,
             resolvers,
             field_mappings,
         });
@@ -278,13 +285,20 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
 
     // Insert entity mappings
     for entity in &config.entity_mappings {
+        // Serialize source filter to JSON if present
+        let source_filter_json: Option<String> = entity
+            .source_filter
+            .as_ref()
+            .map(|f| serde_json::to_string(f).unwrap_or_default());
+
         let entity_result = sqlx::query(
             r#"
             INSERT INTO transfer_entity_mappings (
                 config_id, source_entity, target_entity, priority,
-                allow_creates, allow_updates, allow_deletes, allow_deactivates
+                allow_creates, allow_updates, allow_deletes, allow_deactivates,
+                source_filter_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(config_id)
@@ -295,6 +309,7 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
         .bind(if entity.operation_filter.updates { 1i64 } else { 0i64 })
         .bind(if entity.operation_filter.deletes { 1i64 } else { 0i64 })
         .bind(if entity.operation_filter.deactivates { 1i64 } else { 0i64 })
+        .bind(&source_filter_json)
         .execute(&mut *tx)
         .await
         .context("Failed to insert entity mapping")?;

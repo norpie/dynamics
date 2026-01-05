@@ -118,6 +118,21 @@ impl TransformEngine {
             .collect();
         resolved.set_field_names(field_names.clone());
 
+        // Apply source filter if present
+        let filtered_source: Vec<&serde_json::Value> = if let Some(filter) = &mapping.source_filter {
+            let before_count = source_records.len();
+            let filtered: Vec<_> = source_records.iter().filter(|r| filter.matches(r)).collect();
+            log::debug!(
+                "Source filter applied: {} -> {} records (filtered out {})",
+                before_count,
+                filtered.len(),
+                before_count - filtered.len()
+            );
+            filtered
+        } else {
+            source_records.iter().collect()
+        };
+
         // Index target records by primary key for fast lookup
         let target_index: HashMap<String, &serde_json::Value> = target_records
             .iter()
@@ -129,16 +144,16 @@ impl TransformEngine {
             .collect();
 
         log::debug!(
-            "Transform entity '{}': {} source records, {} target records, {} indexed by target pk '{}'",
+            "Transform entity '{}': {} source records (after filter), {} target records, {} indexed by target pk '{}'",
             mapping.target_entity,
-            source_records.len(),
+            filtered_source.len(),
             target_records.len(),
             target_index.len(),
             ctx.target_pk_field
         );
 
         // Debug: show sample IDs if there's a mismatch
-        if !source_records.is_empty() && !target_records.is_empty() && target_index.is_empty() {
+        if !filtered_source.is_empty() && !target_records.is_empty() && target_index.is_empty() {
             if let Some(first_target) = target_records.first() {
                 log::warn!(
                     "Target index is empty! Sample target record keys: {:?}",
@@ -147,8 +162,8 @@ impl TransformEngine {
             }
         }
 
-        // Build set of source IDs for target-only detection
-        let source_ids: HashSet<String> = source_records
+        // Build set of source IDs for target-only detection (uses filtered records)
+        let source_ids: HashSet<String> = filtered_source
             .iter()
             .filter_map(|r| {
                 r.get(&ctx.source_pk_field)
@@ -157,7 +172,7 @@ impl TransformEngine {
             })
             .collect();
 
-        for record in source_records {
+        for record in filtered_source {
             let resolved_record = Self::transform_record(
                 record,
                 &mapping.field_mappings,
@@ -170,6 +185,7 @@ impl TransformEngine {
         }
 
         // Find target-only records (exist in target but not in source)
+        // Create Delete/Deactivate records based on operation filter
         for target in target_records {
             let target_id_str = target
                 .get(&ctx.target_pk_field)
@@ -180,7 +196,16 @@ impl TransformEngine {
                 // This record exists only in target
                 let target_id = Uuid::parse_str(target_id_str).unwrap_or_else(|_| Uuid::new_v4());
                 let fields = Self::extract_fields_from_target(target, &field_names);
-                resolved.add_record(ResolvedRecord::target_only(target_id, fields));
+
+                // Create appropriate record based on operation filter
+                let record = if mapping.operation_filter.deletes {
+                    ResolvedRecord::delete(target_id)
+                } else if mapping.operation_filter.deactivates {
+                    ResolvedRecord::deactivate(target_id)
+                } else {
+                    ResolvedRecord::target_only(target_id, fields)
+                };
+                resolved.add_record(record);
             }
         }
 

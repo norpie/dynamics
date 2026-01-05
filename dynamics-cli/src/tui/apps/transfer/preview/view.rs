@@ -413,7 +413,7 @@ impl RecordListItem {
             RecordAction::Delete => ("delete    ", self.theme.accent_error),
             RecordAction::Deactivate => ("deactivate", self.theme.accent_warning),
             RecordAction::NoChange => ("nochange  ", self.theme.text_tertiary),
-            RecordAction::TargetOnly => ("targetonly", self.theme.accent_primary),
+            RecordAction::TargetOnly => ("targetonly", self.theme.text_tertiary),
             RecordAction::Skip => ("skip      ", self.theme.accent_warning),
             RecordAction::Error => ("error     ", self.theme.accent_error),
         };

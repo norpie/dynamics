@@ -700,10 +700,12 @@ impl App for TransferPreviewApp {
                     }
 
                     log::info!(
-                        "Transform complete: {} records ({} create, {} update, {} nochange, {} target-only, {} skip, {} error)",
+                        "Transform complete: {} records ({} create, {} update, {} delete, {} deactivate, {} nochange, {} target-only, {} skip, {} error)",
                         resolved.total_records(),
                         resolved.create_count(),
                         resolved.update_count(),
+                        resolved.delete_count(),
+                        resolved.deactivate_count(),
                         resolved.nochange_count(),
                         resolved.target_only_count(),
                         resolved.skip_count(),
@@ -2035,9 +2037,12 @@ impl App for TransferPreviewApp {
                     }
 
                     // Check if there's anything to send
-                    let actionable_count = resolved.create_count() + resolved.update_count();
+                    let actionable_count = resolved.create_count()
+                        + resolved.update_count()
+                        + resolved.delete_count()
+                        + resolved.deactivate_count();
                     if actionable_count == 0 {
-                        log::info!("Nothing to send to queue (no creates or updates)");
+                        log::info!("Nothing to send to queue (no actionable operations)");
                         return Command::None;
                     }
 
@@ -2143,10 +2148,16 @@ impl App for TransferPreviewApp {
                     Span::styled(format!("{}", entity.update_count()), Style::default().fg(theme.accent_secondary)),
                     Span::styled(" update".to_string(), Style::default().fg(theme.text_secondary)),
                     Span::raw(" "),
+                    Span::styled(format!("{}", entity.delete_count()), Style::default().fg(theme.accent_error)),
+                    Span::styled(" delete".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::raw(" "),
+                    Span::styled(format!("{}", entity.deactivate_count()), Style::default().fg(theme.accent_warning)),
+                    Span::styled(" deactivate".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::raw(" "),
                     Span::styled(format!("{}", entity.nochange_count()), Style::default().fg(theme.text_tertiary)),
                     Span::styled(" unchanged".to_string(), Style::default().fg(theme.text_secondary)),
                     Span::raw(" "),
-                    Span::styled(format!("{}", entity.target_only_count()), Style::default().fg(theme.accent_primary)),
+                    Span::styled(format!("{}", entity.target_only_count()), Style::default().fg(theme.text_tertiary)),
                     Span::styled(" target-only".to_string(), Style::default().fg(theme.text_secondary)),
                     Span::raw(" "),
                     Span::styled(format!("{}", entity.skip_count()), Style::default().fg(theme.accent_warning)),
