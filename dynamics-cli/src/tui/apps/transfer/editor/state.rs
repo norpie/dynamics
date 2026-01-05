@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OperationFilter, Transform, Replacement, Resolver, ResolverFallback, SourceFilter, FieldPath, Condition};
 use crate::tui::resource::Resource;
-use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField, ScrollableState};
-use crate::tui::widgets::events::{TreeEvent, AutocompleteEvent, TextInputEvent};
+use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField, ScrollableState, ListState};
+use crate::tui::widgets::events::{TreeEvent, AutocompleteEvent, TextInputEvent, ListEvent};
 use crate::api::FieldMetadata;
 
 /// Parameters to initialize the editor
@@ -69,6 +69,13 @@ pub struct State {
     // Delete confirmation
     pub show_delete_confirm: bool,
     pub delete_target: Option<DeleteTarget>,
+
+    // Quick field picker modal
+    pub show_quick_fields_modal: bool,
+    pub quick_fields_available: Vec<FieldMetadata>,
+    pub quick_fields_list_state: ListState,
+    pub quick_fields_entity_idx: Option<usize>,
+    pub pending_quick_fields: bool,
 }
 
 impl Default for State {
@@ -100,7 +107,69 @@ impl Default for State {
             resolver_related_fields: HashMap::new(),
             show_delete_confirm: false,
             delete_target: None,
+            show_quick_fields_modal: false,
+            quick_fields_available: Vec::new(),
+            quick_fields_list_state: ListState::with_selection(),
+            quick_fields_entity_idx: None,
+            pending_quick_fields: false,
         }
+    }
+}
+
+impl State {
+    /// Compute fields available for quick-add
+    /// Returns fields that exist in both source and target (same logical_name),
+    /// excluding already-mapped fields and system fields
+    pub fn compute_quick_fields(&self, entity_idx: usize) -> Vec<FieldMetadata> {
+        use std::collections::HashSet;
+        use crate::tui::apps::sync::types::is_system_field;
+
+        let source_fields = match &self.source_fields {
+            Resource::Success(fields) => fields,
+            _ => return Vec::new(),
+        };
+
+        let target_fields = match &self.target_fields {
+            Resource::Success(fields) => fields,
+            _ => return Vec::new(),
+        };
+
+        let config = match &self.config {
+            Resource::Success(config) => config,
+            _ => return Vec::new(),
+        };
+
+        let entity_mapping = match config.entity_mappings.get(entity_idx) {
+            Some(m) => m,
+            None => return Vec::new(),
+        };
+
+        // Get already-mapped target fields
+        let already_mapped: HashSet<&str> = entity_mapping
+            .field_mappings
+            .iter()
+            .map(|fm| fm.target_field.as_str())
+            .collect();
+
+        // Build set of target field names for intersection check
+        let target_field_names: HashSet<&str> = target_fields
+            .iter()
+            .map(|f| f.logical_name.as_str())
+            .collect();
+
+        // Filter source fields: must exist in target, not already mapped, not system
+        let mut available: Vec<FieldMetadata> = source_fields
+            .iter()
+            .filter(|f| target_field_names.contains(f.logical_name.as_str()))
+            .filter(|f| !already_mapped.contains(f.logical_name.as_str()))
+            .filter(|f| !is_system_field(&f.logical_name))
+            .cloned()
+            .collect();
+
+        // Sort by logical name
+        available.sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
+
+        available
     }
 }
 
@@ -1225,6 +1294,12 @@ pub enum Msg {
         lookup_field: String,
         result: Result<Vec<FieldMetadata>, String>,
     },
+
+    // Quick field picker
+    OpenQuickFields,
+    CloseQuickFields,
+    QuickFieldsEvent(ListEvent),
+    SaveQuickFields,
 
     // Navigation
     Back,

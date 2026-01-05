@@ -2,7 +2,7 @@ use crate::config::repository::transfer::{get_transfer_config, save_transfer_con
 use crate::transfer::{ResolverFallback, TransferConfig};
 use crate::tui::element::FocusId;
 use crate::tui::resource::Resource;
-use crate::tui::widgets::TreeState;
+use crate::tui::widgets::{TreeState, ListState};
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
 use crate::api::{FieldMetadata, FieldType};
@@ -47,6 +47,11 @@ impl App for MappingEditorApp {
             resolver_related_fields: std::collections::HashMap::new(),
             show_delete_confirm: false,
             delete_target: None,
+            show_quick_fields_modal: false,
+            quick_fields_available: Vec::new(),
+            quick_fields_list_state: ListState::with_selection(),
+            quick_fields_entity_idx: None,
+            pending_quick_fields: false,
         };
 
         // Load config first (fast, local DB), then load entities with loading screen
@@ -1102,6 +1107,139 @@ impl App for MappingEditorApp {
                 Command::set_focus(FocusId::new(focus_id))
             }
 
+            // Quick field picker
+            Msg::OpenQuickFields => {
+                // Get current entity index from tree selection
+                let entity_idx = state.tree_state.selected()
+                    .and_then(|s| s.strip_prefix("entity_"))
+                    .and_then(|s| s.parse::<usize>().ok());
+
+                let Some(entity_idx) = entity_idx else {
+                    return Command::None;
+                };
+
+                // Check if fields are already loaded for this entity
+                if state.current_field_entity_idx == Some(entity_idx)
+                    && matches!(&state.source_fields, Resource::Success(_))
+                    && matches!(&state.target_fields, Resource::Success(_))
+                {
+                    // Fields loaded - open modal
+                    state.quick_fields_entity_idx = Some(entity_idx);
+                    state.quick_fields_available = state.compute_quick_fields(entity_idx);
+                    state.quick_fields_list_state = ListState::with_selection();
+                    state.show_quick_fields_modal = true;
+                    return Command::set_focus(FocusId::new("quick-fields-list"));
+                }
+
+                // Need to load fields first
+                let entity_info = if let Resource::Success(config) = &state.config {
+                    config.entity_mappings.get(entity_idx).map(|e| {
+                        (
+                            config.source_env.clone(),
+                            config.target_env.clone(),
+                            e.source_entity.clone(),
+                            e.target_entity.clone(),
+                        )
+                    })
+                } else {
+                    None
+                };
+
+                if let Some((source_env, target_env, source_entity, target_entity)) = entity_info {
+                    state.quick_fields_entity_idx = Some(entity_idx);
+                    state.current_field_entity_idx = Some(entity_idx);
+                    state.source_fields = Resource::Loading;
+                    state.target_fields = Resource::Loading;
+                    state.pending_quick_fields = true;
+
+                    return Command::perform_parallel()
+                        .add_task(
+                            format!("Loading source fields for {} ({})", source_entity, source_env),
+                            load_entity_fields(source_env.clone(), source_entity),
+                        )
+                        .add_task(
+                            format!("Loading target fields for {} ({})", target_entity, target_env),
+                            load_entity_fields(target_env.clone(), target_entity),
+                        )
+                        .with_title("Loading Field Metadata")
+                        .on_complete(AppId::TransferMappingEditor)
+                        .build(|task_idx, result| {
+                            let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                            match task_idx {
+                                0 => Msg::SourceFieldsLoaded(*data),
+                                _ => Msg::TargetFieldsLoaded(*data),
+                            }
+                        });
+                }
+                Command::None
+            }
+
+            Msg::CloseQuickFields => {
+                state.show_quick_fields_modal = false;
+                state.quick_fields_entity_idx = None;
+                Command::set_focus(FocusId::new("mapping-tree"))
+            }
+
+            Msg::QuickFieldsEvent(event) => {
+                let item_count = state.quick_fields_available.len();
+                state.quick_fields_list_state.handle_event(event, item_count, 15);
+                Command::None
+            }
+
+            Msg::SaveQuickFields => {
+                let entity_idx = match state.quick_fields_entity_idx {
+                    Some(idx) => idx,
+                    None => {
+                        state.show_quick_fields_modal = false;
+                        return Command::set_focus(FocusId::new("mapping-tree"));
+                    }
+                };
+
+                // Get all selected indices from ListState
+                let selected_indices = state.quick_fields_list_state.all_selected();
+                if selected_indices.is_empty() {
+                    state.show_quick_fields_modal = false;
+                    state.quick_fields_entity_idx = None;
+                    return Command::set_focus(FocusId::new("mapping-tree"));
+                }
+
+                // Create Copy mappings for all selected fields
+                if let Resource::Success(config) = &mut state.config {
+                    if let Some(entity) = config.entity_mappings.get_mut(entity_idx) {
+                        use crate::transfer::{FieldMapping, Transform, FieldPath};
+
+                        for idx in selected_indices {
+                            if let Some(field) = state.quick_fields_available.get(idx) {
+                                let mapping = FieldMapping {
+                                    id: None,
+                                    target_field: field.logical_name.clone(),
+                                    transform: Transform::Copy {
+                                        source_path: FieldPath::simple(&field.logical_name),
+                                        resolver: None,
+                                    },
+                                };
+                                entity.field_mappings.push(mapping);
+                            }
+                        }
+
+                        state.tree_state.invalidate_cache();
+                    }
+                }
+
+                state.show_quick_fields_modal = false;
+                state.quick_fields_entity_idx = None;
+
+                // Auto-save
+                if let Resource::Success(config) = &state.config {
+                    let config_clone = config.clone();
+                    return Command::batch(vec![
+                        Command::perform(save_config(config_clone), Msg::SaveCompleted),
+                        Command::set_focus(FocusId::new("mapping-tree")),
+                    ]);
+                }
+                Command::set_focus(FocusId::new("mapping-tree"))
+            }
+
             // Navigation
             Msg::Back => {
                 Command::navigate_to(AppId::TransferConfigList)
@@ -1201,6 +1339,17 @@ fn try_open_pending_field_modal(state: &mut State) -> Command<Msg> {
 
     if !fields_loaded {
         return Command::None;
+    }
+
+    // Check if there's a pending quick fields modal
+    if state.pending_quick_fields {
+        state.pending_quick_fields = false;
+        if let Some(entity_idx) = state.quick_fields_entity_idx {
+            state.quick_fields_available = state.compute_quick_fields(entity_idx);
+            state.quick_fields_list_state = ListState::with_selection();
+            state.show_quick_fields_modal = true;
+        }
+        return Command::set_focus(FocusId::new("quick-fields-list"));
     }
 
     // Check if there's a pending modal to open

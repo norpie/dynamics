@@ -3,6 +3,8 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::api::FieldMetadata;
+use crate::tui::widgets::{ListItem, ListState};
+use crate::tui::widgets::events::ListEvent;
 use crate::transfer::ResolverFallback;
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::modals::ConfirmationModal;
@@ -129,6 +131,18 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
                 source_fields,
                 &state.resolver_related_fields,
                 fields_loading,
+                theme,
+            ),
+            Alignment::Center,
+        );
+    }
+
+    // Quick fields modal
+    if state.show_quick_fields_modal {
+        view = view.with_app_modal(
+            render_quick_fields_modal(
+                &state.quick_fields_available,
+                &state.quick_fields_list_state,
                 theme,
             ),
             Alignment::Center,
@@ -1378,6 +1392,159 @@ fn render_resolver_modal(
         .build()
 }
 
+/// Wrapper for field metadata in quick field picker list
+#[derive(Clone)]
+struct QuickFieldItem {
+    field: FieldMetadata,
+}
+
+impl ListItem for QuickFieldItem {
+    type Msg = Msg;
+
+    fn to_element(&self, is_selected: bool, is_multi_selected: bool, _is_hovered: bool) -> Element<Msg> {
+        let theme = &crate::global_runtime_config().theme;
+
+        // Checkbox based on multi-selection
+        let checkbox = if is_multi_selected { "[x]" } else { "[ ]" };
+
+        // Field type display
+        let field_type = match &self.field.field_type {
+            crate::api::metadata::FieldType::String => "String",
+            crate::api::metadata::FieldType::Integer => "Integer",
+            crate::api::metadata::FieldType::Decimal => "Decimal",
+            crate::api::metadata::FieldType::Boolean => "Boolean",
+            crate::api::metadata::FieldType::DateTime => "DateTime",
+            crate::api::metadata::FieldType::Lookup => "Lookup",
+            crate::api::metadata::FieldType::OptionSet => "OptionSet",
+            crate::api::metadata::FieldType::MultiSelectOptionSet => "MultiSelect",
+            crate::api::metadata::FieldType::Money => "Money",
+            crate::api::metadata::FieldType::Memo => "Memo",
+            crate::api::metadata::FieldType::UniqueIdentifier => "GUID",
+            crate::api::metadata::FieldType::Other(s) => s.as_str(),
+        };
+
+        // Related entity for lookups
+        let related = self.field.related_entity.as_ref().map(|e| format!(" → {}", e)).unwrap_or_default();
+
+        // Display name
+        let display = self.field.display_name.as_ref().map(|d| format!(" \"{}\"", d)).unwrap_or_default();
+
+        // Build the line
+        let base_style = if is_selected {
+            Style::default().bg(theme.bg_surface)
+        } else {
+            Style::default()
+        };
+
+        let checkbox_style = if is_multi_selected {
+            base_style.fg(theme.accent_primary)
+        } else {
+            base_style.fg(theme.text_tertiary)
+        };
+
+        Element::styled_text(Line::from(vec![
+            Span::styled(checkbox, checkbox_style),
+            Span::styled(" ", base_style),
+            Span::styled(format!("{:<30}", self.field.logical_name), base_style.fg(theme.text_primary)),
+            Span::styled(format!("{:<12}", field_type), base_style.fg(theme.text_secondary)),
+            Span::styled(display, base_style.fg(theme.text_tertiary)),
+            Span::styled(related, base_style.fg(theme.accent_secondary)),
+        ]))
+        .build()
+    }
+}
+
+fn render_quick_fields_modal(
+    available: &[FieldMetadata],
+    list_state: &ListState,
+    theme: &Theme,
+) -> Element<Msg> {
+    let title = format!("Quick Add Fields ({} available)", available.len());
+
+    // Instructions
+    let instructions = Element::styled_text(Line::from(vec![
+        Span::styled("Space", Style::default().fg(theme.accent_primary)),
+        Span::styled("=toggle  ", Style::default().fg(theme.text_tertiary)),
+        Span::styled("Ctrl+A", Style::default().fg(theme.accent_primary)),
+        Span::styled("=all  ", Style::default().fg(theme.text_tertiary)),
+        Span::styled("Ctrl+D", Style::default().fg(theme.accent_primary)),
+        Span::styled("=clear  ", Style::default().fg(theme.text_tertiary)),
+        Span::styled("Enter", Style::default().fg(theme.accent_primary)),
+        Span::styled("=add selected", Style::default().fg(theme.text_tertiary)),
+    ]))
+    .build();
+
+    // Build field list items
+    let items: Vec<QuickFieldItem> = available
+        .iter()
+        .map(|f| QuickFieldItem { field: f.clone() })
+        .collect();
+
+    let selected_count = list_state.total_selection_count();
+
+    let list_element = if items.is_empty() {
+        Element::styled_text(Line::from(vec![
+            Span::styled(
+                "No common fields available (all already mapped or system fields only)",
+                Style::default().fg(theme.text_tertiary),
+            ),
+        ]))
+        .build()
+    } else {
+        Element::list(FocusId::new("quick-fields-list"), &items, list_state, theme)
+            .on_navigate(|key| Msg::QuickFieldsEvent(ListEvent::Navigate(key)))
+            .build()
+    };
+
+    // Footer showing count
+    let footer = Element::styled_text(Line::from(vec![
+        Span::styled(
+            format!("{} field(s) selected", selected_count),
+            Style::default().fg(if selected_count == 0 { theme.text_tertiary } else { theme.accent_primary }),
+        ),
+    ]))
+    .build();
+
+    // Buttons
+    let cancel_btn = Element::button(FocusId::new("quick-fields-cancel"), "Cancel")
+        .on_press(Msg::CloseQuickFields)
+        .build();
+
+    let save_btn = if selected_count > 0 {
+        Element::button(FocusId::new("quick-fields-save"), &format!("Add {} Fields", selected_count))
+            .on_press(Msg::SaveQuickFields)
+            .build()
+    } else {
+        Element::button(FocusId::new("quick-fields-save"), "Add Fields").build()
+    };
+
+    let button_row = RowBuilder::new()
+        .add(cancel_btn, LayoutConstraint::Length(12))
+        .add(Element::text(""), LayoutConstraint::Fill(1))
+        .add(save_btn, LayoutConstraint::Length(16))
+        .build();
+
+    let content = ColumnBuilder::new()
+        .add(instructions, LayoutConstraint::Length(1))
+        .add(Element::text(""), LayoutConstraint::Length(1))
+        .add(list_element, LayoutConstraint::Fill(1))
+        .add(Element::text(""), LayoutConstraint::Length(1))
+        .add(footer, LayoutConstraint::Length(1))
+        .add(Element::text(""), LayoutConstraint::Length(1))
+        .add(button_row, LayoutConstraint::Length(3))
+        .build();
+
+    // Calculate modal height based on available fields
+    let list_height = available.len().max(1).min(15) as u16;
+    let modal_height = list_height + 10; // instructions + footer + buttons + padding
+
+    Element::panel(Element::container(content).padding(1).build())
+        .title(&title)
+        .width(80)
+        .height(modal_height)
+        .build()
+}
+
 pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
     let mut subs = vec![];
 
@@ -1420,6 +1587,12 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
         if state.resolver_form.match_field_rows.len() > 1 {
             subs.push(Subscription::ctrl_key(KeyCode::Char('d'), "Remove field", Msg::ResolverRemoveMatchFieldRow));
         }
+    } else if state.show_quick_fields_modal {
+        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseQuickFields));
+        subs.push(Subscription::keyboard(KeyCode::Enter, "Add selected", Msg::SaveQuickFields));
+        subs.push(Subscription::keyboard(KeyCode::Char(' '), "Toggle", Msg::QuickFieldsEvent(ListEvent::ToggleMultiSelect)));
+        subs.push(Subscription::ctrl_key(KeyCode::Char('a'), "Select all", Msg::QuickFieldsEvent(ListEvent::SelectAll)));
+        subs.push(Subscription::ctrl_key(KeyCode::Char('d'), "Clear all", Msg::QuickFieldsEvent(ListEvent::ClearMultiSelection)));
     } else {
         // Main view subscriptions
         subs.push(Subscription::keyboard(KeyCode::Char('a'), "Add entity", Msg::AddEntity));
@@ -1449,6 +1622,11 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                             KeyCode::Char('r'),
                             "Add resolver",
                             Msg::AddResolver(idx),
+                        ));
+                        subs.push(Subscription::keyboard(
+                            KeyCode::Char('q'),
+                            "Quick add fields",
+                            Msg::OpenQuickFields,
                         ));
                     }
                 } else if selected.starts_with("field_") {
