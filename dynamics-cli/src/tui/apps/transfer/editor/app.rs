@@ -712,28 +712,58 @@ impl App for MappingEditorApp {
                     if let Some(entry) = state.field_form.value_map_entries.get_mut(idx) {
                         let current_value = entry.target_value.value.trim();
 
-                        let current_idx = target_options.iter().position(|opt| {
-                            opt.value.to_string() == current_value
-                        });
+                        // Include null as an option (represented as "null" string)
+                        // Options cycle: opt1 -> opt2 -> ... -> optN -> null -> opt1
+                        let is_null = current_value == "null" || current_value.is_empty();
+
+                        let current_idx = if is_null {
+                            None // null is "after" all options
+                        } else {
+                            target_options.iter().position(|opt| {
+                                opt.value.to_string() == current_value
+                            })
+                        };
+
+                        // null is at the end, after all options
+                        let null_idx = target_options.len();
 
                         let next_idx = match current_idx {
                             Some(i) if backwards => {
-                                if i == 0 { target_options.len() - 1 } else { i - 1 }
+                                if i == 0 { null_idx } else { i - 1 }
                             }
                             Some(i) => {
-                                if i + 1 >= target_options.len() { 0 } else { i + 1 }
+                                i + 1 // might be null_idx
                             }
-                            None => 0,
+                            None => {
+                                // Currently null
+                                if backwards {
+                                    target_options.len() - 1
+                                } else {
+                                    0
+                                }
+                            }
                         };
 
-                        entry.target_value.value = target_options[next_idx].value.to_string();
+                        if next_idx >= target_options.len() {
+                            entry.target_value.value = "null".to_string();
+                        } else {
+                            entry.target_value.value = target_options[next_idx].value.to_string();
+                        }
                     }
                 }
                 Command::None
             }
 
-            Msg::FieldFormValueMapScroll(_key) => {
-                // Scroll not needed - all entries displayed in loop
+            Msg::FieldFormValueMapScroll(key) => {
+                let viewport_height = state.field_form.value_map_scroll.viewport_height().unwrap_or(12);
+                let content_height = state.field_form.value_map_scroll.content_height().unwrap_or(12);
+                state.field_form.value_map_scroll.handle_key(key, content_height, viewport_height);
+                Command::None
+            }
+
+            Msg::FieldFormValueMapScrollDimensions(vh, ch, _vw, _cw) => {
+                state.field_form.value_map_scroll.set_viewport_height(vh);
+                state.field_form.value_map_scroll.update_scroll(vh, ch);
                 Command::None
             }
 

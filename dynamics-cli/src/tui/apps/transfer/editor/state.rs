@@ -1092,7 +1092,7 @@ impl FieldMappingForm {
 
 fn parse_value(s: &str) -> crate::transfer::Value {
     use crate::transfer::Value;
-    if s.is_empty() {
+    if s.is_empty() || s.eq_ignore_ascii_case("null") {
         Value::Null
     } else if let Ok(n) = s.parse::<i64>() {
         Value::Int(n)
@@ -1171,6 +1171,8 @@ pub enum Msg {
     FieldFormCycleTargetOption(usize, bool),
     /// Scroll value map entries
     FieldFormValueMapScroll(crossterm::event::KeyCode),
+    /// Set value map scroll dimensions (viewport_height, content_height, viewport_width, content_width)
+    FieldFormValueMapScrollDimensions(usize, usize, usize, usize),
 
     // Format transform fields
     FieldFormFormatTemplate(TextInputEvent),

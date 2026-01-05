@@ -678,6 +678,16 @@ fn render_field_modal(
                 mappings_col = mappings_col.add(entry_row, LayoutConstraint::Length(3));
             }
 
+            // Wrap mappings in a scrollable
+            let mappings_scrollable = Element::scrollable(
+                FocusId::new("valuemap-entries-scroll"),
+                mappings_col.build(),
+                &mut form.value_map_scroll,
+            )
+            .on_navigate(Msg::FieldFormValueMapScroll)
+            .on_render(Msg::FieldFormValueMapScrollDimensions)
+            .build();
+
             let mut col = ColumnBuilder::new()
                 .add(source_panel, LayoutConstraint::Length(3))
                 .add(fallback_indicator, LayoutConstraint::Length(1));
@@ -688,24 +698,13 @@ fn render_field_modal(
 
             let content = col
                 .add(mappings_header, LayoutConstraint::Length(3))
-                .add(mappings_col.build(), LayoutConstraint::Fill(1))
+                .add(mappings_scrollable, LayoutConstraint::Fill(1))
                 .spacing(1)
                 .build();
 
-            // Height calculation:
-            // - Border + padding: 4
-            // - Target field panel: 3 + spacing 1 = 4
-            // - Type indicator: 1 + spacing 1 = 2
-            // - Source panel: 3 + spacing 1 = 4
-            // - Fallback indicator: 1 + spacing 1 = 2
-            // - Default panel (optional): 3 + spacing 1 = 4
-            // - Mappings header: 3 + spacing 1 = 4
-            // - Entries: 3 each
-            // - Button row: 3
-            let base_height: u16 = if form.value_map_fallback == FallbackType::Default { 32 } else { 28 };
-            let entries_height = (form.value_map_entries.len().min(4) * 4) as u16;
-            let height = base_height + entries_height;
-            (content, height.min(45))
+            // Fixed modal height - scrollable fills remaining space
+            let height: u16 = if form.value_map_fallback == FallbackType::Default { 40 } else { 36 };
+            (content, height)
         }
         TransformType::Format => {
             // Template input

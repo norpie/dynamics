@@ -43,7 +43,7 @@ pub fn validate_constant_value(value: &str, target_type: &FieldType, is_required
     let trimmed = value.trim();
 
     // Empty/null handling
-    if trimmed.is_empty() {
+    if trimmed.is_empty() || trimmed.to_lowercase() == "null" {
         return if is_required {
             ValidationResult::Error("Value required for this field".into())
         } else {
