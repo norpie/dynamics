@@ -539,155 +539,68 @@ fn render_field_modal(
                 .add(add_btn, LayoutConstraint::Length(10))
                 .build();
 
-            // Mapping entries (show up to 4 in view)
-            // Note: Using individual event handlers to avoid closure capture issues
+            // Get source and target option values for cycling buttons
+            let source_field_name = form.value_map_source.value.trim();
+            let source_options: Vec<_> = source_fields
+                .iter()
+                .find(|f| f.logical_name == source_field_name)
+                .map(|f| f.option_values.clone())
+                .unwrap_or_default();
+
+            let target_field_name = form.target_field.value.trim();
+            let target_options: Vec<_> = target_fields
+                .iter()
+                .find(|f| f.logical_name == target_field_name)
+                .map(|f| f.option_values.clone())
+                .unwrap_or_default();
+
+            // Helper to format value with label
+            let format_value = |value: &str, options: &[crate::api::metadata::OptionSetValue]| -> String {
+                if value.is_empty() {
+                    return "(click to set)".to_string();
+                }
+                if let Ok(v) = value.parse::<i64>() {
+                    if let Some(opt) = options.iter().find(|o| o.value == v) {
+                        if let Some(label) = &opt.label {
+                            return format!("{} ({})", v, label);
+                        }
+                    }
+                }
+                value.to_string()
+            };
+
+            // Build mapping entries with a loop
             let mut mappings_col = ColumnBuilder::new();
-            let entries_len = form.value_map_entries.len();
+            for (idx, entry) in form.value_map_entries.iter().enumerate() {
+                // Leak strings to get 'static lifetime for FocusId
+                let src_id: &'static str = Box::leak(format!("map-src-{}", idx).into_boxed_str());
+                let tgt_id: &'static str = Box::leak(format!("map-tgt-{}", idx).into_boxed_str());
+                let del_id: &'static str = Box::leak(format!("map-del-{}", idx).into_boxed_str());
 
-            // Entry 0
-            if entries_len > 0 {
-                let entry = &mut form.value_map_entries[0];
-                let src_input = Element::text_input(
-                    FocusId::new("map-src-0"),
-                    &entry.source_value.value,
-                    &mut entry.source_value.state,
-                )
-                .placeholder("Source")
-                .on_event(|e| Msg::FieldFormMappingSource(0, e))
-                .build();
+                // Source button
+                let src_display = format_value(&entry.source_value.value, &source_options);
+                let src_btn = Element::button(FocusId::new(src_id), src_display)
+                    .on_press(Msg::FieldFormCycleSourceOption(idx, false))
+                    .build();
 
-                let tgt_input = Element::text_input(
-                    FocusId::new("map-tgt-0"),
-                    &entry.target_value.value,
-                    &mut entry.target_value.state,
-                )
-                .placeholder("Target")
-                .on_event(|e| Msg::FieldFormMappingTarget(0, e))
-                .build();
+                // Target button
+                let tgt_display = format_value(&entry.target_value.value, &target_options);
+                let tgt_btn = Element::button(FocusId::new(tgt_id), tgt_display)
+                    .on_press(Msg::FieldFormCycleTargetOption(idx, false))
+                    .build();
 
-                let del_btn = Element::button(FocusId::new("map-del-0"), "×")
-                    .on_press(Msg::FieldFormRemoveMapping(0))
+                // Delete button
+                let del_btn = Element::button(FocusId::new(del_id), "×")
+                    .on_press(Msg::FieldFormRemoveMapping(idx))
                     .build();
 
                 let entry_row = RowBuilder::new()
-                    .add(src_input, LayoutConstraint::Fill(1))
+                    .add(src_btn, LayoutConstraint::Fill(1))
                     .add(Element::text(" → "), LayoutConstraint::Length(4))
-                    .add(tgt_input, LayoutConstraint::Fill(1))
+                    .add(tgt_btn, LayoutConstraint::Fill(1))
                     .add(del_btn, LayoutConstraint::Length(5))
                     .build();
                 mappings_col = mappings_col.add(entry_row, LayoutConstraint::Length(3));
-            }
-
-            // Entry 1
-            if entries_len > 1 {
-                let entry = &mut form.value_map_entries[1];
-                let src_input = Element::text_input(
-                    FocusId::new("map-src-1"),
-                    &entry.source_value.value,
-                    &mut entry.source_value.state,
-                )
-                .placeholder("Source")
-                .on_event(|e| Msg::FieldFormMappingSource(1, e))
-                .build();
-
-                let tgt_input = Element::text_input(
-                    FocusId::new("map-tgt-1"),
-                    &entry.target_value.value,
-                    &mut entry.target_value.state,
-                )
-                .placeholder("Target")
-                .on_event(|e| Msg::FieldFormMappingTarget(1, e))
-                .build();
-
-                let del_btn = Element::button(FocusId::new("map-del-1"), "×")
-                    .on_press(Msg::FieldFormRemoveMapping(1))
-                    .build();
-
-                let entry_row = RowBuilder::new()
-                    .add(src_input, LayoutConstraint::Fill(1))
-                    .add(Element::text(" → "), LayoutConstraint::Length(4))
-                    .add(tgt_input, LayoutConstraint::Fill(1))
-                    .add(del_btn, LayoutConstraint::Length(5))
-                    .build();
-                mappings_col = mappings_col.add(entry_row, LayoutConstraint::Length(3));
-            }
-
-            // Entry 2
-            if entries_len > 2 {
-                let entry = &mut form.value_map_entries[2];
-                let src_input = Element::text_input(
-                    FocusId::new("map-src-2"),
-                    &entry.source_value.value,
-                    &mut entry.source_value.state,
-                )
-                .placeholder("Source")
-                .on_event(|e| Msg::FieldFormMappingSource(2, e))
-                .build();
-
-                let tgt_input = Element::text_input(
-                    FocusId::new("map-tgt-2"),
-                    &entry.target_value.value,
-                    &mut entry.target_value.state,
-                )
-                .placeholder("Target")
-                .on_event(|e| Msg::FieldFormMappingTarget(2, e))
-                .build();
-
-                let del_btn = Element::button(FocusId::new("map-del-2"), "×")
-                    .on_press(Msg::FieldFormRemoveMapping(2))
-                    .build();
-
-                let entry_row = RowBuilder::new()
-                    .add(src_input, LayoutConstraint::Fill(1))
-                    .add(Element::text(" → "), LayoutConstraint::Length(4))
-                    .add(tgt_input, LayoutConstraint::Fill(1))
-                    .add(del_btn, LayoutConstraint::Length(5))
-                    .build();
-                mappings_col = mappings_col.add(entry_row, LayoutConstraint::Length(3));
-            }
-
-            // Entry 3
-            if entries_len > 3 {
-                let entry = &mut form.value_map_entries[3];
-                let src_input = Element::text_input(
-                    FocusId::new("map-src-3"),
-                    &entry.source_value.value,
-                    &mut entry.source_value.state,
-                )
-                .placeholder("Source")
-                .on_event(|e| Msg::FieldFormMappingSource(3, e))
-                .build();
-
-                let tgt_input = Element::text_input(
-                    FocusId::new("map-tgt-3"),
-                    &entry.target_value.value,
-                    &mut entry.target_value.state,
-                )
-                .placeholder("Target")
-                .on_event(|e| Msg::FieldFormMappingTarget(3, e))
-                .build();
-
-                let del_btn = Element::button(FocusId::new("map-del-3"), "×")
-                    .on_press(Msg::FieldFormRemoveMapping(3))
-                    .build();
-
-                let entry_row = RowBuilder::new()
-                    .add(src_input, LayoutConstraint::Fill(1))
-                    .add(Element::text(" → "), LayoutConstraint::Length(4))
-                    .add(tgt_input, LayoutConstraint::Fill(1))
-                    .add(del_btn, LayoutConstraint::Length(5))
-                    .build();
-                mappings_col = mappings_col.add(entry_row, LayoutConstraint::Length(3));
-            }
-
-            if form.value_map_entries.len() > 4 {
-                let more_text = format!("... and {} more", form.value_map_entries.len() - 4);
-                mappings_col = mappings_col.add(
-                    Element::styled_text(Line::from(vec![
-                        Span::styled(more_text, Style::default().fg(theme.text_tertiary)),
-                    ])).build(),
-                    LayoutConstraint::Length(1),
-                );
             }
 
             let mut col = ColumnBuilder::new()

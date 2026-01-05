@@ -463,6 +463,28 @@ impl App for MappingEditorApp {
                 state.field_form.transform_type = state.field_form.transform_type.next();
                 // Clear resolver when changing transform type
                 state.field_form.resolver_name = None;
+
+                // Auto-prefill ValueMap entries for OptionSet fields
+                if state.field_form.transform_type == TransformType::ValueMap {
+                    // Copy source_path to value_map_source when switching if not already set
+                    if state.field_form.value_map_source.value.is_empty()
+                        && !state.field_form.source_path.value.is_empty()
+                    {
+                        state.field_form.value_map_source.value = state.field_form.source_path.value.clone();
+                    }
+
+                    // Try to prefill from source field option values
+                    let source_path = state.field_form.value_map_source.value.clone();
+                    if !source_path.is_empty() {
+                        let base_field = source_path.split('.').next().unwrap_or(&source_path);
+                        if let Resource::Success(fields) = &state.source_fields {
+                            if let Some(source_field) = fields.iter().find(|f| f.logical_name == base_field) {
+                                state.field_form.prefill_valuemap_from_optionset(source_field);
+                            }
+                        }
+                    }
+                }
+
                 Command::None
             }
 
@@ -525,6 +547,19 @@ impl App for MappingEditorApp {
             Msg::FieldFormValueMapSource(event) => {
                 let options = get_source_options(state);
                 state.field_form.value_map_source.handle_event::<Msg>(event, &options);
+
+                // Auto-prefill when source field is selected and is OptionSet
+                let current_value = state.field_form.value_map_source.value.trim().to_string();
+                if !current_value.is_empty() {
+                    let base_field = current_value.split('.').next().unwrap_or(&current_value);
+                    if let Resource::Success(fields) = &state.source_fields {
+                        if let Some(source_field) = fields.iter().find(|f| f.logical_name == base_field) {
+                            // Only prefill if entries are empty (don't override user's work)
+                            state.field_form.prefill_valuemap_from_optionset(source_field);
+                        }
+                    }
+                }
+
                 // Check if we need to load related entity fields
                 check_for_nested_lookup(state, &state.field_form.value_map_source.value.clone())
             }
@@ -560,6 +595,83 @@ impl App for MappingEditorApp {
                 if let Some(entry) = state.field_form.value_map_entries.get_mut(idx) {
                     entry.target_value.handle_event(event, Some(100));
                 }
+                Command::None
+            }
+
+            Msg::FieldFormCycleSourceOption(idx, backwards) => {
+                // Get source field's option values
+                let source_field_name = state.field_form.value_map_source.value.trim();
+                let source_options: Vec<_> = if let Resource::Success(fields) = &state.source_fields {
+                    fields.iter()
+                        .find(|f| f.logical_name == source_field_name)
+                        .map(|f| f.option_values.clone())
+                        .unwrap_or_default()
+                } else {
+                    vec![]
+                };
+
+                if !source_options.is_empty() {
+                    if let Some(entry) = state.field_form.value_map_entries.get_mut(idx) {
+                        let current_value = entry.source_value.value.trim();
+
+                        let current_idx = source_options.iter().position(|opt| {
+                            opt.value.to_string() == current_value
+                        });
+
+                        let next_idx = match current_idx {
+                            Some(i) if backwards => {
+                                if i == 0 { source_options.len() - 1 } else { i - 1 }
+                            }
+                            Some(i) => {
+                                if i + 1 >= source_options.len() { 0 } else { i + 1 }
+                            }
+                            None => 0,
+                        };
+
+                        entry.source_value.value = source_options[next_idx].value.to_string();
+                    }
+                }
+                Command::None
+            }
+
+            Msg::FieldFormCycleTargetOption(idx, backwards) => {
+                // Get target field's option values
+                let target_field_name = state.field_form.target_field.value.trim();
+                let target_options: Vec<_> = if let Resource::Success(fields) = &state.target_fields {
+                    fields.iter()
+                        .find(|f| f.logical_name == target_field_name)
+                        .map(|f| f.option_values.clone())
+                        .unwrap_or_default()
+                } else {
+                    vec![]
+                };
+
+                if !target_options.is_empty() {
+                    if let Some(entry) = state.field_form.value_map_entries.get_mut(idx) {
+                        let current_value = entry.target_value.value.trim();
+
+                        let current_idx = target_options.iter().position(|opt| {
+                            opt.value.to_string() == current_value
+                        });
+
+                        let next_idx = match current_idx {
+                            Some(i) if backwards => {
+                                if i == 0 { target_options.len() - 1 } else { i - 1 }
+                            }
+                            Some(i) => {
+                                if i + 1 >= target_options.len() { 0 } else { i + 1 }
+                            }
+                            None => 0,
+                        };
+
+                        entry.target_value.value = target_options[next_idx].value.to_string();
+                    }
+                }
+                Command::None
+            }
+
+            Msg::FieldFormValueMapScroll(_key) => {
+                // Scroll not needed - all entries displayed in loop
                 Command::None
             }
 

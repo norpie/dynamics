@@ -347,6 +347,7 @@ fn build_views_tree(
                             is_primary_key: col.is_primary,
                             max_length: real_field.max_length,
                             related_entity: real_field.related_entity.clone(),
+                            option_values: real_field.option_values.clone(),
                         }
                     } else {
                         // Fallback to placeholder if field not found
@@ -359,6 +360,7 @@ fn build_views_tree(
                             is_primary_key: col.is_primary,
                             max_length: None,
                             related_entity: None,
+                            option_values: vec![],
                         }
                     };
 
@@ -504,6 +506,7 @@ fn build_forms_tree(
                                         is_primary_key: real_field.is_primary_key,
                                         max_length: real_field.max_length,
                                         related_entity: real_field.related_entity.clone(),
+                                        option_values: real_field.option_values.clone(),
                                     }
                                 } else {
                                     // Fallback to placeholder if field not found
@@ -516,6 +519,7 @@ fn build_forms_tree(
                                         is_primary_key: false,
                                         max_length: None,
                                         related_entity: None,
+                                        option_values: vec![],
                                     }
                                 };
 

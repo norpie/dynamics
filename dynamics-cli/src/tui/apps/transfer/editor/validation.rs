@@ -227,6 +227,24 @@ pub fn validate_copy_types(source_type: &FieldType, target_type: &FieldType) -> 
     }
 }
 
+/// Check if using Copy transform on an OptionSet field that might need ValueMap
+/// Returns a warning if the source field is OptionSet/MultiSelectOptionSet type
+pub fn validate_optionset_copy(
+    source_type: &FieldType,
+    target_type: &FieldType,
+) -> ValidationResult {
+    // Only warn for OptionSet fields mapping to OptionSet
+    if matches!(source_type, FieldType::OptionSet | FieldType::MultiSelectOptionSet)
+        && matches!(target_type, FieldType::OptionSet | FieldType::MultiSelectOptionSet)
+    {
+        ValidationResult::Warning(
+            "OptionSet field: Consider using ValueMap to ensure values are mapped correctly".into()
+        )
+    } else {
+        ValidationResult::Valid
+    }
+}
+
 /// Parse a datetime string - accepts various formats
 fn parse_datetime(s: &str) -> Option<()> {
     // ISO 8601 formats

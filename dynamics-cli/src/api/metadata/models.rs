@@ -15,6 +15,9 @@ pub struct FieldMetadata {
     pub is_primary_key: bool,
     pub max_length: Option<i32>,
     pub related_entity: Option<String>, // For lookups
+    /// Option values for OptionSet/MultiSelectOptionSet fields
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub option_values: Vec<OptionSetValue>,
 }
 
 /// Field data types in Dynamics 365
@@ -32,6 +35,15 @@ pub enum FieldType {
     Memo,
     UniqueIdentifier,
     Other(String),
+}
+
+/// Option value for OptionSet/MultiSelectOptionSet fields
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OptionSetValue {
+    /// The numeric value (e.g., 1, 2, 3)
+    pub value: i64,
+    /// The display label (e.g., "Active", "Inactive")
+    pub label: Option<String>,
 }
 
 /// Relationship metadata

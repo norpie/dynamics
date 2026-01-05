@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OperationFilter, Transform, Replacement, Resolver, ResolverFallback};
 use crate::tui::resource::Resource;
-use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField};
+use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField, ScrollableState};
 use crate::tui::widgets::events::{TreeEvent, AutocompleteEvent, TextInputEvent};
 use crate::api::FieldMetadata;
 
@@ -373,6 +373,7 @@ pub struct FieldMappingForm {
     pub value_map_default: TextInputField,
     pub value_map_entries: Vec<ValueMapEntry>,
     pub value_map_selected: Option<usize>,
+    pub value_map_scroll: ScrollableState,
 
     // Format transform fields
     pub format_template: TextInputField,
@@ -551,7 +552,7 @@ impl FieldMappingForm {
         target_fields: &[crate::api::FieldMetadata],
         source_fields: &[crate::api::FieldMetadata],
     ) -> FormValidation {
-        use super::validation::{ValidationResult, validate_constant_value, validate_copy_types};
+        use super::validation::{ValidationResult, validate_constant_value, validate_copy_types, validate_optionset_copy};
 
         let mut validation = FormValidation::default();
 
@@ -587,6 +588,14 @@ impl FieldMappingForm {
                         ValidationResult::Valid => {}
                         ValidationResult::Warning(msg) => validation.transform_warning = Some(msg),
                         ValidationResult::Error(msg) => validation.transform_error = Some(msg),
+                    }
+
+                    // Check for OptionSet copy warning (only if no existing warning/error)
+                    if validation.transform_warning.is_none() && validation.transform_error.is_none() {
+                        let optionset_result = validate_optionset_copy(&source.field_type, &target.field_type);
+                        if let ValidationResult::Warning(msg) = optionset_result {
+                            validation.transform_warning = Some(msg);
+                        }
                     }
                 } else {
                     validation.source_warning = Some("Source field not found in schema".into());
@@ -973,6 +982,54 @@ impl FieldMappingForm {
             self.replace_entries.remove(idx);
         }
     }
+
+    /// Prefill value map entries from source field option values
+    /// Called when switching to ValueMap transform for an OptionSet field
+    /// Only prefills if entries are currently empty to avoid overwriting user work
+    pub fn prefill_valuemap_from_optionset(&mut self, source_field: &crate::api::FieldMetadata) {
+        // Only prefill if we have option values and entries are currently empty
+        if !source_field.option_values.is_empty() && self.value_map_entries.is_empty() {
+            self.value_map_entries = source_field.option_values
+                .iter()
+                .map(|opt| {
+                    // Format source value with label for clarity (e.g., "1 (Active)")
+                    let source_display = opt.label.as_ref()
+                        .map(|l| format!("{} ({})", opt.value, l))
+                        .unwrap_or_else(|| opt.value.to_string());
+
+                    ValueMapEntry {
+                        source_value: TextInputField {
+                            value: opt.value.to_string(), // Just the integer value
+                            ..Default::default()
+                        },
+                        target_value: TextInputField::default(), // Leave blank for user
+                    }
+                })
+                .collect();
+
+            // Select first entry if any were added
+            if !self.value_map_entries.is_empty() {
+                self.value_map_selected = Some(0);
+            }
+        }
+    }
+
+    /// Check if the source field is an OptionSet type
+    pub fn is_optionset_source(&self, source_fields: &[crate::api::FieldMetadata]) -> bool {
+        use crate::api::metadata::FieldType;
+
+        let source_path = if self.transform_type == TransformType::ValueMap {
+            &self.value_map_source.value
+        } else {
+            &self.source_path.value
+        };
+
+        let base_field = source_path.trim().split('.').next().unwrap_or("");
+        source_fields.iter()
+            .find(|f| f.logical_name == base_field)
+            .map(|f| matches!(f.field_type, FieldType::OptionSet | FieldType::MultiSelectOptionSet))
+            .unwrap_or(false)
+    }
 }
 
 fn parse_value(s: &str) -> crate::transfer::Value {
@@ -1044,6 +1101,12 @@ pub enum Msg {
     FieldFormRemoveMapping(usize),
     FieldFormMappingSource(usize, TextInputEvent),
     FieldFormMappingTarget(usize, TextInputEvent),
+    /// Cycle through source option values (idx, backwards)
+    FieldFormCycleSourceOption(usize, bool),
+    /// Cycle through target option values (idx, backwards)
+    FieldFormCycleTargetOption(usize, bool),
+    /// Scroll value map entries
+    FieldFormValueMapScroll(crossterm::event::KeyCode),
 
     // Format transform fields
     FieldFormFormatTemplate(TextInputEvent),

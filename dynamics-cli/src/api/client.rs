@@ -1089,6 +1089,7 @@ impl DynamicsClient {
                     is_primary_key: false, // TODO: detect from Key element
                     max_length: None,
                     related_entity: None,
+                    option_values: vec![], // Not available in XML metadata
                 });
             }
         }
@@ -1135,6 +1136,7 @@ impl DynamicsClient {
                     is_primary_key: false,
                     max_length: None,
                     related_entity,
+                    option_values: vec![], // Not available in XML metadata
                 });
             }
         }
@@ -1154,6 +1156,98 @@ impl DynamicsClient {
         }
     }
 
+    /// Fetch option set values for all picklist-type attributes of an entity
+    /// Returns a map of logical_name -> Vec<OptionSetValue>
+    async fn fetch_picklist_optionsets(&self, entity_name: &str) -> anyhow::Result<HashMap<String, Vec<super::metadata::OptionSetValue>>> {
+        let mut result = HashMap::new();
+
+        // Fetch from PicklistAttributeMetadata (regular picklists)
+        let picklist_url = format!(
+            "{}/{}/EntityDefinitions(LogicalName='{}')/Attributes/Microsoft.Dynamics.CRM.PicklistAttributeMetadata?$select=LogicalName&$expand=OptionSet($select=Options)",
+            self.base_url,
+            constants::api_path(),
+            entity_name
+        );
+
+        // Fetch from StateAttributeMetadata (state fields)
+        let state_url = format!(
+            "{}/{}/EntityDefinitions(LogicalName='{}')/Attributes/Microsoft.Dynamics.CRM.StateAttributeMetadata?$select=LogicalName&$expand=OptionSet($select=Options)",
+            self.base_url,
+            constants::api_path(),
+            entity_name
+        );
+
+        // Fetch from StatusAttributeMetadata (status fields)
+        let status_url = format!(
+            "{}/{}/EntityDefinitions(LogicalName='{}')/Attributes/Microsoft.Dynamics.CRM.StatusAttributeMetadata?$select=LogicalName&$expand=OptionSet($select=Options)",
+            self.base_url,
+            constants::api_path(),
+            entity_name
+        );
+
+        // Fetch all three in parallel
+        let _permit = self.apply_rate_limiting().await?;
+
+        let (picklist_result, state_result, status_result) = tokio::join!(
+            self.fetch_optionset_from_url(&picklist_url),
+            self.fetch_optionset_from_url(&state_url),
+            self.fetch_optionset_from_url(&status_url)
+        );
+
+        // Merge results
+        if let Ok(map) = picklist_result {
+            result.extend(map);
+        }
+        if let Ok(map) = state_result {
+            result.extend(map);
+        }
+        if let Ok(map) = status_result {
+            result.extend(map);
+        }
+
+        Ok(result)
+    }
+
+    /// Helper to fetch option sets from a specific attribute type URL
+    async fn fetch_optionset_from_url(&self, url: &str) -> anyhow::Result<HashMap<String, Vec<super::metadata::OptionSetValue>>> {
+        let response = self.retry_policy.execute(|| async {
+            self.http_client
+                .get(url)
+                .bearer_auth(&self.access_token)
+                .header("Accept", headers::CONTENT_TYPE_JSON)
+                .header("OData-Version", headers::ODATA_VERSION)
+                .send()
+                .await
+        }).await?;
+
+        let mut result = HashMap::new();
+
+        if response.status().is_success() {
+            let json: Value = response.json().await?;
+            if let Some(attributes) = json["value"].as_array() {
+                for attr in attributes {
+                    if let Some(logical_name) = attr["LogicalName"].as_str() {
+                        if let Some(options) = attr["OptionSet"]["Options"].as_array() {
+                            let option_values: Vec<super::metadata::OptionSetValue> = options
+                                .iter()
+                                .filter_map(|opt| {
+                                    let value = opt["Value"].as_i64()?;
+                                    let label = opt["Label"]["UserLocalizedLabel"]["Label"]
+                                        .as_str()
+                                        .map(|s| s.to_string());
+                                    Some(super::metadata::OptionSetValue { value, label })
+                                })
+                                .collect();
+                            result.insert(logical_name.to_string(), option_values);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
     /// Fetch entity field definitions from EntityDefinitions endpoint (attributes only, no navigation properties)
     pub async fn fetch_entity_fields_alt(&self, entity_name: &str) -> anyhow::Result<Vec<super::metadata::FieldMetadata>> {
         let url = format!(
@@ -1162,6 +1256,9 @@ impl DynamicsClient {
             constants::api_path(),
             entity_name
         );
+
+        // Fetch picklist option sets in parallel (requires type-specific endpoint)
+        let optionset_map = self.fetch_picklist_optionsets(entity_name).await.unwrap_or_default();
 
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
@@ -1232,6 +1329,16 @@ impl DynamicsClient {
                         None
                     };
 
+                    // Get option values from pre-fetched optionset_map for OptionSet/MultiSelectOptionSet fields
+                    let option_values = if matches!(field_type,
+                        super::metadata::FieldType::OptionSet |
+                        super::metadata::FieldType::MultiSelectOptionSet)
+                    {
+                        optionset_map.get(&logical_name).cloned().unwrap_or_default()
+                    } else {
+                        vec![]
+                    };
+
                     Some(super::metadata::FieldMetadata {
                         logical_name,
                         schema_name,
@@ -1241,6 +1348,7 @@ impl DynamicsClient {
                         is_primary_key,
                         max_length,
                         related_entity,
+                        option_values,
                     })
                 })
                 .collect();

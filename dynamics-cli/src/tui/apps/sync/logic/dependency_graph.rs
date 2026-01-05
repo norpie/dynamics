@@ -254,6 +254,7 @@ mod tests {
             is_primary_key: false,
             max_length: None,
             related_entity: Some(target.to_string()),
+            option_values: vec![],
         }
     }
 
@@ -267,6 +268,7 @@ mod tests {
             is_primary_key: false,
             max_length: None,
             related_entity: None,
+            option_values: vec![],
         }
     }
 
