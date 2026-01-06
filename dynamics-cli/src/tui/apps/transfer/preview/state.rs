@@ -151,6 +151,8 @@ pub struct RecordDetailState {
     pub focused_field_idx: usize,
     /// List state for fields scrolling in view mode
     pub fields_list_state: crate::tui::widgets::ListState,
+    /// List state for errors scrolling
+    pub errors_list_state: crate::tui::widgets::ListState,
 }
 
 impl RecordDetailState {
@@ -178,6 +180,7 @@ impl RecordDetailState {
             fields,
             focused_field_idx: 0,
             fields_list_state: crate::tui::widgets::ListState::with_selection(),
+            errors_list_state: crate::tui::widgets::ListState::with_selection(),
         }
     }
 
@@ -494,6 +497,8 @@ pub enum Msg {
     RecordDetailFieldNavigate(crossterm::event::KeyCode),
     DetailFieldsListNavigate(crossterm::event::KeyCode),
     DetailFieldsSetViewportHeight(usize),
+    DetailErrorsListNavigate(crossterm::event::KeyCode),
+    DetailErrorsSetViewportHeight(usize),
     StartFieldEdit,              // Enter on a field to start editing
     FocusedFieldInput(TextInputEvent), // Input events for the focused field
     FinishFieldEdit,             // Enter/Tab to finish editing field

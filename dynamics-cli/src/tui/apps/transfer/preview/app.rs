@@ -1276,6 +1276,23 @@ impl App for TransferPreviewApp {
                 Command::None
             }
 
+            Msg::DetailErrorsListNavigate(key) => {
+                if let Some(ref mut detail) = state.record_detail_state {
+                    if !detail.editing {
+                        // Use a large item count - the viewport_height handles actual scrolling
+                        detail.errors_list_state.handle_key(key, 1000, 6);
+                    }
+                }
+                Command::None
+            }
+
+            Msg::DetailErrorsSetViewportHeight(height) => {
+                if let Some(ref mut detail) = state.record_detail_state {
+                    detail.errors_list_state.set_viewport_height(height);
+                }
+                Command::None
+            }
+
             Msg::StartFieldEdit => {
                 if let Some(ref mut detail) = state.record_detail_state {
                     if detail.editing && !detail.editing_field {

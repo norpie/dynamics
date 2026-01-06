@@ -67,13 +67,30 @@ fn render_view_mode(
         .title("Fields")
         .build();
 
-    // Error row (if present)
+    // Error panel (if present) - scrollable list of error lines
     let error_element = if let Some(ref err) = record.error {
-        Element::styled_text(Line::from(vec![
-            Span::styled("Error: ", Style::default().fg(theme.accent_error).add_modifier(Modifier::BOLD)),
-            Span::styled(err.clone(), Style::default().fg(theme.accent_error)),
-        ]))
-        .build()
+        let error_lines: Vec<ErrorLineItem> = err
+            .lines()
+            .map(|line| ErrorLineItem(line.to_string()))
+            .collect();
+
+        if error_lines.is_empty() {
+            Element::text("")
+        } else {
+            let error_list = Element::list(
+                FocusId::new("detail-errors-list"),
+                &error_lines,
+                &state.errors_list_state,
+                theme,
+            )
+            .on_navigate(Msg::DetailErrorsListNavigate)
+            .on_render(Msg::DetailErrorsSetViewportHeight)
+            .build();
+
+            Element::panel(error_list)
+                .title("Errors")
+                .build()
+        }
     } else {
         Element::text("")
     };
@@ -81,13 +98,19 @@ fn render_view_mode(
     // Buttons row
     let buttons = render_view_buttons(theme);
 
-    // Build layout
+    // Build layout - give errors panel some height if present
+    let error_height = if record.error.is_some() {
+        LayoutConstraint::Length(8)
+    } else {
+        LayoutConstraint::Length(0)
+    };
+
     ColumnBuilder::new()
         .add(source_id_row, LayoutConstraint::Length(1))
         .add(action_row, LayoutConstraint::Length(1))
         .add(Element::text(""), LayoutConstraint::Length(1))
         .add(fields_panel, LayoutConstraint::Fill(1))
-        .add(error_element, LayoutConstraint::Length(1))
+        .add(error_element, error_height)
         .add(Element::text(""), LayoutConstraint::Length(1))
         .add(buttons, LayoutConstraint::Length(3))
         .build()
@@ -158,6 +181,34 @@ fn render_action_selector(state: &RecordDetailState, theme: &Theme) -> Element<M
     }
 
     Element::styled_text(Line::from(spans)).build()
+}
+
+/// An error line item for display in the errors list
+#[derive(Clone)]
+pub struct ErrorLineItem(pub String);
+
+impl ListItem for ErrorLineItem {
+    type Msg = Msg;
+
+    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+        let theme = &crate::global_runtime_config().theme;
+
+        let (fg_color, bg_style) = if is_selected {
+            (theme.accent_error, Some(Style::default().bg(theme.bg_surface)))
+        } else {
+            (theme.accent_error, None)
+        };
+
+        let mut builder = Element::styled_text(Line::from(vec![
+            Span::styled(self.0.clone(), Style::default().fg(fg_color)),
+        ]));
+
+        if let Some(bg) = bg_style {
+            builder = builder.background(bg);
+        }
+
+        builder.build()
+    }
 }
 
 /// A field item for display in the view mode list
