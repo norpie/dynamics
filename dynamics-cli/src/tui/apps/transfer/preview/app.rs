@@ -2330,12 +2330,29 @@ async fn fetch_entity_records(
         .await
         .map_err(|e| format!("Query failed for {}: {}", entity_name, e))?;
 
+    // Check for API errors (e.g., invalid field names return 400)
+    if result.is_error() {
+        let error_msg = result.error.as_deref().unwrap_or("Unknown error");
+        log::error!("[{}] API error: {}", entity_name, error_msg);
+        return Err(format!("[{}] API error: {}", entity_name, error_msg));
+    }
+
+    let initial_count = result.data.as_ref().map(|d| d.value.len()).unwrap_or(0);
     log::info!("[{}] Initial response: has_data={}, record_count={}, has_more={}",
         entity_name,
         result.data.is_some(),
-        result.data.as_ref().map(|d| d.value.len()).unwrap_or(0),
+        initial_count,
         result.has_more()
     );
+
+    // Log warning with query details when we get 0 records - often indicates invalid field
+    if initial_count == 0 {
+        log::warn!("[{}] ⚠️ Query returned 0 records. This may indicate an invalid field in the query.", entity_name);
+        log::warn!("[{}]   $select fields: {:?}", entity_name, fields);
+        if !expands.is_empty() {
+            log::warn!("[{}]   $expand clauses: {:?}", entity_name, expands);
+        }
+    }
 
     loop {
         page += 1;
