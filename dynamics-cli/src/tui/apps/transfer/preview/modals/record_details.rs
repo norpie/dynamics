@@ -5,10 +5,10 @@ use ratatui::text::{Line, Span};
 
 use crate::transfer::{LookupBindingContext, RecordAction, ResolvedRecord};
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
-use crate::tui::widgets::TextInputEvent;
+use crate::tui::widgets::{ListItem, ListState, TextInputEvent};
 use crate::tui::{Element, LayoutConstraint, Theme};
 
-use super::super::state::{Msg, RecordDetailState};
+use super::super::state::{FieldEditState, Msg, RecordDetailState};
 use super::super::view::sanitize_for_display;
 
 /// Render the record details/edit modal
@@ -32,8 +32,8 @@ pub fn render(
 
     Element::panel(content)
         .title(title)
-        .width(90)
-        .height(35)
+        .width(110)
+        .height(45)
         .build()
 }
 
@@ -160,13 +160,63 @@ fn render_action_selector(state: &RecordDetailState, theme: &Theme) -> Element<M
     Element::styled_text(Line::from(spans)).build()
 }
 
-/// Render fields in view mode (read-only)
+/// A field item for display in the view mode list
+#[derive(Clone)]
+pub struct FieldViewItem {
+    pub field_name: String,
+    pub value_display: String,
+    pub is_dirty: bool,
+    pub is_lookup: bool,
+}
+
+impl ListItem for FieldViewItem {
+    type Msg = Msg;
+
+    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+        let theme = &crate::global_runtime_config().theme;
+
+        let (name_color, value_color, bg_style) = if is_selected {
+            (theme.accent_primary, theme.text_primary, Some(Style::default().bg(theme.bg_surface)))
+        } else if self.is_lookup {
+            (theme.text_secondary, theme.accent_secondary, None)
+        } else {
+            (theme.text_secondary, theme.text_primary, None)
+        };
+
+        let dirty_indicator = if self.is_dirty {
+            Span::styled(" *", Style::default().fg(theme.accent_warning))
+        } else {
+            Span::raw("")
+        };
+
+        let mut builder = Element::styled_text(Line::from(vec![
+            Span::styled(
+                format!("{:<25}", truncate_str(&self.field_name, 25)),
+                Style::default().fg(name_color),
+            ),
+            Span::raw(" │ "),
+            Span::styled(
+                truncate_str(&self.value_display, 60),
+                Style::default().fg(value_color),
+            ),
+            dirty_indicator,
+        ]));
+
+        if let Some(bg) = bg_style {
+            builder = builder.background(bg);
+        }
+
+        builder.build()
+    }
+}
+
+/// Render fields in view mode (read-only) using a scrollable list
 fn render_fields_view(
     state: &RecordDetailState,
     lookup_context: Option<&LookupBindingContext>,
     theme: &Theme,
 ) -> Element<Msg> {
-    let field_rows: Vec<Element<Msg>> = state
+    let field_items: Vec<FieldViewItem> = state
         .fields
         .iter()
         .map(|field| {
@@ -178,51 +228,34 @@ fn render_fields_view(
             let value_display = if field.input.value().is_empty() {
                 "(null)".to_string()
             } else if is_lookup && is_guid_string(field.input.value()) {
-                // Show lookup binding indicator
                 let target = lookup_target.unwrap_or("?");
                 format!("→ {}({})", target, truncate_str(field.input.value(), 20))
             } else {
                 sanitize_for_display(field.input.value())
             };
 
-            let dirty_indicator = if field.is_dirty {
-                Span::styled(" *", Style::default().fg(theme.accent_warning))
-            } else {
-                Span::raw("")
-            };
-
-            // Use different color for lookup-bound fields
-            let value_style = if is_lookup && is_guid_string(field.input.value()) {
-                Style::default().fg(theme.accent_secondary)
-            } else {
-                Style::default().fg(theme.text_primary)
-            };
-
-            Element::styled_text(Line::from(vec![
-                Span::styled(
-                    format!("{:<20}", truncate_str(&field.field_name, 20)),
-                    Style::default().fg(theme.text_secondary),
-                ),
-                Span::raw(" │ "),
-                Span::styled(
-                    truncate_str(&value_display, 40),
-                    value_style,
-                ),
-                dirty_indicator,
-            ]))
-            .build()
+            FieldViewItem {
+                field_name: field.field_name.clone(),
+                value_display,
+                is_dirty: field.is_dirty,
+                is_lookup,
+            }
         })
         .collect();
 
-    if field_rows.is_empty() {
+    if field_items.is_empty() {
         return Element::text("No fields");
     }
 
-    let mut builder = ColumnBuilder::new();
-    for row in field_rows {
-        builder = builder.add(row, LayoutConstraint::Length(1));
-    }
-    builder.build()
+    Element::list(
+        FocusId::new("detail-fields-list"),
+        &field_items,
+        &state.fields_list_state,
+        theme,
+    )
+    .on_navigate(Msg::DetailFieldsListNavigate)
+    .on_render(Msg::DetailFieldsSetViewportHeight)
+    .build()
 }
 
 /// Render fields in edit mode

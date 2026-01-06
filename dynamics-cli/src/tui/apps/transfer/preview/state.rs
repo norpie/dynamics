@@ -149,6 +149,8 @@ pub struct RecordDetailState {
     pub fields: Vec<FieldEditState>,
     /// Currently focused field index (for keyboard navigation in edit mode)
     pub focused_field_idx: usize,
+    /// List state for fields scrolling in view mode
+    pub fields_list_state: crate::tui::widgets::ListState,
 }
 
 impl RecordDetailState {
@@ -175,6 +177,7 @@ impl RecordDetailState {
             current_action: action,
             fields,
             focused_field_idx: 0,
+            fields_list_state: crate::tui::widgets::ListState::with_selection(),
         }
     }
 
@@ -489,6 +492,8 @@ pub enum Msg {
     ToggleEditMode,
     RecordDetailActionChanged(RecordAction),
     RecordDetailFieldNavigate(crossterm::event::KeyCode),
+    DetailFieldsListNavigate(crossterm::event::KeyCode),
+    DetailFieldsSetViewportHeight(usize),
     StartFieldEdit,              // Enter on a field to start editing
     FocusedFieldInput(TextInputEvent), // Input events for the focused field
     FinishFieldEdit,             // Enter/Tab to finish editing field

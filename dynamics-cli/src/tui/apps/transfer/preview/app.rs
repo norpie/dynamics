@@ -1257,6 +1257,25 @@ impl App for TransferPreviewApp {
                 Command::None
             }
 
+            Msg::DetailFieldsListNavigate(key) => {
+                if let Some(ref mut detail) = state.record_detail_state {
+                    // Only navigate when not in edit mode
+                    if !detail.editing {
+                        let field_count = detail.fields.len();
+                        // handle_key uses stored viewport_height if available, fallback to 20
+                        detail.fields_list_state.handle_key(key, field_count, 20);
+                    }
+                }
+                Command::None
+            }
+
+            Msg::DetailFieldsSetViewportHeight(height) => {
+                if let Some(ref mut detail) = state.record_detail_state {
+                    detail.fields_list_state.set_viewport_height(height);
+                }
+                Command::None
+            }
+
             Msg::StartFieldEdit => {
                 if let Some(ref mut detail) = state.record_detail_state {
                     if detail.editing && !detail.editing_field {
