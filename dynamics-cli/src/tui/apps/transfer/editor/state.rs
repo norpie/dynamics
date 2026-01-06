@@ -80,6 +80,9 @@ pub struct State {
     // Per-entity field metadata cache (for showing types in tree)
     // Key: entity_idx, Value: target entity's field metadata
     pub entity_target_fields_cache: HashMap<usize, Vec<FieldMetadata>>,
+
+    // Clipboard for copy/paste of field mappings
+    pub clipboard: Option<FieldMapping>,
 }
 
 impl Default for State {
@@ -117,6 +120,7 @@ impl Default for State {
             quick_fields_entity_idx: None,
             pending_quick_fields: false,
             entity_target_fields_cache: HashMap::new(),
+            clipboard: None,
         }
     }
 }
@@ -1217,6 +1221,8 @@ pub enum Msg {
     AddField(usize), // entity_idx
     EditField(usize, usize), // entity_idx, field_idx
     DeleteField(usize, usize),
+    CopyField(usize, usize), // entity_idx, field_idx - copy to clipboard
+    PasteField(usize), // entity_idx - paste from clipboard
     CloseFieldModal,
     SaveField,
     FieldFormTarget(AutocompleteEvent),

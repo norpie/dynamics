@@ -53,6 +53,7 @@ impl App for MappingEditorApp {
             quick_fields_entity_idx: None,
             pending_quick_fields: false,
             entity_target_fields_cache: std::collections::HashMap::new(),
+            clipboard: None,
         };
 
         // Load config first (fast, local DB), then load entities with loading screen
@@ -472,6 +473,37 @@ impl App for MappingEditorApp {
             Msg::DeleteField(entity_idx, field_idx) => {
                 state.show_delete_confirm = true;
                 state.delete_target = Some(DeleteTarget::Field(entity_idx, field_idx));
+                Command::None
+            }
+
+            Msg::CopyField(entity_idx, field_idx) => {
+                if let Resource::Success(config) = &state.config {
+                    if let Some(entity) = config.entity_mappings.get(entity_idx) {
+                        if let Some(field_mapping) = entity.field_mappings.get(field_idx) {
+                            state.clipboard = Some(field_mapping.clone());
+                            log::info!("Copied field mapping '{}' to clipboard", field_mapping.target_field);
+                        }
+                    }
+                }
+                Command::None
+            }
+
+            Msg::PasteField(entity_idx) => {
+                let Some(field_mapping) = state.clipboard.clone() else {
+                    return Command::None;
+                };
+
+                if let Resource::Success(config) = &mut state.config {
+                    if let Some(entity) = config.entity_mappings.get_mut(entity_idx) {
+                        entity.field_mappings.push(field_mapping.clone());
+                        log::info!("Pasted field mapping '{}' to entity '{}'", field_mapping.target_field, entity.target_entity);
+                        state.tree_state.invalidate_cache();
+
+                        // Auto-save
+                        let config_clone = config.clone();
+                        return Command::perform(save_config(config_clone), Msg::SaveCompleted);
+                    }
+                }
                 Command::None
             }
 

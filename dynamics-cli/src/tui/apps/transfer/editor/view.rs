@@ -1629,6 +1629,14 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                             "Quick add fields",
                             Msg::OpenQuickFields,
                         ));
+                        // Paste from clipboard
+                        if state.clipboard.is_some() {
+                            subs.push(Subscription::keyboard(
+                                KeyCode::Char('p'),
+                                "Paste field",
+                                Msg::PasteField(idx),
+                            ));
+                        }
                     }
                 } else if selected.starts_with("field_") {
                     let parts: Vec<&str> = selected.strip_prefix("field_").unwrap_or("").split('_').collect();
@@ -1660,6 +1668,20 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                                 "Quick add fields",
                                 Msg::OpenQuickFields,
                             ));
+                            // Copy field to clipboard
+                            subs.push(Subscription::keyboard(
+                                KeyCode::Char('c'),
+                                "Copy field",
+                                Msg::CopyField(entity_idx, field_idx),
+                            ));
+                            // Paste from clipboard
+                            if state.clipboard.is_some() {
+                                subs.push(Subscription::keyboard(
+                                    KeyCode::Char('p'),
+                                    "Paste field",
+                                    Msg::PasteField(entity_idx),
+                                ));
+                            }
                         }
                     }
                 } else if selected.starts_with("resolver_") {
@@ -1693,6 +1715,14 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                                 "Quick add fields",
                                 Msg::OpenQuickFields,
                             ));
+                            // Paste from clipboard
+                            if state.clipboard.is_some() {
+                                subs.push(Subscription::keyboard(
+                                    KeyCode::Char('p'),
+                                    "Paste field",
+                                    Msg::PasteField(entity_idx),
+                                ));
+                            }
                         }
                     }
                 }
