@@ -1191,6 +1191,7 @@ pub enum Msg {
     // Tree navigation
     TreeEvent(TreeEvent),
     TreeSelect(String),
+    TreeViewportHeight(usize),
 
     // Entity mapping actions
     AddEntity,

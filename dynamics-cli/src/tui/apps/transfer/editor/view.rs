@@ -190,6 +190,7 @@ fn render_editor(state: &mut State, source_env: &str, target_env: &str, theme: &
         Element::tree(FocusId::new("mapping-tree"), &items, &mut state.tree_state, theme)
             .on_event(Msg::TreeEvent)
             .on_select(Msg::TreeSelect)
+            .on_render(Msg::TreeViewportHeight)
             .build()
     };
 

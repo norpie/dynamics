@@ -166,6 +166,11 @@ impl App for MappingEditorApp {
                 Command::None
             }
 
+            Msg::TreeViewportHeight(height) => {
+                state.tree_state.set_viewport_height(height);
+                Command::None
+            }
+
             // Entity modal
             Msg::AddEntity => {
                 state.show_entity_modal = true;
