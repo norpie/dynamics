@@ -1644,6 +1644,22 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                                 "Delete field",
                                 Msg::DeleteField(entity_idx, field_idx),
                             ));
+                            // Also allow adding to the parent entity
+                            subs.push(Subscription::keyboard(
+                                KeyCode::Char('f'),
+                                "Add field",
+                                Msg::AddField(entity_idx),
+                            ));
+                            subs.push(Subscription::keyboard(
+                                KeyCode::Char('r'),
+                                "Add resolver",
+                                Msg::AddResolver(entity_idx),
+                            ));
+                            subs.push(Subscription::keyboard(
+                                KeyCode::Char('q'),
+                                "Quick add fields",
+                                Msg::OpenQuickFields,
+                            ));
                         }
                     }
                 } else if selected.starts_with("resolver_") {
@@ -1660,6 +1676,22 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                                 KeyCode::Char('d'),
                                 "Delete resolver",
                                 Msg::DeleteResolver(entity_idx, resolver_idx),
+                            ));
+                            // Also allow adding to the parent entity
+                            subs.push(Subscription::keyboard(
+                                KeyCode::Char('f'),
+                                "Add field",
+                                Msg::AddField(entity_idx),
+                            ));
+                            subs.push(Subscription::keyboard(
+                                KeyCode::Char('r'),
+                                "Add resolver",
+                                Msg::AddResolver(entity_idx),
+                            ));
+                            subs.push(Subscription::keyboard(
+                                KeyCode::Char('q'),
+                                "Quick add fields",
+                                Msg::OpenQuickFields,
                             ));
                         }
                     }

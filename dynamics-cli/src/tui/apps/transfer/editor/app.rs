@@ -1124,9 +1124,18 @@ impl App for MappingEditorApp {
             // Quick field picker
             Msg::OpenQuickFields => {
                 // Get current entity index from tree selection
-                let entity_idx = state.tree_state.selected()
-                    .and_then(|s| s.strip_prefix("entity_"))
-                    .and_then(|s| s.parse::<usize>().ok());
+                // Supports entity_*, field_*_*, and resolver_*_* formats
+                let entity_idx = state.tree_state.selected().and_then(|s| {
+                    if let Some(idx_str) = s.strip_prefix("entity_") {
+                        idx_str.parse::<usize>().ok()
+                    } else if let Some(rest) = s.strip_prefix("field_") {
+                        rest.split('_').next().and_then(|idx| idx.parse::<usize>().ok())
+                    } else if let Some(rest) = s.strip_prefix("resolver_") {
+                        rest.split('_').next().and_then(|idx| idx.parse::<usize>().ok())
+                    } else {
+                        None
+                    }
+                });
 
                 let Some(entity_idx) = entity_idx else {
                     return Command::None;
