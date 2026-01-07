@@ -34,6 +34,7 @@ pub struct State {
     pub show_entity_modal: bool,
     pub entity_form: EntityMappingForm,
     pub editing_entity_idx: Option<usize>,
+    pub entity_modal_scroll: ScrollableState,
 
     // Field mapping modal
     pub show_field_modal: bool,
@@ -96,6 +97,7 @@ impl Default for State {
             show_entity_modal: false,
             entity_form: EntityMappingForm::default(),
             editing_entity_idx: None,
+            entity_modal_scroll: ScrollableState::new(),
             show_field_modal: false,
             field_form: FieldMappingForm::default(),
             editing_field: None,
@@ -205,6 +207,11 @@ pub struct EntityMappingForm {
     pub filter_field: AutocompleteField,
     pub filter_condition_type: ConditionType,
     pub filter_value: TextInputField,
+    /// Target record filter
+    pub target_filter_enabled: bool,
+    pub target_filter_field: AutocompleteField,
+    pub target_filter_condition_type: ConditionType,
+    pub target_filter_value: TextInputField,
 }
 
 impl Default for EntityMappingForm {
@@ -221,6 +228,10 @@ impl Default for EntityMappingForm {
             filter_field: AutocompleteField::default(),
             filter_condition_type: ConditionType::default(),
             filter_value: TextInputField::default(),
+            target_filter_enabled: false,
+            target_filter_field: AutocompleteField::default(),
+            target_filter_condition_type: ConditionType::default(),
+            target_filter_value: TextInputField::default(),
         }
     }
 }
@@ -255,6 +266,19 @@ impl EntityMappingForm {
             };
         }
 
+        // Load target filter if present
+        if let Some(filter) = &mapping.target_filter {
+            form.target_filter_enabled = true;
+            form.target_filter_field.value = filter.field_path.to_string();
+            form.target_filter_condition_type = ConditionType::from_condition(&filter.condition);
+            form.target_filter_value.value = match &filter.condition {
+                Condition::Equals { value } | Condition::NotEquals { value } => {
+                    value.to_string()
+                }
+                Condition::IsNull | Condition::IsNotNull => String::new(),
+            };
+        }
+
         form
     }
 
@@ -264,6 +288,16 @@ impl EntityMappingForm {
             let field_path = FieldPath::parse(self.filter_field.value.trim())
                 .unwrap_or_else(|_| FieldPath::simple(self.filter_field.value.trim()));
             let condition = self.filter_condition_type.to_condition(&self.filter_value.value);
+            Some(SourceFilter::new(field_path, condition))
+        } else {
+            None
+        };
+
+        // Build target filter if enabled
+        let target_filter = if self.target_filter_enabled && !self.target_filter_field.value.trim().is_empty() {
+            let field_path = FieldPath::parse(self.target_filter_field.value.trim())
+                .unwrap_or_else(|_| FieldPath::simple(self.target_filter_field.value.trim()));
+            let condition = self.target_filter_condition_type.to_condition(&self.target_filter_value.value);
             Some(SourceFilter::new(field_path, condition))
         } else {
             None
@@ -281,6 +315,7 @@ impl EntityMappingForm {
                 deactivates: self.allow_deactivates,
             },
             source_filter,
+            target_filter,
             resolvers: vec![],
             field_mappings: vec![],
         }
@@ -1216,6 +1251,16 @@ pub enum Msg {
     EntityFormFilterField(AutocompleteEvent),
     EntityFormToggleFilterCondition,
     EntityFormFilterValue(TextInputEvent),
+
+    // Entity target filter
+    EntityFormToggleTargetFilter,
+    EntityFormTargetFilterField(AutocompleteEvent),
+    EntityFormToggleTargetFilterCondition,
+    EntityFormTargetFilterValue(TextInputEvent),
+
+    // Entity modal scroll
+    EntityModalScroll(crossterm::event::KeyCode),
+    EntityModalViewport(usize, usize, usize, usize), // viewport_height, content_height, viewport_width, content_width
 
     // Field mapping actions
     AddField(usize), // entity_idx

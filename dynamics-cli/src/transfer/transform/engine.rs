@@ -133,8 +133,8 @@ impl TransformEngine {
             source_records.iter().collect()
         };
 
-        // Index target records by primary key for fast lookup
-        let target_index: HashMap<String, &serde_json::Value> = target_records
+        // Build full target index (unfiltered) for existence checking
+        let full_target_index: HashMap<String, &serde_json::Value> = target_records
             .iter()
             .filter_map(|r| {
                 r.get(&ctx.target_pk_field)
@@ -143,11 +143,36 @@ impl TransformEngine {
             })
             .collect();
 
+        // Apply target filter if present
+        let (filtered_target, target_filter_active): (Vec<&serde_json::Value>, bool) = if let Some(filter) = &mapping.target_filter {
+            let before_count = target_records.len();
+            let filtered: Vec<_> = target_records.iter().filter(|r| filter.matches(r)).collect();
+            log::debug!(
+                "Target filter applied: {} -> {} records (filtered out {})",
+                before_count,
+                filtered.len(),
+                before_count - filtered.len()
+            );
+            (filtered, true)
+        } else {
+            (target_records.iter().collect(), false)
+        };
+
+        // Index filtered target records by primary key for matching
+        let target_index: HashMap<String, &serde_json::Value> = filtered_target
+            .iter()
+            .filter_map(|r| {
+                r.get(&ctx.target_pk_field)
+                    .and_then(|v| v.as_str())
+                    .map(|id| (id.to_string(), *r))
+            })
+            .collect();
+
         log::debug!(
-            "Transform entity '{}': {} source records (after filter), {} target records, {} indexed by target pk '{}'",
+            "Transform entity '{}': {} source records (after filter), {} target records (after filter), {} indexed by target pk '{}'",
             mapping.target_entity,
             filtered_source.len(),
-            target_records.len(),
+            filtered_target.len(),
             target_index.len(),
             ctx.target_pk_field
         );
@@ -172,7 +197,22 @@ impl TransformEngine {
             })
             .collect();
 
+        let mut skipped_by_target_filter = 0usize;
         for record in filtered_source {
+            // If target filter is active, check if this source record's target exists but was filtered out
+            if target_filter_active {
+                let source_id = record
+                    .get(&ctx.source_pk_field)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                // If target exists (unfiltered) but not in filtered set, skip this source record
+                if full_target_index.contains_key(source_id) && !target_index.contains_key(source_id) {
+                    skipped_by_target_filter += 1;
+                    continue;
+                }
+            }
+
             let resolved_record = Self::transform_record(
                 record,
                 &mapping.field_mappings,
@@ -184,9 +224,17 @@ impl TransformEngine {
             resolved.add_record(resolved_record);
         }
 
+        if skipped_by_target_filter > 0 {
+            log::debug!(
+                "Skipped {} source records because their targets were filtered out",
+                skipped_by_target_filter
+            );
+        }
+
         // Find target-only records (exist in target but not in source)
         // Create Delete/Deactivate records based on operation filter
-        for target in target_records {
+        // Uses filtered_target to respect target filter
+        for target in &filtered_target {
             let target_id_str = target
                 .get(&ctx.target_pk_field)
                 .and_then(|v| v.as_str())
@@ -666,6 +714,7 @@ mod tests {
             ],
             resolvers: Vec::new(),
             source_filter: None,
+            target_filter: None,
         };
 
         let result = TransformEngine::transform_entity(
@@ -703,6 +752,7 @@ mod tests {
                     ],
                     resolvers: Vec::new(),
                     source_filter: None,
+                    target_filter: None,
                 },
             ],
         };
@@ -1100,6 +1150,7 @@ mod tests {
                         Resolver::new("contact_by_email", "contact", "emailaddress1"),
                     ],
                     source_filter: None,
+                    target_filter: None,
                 },
             ],
         };

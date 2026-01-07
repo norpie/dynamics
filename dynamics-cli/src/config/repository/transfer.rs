@@ -106,7 +106,7 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
         r#"
         SELECT id, source_entity, target_entity, priority,
                allow_creates, allow_updates, allow_deletes, allow_deactivates,
-               source_filter_json
+               source_filter_json, target_filter_json
         FROM transfer_entity_mappings
         WHERE config_id = ?
         ORDER BY priority, source_entity
@@ -204,6 +204,11 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
             .try_get::<Option<String>, _>("source_filter_json")?
             .and_then(|json| serde_json::from_str(&json).ok());
 
+        // Parse target filter from JSON if present
+        let target_filter: Option<SourceFilter> = entity_row
+            .try_get::<Option<String>, _>("target_filter_json")?
+            .and_then(|json| serde_json::from_str(&json).ok());
+
         entity_mappings.push(EntityMapping {
             id: Some(entity_id),
             source_entity: entity_row.try_get("source_entity")?,
@@ -211,6 +216,7 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
             priority: entity_row.try_get::<i64, _>("priority")? as u32,
             operation_filter,
             source_filter,
+            target_filter,
             resolvers,
             field_mappings,
         });
@@ -291,14 +297,20 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
             .as_ref()
             .map(|f| serde_json::to_string(f).unwrap_or_default());
 
+        // Serialize target filter to JSON if present
+        let target_filter_json: Option<String> = entity
+            .target_filter
+            .as_ref()
+            .map(|f| serde_json::to_string(f).unwrap_or_default());
+
         let entity_result = sqlx::query(
             r#"
             INSERT INTO transfer_entity_mappings (
                 config_id, source_entity, target_entity, priority,
                 allow_creates, allow_updates, allow_deletes, allow_deactivates,
-                source_filter_json
+                source_filter_json, target_filter_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(config_id)
@@ -310,6 +322,7 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
         .bind(if entity.operation_filter.deletes { 1i64 } else { 0i64 })
         .bind(if entity.operation_filter.deactivates { 1i64 } else { 0i64 })
         .bind(&source_filter_json)
+        .bind(&target_filter_json)
         .execute(&mut *tx)
         .await
         .context("Failed to insert entity mapping")?;

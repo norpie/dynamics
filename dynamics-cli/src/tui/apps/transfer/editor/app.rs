@@ -2,7 +2,7 @@ use crate::config::repository::transfer::{get_transfer_config, save_transfer_con
 use crate::transfer::{ResolverFallback, TransferConfig};
 use crate::tui::element::FocusId;
 use crate::tui::resource::Resource;
-use crate::tui::widgets::{TreeState, ListState};
+use crate::tui::widgets::{TreeState, ListState, ScrollableState};
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
 use crate::api::{FieldMetadata, FieldType};
@@ -29,6 +29,7 @@ impl App for MappingEditorApp {
             show_entity_modal: false,
             entity_form: EntityMappingForm::default(),
             editing_entity_idx: None,
+            entity_modal_scroll: ScrollableState::new(),
             show_field_modal: false,
             field_form: FieldMappingForm::default(),
             editing_field: None,
@@ -178,6 +179,7 @@ impl App for MappingEditorApp {
                 state.editing_entity_idx = None;
                 state.entity_form = EntityMappingForm::default();
                 state.entity_form.priority.value = next_priority(state).to_string();
+                state.entity_modal_scroll = ScrollableState::new();
                 Command::set_focus(FocusId::new("entity-source"))
             }
 
@@ -187,17 +189,27 @@ impl App for MappingEditorApp {
                         state.show_entity_modal = true;
                         state.editing_entity_idx = Some(idx);
                         state.entity_form = EntityMappingForm::from_mapping(mapping);
+                        state.entity_modal_scroll = ScrollableState::new();
 
-                        // Load source fields for filter autocomplete
+                        // Load source fields for source filter autocomplete
                         let source_entity = mapping.source_entity.clone();
                         let source_env = config.source_env.clone();
                         state.source_fields = Resource::Loading;
+
+                        // Load target fields for target filter autocomplete
+                        let target_entity = mapping.target_entity.clone();
+                        let target_env = config.target_env.clone();
+                        state.target_fields = Resource::Loading;
 
                         return Command::batch(vec![
                             Command::set_focus(FocusId::new("entity-source")),
                             Command::perform(
                                 load_entity_fields(source_env, source_entity),
                                 Msg::SourceFieldsLoaded,
+                            ),
+                            Command::perform(
+                                load_entity_fields(target_env, target_entity),
+                                Msg::TargetFieldsLoaded,
                             ),
                         ]);
                     }
@@ -292,7 +304,31 @@ impl App for MappingEditorApp {
                     Resource::Success(entities) => entities.clone(),
                     _ => vec![],
                 };
+
+                // Check if this is a selection event that should trigger field loading
+                let should_load_fields = matches!(
+                    &event,
+                    crate::tui::widgets::AutocompleteEvent::Select(_) |
+                    crate::tui::widgets::AutocompleteEvent::Navigate(crossterm::event::KeyCode::Enter)
+                );
+
                 state.entity_form.target_entity.handle_event::<Msg>(event, &options);
+
+                // Load target entity fields for target filter autocomplete when entity is selected
+                if should_load_fields {
+                    let entity_name = state.entity_form.target_entity.value.trim().to_string();
+                    if !entity_name.is_empty() && options.contains(&entity_name) {
+                        if let Resource::Success(config) = &state.config {
+                            let target_env = config.target_env.clone();
+                            state.target_fields = Resource::Loading;
+                            return Command::perform(
+                                load_entity_fields(target_env, entity_name),
+                                Msg::TargetFieldsLoaded,
+                            );
+                        }
+                    }
+                }
+
                 Command::None
             }
 
@@ -343,6 +379,47 @@ impl App for MappingEditorApp {
 
             Msg::EntityFormFilterValue(event) => {
                 state.entity_form.filter_value.handle_event(event, Some(200));
+                Command::None
+            }
+
+            // Entity target filter
+            Msg::EntityFormToggleTargetFilter => {
+                state.entity_form.target_filter_enabled = !state.entity_form.target_filter_enabled;
+                Command::None
+            }
+
+            Msg::EntityFormTargetFilterField(event) => {
+                let options = match &state.target_fields {
+                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
+                    _ => vec![],
+                };
+                state.entity_form.target_filter_field.handle_event::<Msg>(event, &options);
+                Command::None
+            }
+
+            Msg::EntityFormToggleTargetFilterCondition => {
+                state.entity_form.target_filter_condition_type = state.entity_form.target_filter_condition_type.next();
+                Command::None
+            }
+
+            Msg::EntityFormTargetFilterValue(event) => {
+                state.entity_form.target_filter_value.handle_event(event, Some(200));
+                Command::None
+            }
+
+            // Entity modal scroll
+            Msg::EntityModalScroll(key) => {
+                let content_height = state.entity_modal_scroll.content_height().unwrap_or(50);
+                let viewport_height = state.entity_modal_scroll.viewport_height().unwrap_or(25);
+                state.entity_modal_scroll.handle_key(key, content_height, viewport_height);
+                Command::None
+            }
+
+            Msg::EntityModalViewport(viewport_height, content_height, viewport_width, content_width) => {
+                state.entity_modal_scroll.set_viewport_height(viewport_height);
+                state.entity_modal_scroll.update_scroll(viewport_height, content_height);
+                state.entity_modal_scroll.set_viewport_width(viewport_width);
+                state.entity_modal_scroll.update_horizontal_scroll(viewport_width, content_width);
                 Command::None
             }
 

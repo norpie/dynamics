@@ -1,0 +1,2 @@
+-- SQLite doesn't support DROP COLUMN directly, but this migration is not reversible in practice
+-- The column will remain but be ignored if downgraded

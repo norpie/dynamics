@@ -53,6 +53,10 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
             Resource::Success(f) => f.as_slice(),
             _ => &[],
         };
+        let target_fields_for_filter = match &state.target_fields {
+            Resource::Success(f) => f.as_slice(),
+            _ => &[],
+        };
         view = view.with_app_modal(
             render_entity_modal(
                 &mut state.entity_form,
@@ -60,6 +64,8 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
                 source_entities,
                 target_entities,
                 source_fields_for_filter,
+                target_fields_for_filter,
+                &state.entity_modal_scroll,
                 theme,
             ),
             Alignment::Center,
@@ -235,9 +241,10 @@ fn render_entity_modal(
     source_entities: &[String],
     target_entities: &[String],
     source_fields: &[FieldMetadata],
-    theme: &Theme,
+    target_fields: &[FieldMetadata],
+    scroll_state: &crate::tui::widgets::ScrollableState,
+    _theme: &Theme,
 ) -> Element<Msg> {
-    use super::state::ConditionType;
     let title = if is_edit { "Edit Entity Mapping" } else { "Add Entity Mapping" };
 
     // Source entity autocomplete
@@ -364,6 +371,63 @@ fn render_entity_modal(
         Element::panel(filter_toggle_btn).title("Source Record Filter").build()
     };
 
+    // Target filter section
+    let target_filter_toggle_label = if form.target_filter_enabled { "[x] Target Filter" } else { "[ ] Target Filter" };
+    let target_filter_toggle_btn = Element::button(FocusId::new("entity-target-filter-toggle"), target_filter_toggle_label)
+        .on_press(Msg::EntityFormToggleTargetFilter)
+        .build();
+
+    let target_filter_panel = if form.target_filter_enabled {
+        // Field autocomplete
+        let field_options: Vec<String> = target_fields.iter().map(|f| f.logical_name.clone()).collect();
+        let field_input = Element::autocomplete(
+            FocusId::new("entity-target-filter-field"),
+            field_options,
+            form.target_filter_field.value.clone(),
+            &mut form.target_filter_field.state,
+        )
+        .placeholder(if target_fields.is_empty() { "Select target entity first..." } else { "Select field..." })
+        .on_event(Msg::EntityFormTargetFilterField)
+        .build();
+
+        // Condition type button
+        let condition_label = format!("{} (click to change)", form.target_filter_condition_type.label());
+        let condition_btn = Element::button(FocusId::new("entity-target-filter-condition"), condition_label)
+            .on_press(Msg::EntityFormToggleTargetFilterCondition)
+            .build();
+
+        // Value input (only for Equals/NotEquals)
+        let filter_content = if form.target_filter_condition_type.needs_value() {
+            let value_input = Element::text_input(
+                FocusId::new("entity-target-filter-value"),
+                &form.target_filter_value.value,
+                &mut form.target_filter_value.state,
+            )
+            .placeholder("Filter value...")
+            .on_event(Msg::EntityFormTargetFilterValue)
+            .build();
+
+            ColumnBuilder::new()
+                .add(target_filter_toggle_btn, LayoutConstraint::Length(3))
+                .add(field_input, LayoutConstraint::Length(3))
+                .add(condition_btn, LayoutConstraint::Length(3))
+                .add(value_input, LayoutConstraint::Length(3))
+                .spacing(1)
+                .build()
+        } else {
+            ColumnBuilder::new()
+                .add(target_filter_toggle_btn, LayoutConstraint::Length(3))
+                .add(field_input, LayoutConstraint::Length(3))
+                .add(condition_btn, LayoutConstraint::Length(3))
+                .spacing(1)
+                .build()
+        };
+
+        Element::panel(filter_content).title("Target Record Filter").build()
+    } else {
+        Element::panel(target_filter_toggle_btn).title("Target Record Filter").build()
+    };
+
     // Buttons
     let cancel_btn = Element::button(FocusId::new("entity-cancel"), "Cancel")
         .on_press(Msg::CloseEntityModal)
@@ -383,31 +447,52 @@ fn render_entity_modal(
         .add(save_btn, LayoutConstraint::Length(12))
         .build();
 
-    // Calculate filter panel height (3 per element + spacing + panel border)
-    let filter_panel_height = if form.filter_enabled {
+    // Calculate filter panel heights (3 per element + spacing + panel border)
+    let source_filter_panel_height = if form.filter_enabled {
         if form.filter_condition_type.needs_value() { 18 } else { 14 }
     } else {
         5
     };
 
-    let form_content = ColumnBuilder::new()
+    let target_filter_panel_height = if form.target_filter_enabled {
+        if form.target_filter_condition_type.needs_value() { 18 } else { 14 }
+    } else {
+        5
+    };
+
+    // Build the scrollable form content (everything except buttons)
+    let scrollable_content = ColumnBuilder::new()
         .add(source_panel, LayoutConstraint::Length(3))
         .add(target_panel, LayoutConstraint::Length(3))
         .add(priority_panel, LayoutConstraint::Length(3))
         .add(op_filter_panel, LayoutConstraint::Length(5))
-        .add(filter_panel, LayoutConstraint::Length(filter_panel_height as u16))
-        .add(Element::text(""), LayoutConstraint::Fill(1))
+        .add(filter_panel, LayoutConstraint::Length(source_filter_panel_height as u16))
+        .add(target_filter_panel, LayoutConstraint::Length(target_filter_panel_height as u16))
+        .spacing(1)
+        .build();
+
+    // Wrap in scrollable with navigation and viewport handlers
+    let scrollable = Element::scrollable(
+        FocusId::new("entity-modal-scroll"),
+        scrollable_content,
+        scroll_state,
+    )
+    .on_navigate(Msg::EntityModalScroll)
+    .on_render(Msg::EntityModalViewport)
+    .build();
+
+    // Main content layout: scrollable area + fixed button row at bottom
+    let form_content = ColumnBuilder::new()
+        .add(scrollable, LayoutConstraint::Fill(1))
         .add(button_row, LayoutConstraint::Length(3))
         .spacing(1)
         .build();
 
-    // Adjust modal height based on filter state
-    let modal_height = 26 + filter_panel_height;
-
+    // Fixed modal height - content scrolls inside
     Element::panel(Element::container(form_content).padding(1).build())
         .title(title)
         .width(65)
-        .height(modal_height as u16)
+        .height(35)
         .build()
 }
 

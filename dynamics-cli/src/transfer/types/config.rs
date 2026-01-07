@@ -365,6 +365,9 @@ pub struct EntityMapping {
     /// Optional filter for source records - only matching records are processed
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_filter: Option<SourceFilter>,
+    /// Optional filter for target records - only matching records are considered during matching
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_filter: Option<SourceFilter>,
     /// Resolvers for lookup field resolution (scoped to this entity)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub resolvers: Vec<Resolver>,
@@ -386,6 +389,7 @@ impl EntityMapping {
             priority,
             operation_filter: OperationFilter::default(),
             source_filter: None,
+            target_filter: None,
             resolvers: Vec::new(),
             field_mappings: Vec::new(),
         }
