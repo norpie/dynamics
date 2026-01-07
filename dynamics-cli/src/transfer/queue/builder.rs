@@ -20,13 +20,24 @@ const DEFAULT_BATCH_SIZE: usize = 50;
 /// For Update operations with `changed_fields` set, only the changed fields are
 /// included in the payload (partial update). This reduces payload size and avoids
 /// unnecessary writes to unchanged fields.
+///
+/// When `skip_state_fields` is true, statecode and statuscode fields are excluded
+/// from the payload. This is used for CREATE operations on inactive records, which
+/// must be created as active first, then deactivated in a separate operation.
 fn prepare_payload(
     record: &ResolvedRecord,
     lookup_ctx: Option<&LookupBindingContext>,
+    skip_state_fields: bool,
 ) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
 
     for (field_name, value) in &record.fields {
+        // Skip statecode/statuscode for inactive records being created
+        // (they must be created as active first, then deactivated separately)
+        if skip_state_fields && (field_name == "statecode" || field_name == "statuscode") {
+            continue;
+        }
+
         // For partial updates, skip fields that haven't changed
         if let Some(ref changed) = record.changed_fields {
             if !changed.contains(field_name) {
@@ -114,6 +125,8 @@ enum Phase {
     TargetOnly,
     /// Then create new records
     Create,
+    /// Deactivate newly created records that were inactive in source
+    PostCreateDeactivate,
     /// Finally update existing records
     Update,
 }
@@ -123,6 +136,7 @@ impl Phase {
         match self {
             Phase::TargetOnly => "target-only",
             Phase::Create => "create",
+            Phase::PostCreateDeactivate => "post-create-deactivate",
             Phase::Update => "update",
         }
     }
@@ -131,7 +145,8 @@ impl Phase {
         match self {
             Phase::TargetOnly => 0,
             Phase::Create => 1,
-            Phase::Update => 2,
+            Phase::PostCreateDeactivate => 2,
+            Phase::Update => 3,
         }
     }
 }
@@ -190,9 +205,19 @@ fn build_entity_queue_items(
             Phase::Create,
             options,
         ));
+
+        // Build queue items for post-create deactivation (phase 2)
+        // This handles records that were inactive in source - they must be created
+        // as active first, then deactivated in a separate operation
+        items.extend(build_post_create_deactivate_queue_items(
+            entity,
+            transfer,
+            &creates,
+            options,
+        ));
     }
 
-    // Build queue items for updates (phase 2) - only if updates are enabled
+    // Build queue items for updates (phase 3) - only if updates are enabled
     if entity.operation_filter.updates {
         let updates: Vec<_> = entity
             .records
@@ -225,11 +250,11 @@ fn build_phase_queue_items(
 
     // Calculate priority:
     // - Base priority (1)
-    // - + entity.priority * 3 (so each entity has room for target-only/create/update phases)
-    // - + phase offset (0 for target-only, 1 for create, 2 for update)
-    // This ensures: entity1.target-only < entity1.creates < entity1.updates < entity2.target-only ...
+    // - + entity.priority * 4 (so each entity has room for target-only/create/post-create-deactivate/update phases)
+    // - + phase offset (0 for target-only, 1 for create, 2 for post-create-deactivate, 3 for update)
+    // This ensures: entity1.target-only < entity1.creates < entity1.post-create-deactivate < entity1.updates < entity2.target-only ...
     let priority = BASE_PRIORITY
-        .saturating_add((entity.priority as u8).saturating_mul(3))
+        .saturating_add((entity.priority as u8).saturating_mul(4))
         .saturating_add(phase.priority_offset())
         .min(127);
 
@@ -243,10 +268,20 @@ fn build_phase_queue_items(
     let operations: Vec<Operation> = records
         .iter()
         .map(|record| {
-            let payload = prepare_payload(record, lookup_ctx);
+            // For CREATE operations on inactive records, skip statecode/statuscode
+            // (they must be created as active first, then deactivated separately)
+            let is_inactive = record
+                .fields
+                .get("statecode")
+                .and_then(|v| v.as_int())
+                .map(|s| s != 0)
+                .unwrap_or(false);
+            let skip_state_fields = phase == Phase::Create && is_inactive;
+
+            let payload = prepare_payload(record, lookup_ctx, skip_state_fields);
             match phase {
-                Phase::TargetOnly => {
-                    // TargetOnly is handled separately by build_target_only_queue_items
+                Phase::TargetOnly | Phase::PostCreateDeactivate => {
+                    // TargetOnly and PostCreateDeactivate are handled separately
                     // This branch shouldn't be reached, but we handle it anyway
                     Operation::delete(entity_set, record.source_id.to_string())
                 }
@@ -310,6 +345,115 @@ fn build_phase_queue_items(
         .collect()
 }
 
+/// Build queue items for deactivating newly created inactive records
+///
+/// When a source record is inactive (statecode != 0), we cannot create it directly
+/// in inactive state. Instead, we create it as active, then deactivate it in a
+/// separate operation. This function builds those deactivation operations.
+fn build_post_create_deactivate_queue_items(
+    entity: &ResolvedEntity,
+    transfer: &ResolvedTransfer,
+    records: &[&ResolvedRecord],
+    options: &QueueBuildOptions,
+) -> Vec<QueueItem> {
+    // Filter to only inactive CREATE records
+    let inactive_creates: Vec<_> = records
+        .iter()
+        .filter(|r| r.action == RecordAction::Create)
+        .filter(|r| {
+            r.fields
+                .get("statecode")
+                .and_then(|v| v.as_int())
+                .map(|s| s != 0)
+                .unwrap_or(false)
+        })
+        .collect();
+
+    if inactive_creates.is_empty() {
+        return Vec::new();
+    }
+
+    // Calculate priority (PostCreateDeactivate phase - after creates, before updates)
+    let priority = BASE_PRIORITY
+        .saturating_add((entity.priority as u8).saturating_mul(4))
+        .saturating_add(Phase::PostCreateDeactivate.priority_offset())
+        .min(127);
+
+    // Use entity_set_name for API calls
+    let entity_set = entity
+        .entity_set_name
+        .as_ref()
+        .unwrap_or(&entity.entity_name);
+
+    // Build PATCH operations with statecode + statuscode
+    let operations: Vec<Operation> = inactive_creates
+        .iter()
+        .map(|record| {
+            let mut payload = serde_json::Map::new();
+            if let Some(statecode) = record.fields.get("statecode") {
+                payload.insert("statecode".to_string(), statecode.to_json());
+            }
+            if let Some(statuscode) = record.fields.get("statuscode") {
+                payload.insert("statuscode".to_string(), statuscode.to_json());
+            }
+            Operation::update(
+                entity_set,
+                record.source_id.to_string(),
+                serde_json::Value::Object(payload),
+            )
+        })
+        .collect();
+
+    // Determine batch size
+    let batch_size = if options.batch_size == 0 {
+        operations.len()
+    } else {
+        options.batch_size
+    };
+
+    // Split into batches
+    let chunks: Vec<_> = operations.chunks(batch_size).collect();
+    let total_batches = chunks.len();
+
+    chunks
+        .into_iter()
+        .enumerate()
+        .map(|(i, chunk)| {
+            let ops = Operations::from_operations(chunk.to_vec());
+
+            let description = if total_batches == 1 {
+                format!(
+                    "{}: {} {} ({} records)",
+                    transfer.config_name,
+                    entity.entity_name,
+                    Phase::PostCreateDeactivate.label(),
+                    chunk.len()
+                )
+            } else {
+                format!(
+                    "{}: {} {} {}/{} ({} records)",
+                    transfer.config_name,
+                    entity.entity_name,
+                    Phase::PostCreateDeactivate.label(),
+                    i + 1,
+                    total_batches,
+                    chunk.len()
+                )
+            };
+
+            let metadata = QueueMetadata {
+                source: "Transfer".to_string(),
+                entity_type: format!("transfer: {}", entity.entity_name),
+                description,
+                row_number: None,
+                environment_name: transfer.target_env.clone(),
+            };
+
+            QueueItem::new(ops, metadata, priority)
+        })
+        .collect()
+}
+
 /// Build queue items for delete records
 fn build_delete_queue_items(
     entity: &ResolvedEntity,
@@ -323,7 +467,7 @@ fn build_delete_queue_items(
 
     // Calculate priority (phase 0 - deletes first)
     let priority = BASE_PRIORITY
-        .saturating_add((entity.priority as u8).saturating_mul(3))
+        .saturating_add((entity.priority as u8).saturating_mul(4))
         .saturating_add(Phase::TargetOnly.priority_offset())
         .min(127);
 
@@ -400,7 +544,7 @@ fn build_deactivate_queue_items(
 
     // Calculate priority (phase 0 - deactivates first)
     let priority = BASE_PRIORITY
-        .saturating_add((entity.priority as u8).saturating_mul(3))
+        .saturating_add((entity.priority as u8).saturating_mul(4))
         .saturating_add(Phase::TargetOnly.priority_offset())
         .min(127);
 
@@ -491,7 +635,7 @@ fn build_target_only_queue_items(
 
     // Calculate priority (same as build_phase_queue_items but for phase 0)
     let priority = BASE_PRIORITY
-        .saturating_add((entity.priority as u8).saturating_mul(3))
+        .saturating_add((entity.priority as u8).saturating_mul(4))
         .saturating_add(Phase::TargetOnly.priority_offset())
         .min(127);
 
@@ -642,10 +786,10 @@ mod tests {
 
         // accounts (priority 1): creates, updates
         // contacts (priority 2): creates
-        // Formula: BASE(1) + entity.priority * 3 + phase_offset (0=target-only, 1=create, 2=update)
-        assert_eq!(items[0].priority, 5); // accounts create: 1 + 1*3 + 1 = 5
-        assert_eq!(items[1].priority, 6); // accounts update: 1 + 1*3 + 2 = 6
-        assert_eq!(items[2].priority, 8); // contacts create: 1 + 2*3 + 1 = 8
+        // Formula: BASE(1) + entity.priority * 4 + phase_offset (0=target-only, 1=create, 2=post-create-deactivate, 3=update)
+        assert_eq!(items[0].priority, 6); // accounts create: 1 + 1*4 + 1 = 6
+        assert_eq!(items[1].priority, 8); // accounts update: 1 + 1*4 + 3 = 8
+        assert_eq!(items[2].priority, 10); // contacts create: 1 + 2*4 + 1 = 10
     }
 
     #[test]
@@ -779,7 +923,7 @@ mod tests {
         let record = ResolvedRecord::update_partial(id, fields, changed);
 
         // Build payload
-        let payload = prepare_payload(&record, None);
+        let payload = prepare_payload(&record, None, false);
         let obj = payload.as_object().unwrap();
 
         // Should only contain changed fields
@@ -802,7 +946,7 @@ mod tests {
         let record = ResolvedRecord::update(id, fields);
 
         // Build payload
-        let payload = prepare_payload(&record, None);
+        let payload = prepare_payload(&record, None, false);
         let obj = payload.as_object().unwrap();
 
         // Should contain all fields
@@ -823,11 +967,110 @@ mod tests {
 
         let record = ResolvedRecord::create(id, fields);
 
-        let payload = prepare_payload(&record, None);
+        let payload = prepare_payload(&record, None, false);
         let obj = payload.as_object().unwrap();
 
         assert_eq!(obj.len(), 2);
         assert!(obj.contains_key("name"));
         assert!(obj.contains_key("revenue"));
+    }
+
+    #[test]
+    fn test_create_skips_state_fields_when_inactive() {
+        // Test that create records skip statecode/statuscode when skip_state_fields is true
+        let id = Uuid::new_v4();
+        let fields = HashMap::from([
+            ("name".to_string(), Value::String("Inactive Record".to_string())),
+            ("statecode".to_string(), Value::Int(1)),
+            ("statuscode".to_string(), Value::Int(2)),
+        ]);
+
+        let record = ResolvedRecord::create(id, fields);
+
+        // With skip_state_fields = true, statecode/statuscode should be excluded
+        let payload = prepare_payload(&record, None, true);
+        let obj = payload.as_object().unwrap();
+
+        assert_eq!(obj.len(), 1);
+        assert!(obj.contains_key("name"));
+        assert!(!obj.contains_key("statecode"));
+        assert!(!obj.contains_key("statuscode"));
+    }
+
+    #[test]
+    fn test_create_includes_state_fields_when_active() {
+        // Test that create records include statuscode when statecode is 0 (active)
+        let id = Uuid::new_v4();
+        let fields = HashMap::from([
+            ("name".to_string(), Value::String("Active Record".to_string())),
+            ("statecode".to_string(), Value::Int(0)),
+            ("statuscode".to_string(), Value::Int(170590005)), // Non-default active status
+        ]);
+
+        let record = ResolvedRecord::create(id, fields);
+
+        // With skip_state_fields = false, all fields should be included
+        let payload = prepare_payload(&record, None, false);
+        let obj = payload.as_object().unwrap();
+
+        assert_eq!(obj.len(), 3);
+        assert!(obj.contains_key("name"));
+        assert!(obj.contains_key("statecode"));
+        assert!(obj.contains_key("statuscode"));
+    }
+
+    #[test]
+    fn test_post_create_deactivate_queue_items_generated_for_inactive_records() {
+        // Test that inactive records generate both a create and a post-create-deactivate queue item
+        let mut transfer = ResolvedTransfer::new("test", "dev", "prod");
+        let mut entity = ResolvedEntity::new("accounts", 1, "accountid");
+
+        // Add an inactive create record
+        entity.add_record(ResolvedRecord::create(
+            Uuid::new_v4(),
+            HashMap::from([
+                ("name".to_string(), Value::String("Inactive Account".to_string())),
+                ("statecode".to_string(), Value::Int(1)),
+                ("statuscode".to_string(), Value::Int(2)),
+            ]),
+        ));
+
+        // Add an active create record
+        entity.add_record(ResolvedRecord::create(
+            Uuid::new_v4(),
+            HashMap::from([
+                ("name".to_string(), Value::String("Active Account".to_string())),
+            ]),
+        ));
+
+        transfer.add_entity(entity);
+
+        let options = QueueBuildOptions { batch_size: 0 };
+        let items = build_queue_items(&transfer, &options);
+
+        // Should have 2 items: create batch (2 records) and post-create-deactivate batch (1 record)
+        assert_eq!(items.len(), 2);
+
+        // First item: creates (2 records)
+        assert!(items[0].metadata.description.contains("create"));
+        assert!(items[0].metadata.description.contains("2 records"));
+        assert_eq!(items[0].priority, 6); // 1 + 1*4 + 1 = 6
+
+        // Second item: post-create-deactivate (1 inactive record)
+        assert!(items[1].metadata.description.contains("post-create-deactivate"));
+        assert!(items[1].metadata.description.contains("1 records"));
+        assert_eq!(items[1].priority, 7); // 1 + 1*4 + 2 = 7
+
+        // Verify the post-create-deactivate operation has the right data
+        let deactivate_op = &items[1].operations.operations()[0];
+        if let Operation::Update { data, .. } = deactivate_op {
+            let obj = data.as_object().unwrap();
+            assert!(obj.contains_key("statecode"));
+            assert!(obj.contains_key("statuscode"));
+            assert_eq!(obj.get("statecode").unwrap(), 1);
+            assert_eq!(obj.get("statuscode").unwrap(), 2);
+        } else {
+            panic!("Expected Update operation");
+        }
     }
 }
