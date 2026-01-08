@@ -20,6 +20,13 @@ impl Default for EditorParams {
     }
 }
 
+/// A matched field for quick-add, containing source field info and target field name
+#[derive(Clone, Debug)]
+pub struct QuickFieldMatch {
+    pub source: FieldMetadata,
+    pub target_logical_name: String,
+}
+
 #[derive(Clone)]
 pub struct State {
     pub config_name: String,
@@ -73,10 +80,12 @@ pub struct State {
 
     // Quick field picker modal
     pub show_quick_fields_modal: bool,
-    pub quick_fields_available: Vec<FieldMetadata>,
+    pub quick_fields_available: Vec<QuickFieldMatch>,
     pub quick_fields_list_state: ListState,
     pub quick_fields_entity_idx: Option<usize>,
     pub pending_quick_fields: bool,
+    pub quick_fields_source_prefix: TextInputField,
+    pub quick_fields_target_prefix: TextInputField,
 
     // Per-entity field metadata cache (for showing types in tree)
     // Key: entity_idx, Value: target entity's field metadata
@@ -121,6 +130,8 @@ impl Default for State {
             quick_fields_list_state: ListState::with_selection(),
             quick_fields_entity_idx: None,
             pending_quick_fields: false,
+            quick_fields_source_prefix: TextInputField::default(),
+            quick_fields_target_prefix: TextInputField::default(),
             entity_target_fields_cache: HashMap::new(),
             clipboard: None,
         }
@@ -129,10 +140,10 @@ impl Default for State {
 
 impl State {
     /// Compute fields available for quick-add
-    /// Returns fields that exist in both source and target (same logical_name),
+    /// Returns fields that exist in both source and target (matching by base name after stripping prefixes),
     /// excluding already-mapped fields and system fields
-    pub fn compute_quick_fields(&self, entity_idx: usize) -> Vec<FieldMetadata> {
-        use std::collections::HashSet;
+    pub fn compute_quick_fields(&self, entity_idx: usize, source_prefix: &str, target_prefix: &str) -> Vec<QuickFieldMatch> {
+        use std::collections::{HashSet, HashMap};
         use crate::tui::apps::sync::types::is_system_field;
 
         let source_fields = match &self.source_fields {
@@ -162,23 +173,39 @@ impl State {
             .map(|fm| fm.target_field.as_str())
             .collect();
 
-        // Build set of target field names for intersection check
-        let target_field_names: HashSet<&str> = target_fields
+        // Build target lookup: base_name (after stripping prefix) -> full target logical_name
+        let target_lookup: HashMap<String, &str> = target_fields
             .iter()
-            .map(|f| f.logical_name.as_str())
+            .map(|f| {
+                let base = if !target_prefix.is_empty() {
+                    f.logical_name.strip_prefix(target_prefix).unwrap_or(&f.logical_name)
+                } else {
+                    &f.logical_name
+                };
+                (base.to_string(), f.logical_name.as_str())
+            })
             .collect();
 
-        // Filter source fields: must exist in target, not already mapped, not system
-        let mut available: Vec<FieldMetadata> = source_fields
+        // Match source fields to target by base name (after stripping prefix)
+        let mut available: Vec<QuickFieldMatch> = source_fields
             .iter()
-            .filter(|f| target_field_names.contains(f.logical_name.as_str()))
-            .filter(|f| !already_mapped.contains(f.logical_name.as_str()))
-            .filter(|f| !is_system_field(&f.logical_name))
-            .cloned()
+            .filter_map(|f| {
+                let base = if !source_prefix.is_empty() {
+                    f.logical_name.strip_prefix(source_prefix).unwrap_or(&f.logical_name)
+                } else {
+                    &f.logical_name
+                };
+                target_lookup.get(base).map(|&target_name| QuickFieldMatch {
+                    source: f.clone(),
+                    target_logical_name: target_name.to_string(),
+                })
+            })
+            .filter(|m| !already_mapped.contains(m.target_logical_name.as_str()))
+            .filter(|m| !is_system_field(&m.source.logical_name))
             .collect();
 
-        // Sort by logical name
-        available.sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
+        // Sort by source logical name
+        available.sort_by(|a, b| a.source.logical_name.cmp(&b.source.logical_name));
 
         available
     }
@@ -1356,6 +1383,8 @@ pub enum Msg {
     OpenQuickFields,
     CloseQuickFields,
     QuickFieldsEvent(ListEvent),
+    QuickFieldsSourcePrefix(TextInputEvent),
+    QuickFieldsTargetPrefix(TextInputEvent),
     SaveQuickFields,
 
     // Navigation

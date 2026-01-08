@@ -2,7 +2,7 @@ use crate::config::repository::transfer::{get_transfer_config, save_transfer_con
 use crate::transfer::{ResolverFallback, TransferConfig};
 use crate::tui::element::FocusId;
 use crate::tui::resource::Resource;
-use crate::tui::widgets::{TreeState, ListState, ScrollableState};
+use crate::tui::widgets::{TreeState, ListState, ScrollableState, TextInputField};
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
 use crate::api::{FieldMetadata, FieldType};
@@ -53,6 +53,8 @@ impl App for MappingEditorApp {
             quick_fields_list_state: ListState::with_selection(),
             quick_fields_entity_idx: None,
             pending_quick_fields: false,
+            quick_fields_source_prefix: TextInputField::default(),
+            quick_fields_target_prefix: TextInputField::default(),
             entity_target_fields_cache: std::collections::HashMap::new(),
             clipboard: None,
         };
@@ -1257,7 +1259,9 @@ impl App for MappingEditorApp {
                 {
                     // Fields loaded - open modal
                     state.quick_fields_entity_idx = Some(entity_idx);
-                    state.quick_fields_available = state.compute_quick_fields(entity_idx);
+                    state.quick_fields_source_prefix = TextInputField::default();
+                    state.quick_fields_target_prefix = TextInputField::default();
+                    state.quick_fields_available = state.compute_quick_fields(entity_idx, "", "");
                     state.quick_fields_list_state = ListState::with_selection();
                     state.show_quick_fields_modal = true;
                     return Command::set_focus(FocusId::new("quick-fields-list"));
@@ -1318,6 +1322,32 @@ impl App for MappingEditorApp {
                 Command::None
             }
 
+            Msg::QuickFieldsSourcePrefix(event) => {
+                state.quick_fields_source_prefix.handle_event(event, Some(50));
+                if let Some(idx) = state.quick_fields_entity_idx {
+                    state.quick_fields_available = state.compute_quick_fields(
+                        idx,
+                        &state.quick_fields_source_prefix.value,
+                        &state.quick_fields_target_prefix.value,
+                    );
+                    state.quick_fields_list_state.clear_multi_selection();
+                }
+                Command::None
+            }
+
+            Msg::QuickFieldsTargetPrefix(event) => {
+                state.quick_fields_target_prefix.handle_event(event, Some(50));
+                if let Some(idx) = state.quick_fields_entity_idx {
+                    state.quick_fields_available = state.compute_quick_fields(
+                        idx,
+                        &state.quick_fields_source_prefix.value,
+                        &state.quick_fields_target_prefix.value,
+                    );
+                    state.quick_fields_list_state.clear_multi_selection();
+                }
+                Command::None
+            }
+
             Msg::SaveQuickFields => {
                 let entity_idx = match state.quick_fields_entity_idx {
                     Some(idx) => idx,
@@ -1341,12 +1371,12 @@ impl App for MappingEditorApp {
                         use crate::transfer::{FieldMapping, Transform, FieldPath};
 
                         for idx in selected_indices {
-                            if let Some(field) = state.quick_fields_available.get(idx) {
+                            if let Some(field_match) = state.quick_fields_available.get(idx) {
                                 let mapping = FieldMapping {
                                     id: None,
-                                    target_field: field.logical_name.clone(),
+                                    target_field: field_match.target_logical_name.clone(),
                                     transform: Transform::Copy {
-                                        source_path: FieldPath::simple(&field.logical_name),
+                                        source_path: FieldPath::simple(&field_match.source.logical_name),
                                         resolver: None,
                                     },
                                 };
@@ -1477,7 +1507,9 @@ fn try_open_pending_field_modal(state: &mut State) -> Command<Msg> {
     if state.pending_quick_fields {
         state.pending_quick_fields = false;
         if let Some(entity_idx) = state.quick_fields_entity_idx {
-            state.quick_fields_available = state.compute_quick_fields(entity_idx);
+            state.quick_fields_source_prefix = TextInputField::default();
+            state.quick_fields_target_prefix = TextInputField::default();
+            state.quick_fields_available = state.compute_quick_fields(entity_idx, "", "");
             state.quick_fields_list_state = ListState::with_selection();
             state.show_quick_fields_modal = true;
         }

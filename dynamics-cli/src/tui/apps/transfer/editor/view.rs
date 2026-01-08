@@ -3,8 +3,8 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::api::FieldMetadata;
-use crate::tui::widgets::{ListItem, ListState};
-use crate::tui::widgets::events::ListEvent;
+use crate::tui::widgets::{ListItem, ListState, TextInputField};
+use crate::tui::widgets::events::{ListEvent, TextInputEvent};
 use crate::transfer::ResolverFallback;
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::modals::ConfirmationModal;
@@ -12,7 +12,7 @@ use crate::tui::resource::Resource;
 use crate::tui::widgets::events::TreeEvent;
 use crate::tui::{Alignment, Element, LayeredView, LayoutConstraint, Subscription, Theme};
 
-use super::state::{DeleteTarget, Msg, State, TransformType};
+use super::state::{DeleteTarget, Msg, QuickFieldMatch, State, TransformType};
 use super::tree::build_tree;
 
 pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
@@ -149,6 +149,8 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
             render_quick_fields_modal(
                 &state.quick_fields_available,
                 &state.quick_fields_list_state,
+                &mut state.quick_fields_source_prefix,
+                &mut state.quick_fields_target_prefix,
                 theme,
             ),
             Alignment::Center,
@@ -1481,7 +1483,7 @@ fn render_resolver_modal(
 /// Wrapper for field metadata in quick field picker list
 #[derive(Clone)]
 struct QuickFieldItem {
-    field: FieldMetadata,
+    field_match: QuickFieldMatch,
 }
 
 impl ListItem for QuickFieldItem {
@@ -1494,7 +1496,7 @@ impl ListItem for QuickFieldItem {
         let checkbox = if is_multi_selected { "[x]" } else { "[ ]" };
 
         // Field type display
-        let field_type = match &self.field.field_type {
+        let field_type = match &self.field_match.source.field_type {
             crate::api::metadata::FieldType::String => "String",
             crate::api::metadata::FieldType::Integer => "Integer",
             crate::api::metadata::FieldType::Decimal => "Decimal",
@@ -1510,10 +1512,14 @@ impl ListItem for QuickFieldItem {
         };
 
         // Related entity for lookups
-        let related = self.field.related_entity.as_ref().map(|e| format!(" → {}", e)).unwrap_or_default();
+        let related = self.field_match.source.related_entity.as_ref().map(|e| format!(" -> {}", e)).unwrap_or_default();
 
-        // Display name
-        let display = self.field.display_name.as_ref().map(|d| format!(" \"{}\"", d)).unwrap_or_default();
+        // Show target field name if different from source
+        let target_info = if self.field_match.source.logical_name != self.field_match.target_logical_name {
+            format!(" => {}", self.field_match.target_logical_name)
+        } else {
+            String::new()
+        };
 
         // Build the line
         let base_style = if is_selected {
@@ -1531,9 +1537,9 @@ impl ListItem for QuickFieldItem {
         Element::styled_text(Line::from(vec![
             Span::styled(checkbox, checkbox_style),
             Span::styled(" ", base_style),
-            Span::styled(format!("{:<30}", self.field.logical_name), base_style.fg(theme.text_primary)),
+            Span::styled(format!("{:<30}", self.field_match.source.logical_name), base_style.fg(theme.text_primary)),
             Span::styled(format!("{:<12}", field_type), base_style.fg(theme.text_secondary)),
-            Span::styled(display, base_style.fg(theme.text_tertiary)),
+            Span::styled(target_info, base_style.fg(theme.accent_primary)),
             Span::styled(related, base_style.fg(theme.accent_secondary)),
         ]))
         .build()
@@ -1541,11 +1547,43 @@ impl ListItem for QuickFieldItem {
 }
 
 fn render_quick_fields_modal(
-    available: &[FieldMetadata],
+    available: &[QuickFieldMatch],
     list_state: &ListState,
+    source_prefix: &mut TextInputField,
+    target_prefix: &mut TextInputField,
     theme: &Theme,
 ) -> Element<Msg> {
     let title = format!("Quick Add Fields ({} available)", available.len());
+
+    // Prefix inputs row
+    let source_input = Element::text_input(
+        FocusId::new("quick-fields-source-prefix"),
+        &source_prefix.value,
+        &mut source_prefix.state,
+    )
+    .placeholder("e.g., new_")
+    .on_event(Msg::QuickFieldsSourcePrefix)
+    .build();
+
+    let target_input = Element::text_input(
+        FocusId::new("quick-fields-target-prefix"),
+        &target_prefix.value,
+        &mut target_prefix.state,
+    )
+    .placeholder("e.g., old_")
+    .on_event(Msg::QuickFieldsTargetPrefix)
+    .build();
+
+    let prefix_row = RowBuilder::new()
+        .add(
+            Element::panel(source_input).title("Source Prefix").build(),
+            LayoutConstraint::Fill(1),
+        )
+        .add(
+            Element::panel(target_input).title("Target Prefix").build(),
+            LayoutConstraint::Fill(1),
+        )
+        .build();
 
     // Instructions
     let instructions = Element::styled_text(Line::from(vec![
@@ -1563,7 +1601,7 @@ fn render_quick_fields_modal(
     // Build field list items
     let items: Vec<QuickFieldItem> = available
         .iter()
-        .map(|f| QuickFieldItem { field: f.clone() })
+        .map(|f| QuickFieldItem { field_match: f.clone() })
         .collect();
 
     let selected_count = list_state.total_selection_count();
@@ -1571,7 +1609,7 @@ fn render_quick_fields_modal(
     let list_element = if items.is_empty() {
         Element::styled_text(Line::from(vec![
             Span::styled(
-                "No common fields available (all already mapped or system fields only)",
+                "No matching fields (try adjusting prefixes)",
                 Style::default().fg(theme.text_tertiary),
             ),
         ]))
@@ -1611,6 +1649,8 @@ fn render_quick_fields_modal(
         .build();
 
     let content = ColumnBuilder::new()
+        .add(prefix_row, LayoutConstraint::Length(3))
+        .add(Element::text(""), LayoutConstraint::Length(1))
         .add(instructions, LayoutConstraint::Length(1))
         .add(Element::text(""), LayoutConstraint::Length(1))
         .add(list_element, LayoutConstraint::Fill(1))
@@ -1622,7 +1662,7 @@ fn render_quick_fields_modal(
 
     // Calculate modal height based on available fields
     let list_height = available.len().max(1).min(15) as u16;
-    let modal_height = list_height + 10; // instructions + footer + buttons + padding
+    let modal_height = list_height + 14; // prefix inputs + instructions + footer + buttons + padding
 
     Element::panel(Element::container(content).padding(1).build())
         .title(&title)
