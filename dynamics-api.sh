@@ -1,13 +1,15 @@
 #!/bin/bash
 
 # Dynamics 365 API Query Wrapper with OAuth Authentication
-# Usage: ./dynamics-api.sh <endpoint> [-m method] [-d data] [-o output_file] [-h host_num]
+# Usage: ./dynamics-api.sh <endpoint> [-m method] [-d data] [-o output_file] [-h host_num] [-a] [--max-pages N]
 # Examples:
 #   ./dynamics-api.sh "adx_entitylists?\$filter=adx_name eq 'Active Projects'"
 #   ./dynamics-api.sh "nrq_requests(guid)"
 #   ./dynamics-api.sh "nrq_requests(guid)" -m PATCH -d '{"statuscode": 2}'
 #   ./dynamics-api.sh "nrq_requests(guid)" -o response.json
 #   ./dynamics-api.sh "nrq_requests" -h 2  # Uses DYNAMICS_HOST2
+#   ./dynamics-api.sh "nrq_projects" -a    # Follow all @odata.nextLink pages
+#   ./dynamics-api.sh "nrq_projects" -a --max-pages 10 -o all.json
 
 # Load environment variables from .env file if it exists
 if [ -f .env ]; then
@@ -38,6 +40,9 @@ DATA=""
 OUTPUT_FILE=""
 HOST_NUM=""
 CUSTOM_HEADERS=()
+FOLLOW_ALL=false
+MAX_PAGES=""
+PAGE_SIZE=""
 
 # Check for flags in arguments
 for ((j=1; j<=$#; j++)); do
@@ -61,6 +66,17 @@ for ((j=1; j<=$#; j++)); do
     -H)
       k=$((j+1))
       CUSTOM_HEADERS+=("${!k}")
+      ;;
+    -a|--all)
+      FOLLOW_ALL=true
+      ;;
+    --max-pages)
+      k=$((j+1))
+      MAX_PAGES="${!k}"
+      ;;
+    --page-size|-p)
+      k=$((j+1))
+      PAGE_SIZE="${!k}"
       ;;
   esac
 done
@@ -105,6 +121,9 @@ if [ -z "$ENDPOINT" ]; then
   echo "  -o FILE      Save response to file"
   echo "  -h NUM       Use alternate host (DYNAMICS_HOST2, DYNAMICS_HOST3, etc.)"
   echo "  -H HEADER    Add custom header (can be used multiple times)"
+  echo "  -a, --all    Follow all @odata.nextLink pages automatically"
+  echo "  --max-pages N  Limit pagination to N pages (requires -a)"
+  echo "  -p, --page-size N  Set page size via Prefer header (default: server decides)"
   echo ""
   echo "Examples:"
   echo "  # Get entity list"
@@ -127,6 +146,15 @@ if [ -z "$ENDPOINT" ]; then
   echo ""
   echo "  # Use alternate host (DYNAMICS_HOST2)"
   echo "  $0 \"nrq_projects\" -h 2"
+  echo ""
+  echo "  # Fetch all pages automatically"
+  echo "  $0 \"nrq_projects\" -a"
+  echo ""
+  echo "  # Fetch all pages, save to file"
+  echo "  $0 \"nrq_projects\" -a -o all_projects.json"
+  echo ""
+  echo "  # Fetch with page limit"
+  echo "  $0 \"nrq_projects\" -a --max-pages 5"
   echo ""
   echo "Common OData operators:"
   echo "  \$filter  - Filter results (eq, ne, gt, lt, contains, startswith)"
@@ -233,6 +261,11 @@ CURL_CMD+=(-H "Accept: application/json")
 CURL_CMD+=(-H "OData-MaxVersion: 4.0")
 CURL_CMD+=(-H "OData-Version: 4.0")
 
+# Add page size header if specified
+if [ -n "$PAGE_SIZE" ]; then
+  CURL_CMD+=(-H "Prefer: odata.maxpagesize=$PAGE_SIZE")
+fi
+
 # Add custom headers
 for header in "${CUSTOM_HEADERS[@]}"; do
   CURL_CMD+=(-H "$header")
@@ -281,11 +314,100 @@ RESPONSE_DATA=$(echo "$RESPONSE" | sed '$d')
 END_TIME=$(date +%s%N)
 DURATION=$(( (END_TIME - START_TIME) / 1000000 ))
 
-# Print response
-echo -e "${CYAN}Response (HTTP $HTTP_CODE):${NC}" >&2
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}" >&2
+# Check for failure on initial request (fail-fast)
+if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+  echo -e "${CYAN}Response (HTTP $HTTP_CODE):${NC}" >&2
+  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}" >&2
+  echo "$RESPONSE_DATA" | jq '.' 2>/dev/null || echo "$RESPONSE_DATA"
+  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}" >&2
+  echo -e "${RED}✗ Error${NC} (HTTP $HTTP_CODE) ${CYAN}⏱ ${DURATION}ms${NC}" >&2
+  exit 1
+fi
 
-# If output file is specified, save to file
+# Handle pagination if -a flag is set
+if [ "$FOLLOW_ALL" = true ] && [ "$METHOD" = "GET" ]; then
+  PAGE_NUM=1
+  ALL_VALUES=$(echo "$RESPONSE_DATA" | jq '.value // []')
+  CONTEXT=$(echo "$RESPONSE_DATA" | jq -r '.["@odata.context"] // empty')
+  NEXT_LINK=$(echo "$RESPONSE_DATA" | jq -r '.["@odata.nextLink"] // empty')
+
+  INITIAL_COUNT=$(echo "$ALL_VALUES" | jq 'length')
+  echo -e "${GREEN}✓ Page 1${NC} (HTTP $HTTP_CODE) ${CYAN}⏱ ${DURATION}ms${NC} - ${INITIAL_COUNT} records" >&2
+
+  while [ -n "$NEXT_LINK" ]; do
+    # Check max pages limit
+    if [ -n "$MAX_PAGES" ] && [ "$PAGE_NUM" -ge "$MAX_PAGES" ]; then
+      echo -e "${YELLOW}⚠ Stopped at page limit ($MAX_PAGES), more data may exist${NC}" >&2
+      break
+    fi
+
+    PAGE_NUM=$((PAGE_NUM + 1))
+    echo -e "${CYAN}Fetching page $PAGE_NUM...${NC}" >&2
+
+    # Fetch next page
+    PAGE_START=$(date +%s%N)
+    PAGE_CURL_CMD=(curl -s -w "\n%{http_code}" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Accept: application/json" \
+      -H "OData-MaxVersion: 4.0" \
+      -H "OData-Version: 4.0")
+    if [ -n "$PAGE_SIZE" ]; then
+      PAGE_CURL_CMD+=(-H "Prefer: odata.maxpagesize=$PAGE_SIZE")
+    fi
+    PAGE_CURL_CMD+=("$NEXT_LINK")
+    PAGE_RESPONSE=$("${PAGE_CURL_CMD[@]}")
+
+    PAGE_HTTP_CODE=$(echo "$PAGE_RESPONSE" | tail -n1)
+    PAGE_DATA=$(echo "$PAGE_RESPONSE" | sed '$d')
+    PAGE_END=$(date +%s%N)
+    PAGE_DURATION=$(( (PAGE_END - PAGE_START) / 1000000 ))
+
+    # Fail-fast on error
+    if [ "$PAGE_HTTP_CODE" -lt 200 ] || [ "$PAGE_HTTP_CODE" -ge 300 ]; then
+      echo -e "${RED}✗ Failed on page $PAGE_NUM${NC} (HTTP $PAGE_HTTP_CODE) ${CYAN}⏱ ${PAGE_DURATION}ms${NC}" >&2
+      echo "$PAGE_DATA" | jq '.' 2>/dev/null || echo "$PAGE_DATA" >&2
+      exit 1
+    fi
+
+    # Merge values
+    PAGE_VALUES=$(echo "$PAGE_DATA" | jq '.value // []')
+    PAGE_COUNT=$(echo "$PAGE_VALUES" | jq 'length')
+    ALL_VALUES=$(echo "$ALL_VALUES $PAGE_VALUES" | jq -s 'add')
+
+    echo -e "${GREEN}✓ Page $PAGE_NUM${NC} (HTTP $PAGE_HTTP_CODE) ${CYAN}⏱ ${PAGE_DURATION}ms${NC} - ${PAGE_COUNT} records" >&2
+
+    # Get next link
+    NEXT_LINK=$(echo "$PAGE_DATA" | jq -r '.["@odata.nextLink"] // empty')
+  done
+
+  # Build combined response
+  TOTAL_COUNT=$(echo "$ALL_VALUES" | jq 'length')
+  if [ -n "$CONTEXT" ]; then
+    RESPONSE_DATA=$(echo "$ALL_VALUES" | jq --arg ctx "$CONTEXT" '{"@odata.context": $ctx, "value": .}')
+  else
+    RESPONSE_DATA=$(echo "$ALL_VALUES" | jq '{"value": .}')
+  fi
+
+  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}" >&2
+  echo -e "${GREEN}✓ Complete${NC} - ${TOTAL_COUNT} total records from ${PAGE_NUM} page(s)" >&2
+  echo "" >&2
+else
+  # Non-paginated output
+  echo -e "${CYAN}Response (HTTP $HTTP_CODE):${NC}" >&2
+  echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}" >&2
+  echo -e "${GREEN}✓ Success${NC} (HTTP $HTTP_CODE) ${CYAN}⏱ ${DURATION}ms${NC}" >&2
+
+  # Show record count for GET requests with 'value' array
+  if [ "$METHOD" = "GET" ]; then
+    RECORD_COUNT=$(echo "$RESPONSE_DATA" | jq '.value | length' 2>/dev/null)
+    if [ -n "$RECORD_COUNT" ] && [ "$RECORD_COUNT" != "null" ]; then
+      echo -e "${CYAN}Records returned: $RECORD_COUNT${NC}" >&2
+    fi
+  fi
+  echo "" >&2
+fi
+
+# Output final response
 if [ -n "$OUTPUT_FILE" ]; then
   # Try to format as JSON before saving
   if echo "$RESPONSE_DATA" | jq '.' > "$OUTPUT_FILE" 2>/dev/null; then
@@ -305,31 +427,5 @@ else
   fi
 fi
 
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}" >&2
-
-# Status and timing
-if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-  echo -e "${GREEN}✓ Success${NC} (HTTP $HTTP_CODE) ${CYAN}⏱ ${DURATION}ms${NC}" >&2
-elif [ "$HTTP_CODE" -ge 400 ]; then
-  echo -e "${RED}✗ Error${NC} (HTTP $HTTP_CODE) ${CYAN}⏱ ${DURATION}ms${NC}" >&2
-else
-  echo -e "${YELLOW}⚠ Unexpected status${NC} (HTTP $HTTP_CODE) ${CYAN}⏱ ${DURATION}ms${NC}" >&2
-fi
-
-echo "" >&2
-
-# Show record count for successful GET requests with 'value' array
-if [ "$METHOD" = "GET" ] && [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-  RECORD_COUNT=$(echo "$RESPONSE_DATA" | jq '.value | length' 2>/dev/null)
-  if [ -n "$RECORD_COUNT" ] && [ "$RECORD_COUNT" != "null" ]; then
-    echo -e "${CYAN}Records returned: $RECORD_COUNT${NC}" >&2
-    echo "" >&2
-  fi
-fi
-
-# Exit with appropriate code
-if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-  exit 0
-else
-  exit 1
-fi
+# Success (failures exit early above)
+exit 0
