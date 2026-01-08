@@ -246,13 +246,18 @@ impl LuaRuntime {
     /// Parse the operations array returned by transform()
     fn parse_operations(&self, table: Table) -> Result<Vec<super::types::LuaOperation>> {
         let mut operations = Vec::new();
+        let mut op_index = 0;
 
         for pair in table.pairs::<i64, Table>() {
-            let (_, op_table) = pair.context("Invalid operation in result")?;
-            let op = self.parse_single_operation(op_table)?;
+            op_index += 1;
+            let (_, op_table) = pair.with_context(|| format!("Invalid operation at index {}", op_index))?;
+            let op = self.parse_single_operation(op_table).with_context(|| {
+                format!("Failed to parse operation at index {}", op_index)
+            })?;
             operations.push(op);
         }
 
+        log::debug!("[Lua] Successfully parsed {} operations", operations.len());
         Ok(operations)
     }
 
@@ -269,11 +274,13 @@ impl LuaRuntime {
             .context("Operation must have 'operation' field")?;
 
         let operation = OperationType::from_str(&op_str)
-            .ok_or_else(|| anyhow::anyhow!("Invalid operation type: {}", op_str))?;
+            .ok_or_else(|| anyhow::anyhow!("Invalid operation type: '{}' (entity: {})", op_str, entity))?;
 
         // Parse optional id
         let id = if let Ok(id_str) = table.get::<String>("id") {
-            Some(uuid::Uuid::parse_str(&id_str).context("Invalid UUID in 'id' field")?)
+            Some(uuid::Uuid::parse_str(&id_str).with_context(|| {
+                format!("Invalid UUID '{}' in 'id' field for {} {}", id_str, operation.label(), entity)
+            })?)
         } else {
             None
         };
@@ -282,8 +289,13 @@ impl LuaRuntime {
         let mut fields = std::collections::HashMap::new();
         if let Ok(fields_table) = table.get::<Table>("fields") {
             for pair in fields_table.pairs::<String, Value>() {
-                let (key, value) = pair?;
-                fields.insert(key, self.lua_to_json(value)?);
+                let (key, value) = pair.with_context(|| {
+                    format!("Failed to iterate fields for {} {}", operation.label(), entity)
+                })?;
+                let json_value = self.lua_to_json(value).with_context(|| {
+                    format!("Failed to convert field '{}' to JSON for {} {}", key, operation.label(), entity)
+                })?;
+                fields.insert(key, json_value);
             }
         }
 

@@ -236,6 +236,11 @@ fn execute_transform_with_updates(
     // Run the transform (this blocks until complete)
     let operations = runtime
         .run_transform(&module, source_data, target_data)
+        .map_err(|e| {
+            log::error!("[Lua] Transform error details: {:?}", e);
+            log::error!("[Lua] Transform error chain: {:#}", e);
+            e
+        })
         .context("Failed to run transform")?;
 
     // Get captured logs before dropping runtime
