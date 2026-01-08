@@ -68,9 +68,12 @@ fn render_view_mode(
         .build();
 
     // Error panel (if present) - scrollable list of error lines
+    // Errors may be separated by newlines or "; " (semicolon + space)
     let error_element = if let Some(ref err) = record.error {
         let error_lines: Vec<ErrorLineItem> = err
-            .lines()
+            .split("; ")
+            .flat_map(|part| part.lines())
+            .filter(|line| !line.is_empty())
             .map(|line| ErrorLineItem(line.to_string()))
             .collect();
 
