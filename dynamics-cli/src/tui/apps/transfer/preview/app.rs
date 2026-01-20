@@ -112,15 +112,15 @@ impl App for TransferPreviewApp {
                             .on_complete(AppId::TransferPreview)
                             .build(move |task_idx, result| {
                                 if task_idx < num_source_tasks {
-                                    // Source metadata returns (entity_name, fields)
+                                    // Source metadata returns (entity_name, fields, primary_id_attribute)
                                     let data = result
-                                        .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>), String>>()
+                                        .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String>>()
                                         .unwrap();
                                     Msg::SourceMetadataResult(*data)
                                 } else {
-                                    // Target metadata returns (entity_name, fields, entity_set_name)
+                                    // Target metadata returns (entity_name, fields, entity_set_name, primary_id_attribute)
                                     let data = result
-                                        .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String>>()
+                                        .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String>>()
                                         .unwrap();
                                     Msg::TargetMetadataResult(*data)
                                 }
@@ -136,14 +136,16 @@ impl App for TransferPreviewApp {
             // Data loading - Step 1b: Source metadata loaded, accumulate
             Msg::SourceMetadataResult(result) => {
                 match result {
-                    Ok((entity_name, fields)) => {
+                    Ok((entity_name, fields, primary_id)) => {
                         log::info!(
-                            "[{}] Source metadata loaded: {} fields ({} lookups)",
+                            "[{}] Source metadata loaded: {} fields ({} lookups), primary_id={}",
                             entity_name,
                             fields.len(),
-                            fields.iter().filter(|f| f.related_entity.is_some()).count()
+                            fields.iter().filter(|f| f.related_entity.is_some()).count(),
+                            primary_id
                         );
-                        state.source_metadata.insert(entity_name, fields);
+                        state.source_metadata.insert(entity_name.clone(), fields);
+                        state.primary_id_map.insert(entity_name, primary_id);
                         state.pending_source_metadata_fetches = state.pending_source_metadata_fetches.saturating_sub(1);
 
                         // Check if BOTH source and target metadata are loaded
@@ -165,16 +167,18 @@ impl App for TransferPreviewApp {
             // Data loading - Step 1c: Target metadata loaded, accumulate
             Msg::TargetMetadataResult(result) => {
                 match result {
-                    Ok((entity_name, fields, entity_set)) => {
+                    Ok((entity_name, fields, entity_set, primary_id)) => {
                         log::info!(
-                            "[{}] Target metadata loaded: {} fields ({} lookups), entity_set={}",
+                            "[{}] Target metadata loaded: {} fields ({} lookups), entity_set={}, primary_id={}",
                             entity_name,
                             fields.len(),
                             fields.iter().filter(|f| f.related_entity.is_some()).count(),
-                            entity_set
+                            entity_set,
+                            primary_id
                         );
                         state.target_metadata.insert(entity_name.clone(), fields);
-                        state.entity_set_map.insert(entity_name, entity_set);
+                        state.entity_set_map.insert(entity_name.clone(), entity_set);
+                        state.primary_id_map.insert(entity_name, primary_id);
                         state.pending_target_metadata_fetches = state.pending_target_metadata_fetches.saturating_sub(1);
 
                         // Check if BOTH source and target metadata are loaded
@@ -197,15 +201,17 @@ impl App for TransferPreviewApp {
             // Data loading - Step 1d: Related entity metadata loaded (for lookup traversals)
             Msg::RelatedMetadataResult(result) => {
                 match result {
-                    Ok((entity_name, fields)) => {
+                    Ok((entity_name, fields, primary_id)) => {
                         log::info!(
-                            "[{}] Related entity metadata loaded: {} fields ({} lookups)",
+                            "[{}] Related entity metadata loaded: {} fields ({} lookups), primary_id={}",
                             entity_name,
                             fields.len(),
-                            fields.iter().filter(|f| f.related_entity.is_some()).count()
+                            fields.iter().filter(|f| f.related_entity.is_some()).count(),
+                            primary_id
                         );
                         // Store in source_metadata since it's used for source query building
-                        state.source_metadata.insert(entity_name, fields);
+                        state.source_metadata.insert(entity_name.clone(), fields);
+                        state.primary_id_map.insert(entity_name, primary_id);
                         state.pending_related_metadata_fetches = state.pending_related_metadata_fetches.saturating_sub(1);
 
                         // Check if all related metadata is loaded
@@ -254,7 +260,11 @@ impl App for TransferPreviewApp {
                             .flat_map(|fm| fm.transform.source_fields())
                             .map(|s| s.to_string())
                             .collect();
-                        source_fields.push(format!("{}id", entity)); // Primary key
+                        // Add primary key field (use fetched metadata or fallback to convention)
+                        let pk_field = state.primary_id_map.get(&entity)
+                            .cloned()
+                            .unwrap_or_else(|| format!("{}id", entity));
+                        source_fields.push(pk_field);
 
                         // Build expand tree for nested lookup traversals
                         let mut expand_tree = ExpandTree::new();
@@ -361,7 +371,11 @@ impl App for TransferPreviewApp {
                             .iter()
                             .map(|fm| fm.target_field.clone())
                             .collect();
-                        target_fields.push(format!("{}id", entity)); // Primary key
+                        // Add primary key field (use fetched metadata or fallback to convention)
+                        let pk_field = state.primary_id_map.get(&entity)
+                            .cloned()
+                            .unwrap_or_else(|| format!("{}id", entity));
+                        target_fields.push(pk_field);
 
                         // Replace lookup fields with _fieldname_value (from target metadata)
                         if let Some(fields) = state.target_metadata.get(&mapping.target_entity) {
@@ -419,9 +433,13 @@ impl App for TransferPreviewApp {
                                 continue;
                             }
 
+                            // Use fetched primary key or fallback to convention
+                            let pk_field = state.primary_id_map.get(&resolver.source_entity)
+                                .cloned()
+                                .unwrap_or_else(|| format!("{}id", resolver.source_entity));
                             let entry = resolver_entity_fields
                                 .entry(resolver.source_entity.clone())
-                                .or_insert_with(|| vec![format!("{}id", resolver.source_entity)]);
+                                .or_insert_with(|| vec![pk_field]);
 
                             for mf in &resolver.match_fields {
                                 if !entry.contains(&mf.target_field) {
@@ -553,7 +571,7 @@ impl App for TransferPreviewApp {
                             .on_complete(AppId::TransferPreview)
                             .build(|_task_idx, result| {
                                 let data = result
-                                    .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String>>()
+                                    .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String>>()
                                     .unwrap();
                                 Msg::MetadataResult(*data)
                             });
@@ -608,7 +626,7 @@ impl App for TransferPreviewApp {
                             .on_complete(AppId::TransferPreview)
                             .build(|_task_idx, result| {
                                 let data = result
-                                    .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String>>()
+                                    .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String>>()
                                     .unwrap();
                                 Msg::MetadataResult(*data)
                             });
@@ -616,15 +634,25 @@ impl App for TransferPreviewApp {
 
                     // All metadata loaded - proceed with transform
                     // Build primary keys map for both source and target entities
+                    // Use fetched primary_id_attribute from metadata, fall back to convention if not available
                     let mut primary_keys: HashMap<String, String> = HashMap::new();
                     for m in &config.entity_mappings {
-                        primary_keys.insert(m.source_entity.clone(), format!("{}id", m.source_entity));
-                        primary_keys.insert(m.target_entity.clone(), format!("{}id", m.target_entity));
+                        let source_pk = state.primary_id_map.get(&m.source_entity)
+                            .cloned()
+                            .unwrap_or_else(|| format!("{}id", m.source_entity));
+                        let target_pk = state.primary_id_map.get(&m.target_entity)
+                            .cloned()
+                            .unwrap_or_else(|| format!("{}id", m.target_entity));
+                        primary_keys.insert(m.source_entity.clone(), source_pk);
+                        primary_keys.insert(m.target_entity.clone(), target_pk);
                     }
                     // Also add resolver source entities (from all entity mappings)
                     for m in &config.entity_mappings {
                         for r in &m.resolvers {
-                            primary_keys.insert(r.source_entity.clone(), format!("{}id", r.source_entity));
+                            let resolver_pk = state.primary_id_map.get(&r.source_entity)
+                                .cloned()
+                                .unwrap_or_else(|| format!("{}id", r.source_entity));
+                            primary_keys.insert(r.source_entity.clone(), resolver_pk);
                         }
                     }
 
@@ -730,15 +758,17 @@ impl App for TransferPreviewApp {
             // Data loading - Step 3b: Metadata result (called for each entity after LoadingScreen completes)
             Msg::MetadataResult(result) => {
                 match result {
-                    Ok((entity_name, fields, entity_set)) => {
+                    Ok((entity_name, fields, entity_set, primary_id)) => {
                         log::info!(
-                            "[{}] Metadata loaded: {} fields, entity_set={}",
+                            "[{}] Metadata loaded: {} fields, entity_set={}, primary_id={}",
                             entity_name,
                             fields.len(),
-                            entity_set
+                            entity_set,
+                            primary_id
                         );
                         state.target_metadata.insert(entity_name.clone(), fields.clone());
-                        state.entity_set_map.insert(entity_name, entity_set);
+                        state.entity_set_map.insert(entity_name.clone(), entity_set);
+                        state.primary_id_map.insert(entity_name, primary_id);
 
                         // Track pending results - we get one MetadataResult per task from perform_parallel
                         state.pending_metadata_fetches = state.pending_metadata_fetches.saturating_sub(1);
@@ -787,15 +817,17 @@ impl App for TransferPreviewApp {
             // Lua mode metadata loading - accumulate metadata for lookup binding
             Msg::LuaMetadataResult(result) => {
                 match result {
-                    Ok((entity_name, fields, entity_set)) => {
+                    Ok((entity_name, fields, entity_set, primary_id)) => {
                         log::info!(
-                            "[Lua] Metadata loaded for {}: {} fields, entity_set={}",
+                            "[Lua] Metadata loaded for {}: {} fields, entity_set={}, primary_id={}",
                             entity_name,
                             fields.len(),
-                            entity_set
+                            entity_set,
+                            primary_id
                         );
                         state.target_metadata.insert(entity_name.clone(), fields);
-                        state.entity_set_map.insert(entity_name, entity_set);
+                        state.entity_set_map.insert(entity_name.clone(), entity_set);
+                        state.primary_id_map.insert(entity_name, primary_id);
                         state.pending_lua_metadata_fetches = state.pending_lua_metadata_fetches.saturating_sub(1);
 
                         // When all metadata is loaded, start fetching data
@@ -899,10 +931,13 @@ impl App for TransferPreviewApp {
                         }
                         log::info!("[Lua] Transform complete: {} operations, {} log messages", operations.len(), logs.len());
 
-                        // Build primary keys map
+                        // Build primary keys map using fetched metadata
                         let mut primary_keys = HashMap::new();
                         for entity_name in state.source_data.keys().chain(state.target_data.keys()) {
-                            primary_keys.insert(entity_name.clone(), format!("{}id", entity_name));
+                            let pk = state.primary_id_map.get(entity_name)
+                                .cloned()
+                                .unwrap_or_else(|| format!("{}id", entity_name));
+                            primary_keys.insert(entity_name.clone(), pk);
                         }
 
                         // Create resolved transfer and convert operations
@@ -1850,7 +1885,11 @@ impl App for TransferPreviewApp {
                         .flat_map(|fm| fm.transform.source_fields())
                         .map(|s| s.to_string())
                         .collect();
-                    source_fields.push(format!("{}id", entity));
+                    // Add primary key field (use fetched metadata or fallback to convention)
+                    let pk_field = state.primary_id_map.get(&entity)
+                        .cloned()
+                        .unwrap_or_else(|| format!("{}id", entity));
+                    source_fields.push(pk_field);
 
                     // Build expand tree for nested lookup traversals
                     let mut expand_tree = ExpandTree::new();
@@ -1946,7 +1985,11 @@ impl App for TransferPreviewApp {
                         .iter()
                         .map(|fm| fm.target_field.clone())
                         .collect();
-                    target_fields.push(format!("{}id", entity));
+                    // Add primary key field (use fetched metadata or fallback to convention)
+                    let pk_field = state.primary_id_map.get(&entity)
+                        .cloned()
+                        .unwrap_or_else(|| format!("{}id", entity));
+                    target_fields.push(pk_field);
 
                     // Replace lookup fields with _fieldname_value (from target metadata)
                     if let Some(fields) = state.target_metadata.get(&mapping.target_entity) {
@@ -1991,7 +2034,11 @@ impl App for TransferPreviewApp {
                         }
 
                         let fields = resolver_entity_fields.entry(r.source_entity.clone()).or_default();
-                        fields.push(format!("{}id", r.source_entity));
+                        // Add primary key field (use fetched metadata or fallback to convention)
+                        let pk_field = state.primary_id_map.get(&r.source_entity)
+                            .cloned()
+                            .unwrap_or_else(|| format!("{}id", r.source_entity));
+                        fields.push(pk_field);
                         for mf in &r.match_fields {
                             fields.push(mf.target_field.clone());
                         }
@@ -2637,7 +2684,7 @@ fn check_and_fetch_related_metadata(state: &mut State) -> Option<Command<Msg>> {
         .on_complete(AppId::TransferPreview)
         .build(|_task_idx, result| {
             let data = result
-                .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>), String>>()
+                .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String>>()
                 .unwrap();
             Msg::RelatedMetadataResult(*data)
         }))
@@ -2649,20 +2696,25 @@ fn check_and_fetch_related_metadata(state: &mut State) -> Option<Command<Msg>> {
 async fn fetch_source_metadata(
     env_name: String,
     entity_name: String,
-) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>), String> {
+) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String> {
     log::debug!("[{}] fetch_source_metadata START for env={}", entity_name, env_name);
 
     let config = crate::global_config();
 
     // Check cache first (1 hour TTL)
     match config.get_entity_metadata_cache(&env_name, &entity_name, 1).await {
-        Ok(Some(cached)) => {
+        Ok(Some(cached)) if cached.primary_id_attribute.is_some() => {
+            let primary_id = cached.primary_id_attribute.unwrap();
             log::info!(
-                "[{}] Using cached source metadata: {} fields",
+                "[{}] Using cached source metadata: {} fields, primary_id={}",
                 entity_name,
-                cached.fields.len()
+                cached.fields.len(),
+                primary_id
             );
-            return Ok((entity_name, cached.fields));
+            return Ok((entity_name, cached.fields, primary_id));
+        }
+        Ok(Some(_)) => {
+            log::info!("[{}] Source cache missing primary_id_attribute, fetching from API", entity_name);
         }
         Ok(None) => {
             log::info!("[{}] No valid source cache, fetching from API", entity_name);
@@ -2685,31 +2737,39 @@ async fn fetch_source_metadata(
         .await
         .map_err(|e| format!("Failed to fetch field metadata for {}: {}", entity_name, e))?;
 
+    // Fetch entity metadata info (includes primary_id_attribute)
+    let entity_info = client
+        .fetch_entity_metadata_info(&entity_name)
+        .await
+        .map_err(|e| format!("Failed to fetch entity info for {}: {}", entity_name, e))?;
+
     log::info!(
-        "[{}] Fetched {} source fields",
+        "[{}] Fetched {} source fields, primary_id={}",
         entity_name,
-        fields.len()
+        fields.len(),
+        entity_info.primary_id_attribute
     );
 
-    // Save to cache
+    // Save to cache with primary_id_attribute
     let metadata = crate::api::metadata::EntityMetadata {
         fields: fields.clone(),
+        primary_id_attribute: Some(entity_info.primary_id_attribute.clone()),
         ..Default::default()
     };
     if let Err(e) = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await {
         log::warn!("[{}] Failed to cache source metadata: {}", entity_name, e);
     }
 
-    Ok((entity_name, fields))
+    Ok((entity_name, fields, entity_info.primary_id_attribute))
 }
 
 /// Fetch target entity field metadata for lookup field detection
-/// Returns (entity_name, field_metadata, entity_set_name)
+/// Returns (entity_name, field_metadata, entity_set_name, primary_id_attribute)
 /// Uses SQLite cache with 1 hour TTL
 async fn fetch_target_metadata(
     env_name: String,
     entity_name: String,
-) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String> {
+) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String> {
     log::debug!("[{}] fetch_target_metadata START for env={}", entity_name, env_name);
 
     let config = crate::global_config();
@@ -2718,13 +2778,15 @@ async fn fetch_target_metadata(
     match config.get_entity_metadata_cache(&env_name, &entity_name, 1).await {
         Ok(Some(cached)) if cached.entity_set_name.is_some() => {
             let entity_set = cached.entity_set_name.unwrap();
+            let primary_id = cached.primary_id_attribute.unwrap_or_else(|| format!("{}id", entity_name));
             log::info!(
-                "[{}] Using cached target metadata: {} fields, entity_set={}",
+                "[{}] Using cached target metadata: {} fields, entity_set={}, primary_id={}",
                 entity_name,
                 cached.fields.len(),
-                entity_set
+                entity_set,
+                primary_id
             );
-            return Ok((entity_name, cached.fields, entity_set));
+            return Ok((entity_name, cached.fields, entity_set, primary_id));
         }
         Ok(_) => {
             log::info!("[{}] No valid target cache (or missing entity_set_name), fetching from API", entity_name);
@@ -2754,32 +2816,34 @@ async fn fetch_target_metadata(
         .map_err(|e| format!("Failed to fetch entity info for {}: {}", entity_name, e))?;
 
     log::info!(
-        "[{}] Fetched {} target fields, entity_set={}",
+        "[{}] Fetched {} target fields, entity_set={}, primary_id={}",
         entity_name,
         fields.len(),
-        entity_info.entity_set_name
+        entity_info.entity_set_name,
+        entity_info.primary_id_attribute
     );
 
-    // Save to cache with entity_set_name
+    // Save to cache with entity_set_name and primary_id_attribute
     let metadata = crate::api::metadata::EntityMetadata {
         fields: fields.clone(),
         entity_set_name: Some(entity_info.entity_set_name.clone()),
+        primary_id_attribute: Some(entity_info.primary_id_attribute.clone()),
         ..Default::default()
     };
     if let Err(e) = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await {
         log::warn!("[{}] Failed to cache target metadata: {}", entity_name, e);
     }
 
-    Ok((entity_name, fields, entity_info.entity_set_name))
+    Ok((entity_name, fields, entity_info.entity_set_name, entity_info.primary_id_attribute))
 }
 
 /// Fetch entity metadata (fields + entity set name) for lookup binding
-/// Returns (entity_name, field_metadata, entity_set_name)
+/// Returns (entity_name, field_metadata, entity_set_name, primary_id_attribute)
 /// Uses SQLite cache with 1 hour TTL
 async fn fetch_entity_metadata(
     env_name: String,
     entity_name: String,
-) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String> {
+) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String> {
     log::debug!("[{}] fetch_entity_metadata START for env={}", entity_name, env_name);
 
     let config = crate::global_config();
@@ -2790,13 +2854,15 @@ async fn fetch_entity_metadata(
     match config.get_entity_metadata_cache(&env_name, &entity_name, 1).await {
         Ok(Some(cached)) if cached.entity_set_name.is_some() => {
             let entity_set = cached.entity_set_name.unwrap();
+            let primary_id = cached.primary_id_attribute.unwrap_or_else(|| format!("{}id", entity_name));
             log::info!(
-                "[{}] Using cached metadata: {} fields, entity_set={} (from cache)",
+                "[{}] Using cached metadata: {} fields, entity_set={}, primary_id={} (from cache)",
                 entity_name,
                 cached.fields.len(),
-                entity_set
+                entity_set,
+                primary_id
             );
-            return Ok((entity_name, cached.fields, entity_set));
+            return Ok((entity_name, cached.fields, entity_set, primary_id));
         }
         Ok(_) => {
             log::info!("[{}] No valid cache, fetching from API", entity_name);
@@ -2819,30 +2885,32 @@ async fn fetch_entity_metadata(
         .await
         .map_err(|e| format!("Failed to fetch field metadata for {}: {}", entity_name, e))?;
 
-    // Fetch entity metadata info (includes entity_set_name)
+    // Fetch entity metadata info (includes entity_set_name and primary_id_attribute)
     let entity_info = client
         .fetch_entity_metadata_info(&entity_name)
         .await
         .map_err(|e| format!("Failed to fetch entity info for {}: {}", entity_name, e))?;
 
     log::info!(
-        "[{}] Fetched {} fields, entity_set={}",
+        "[{}] Fetched {} fields, entity_set={}, primary_id={}",
         entity_name,
         fields.len(),
-        entity_info.entity_set_name
+        entity_info.entity_set_name,
+        entity_info.primary_id_attribute
     );
 
     // Save to cache
     let metadata = crate::api::metadata::EntityMetadata {
         fields: fields.clone(),
         entity_set_name: Some(entity_info.entity_set_name.clone()),
+        primary_id_attribute: Some(entity_info.primary_id_attribute.clone()),
         ..Default::default()
     };
     if let Err(e) = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await {
         log::warn!("[{}] Failed to cache metadata: {}", entity_name, e);
     }
 
-    Ok((entity_name, fields, entity_info.entity_set_name))
+    Ok((entity_name, fields, entity_info.entity_set_name, entity_info.primary_id_attribute))
 }
 
 /// Handle Lua mode config - first fetch metadata, then fetch data
@@ -2933,7 +3001,7 @@ fn handle_lua_mode_config(state: &mut State, config: TransferConfig) -> Command<
         .on_complete(AppId::TransferPreview)
         .build(|_task_idx, result| {
             let data = result
-                .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String>>()
+                .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String>>()
                 .unwrap();
             Msg::LuaMetadataResult(*data)
         })
@@ -2975,10 +3043,11 @@ fn build_lua_data_fetch_commands(state: &mut State) -> Command<Msg> {
         let filter = entity_decl.filter.clone();
         let expand = if entity_decl.expand.is_empty() { None } else { Some(entity_decl.expand.clone()) };
         let top = entity_decl.top;
+        let primary_id = state.primary_id_map.get(entity_name).cloned();
 
         builder = builder.add_task_with_progress(
             format!("Source: {}", entity),
-            move |progress| fetch_lua_data(env, entity, fields, filter, expand, top, true, Some(progress)),
+            move |progress| fetch_lua_data(env, entity, fields, filter, expand, top, true, Some(progress), primary_id),
         );
     }
 
@@ -2990,10 +3059,11 @@ fn build_lua_data_fetch_commands(state: &mut State) -> Command<Msg> {
         let filter = entity_decl.filter.clone();
         let expand = if entity_decl.expand.is_empty() { None } else { Some(entity_decl.expand.clone()) };
         let top = entity_decl.top;
+        let primary_id = state.primary_id_map.get(entity_name).cloned();
 
         builder = builder.add_task_with_progress(
             format!("Target: {}", entity),
-            move |progress| fetch_lua_data(env, entity, fields, filter, expand, top, false, Some(progress)),
+            move |progress| fetch_lua_data(env, entity, fields, filter, expand, top, false, Some(progress), primary_id),
         );
     }
 
@@ -3017,6 +3087,7 @@ async fn fetch_lua_data(
     top: Option<usize>,
     is_source: bool,
     progress: Option<crate::tui::command::ProgressSender>,
+    primary_id: Option<String>,
 ) -> Result<(String, bool, Vec<serde_json::Value>), String> {
     use crate::api::pluralization::pluralize_entity_name;
     use crate::api::query::QueryBuilder;
@@ -3070,7 +3141,7 @@ async fn fetch_lua_data(
     // Select fields (if provided, otherwise select all)
     if !fields.is_empty() {
         // Always include primary key
-        let pk_field = format!("{}id", entity_name);
+        let pk_field = primary_id.unwrap_or_else(|| format!("{}id", entity_name));
         let mut all_fields = fields.clone();
         if !all_fields.contains(&pk_field) {
             all_fields.push(pk_field);

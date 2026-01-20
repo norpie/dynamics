@@ -255,6 +255,8 @@ pub struct State {
     pub target_metadata: std::collections::HashMap<String, Vec<FieldMetadata>>,
     /// Entity set names (entity_logical_name -> entity_set_name)
     pub entity_set_map: std::collections::HashMap<String, String>,
+    /// Primary ID attribute names (entity_logical_name -> primary_id_attribute)
+    pub primary_id_map: std::collections::HashMap<String, String>,
     /// Resolved transfer data (loaded async)
     pub resolved: Resource<ResolvedTransfer>,
     /// Currently selected entity index
@@ -312,6 +314,7 @@ impl Default for State {
             source_metadata: std::collections::HashMap::new(),
             target_metadata: std::collections::HashMap::new(),
             entity_set_map: std::collections::HashMap::new(),
+            primary_id_map: std::collections::HashMap::new(),
             resolved: Resource::NotAsked,
             current_entity_idx: 0,
             filter: RecordFilter::All,
@@ -453,18 +456,18 @@ pub enum PreviewModal {
 pub enum Msg {
     // Data loading
     ConfigLoaded(Result<crate::transfer::TransferConfig, String>),
-    SourceMetadataResult(Result<(String, Vec<FieldMetadata>), String>), // (entity_name, fields) - for source lookup detection
-    TargetMetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, entity_set_name) - for target lookup detection
-    RelatedMetadataResult(Result<(String, Vec<FieldMetadata>), String>), // (entity_name, fields) - for lookup traversal entities
+    SourceMetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, primary_id_attribute) - for source lookup detection
+    TargetMetadataResult(Result<(String, Vec<FieldMetadata>, String, String), String>), // (entity_name, fields, entity_set_name, primary_id_attribute) - for target lookup detection
+    RelatedMetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, primary_id_attribute) - for lookup traversal entities
     FetchRelatedMetadata, // Triggered when related entity metadata needs to be fetched
     FetchRecords, // Triggered after both source and target metadata are loaded
     FetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
-    MetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, entity_set_name)
+    MetadataResult(Result<(String, Vec<FieldMetadata>, String, String), String>), // (entity_name, fields, entity_set_name, primary_id_attribute)
     RunTransform, // Triggered after loading screen returns
     ResolvedLoaded(Result<ResolvedTransfer, String>),
 
     // Lua mode data loading
-    LuaMetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, entity_set_name)
+    LuaMetadataResult(Result<(String, Vec<FieldMetadata>, String, String), String>), // (entity_name, fields, entity_set_name, primary_id_attribute)
     LuaFetchRecords, // Triggered after Lua metadata is loaded
     LuaFetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
     RunLuaTransform, // Triggered after Lua data is loaded

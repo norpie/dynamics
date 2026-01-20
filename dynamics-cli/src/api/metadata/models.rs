@@ -145,6 +145,9 @@ pub struct EntityMetadata {
     /// Entity set name for OData URLs (e.g., "accounts", "contacts")
     #[serde(default)]
     pub entity_set_name: Option<String>,
+    /// Primary ID attribute name (e.g., "accountid", "businessprocessflowinstanceid")
+    #[serde(default)]
+    pub primary_id_attribute: Option<String>,
 }
 
 impl Default for EntityMetadata {
@@ -155,6 +158,7 @@ impl Default for EntityMetadata {
             views: Vec::new(),
             forms: Vec::new(),
             entity_set_name: None,
+            primary_id_attribute: None,
         }
     }
 }
