@@ -39,7 +39,10 @@ pub enum LookupBindingError {
 impl std::fmt::Display for LookupBindingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LookupBindingError::PolymorphicLookup { field_name, targets } => {
+            LookupBindingError::PolymorphicLookup {
+                field_name,
+                targets,
+            } => {
                 write!(
                     f,
                     "Polymorphic lookup '{}' has multiple targets ({}) - use a single-target field instead",
@@ -105,12 +108,11 @@ impl LookupBindingContext {
             })?;
 
             // Get entity set name for target
-            let target_entity_set =
-                entity_set_map
-                    .get(target_entity)
-                    .ok_or_else(|| LookupBindingError::MissingEntitySet {
-                        entity_name: target_entity.clone(),
-                    })?;
+            let target_entity_set = entity_set_map.get(target_entity).ok_or_else(|| {
+                LookupBindingError::MissingEntitySet {
+                    entity_name: target_entity.clone(),
+                }
+            })?;
 
             lookups.insert(
                 field.logical_name.clone(),

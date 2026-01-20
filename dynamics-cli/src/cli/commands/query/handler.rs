@@ -5,10 +5,10 @@ use colored::*;
 use std::fs;
 use std::time::Instant;
 
+use super::{DisplayStyle, OutputFormat, QueryCommands};
 use crate::api::ClientManager;
 use crate::config::Config;
 use crate::fql::{parse, to_fetchxml, to_fetchxml_pretty, tokenize};
-use super::{DisplayStyle, OutputFormat, QueryCommands};
 
 /// Handle the query command with the new streamlined interface
 pub async fn handle_query_command(args: QueryCommands) -> Result<()> {
@@ -45,7 +45,10 @@ pub async fn handle_query_command(args: QueryCommands) -> Result<()> {
         }
 
         if matches!(args.style, DisplayStyle::Verbose) {
-            println!("Reading query from: {}", file_path.display().to_string().cyan());
+            println!(
+                "Reading query from: {}",
+                file_path.display().to_string().cyan()
+            );
         }
         trimmed.to_string()
     } else {
@@ -64,11 +67,9 @@ pub async fn handle_query_command(args: QueryCommands) -> Result<()> {
         println!("Parsing FQL query...");
     }
 
-    let tokens = tokenize(&query_text)
-        .context("Failed to tokenize FQL query")?;
+    let tokens = tokenize(&query_text).context("Failed to tokenize FQL query")?;
 
-    let ast = parse(tokens, &query_text)
-        .context("Failed to parse FQL query")?;
+    let ast = parse(tokens, &query_text).context("Failed to parse FQL query")?;
 
     // Extract entity name from AST for pluralization
     let entity_name = ast.entity.name.clone();
@@ -77,7 +78,8 @@ pub async fn handle_query_command(args: QueryCommands) -> Result<()> {
         to_fetchxml_pretty(ast)
     } else {
         to_fetchxml(ast)
-    }.context("Failed to generate FetchXML from query")?;
+    }
+    .context("Failed to generate FetchXML from query")?;
 
     let parse_duration = start_parse.elapsed();
 
@@ -119,14 +121,22 @@ pub async fn handle_query_command(args: QueryCommands) -> Result<()> {
     let client = client_manager.get_client(&env_name).await?;
 
     // Execute the query using the new API client with entity name
-    let result = client.execute_fetchxml(&entity_name, &fetchxml).await
+    let result = client
+        .execute_fetchxml(&entity_name, &fetchxml)
+        .await
         .context("Failed to execute query")?;
 
     let exec_duration = start_exec.elapsed();
 
     if matches!(args.style, DisplayStyle::Verbose) {
-        println!("Execution time: {:.2}ms", exec_duration.as_secs_f64() * 1000.0);
-        println!("Total time: {:.2}ms", (parse_duration + exec_duration).as_secs_f64() * 1000.0);
+        println!(
+            "Execution time: {:.2}ms",
+            exec_duration.as_secs_f64() * 1000.0
+        );
+        println!(
+            "Total time: {:.2}ms",
+            (parse_duration + exec_duration).as_secs_f64() * 1000.0
+        );
         println!();
     }
 
@@ -137,7 +147,10 @@ pub async fn handle_query_command(args: QueryCommands) -> Result<()> {
         fs::write(&output_path, &formatted_output)
             .with_context(|| format!("Failed to write output to: {}", output_path.display()))?;
         if matches!(args.style, DisplayStyle::Verbose) {
-            println!("Results saved to: {}", output_path.display().to_string().bright_green());
+            println!(
+                "Results saved to: {}",
+                output_path.display().to_string().bright_green()
+            );
         }
     } else {
         if matches!(args.style, DisplayStyle::Verbose) {
@@ -154,12 +167,10 @@ pub async fn handle_query_command(args: QueryCommands) -> Result<()> {
 fn format_output(data: &serde_json::Value, format: &OutputFormat) -> Result<String> {
     match format {
         OutputFormat::Json => {
-            serde_json::to_string_pretty(data)
-                .context("Failed to format JSON output")
+            serde_json::to_string_pretty(data).context("Failed to format JSON output")
         }
         OutputFormat::JsonCompact => {
-            serde_json::to_string(data)
-                .context("Failed to format JSON output")
+            serde_json::to_string(data).context("Failed to format JSON output")
         }
         OutputFormat::Xml => {
             // Convert JSON to XML representation
@@ -177,14 +188,11 @@ fn format_output(data: &serde_json::Value, format: &OutputFormat) -> Result<Stri
                         }
                         buf.clear();
                     }
-                    Ok(String::from_utf8(writer.into_inner())
-                        .unwrap_or(xml_string))
+                    Ok(String::from_utf8(writer.into_inner()).unwrap_or(xml_string))
                 }
             }
         }
-        OutputFormat::Csv => {
-            json_to_csv(data)
-        }
+        OutputFormat::Csv => json_to_csv(data),
     }
 }
 
@@ -194,7 +202,12 @@ fn json_to_xml(data: &serde_json::Value) -> Result<String> {
         serde_json::Value::Object(obj) => {
             let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<result>\n");
             for (key, value) in obj {
-                xml.push_str(&format!("  <{}>{}</{}>\n", key, json_value_to_string(value), key));
+                xml.push_str(&format!(
+                    "  <{}>{}</{}>\n",
+                    key,
+                    json_value_to_string(value),
+                    key
+                ));
             }
             xml.push_str("</result>");
             Ok(xml)
@@ -202,12 +215,19 @@ fn json_to_xml(data: &serde_json::Value) -> Result<String> {
         serde_json::Value::Array(arr) => {
             let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<results>\n");
             for (i, item) in arr.iter().enumerate() {
-                xml.push_str(&format!("  <item index=\"{}\">{}</item>\n", i, json_value_to_string(item)));
+                xml.push_str(&format!(
+                    "  <item index=\"{}\">{}</item>\n",
+                    i,
+                    json_value_to_string(item)
+                ));
             }
             xml.push_str("</results>");
             Ok(xml)
         }
-        _ => Ok(format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<value>{}</value>", json_value_to_string(data)))
+        _ => Ok(format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<value>{}</value>",
+            json_value_to_string(data)
+        )),
     }
 }
 
@@ -230,8 +250,13 @@ fn json_to_csv(data: &serde_json::Value) -> Result<String> {
                 // Add data rows
                 for item in arr {
                     if let serde_json::Value::Object(obj) = item {
-                        let row: Vec<String> = headers.iter()
-                            .map(|h| csv_escape(&json_value_to_string(obj.get(h).unwrap_or(&serde_json::Value::Null))))
+                        let row: Vec<String> = headers
+                            .iter()
+                            .map(|h| {
+                                csv_escape(&json_value_to_string(
+                                    obj.get(h).unwrap_or(&serde_json::Value::Null),
+                                ))
+                            })
                             .collect();
                         csv.push_str(&row.join(","));
                         csv.push('\n');
@@ -243,11 +268,18 @@ fn json_to_csv(data: &serde_json::Value) -> Result<String> {
         serde_json::Value::Object(obj) => {
             let mut csv = String::from("key,value\n");
             for (key, value) in obj {
-                csv.push_str(&format!("{},{}\n", csv_escape(key), csv_escape(&json_value_to_string(value))));
+                csv.push_str(&format!(
+                    "{},{}\n",
+                    csv_escape(key),
+                    csv_escape(&json_value_to_string(value))
+                ));
             }
             Ok(csv)
         }
-        _ => Ok(format!("value\n{}\n", csv_escape(&json_value_to_string(data))))
+        _ => Ok(format!(
+            "value\n{}\n",
+            csv_escape(&json_value_to_string(data))
+        )),
     }
 }
 
@@ -270,4 +302,3 @@ fn csv_escape(s: &str) -> String {
         s.to_string()
     }
 }
-

@@ -11,7 +11,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Auto-Check")
             .description("Automatically check for updates every hour")
             .bool_type(false)
-            .build()?
+            .build()?,
     )?;
 
     // Auto-install option
@@ -20,7 +20,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Auto-Install")
             .description("Automatically install updates when found")
             .bool_type(false)
-            .build()?
+            .build()?,
     )?;
 
     log::info!("Registered {} update options", 2);

@@ -115,7 +115,11 @@ impl LuaOperation {
     }
 
     /// Create a new update operation
-    pub fn update(entity: impl Into<String>, id: Uuid, fields: HashMap<String, serde_json::Value>) -> Self {
+    pub fn update(
+        entity: impl Into<String>,
+        id: Uuid,
+        fields: HashMap<String, serde_json::Value>,
+    ) -> Self {
         LuaOperation {
             entity: entity.into(),
             operation: OperationType::Update,
@@ -209,9 +213,18 @@ mod tests {
 
     #[test]
     fn test_operation_type_from_str() {
-        assert_eq!(OperationType::from_str("create"), Some(OperationType::Create));
-        assert_eq!(OperationType::from_str("CREATE"), Some(OperationType::Create));
-        assert_eq!(OperationType::from_str("Update"), Some(OperationType::Update));
+        assert_eq!(
+            OperationType::from_str("create"),
+            Some(OperationType::Create)
+        );
+        assert_eq!(
+            OperationType::from_str("CREATE"),
+            Some(OperationType::Create)
+        );
+        assert_eq!(
+            OperationType::from_str("Update"),
+            Some(OperationType::Update)
+        );
         assert_eq!(OperationType::from_str("invalid"), None);
     }
 

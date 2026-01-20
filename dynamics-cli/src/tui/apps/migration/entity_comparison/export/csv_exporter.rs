@@ -41,7 +41,9 @@ pub fn export_unmapped_fields_to_csv(state: &State, file_path: &str) -> Result<(
             // In multi-entity mode, ignored items might be qualified
             let ignore_id_unqualified = format!("fields:source:{}", field.logical_name);
             let ignore_id_qualified = format!("fields:source:{}", field_key);
-            if state.ignored_items.contains(&ignore_id_unqualified) || state.ignored_items.contains(&ignore_id_qualified) {
+            if state.ignored_items.contains(&ignore_id_unqualified)
+                || state.ignored_items.contains(&ignore_id_qualified)
+            {
                 continue;
             }
 
@@ -72,8 +74,7 @@ pub fn export_unmapped_fields_to_csv(state: &State, file_path: &str) -> Result<(
     }
 
     // Flush to ensure all data is written
-    wtr.flush()
-        .context("Failed to flush CSV writer")?;
+    wtr.flush().context("Failed to flush CSV writer")?;
 
     log::info!("CSV file exported to: {}", file_path);
     Ok(())

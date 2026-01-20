@@ -1,12 +1,17 @@
 use super::domain::*;
-use super::tree_items::{SnapshotTreeItem, CopyBadge};
-use super::field_filter::{RelevantFields, ConditionLogic};
+use super::field_filter::{ConditionLogic, RelevantFields};
+use super::tree_items::{CopyBadge, SnapshotTreeItem};
 use serde_json::Value;
 use std::collections::HashMap;
 
 /// Helper to build filtered attribute list from JSON object
-fn build_filtered_fields(value: &Value, filter: &RelevantFields, parent_id: &str) -> Vec<SnapshotTreeItem> {
-    filter.filter_fields(value)
+fn build_filtered_fields(
+    value: &Value,
+    filter: &RelevantFields,
+    parent_id: &str,
+) -> Vec<SnapshotTreeItem> {
+    filter
+        .filter_fields(value)
         .into_iter()
         .map(|(key, val)| SnapshotTreeItem::Attribute {
             parent_id: parent_id.to_string(),
@@ -17,7 +22,11 @@ fn build_filtered_fields(value: &Value, filter: &RelevantFields, parent_id: &str
 }
 
 /// Create a Fields category if there are any fields
-fn fields_category(value: &Value, filter: &RelevantFields, unique_id: &str) -> Option<SnapshotTreeItem> {
+fn fields_category(
+    value: &Value,
+    filter: &RelevantFields,
+    unique_id: &str,
+) -> Option<SnapshotTreeItem> {
     let fields = build_filtered_fields(value, filter, unique_id);
     if fields.is_empty() {
         None
@@ -37,32 +46,58 @@ pub fn build_snapshot_tree(questionnaire: &Questionnaire) -> Vec<SnapshotTreeIte
     // Build lookup maps
     let mut page_lines_by_page: HashMap<&str, Vec<&Value>> = HashMap::new();
     for line in &questionnaire.page_lines {
-        if let Some(page_id) = line.get("_nrq_questionnairepageid_value").and_then(|v| v.as_str()) {
-            page_lines_by_page.entry(page_id).or_insert_with(Vec::new).push(line);
+        if let Some(page_id) = line
+            .get("_nrq_questionnairepageid_value")
+            .and_then(|v| v.as_str())
+        {
+            page_lines_by_page
+                .entry(page_id)
+                .or_insert_with(Vec::new)
+                .push(line);
         }
     }
 
     let mut group_lines_by_page: HashMap<&str, Vec<&Value>> = HashMap::new();
     for line in &questionnaire.group_lines {
-        if let Some(page_id) = line.get("_nrq_questionnairepageid_value").and_then(|v| v.as_str()) {
-            group_lines_by_page.entry(page_id).or_insert_with(Vec::new).push(line);
+        if let Some(page_id) = line
+            .get("_nrq_questionnairepageid_value")
+            .and_then(|v| v.as_str())
+        {
+            group_lines_by_page
+                .entry(page_id)
+                .or_insert_with(Vec::new)
+                .push(line);
         }
     }
 
     let mut template_lines_by_group: HashMap<&str, Vec<&TemplateLine>> = HashMap::new();
     for template_line in &questionnaire.template_lines {
-        template_lines_by_group.entry(template_line.group_id.as_str()).or_insert_with(Vec::new).push(template_line);
+        template_lines_by_group
+            .entry(template_line.group_id.as_str())
+            .or_insert_with(Vec::new)
+            .push(template_line);
     }
 
     let mut conditions_by_question: HashMap<&str, Vec<&Condition>> = HashMap::new();
     for condition in &questionnaire.conditions {
-        if let Some(question_id) = condition.raw.get("_nrq_questionid_value").and_then(|v| v.as_str()) {
-            conditions_by_question.entry(question_id).or_insert_with(Vec::new).push(condition);
+        if let Some(question_id) = condition
+            .raw
+            .get("_nrq_questionid_value")
+            .and_then(|v| v.as_str())
+        {
+            conditions_by_question
+                .entry(question_id)
+                .or_insert_with(Vec::new)
+                .push(condition);
         }
     }
 
     // 1. Questionnaire Fields section
-    if let Some(fields) = fields_category(&questionnaire.raw, &RelevantFields::for_questionnaire(), &questionnaire.id) {
+    if let Some(fields) = fields_category(
+        &questionnaire.raw,
+        &RelevantFields::for_questionnaire(),
+        &questionnaire.id,
+    ) {
         questionnaire_children.push(fields);
     }
 
@@ -341,7 +376,10 @@ pub fn build_snapshot_tree(questionnaire: &Questionnaire) -> Vec<SnapshotTreeIte
     let mut classification_children = vec![];
 
     if !questionnaire.classifications.categories.is_empty() {
-        let category_items: Vec<SnapshotTreeItem> = questionnaire.classifications.categories.iter()
+        let category_items: Vec<SnapshotTreeItem> = questionnaire
+            .classifications
+            .categories
+            .iter()
             .map(|ref_item| SnapshotTreeItem::ReferencedEntity {
                 name: ref_item.name.clone().unwrap_or_else(|| ref_item.id.clone()),
                 id: ref_item.id.clone(),
@@ -358,7 +396,10 @@ pub fn build_snapshot_tree(questionnaire: &Questionnaire) -> Vec<SnapshotTreeIte
     }
 
     if !questionnaire.classifications.domains.is_empty() {
-        let domain_items: Vec<SnapshotTreeItem> = questionnaire.classifications.domains.iter()
+        let domain_items: Vec<SnapshotTreeItem> = questionnaire
+            .classifications
+            .domains
+            .iter()
             .map(|ref_item| SnapshotTreeItem::ReferencedEntity {
                 name: ref_item.name.clone().unwrap_or_else(|| ref_item.id.clone()),
                 id: ref_item.id.clone(),
@@ -375,7 +416,10 @@ pub fn build_snapshot_tree(questionnaire: &Questionnaire) -> Vec<SnapshotTreeIte
     }
 
     if !questionnaire.classifications.funds.is_empty() {
-        let fund_items: Vec<SnapshotTreeItem> = questionnaire.classifications.funds.iter()
+        let fund_items: Vec<SnapshotTreeItem> = questionnaire
+            .classifications
+            .funds
+            .iter()
             .map(|ref_item| SnapshotTreeItem::ReferencedEntity {
                 name: ref_item.name.clone().unwrap_or_else(|| ref_item.id.clone()),
                 id: ref_item.id.clone(),
@@ -392,7 +436,10 @@ pub fn build_snapshot_tree(questionnaire: &Questionnaire) -> Vec<SnapshotTreeIte
     }
 
     if !questionnaire.classifications.supports.is_empty() {
-        let support_items: Vec<SnapshotTreeItem> = questionnaire.classifications.supports.iter()
+        let support_items: Vec<SnapshotTreeItem> = questionnaire
+            .classifications
+            .supports
+            .iter()
             .map(|ref_item| SnapshotTreeItem::ReferencedEntity {
                 name: ref_item.name.clone().unwrap_or_else(|| ref_item.id.clone()),
                 id: ref_item.id.clone(),
@@ -409,7 +456,10 @@ pub fn build_snapshot_tree(questionnaire: &Questionnaire) -> Vec<SnapshotTreeIte
     }
 
     if !questionnaire.classifications.types.is_empty() {
-        let type_items: Vec<SnapshotTreeItem> = questionnaire.classifications.types.iter()
+        let type_items: Vec<SnapshotTreeItem> = questionnaire
+            .classifications
+            .types
+            .iter()
             .map(|ref_item| SnapshotTreeItem::ReferencedEntity {
                 name: ref_item.name.clone().unwrap_or_else(|| ref_item.id.clone()),
                 id: ref_item.id.clone(),
@@ -426,7 +476,10 @@ pub fn build_snapshot_tree(questionnaire: &Questionnaire) -> Vec<SnapshotTreeIte
     }
 
     if !questionnaire.classifications.subcategories.is_empty() {
-        let subcategory_items: Vec<SnapshotTreeItem> = questionnaire.classifications.subcategories.iter()
+        let subcategory_items: Vec<SnapshotTreeItem> = questionnaire
+            .classifications
+            .subcategories
+            .iter()
             .map(|ref_item| SnapshotTreeItem::ReferencedEntity {
                 name: ref_item.name.clone().unwrap_or_else(|| ref_item.id.clone()),
                 id: ref_item.id.clone(),
@@ -443,7 +496,10 @@ pub fn build_snapshot_tree(questionnaire: &Questionnaire) -> Vec<SnapshotTreeIte
     }
 
     if !questionnaire.classifications.flemish_shares.is_empty() {
-        let flemish_share_items: Vec<SnapshotTreeItem> = questionnaire.classifications.flemish_shares.iter()
+        let flemish_share_items: Vec<SnapshotTreeItem> = questionnaire
+            .classifications
+            .flemish_shares
+            .iter()
             .map(|ref_item| SnapshotTreeItem::ReferencedEntity {
                 name: ref_item.name.clone().unwrap_or_else(|| ref_item.id.clone()),
                 id: ref_item.id.clone(),
@@ -460,13 +516,16 @@ pub fn build_snapshot_tree(questionnaire: &Questionnaire) -> Vec<SnapshotTreeIte
     }
 
     if !classification_children.is_empty() {
-        let total_count: usize = classification_children.iter().map(|c| {
-            if let SnapshotTreeItem::Category { count, .. } = c {
-                *count
-            } else {
-                0
-            }
-        }).sum();
+        let total_count: usize = classification_children
+            .iter()
+            .map(|c| {
+                if let SnapshotTreeItem::Category { count, .. } = c {
+                    *count
+                } else {
+                    0
+                }
+            })
+            .sum();
 
         questionnaire_children.push(SnapshotTreeItem::Category {
             id: format!("classifications:{}", questionnaire.id),

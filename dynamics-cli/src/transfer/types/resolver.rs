@@ -150,9 +150,7 @@ impl Resolver {
             source_entity: source_entity.into(),
             match_fields: match_fields
                 .into_iter()
-                .map(|(source, target)| {
-                    MatchField::new(FieldPath::simple(source.into()), target)
-                })
+                .map(|(source, target)| MatchField::new(FieldPath::simple(source.into()), target))
                 .collect(),
             fallback: ResolverFallback::default(),
         }
@@ -171,9 +169,7 @@ impl Resolver {
             source_entity: source_entity.into(),
             match_fields: match_fields
                 .into_iter()
-                .map(|(source, target)| {
-                    MatchField::new(FieldPath::simple(source.into()), target)
-                })
+                .map(|(source, target)| MatchField::new(FieldPath::simple(source.into()), target))
                 .collect(),
             fallback,
         }
@@ -202,7 +198,10 @@ impl Resolver {
 
     /// Get all target field names that need to be fetched for this resolver
     pub fn target_fields(&self) -> Vec<&str> {
-        self.match_fields.iter().map(|mf| mf.target_field.as_str()).collect()
+        self.match_fields
+            .iter()
+            .map(|mf| mf.target_field.as_str())
+            .collect()
     }
 }
 
@@ -324,7 +323,10 @@ impl ResolverContext {
             let mut sorted_match_fields = resolver.match_fields.clone();
             sorted_match_fields.sort_by(|a, b| a.target_field.cmp(&b.target_field));
 
-            let field_names: Vec<_> = sorted_match_fields.iter().map(|mf| mf.target_field.as_str()).collect();
+            let field_names: Vec<_> = sorted_match_fields
+                .iter()
+                .map(|mf| mf.target_field.as_str())
+                .collect();
             log::info!(
                 "Processing resolver '{}': source_entity='{}', match_fields={:?}",
                 resolver.name,
@@ -395,7 +397,8 @@ impl ResolverContext {
                 };
 
                 // Build composite key from all match fields (sorted by target_field)
-                let composite_key = Self::build_composite_key_from_record(record, &sorted_match_fields);
+                let composite_key =
+                    Self::build_composite_key_from_record(record, &sorted_match_fields);
                 if composite_key.is_empty() {
                     continue;
                 }
@@ -423,15 +426,20 @@ impl ResolverContext {
             );
 
             ctx.tables.insert(resolver.name.clone(), table);
-            ctx.fallbacks.insert(resolver.name.clone(), resolver.fallback.clone());
-            ctx.match_fields.insert(resolver.name.clone(), sorted_match_fields);
+            ctx.fallbacks
+                .insert(resolver.name.clone(), resolver.fallback.clone());
+            ctx.match_fields
+                .insert(resolver.name.clone(), sorted_match_fields);
         }
 
         ctx
     }
 
     /// Build a composite key from a target record using the sorted match fields
-    fn build_composite_key_from_record(record: &serde_json::Value, match_fields: &[MatchField]) -> String {
+    fn build_composite_key_from_record(
+        record: &serde_json::Value,
+        match_fields: &[MatchField],
+    ) -> String {
         let mut parts: Vec<String> = Vec::with_capacity(match_fields.len());
 
         for mf in match_fields {
@@ -511,13 +519,20 @@ impl ResolverContext {
     ///
     /// # Returns
     /// The resolution result (Found or NotFound)
-    pub fn resolve_composite(&self, resolver_name: &str, pairs: &[(&str, &serde_json::Value)]) -> ResolveResult {
+    pub fn resolve_composite(
+        &self,
+        resolver_name: &str,
+        pairs: &[(&str, &serde_json::Value)],
+    ) -> ResolveResult {
         let composite_key = Self::build_composite_key(pairs);
         if composite_key.is_empty() {
             log::debug!(
                 "Resolver '{}': empty composite key from pairs: {:?}",
                 resolver_name,
-                pairs.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>()
+                pairs
+                    .iter()
+                    .map(|(k, v)| format!("{}={}", k, v))
+                    .collect::<Vec<_>>()
             );
             return ResolveResult::NotFound;
         }
@@ -535,10 +550,15 @@ impl ResolverContext {
             }
 
             // Log first few misses with sample of available keys
-            static MISS_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            static MISS_COUNT: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
             let count = MISS_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             if count < 5 {
-                let sample_keys: Vec<_> = table.keys().take(3).map(|k| k.replace('\x1F', " | ")).collect();
+                let sample_keys: Vec<_> = table
+                    .keys()
+                    .take(3)
+                    .map(|k| k.replace('\x1F', " | "))
+                    .collect();
                 log::warn!(
                     "Resolver '{}': NOT FOUND key '{}'. Table has {} entries. Sample keys: {:?}",
                     resolver_name,
@@ -666,8 +686,12 @@ mod tests {
 
     #[test]
     fn test_resolver_with_fallback() {
-        let resolver =
-            Resolver::with_fallback("user_by_email", "contact", "emailaddress1", ResolverFallback::Null);
+        let resolver = Resolver::with_fallback(
+            "user_by_email",
+            "contact",
+            "emailaddress1",
+            ResolverFallback::Null,
+        );
         assert_eq!(resolver.fallback, ResolverFallback::Null);
     }
 
@@ -704,7 +728,11 @@ mod tests {
     fn test_resolver_context_build_and_resolve() {
         use serde_json::json;
 
-        let resolvers = vec![Resolver::new("contact_by_email", "contact", "emailaddress1")];
+        let resolvers = vec![Resolver::new(
+            "contact_by_email",
+            "contact",
+            "emailaddress1",
+        )];
 
         let mut target_data = HashMap::new();
         target_data.insert(
@@ -754,7 +782,11 @@ mod tests {
     fn test_resolver_context_duplicates() {
         use serde_json::json;
 
-        let resolvers = vec![Resolver::new("contact_by_email", "contact", "emailaddress1")];
+        let resolvers = vec![Resolver::new(
+            "contact_by_email",
+            "contact",
+            "emailaddress1",
+        )];
 
         let mut target_data = HashMap::new();
         target_data.insert(
@@ -798,7 +830,11 @@ mod tests {
     #[test]
     #[allow(deprecated)]
     fn test_resolver_context_missing_entity() {
-        let resolvers = vec![Resolver::new("contact_by_email", "contact", "emailaddress1")];
+        let resolvers = vec![Resolver::new(
+            "contact_by_email",
+            "contact",
+            "emailaddress1",
+        )];
         let target_data = HashMap::new(); // No data
         let primary_keys = HashMap::new();
 
@@ -878,7 +914,10 @@ mod tests {
 
         // Test successful compound lookup
         let pairs = [
-            ("contactid", &json!("aaaa1111-1111-1111-1111-111111111111") as &serde_json::Value),
+            (
+                "contactid",
+                &json!("aaaa1111-1111-1111-1111-111111111111") as &serde_json::Value,
+            ),
             ("requestid", &json!("bbbb1111-1111-1111-1111-111111111111")),
         ];
         let result = ctx.resolve_composite("capacity_by_pair", &pairs);
@@ -889,7 +928,10 @@ mod tests {
 
         // Test with reversed order (should still work due to order-independent matching)
         let pairs_reversed = [
-            ("requestid", &json!("bbbb1111-1111-1111-1111-111111111111") as &serde_json::Value),
+            (
+                "requestid",
+                &json!("bbbb1111-1111-1111-1111-111111111111") as &serde_json::Value,
+            ),
             ("contactid", &json!("aaaa1111-1111-1111-1111-111111111111")),
         ];
         let result = ctx.resolve_composite("capacity_by_pair", &pairs_reversed);
@@ -900,7 +942,10 @@ mod tests {
 
         // Test partial match (only one field matches) - should not find
         let partial_pairs = [
-            ("contactid", &json!("aaaa1111-1111-1111-1111-111111111111") as &serde_json::Value),
+            (
+                "contactid",
+                &json!("aaaa1111-1111-1111-1111-111111111111") as &serde_json::Value,
+            ),
             ("requestid", &json!("wrong-request-id")),
         ];
         let result = ctx.resolve_composite("capacity_by_pair", &partial_pairs);
@@ -908,7 +953,10 @@ mod tests {
 
         // Test with second record
         let pairs2 = [
-            ("contactid", &json!("aaaa2222-2222-2222-2222-222222222222") as &serde_json::Value),
+            (
+                "contactid",
+                &json!("aaaa2222-2222-2222-2222-222222222222") as &serde_json::Value,
+            ),
             ("requestid", &json!("bbbb2222-2222-2222-2222-222222222222")),
         ];
         let result = ctx.resolve_composite("capacity_by_pair", &pairs2);
@@ -945,7 +993,10 @@ mod tests {
 
         // Test case-insensitive lookup (lowercase query should match uppercase data)
         let pairs = [
-            ("contactid", &json!("aaaa1111-1111-1111-1111-111111111111") as &serde_json::Value),
+            (
+                "contactid",
+                &json!("aaaa1111-1111-1111-1111-111111111111") as &serde_json::Value,
+            ),
             ("requestid", &json!("BBBB1111-1111-1111-1111-111111111111")),
         ];
         let result = ctx.resolve_composite("capacity_by_pair", &pairs);
@@ -983,13 +1034,18 @@ mod tests {
 
         // Test successful resolution
         let pairs = [
-            ("contactid", &json!("aaaa1111-1111-1111-1111-111111111111") as &serde_json::Value),
+            (
+                "contactid",
+                &json!("aaaa1111-1111-1111-1111-111111111111") as &serde_json::Value,
+            ),
             ("requestid", &json!("bbbb1111-1111-1111-1111-111111111111")),
         ];
         let result = ctx.resolve_composite_to_value("capacity_by_pair", &pairs);
         assert_eq!(
             result,
-            Ok(Value::Guid(Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap()))
+            Ok(Value::Guid(
+                Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap()
+            ))
         );
 
         // Test fallback to null

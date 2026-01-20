@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
-use quote::{quote, format_ident};
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Type, GenericArgument, PathArguments};
+use quote::{format_ident, quote};
+use syn::{Data, DeriveInput, Fields, GenericArgument, PathArguments, Type, parse_macro_input};
 
 pub fn derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -50,7 +50,9 @@ pub fn derive(input: TokenStream) -> TokenStream {
             };
 
             // Extract the inner type from Resource<T, E> or Resource<T>
-            let Type::Path(type_path) = &field.ty else { continue; };
+            let Type::Path(type_path) = &field.ty else {
+                continue;
+            };
             let last_segment = type_path.path.segments.last().unwrap();
 
             if last_segment.ident != "Resource" {
@@ -72,8 +74,10 @@ pub fn derive(input: TokenStream) -> TokenStream {
             let handle_method = format_ident!("handle_{}_loaded", field_name);
 
             // Convert field_name to PascalCase for Msg variant
-            let msg_variant = format_ident!("{}Loaded",
-                field_name.to_string()
+            let msg_variant = format_ident!(
+                "{}Loaded",
+                field_name
+                    .to_string()
                     .split('_')
                     .map(|s| {
                         let mut c = s.chars();

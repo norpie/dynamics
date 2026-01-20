@@ -3,11 +3,11 @@
 //! Provides structured logging capabilities that include correlation IDs,
 //! performance metrics, and request/response tracking for debugging and monitoring.
 
-use super::config::{MonitoringConfig, LogLevel};
-use serde_json::{json, Value};
+use super::config::{LogLevel, MonitoringConfig};
+use log::{debug, error, info, trace, warn};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use log::{debug, info, warn, error, trace};
 
 /// Structured logger for API operations with correlation tracking
 #[derive(Debug, Clone)]
@@ -54,7 +54,12 @@ impl ApiLogger {
     }
 
     /// Start tracking a new operation
-    pub fn start_operation(&self, operation_type: &str, entity: &str, correlation_id: &str) -> OperationContext {
+    pub fn start_operation(
+        &self,
+        operation_type: &str,
+        entity: &str,
+        correlation_id: &str,
+    ) -> OperationContext {
         let context = OperationContext {
             correlation_id: correlation_id.to_string(),
             operation_type: operation_type.to_string(),
@@ -79,7 +84,13 @@ impl ApiLogger {
     }
 
     /// Log HTTP request details
-    pub fn log_request(&self, context: &OperationContext, method: &str, url: &str, headers: &HashMap<String, String>) {
+    pub fn log_request(
+        &self,
+        context: &OperationContext,
+        method: &str,
+        url: &str,
+        headers: &HashMap<String, String>,
+    ) {
         if !self.config.request_logging || !self.should_log(&LogLevel::Debug) {
             return;
         }
@@ -99,7 +110,13 @@ impl ApiLogger {
     }
 
     /// Log HTTP response details
-    pub fn log_response(&self, context: &OperationContext, status_code: u16, headers: &HashMap<String, String>, duration: Duration) {
+    pub fn log_response(
+        &self,
+        context: &OperationContext,
+        status_code: u16,
+        headers: &HashMap<String, String>,
+        duration: Duration,
+    ) {
         if !self.config.request_logging || !self.should_log(&LogLevel::Debug) {
             return;
         }
@@ -123,7 +140,13 @@ impl ApiLogger {
     }
 
     /// Log retry attempt
-    pub fn log_retry(&self, context: &OperationContext, attempt: u32, error: &str, delay: Duration) {
+    pub fn log_retry(
+        &self,
+        context: &OperationContext,
+        attempt: u32,
+        error: &str,
+        delay: Duration,
+    ) {
         if !self.should_log(&LogLevel::Warn) {
             return;
         }
@@ -143,7 +166,12 @@ impl ApiLogger {
     }
 
     /// Log rate limiting event
-    pub fn log_rate_limit(&self, context: &OperationContext, delay: Duration, tokens_available: f64) {
+    pub fn log_rate_limit(
+        &self,
+        context: &OperationContext,
+        delay: Duration,
+        tokens_available: f64,
+    ) {
         if !self.should_log(&LogLevel::Debug) {
             return;
         }
@@ -187,7 +215,13 @@ impl ApiLogger {
     }
 
     /// Log batch operation details
-    pub fn log_batch_operation(&self, correlation_id: &str, operation_count: usize, duration: Duration, success_count: usize) {
+    pub fn log_batch_operation(
+        &self,
+        correlation_id: &str,
+        operation_count: usize,
+        duration: Duration,
+        success_count: usize,
+    ) {
         if !self.config.performance_metrics || !self.should_log(&LogLevel::Info) {
             return;
         }
@@ -209,14 +243,22 @@ impl ApiLogger {
     /// Add metadata to an operation context
     pub fn add_metadata(&self, context: &mut OperationContext, key: &str, value: Value) {
         if self.should_log(&LogLevel::Trace) {
-            trace!("Added metadata to operation {}: {} = {}", context.correlation_id, key, value);
+            trace!(
+                "Added metadata to operation {}: {} = {}",
+                context.correlation_id, key, value
+            );
         }
 
         context.metadata.insert(key.to_string(), value);
     }
 
     /// Log performance warning for slow operations
-    pub fn log_performance_warning(&self, context: &OperationContext, duration: Duration, threshold: Duration) {
+    pub fn log_performance_warning(
+        &self,
+        context: &OperationContext,
+        duration: Duration,
+        threshold: Duration,
+    ) {
         if !self.config.performance_metrics || !self.should_log(&LogLevel::Warn) {
             return;
         }
@@ -240,7 +282,10 @@ impl ApiLogger {
             (LogLevel::Error, LogLevel::Error) => true,
             (LogLevel::Warn, LogLevel::Error | LogLevel::Warn) => true,
             (LogLevel::Info, LogLevel::Error | LogLevel::Warn | LogLevel::Info) => true,
-            (LogLevel::Debug, LogLevel::Error | LogLevel::Warn | LogLevel::Info | LogLevel::Debug) => true,
+            (
+                LogLevel::Debug,
+                LogLevel::Error | LogLevel::Warn | LogLevel::Info | LogLevel::Debug,
+            ) => true,
             (LogLevel::Trace, _) => true,
             _ => false,
         }
@@ -252,7 +297,10 @@ impl ApiLogger {
 
         for (key, value) in headers {
             let key_lower = key.to_lowercase();
-            if key_lower.contains("authorization") || key_lower.contains("token") || key_lower.contains("key") {
+            if key_lower.contains("authorization")
+                || key_lower.contains("token")
+                || key_lower.contains("key")
+            {
                 sanitized.insert(key.clone(), "[REDACTED]".to_string());
             } else {
                 sanitized.insert(key.clone(), value.clone());
@@ -270,7 +318,12 @@ impl OperationContext {
     }
 
     /// Create metrics from this context
-    pub fn create_metrics(&self, success: bool, status_code: Option<u16>, error_message: Option<String>) -> OperationMetrics {
+    pub fn create_metrics(
+        &self,
+        success: bool,
+        status_code: Option<u16>,
+        error_message: Option<String>,
+    ) -> OperationMetrics {
         OperationMetrics {
             duration: self.elapsed(),
             retry_attempts: 0,
@@ -361,14 +414,23 @@ mod tests {
 
         let logger = ApiLogger::new(config);
         let mut headers = HashMap::new();
-        headers.insert("Authorization".to_string(), "Bearer secret-token".to_string());
+        headers.insert(
+            "Authorization".to_string(),
+            "Bearer secret-token".to_string(),
+        );
         headers.insert("Content-Type".to_string(), "application/json".to_string());
         headers.insert("X-API-Key".to_string(), "secret-key".to_string());
 
         let sanitized = logger.sanitize_headers(&headers);
 
-        assert_eq!(sanitized.get("Authorization"), Some(&"[REDACTED]".to_string()));
-        assert_eq!(sanitized.get("Content-Type"), Some(&"application/json".to_string()));
+        assert_eq!(
+            sanitized.get("Authorization"),
+            Some(&"[REDACTED]".to_string())
+        );
+        assert_eq!(
+            sanitized.get("Content-Type"),
+            Some(&"application/json".to_string())
+        );
         assert_eq!(sanitized.get("X-API-Key"), Some(&"[REDACTED]".to_string()));
     }
 

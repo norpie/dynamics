@@ -9,27 +9,23 @@ use sqlx::SqlitePool;
 
 /// Get a string value from update metadata
 pub async fn get_string(pool: &SqlitePool, key: &str) -> Result<Option<String>> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT value FROM update_metadata WHERE key = ?",
-    )
-    .bind(key)
-    .fetch_optional(pool)
-    .await
-    .with_context(|| format!("Failed to get update metadata for key '{}'", key))?;
+    let row: Option<(String,)> = sqlx::query_as("SELECT value FROM update_metadata WHERE key = ?")
+        .bind(key)
+        .fetch_optional(pool)
+        .await
+        .with_context(|| format!("Failed to get update metadata for key '{}'", key))?;
 
     Ok(row.map(|(value,)| value))
 }
 
 /// Set a string value in update metadata
 pub async fn set_string(pool: &SqlitePool, key: &str, value: &str) -> Result<()> {
-    sqlx::query(
-        "INSERT OR REPLACE INTO update_metadata (key, value) VALUES (?, ?)",
-    )
-    .bind(key)
-    .bind(value)
-    .execute(pool)
-    .await
-    .with_context(|| format!("Failed to set update metadata for key '{}'", key))?;
+    sqlx::query("INSERT OR REPLACE INTO update_metadata (key, value) VALUES (?, ?)")
+        .bind(key)
+        .bind(value)
+        .execute(pool)
+        .await
+        .with_context(|| format!("Failed to set update metadata for key '{}'", key))?;
 
     log::debug!("Set update metadata: {} = {}", key, value);
     Ok(())

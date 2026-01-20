@@ -1,9 +1,9 @@
-use crate::tui::command::Command;
-use crate::tui::widgets::TextInputEvent;
-use crate::tui::FocusId;
 use super::super::Msg;
 use super::super::app::State;
 use super::super::models::SearchMode;
+use crate::tui::FocusId;
+use crate::tui::command::Command;
+use crate::tui::widgets::TextInputEvent;
 
 /// Handle toggle search - focus the search box
 pub fn handle_toggle_search(state: &mut State) -> Command<Msg> {
@@ -199,8 +199,16 @@ pub fn get_search_terms(state: &State) -> (Option<&str>, Option<&str>) {
             let source = state.source_search.value();
             let target = state.target_search.value();
             (
-                if source.is_empty() { None } else { Some(source) },
-                if target.is_empty() { None } else { Some(target) },
+                if source.is_empty() {
+                    None
+                } else {
+                    Some(source)
+                },
+                if target.is_empty() {
+                    None
+                } else {
+                    Some(target)
+                },
             )
         }
     }

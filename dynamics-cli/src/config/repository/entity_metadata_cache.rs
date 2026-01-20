@@ -1,8 +1,8 @@
 //! Repository for entity metadata cache operations
 
+use crate::api::EntityMetadata;
 use anyhow::{Context, Result};
 use sqlx::SqlitePool;
-use crate::api::EntityMetadata;
 
 /// Get cached entity metadata
 pub async fn get(
@@ -15,7 +15,7 @@ pub async fn get(
         SELECT metadata, cached_at
         FROM entity_metadata_cache
         WHERE environment_name = ? AND entity_name = ?
-        "#
+        "#,
     )
     .bind(environment_name)
     .bind(entity_name)
@@ -39,8 +39,8 @@ pub async fn set(
     entity_name: &str,
     metadata: &EntityMetadata,
 ) -> Result<()> {
-    let metadata_json = serde_json::to_string(metadata)
-        .context("Failed to serialize entity metadata to JSON")?;
+    let metadata_json =
+        serde_json::to_string(metadata).context("Failed to serialize entity metadata to JSON")?;
 
     sqlx::query(
         r#"
@@ -59,16 +59,12 @@ pub async fn set(
 }
 
 /// Delete cached entity metadata for a specific entity
-pub async fn delete(
-    pool: &SqlitePool,
-    environment_name: &str,
-    entity_name: &str,
-) -> Result<()> {
+pub async fn delete(pool: &SqlitePool, environment_name: &str, entity_name: &str) -> Result<()> {
     sqlx::query(
         r#"
         DELETE FROM entity_metadata_cache
         WHERE environment_name = ? AND entity_name = ?
-        "#
+        "#,
     )
     .bind(environment_name)
     .bind(entity_name)
@@ -80,15 +76,12 @@ pub async fn delete(
 }
 
 /// Delete all cached entity metadata for an environment
-pub async fn delete_all_for_environment(
-    pool: &SqlitePool,
-    environment_name: &str,
-) -> Result<()> {
+pub async fn delete_all_for_environment(pool: &SqlitePool, environment_name: &str) -> Result<()> {
     sqlx::query(
         r#"
         DELETE FROM entity_metadata_cache
         WHERE environment_name = ?
-        "#
+        "#,
     )
     .bind(environment_name)
     .execute(pool)

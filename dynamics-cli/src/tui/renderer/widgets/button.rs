@@ -1,13 +1,20 @@
-use ratatui::{Frame, style::Style, widgets::{Block, Borders, Paragraph}, layout::{Rect, Alignment}};
-use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::{Element, Theme};
-use crate::tui::element::FocusId;
 use crate::tui::command::DispatchTarget;
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, FocusableInfo};
+use crate::tui::element::FocusId;
+use crate::tui::renderer::{FocusRegistry, FocusableInfo, InteractionRegistry};
+use crate::tui::{Element, Theme};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{
+    Frame,
+    layout::{Alignment, Rect},
+    style::Style,
+    widgets::{Block, Borders, Paragraph},
+};
 
 /// Create on_key handler for buttons (Enter or Space activates)
 /// Buttons don't support auto-dispatch since they have no Field type
-pub fn button_on_key<Msg: Clone + Send + 'static>(on_press: Option<Msg>) -> Box<dyn Fn(KeyEvent) -> DispatchTarget<Msg> + Send> {
+pub fn button_on_key<Msg: Clone + Send + 'static>(
+    on_press: Option<Msg>,
+) -> Box<dyn Fn(KeyEvent) -> DispatchTarget<Msg> + Send> {
     Box::new(move |key_event| match key_event.code {
         KeyCode::Enter | KeyCode::Char(' ') => {
             if let Some(msg) = on_press.clone() {
@@ -27,7 +34,7 @@ pub fn button_on_key<Msg: Clone + Send + 'static>(on_press: Option<Msg>) -> Box<
 /// Render Button element
 pub fn render_button<Msg: Clone + Send + 'static>(
     frame: &mut Frame,
-    
+
     registry: &mut InteractionRegistry<Msg>,
     focus_registry: &mut FocusRegistry<Msg>,
     focused_id: Option<&FocusId>,

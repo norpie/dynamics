@@ -1,7 +1,7 @@
-use crate::tui::Command;
-use super::super::app::State;
 use super::super::Msg;
-use super::super::models::{cycle_type_filter, TypeFilterMode};
+use super::super::app::State;
+use super::super::models::{TypeFilterMode, cycle_type_filter};
+use crate::tui::Command;
 
 pub fn handle_toggle_type_filter_mode(state: &mut State) -> Command<Msg> {
     state.type_filter_mode = state.type_filter_mode.toggle();
@@ -33,7 +33,8 @@ pub fn handle_cycle_source_type_filter(state: &mut State) -> Command<Msg> {
         TypeFilterMode::Unified => {
             // Cycle unified filter using source types (or combined types)
             let available_types = &state.available_source_types;
-            state.unified_type_filter = cycle_type_filter(&state.unified_type_filter, available_types);
+            state.unified_type_filter =
+                cycle_type_filter(&state.unified_type_filter, available_types);
             // Sync both sides
             state.source_type_filter = state.unified_type_filter.clone();
             state.target_type_filter = state.unified_type_filter.clone();
@@ -53,7 +54,8 @@ pub fn handle_cycle_source_type_filter(state: &mut State) -> Command<Msg> {
         TypeFilterMode::Independent => {
             // Cycle source filter only
             let available_types = &state.available_source_types;
-            state.source_type_filter = cycle_type_filter(&state.source_type_filter, available_types);
+            state.source_type_filter =
+                cycle_type_filter(&state.source_type_filter, available_types);
 
             // Reset scroll on source side only when source filter changes
             state.source_fields_tree.reset_scroll();
@@ -73,7 +75,8 @@ pub fn handle_cycle_target_type_filter(state: &mut State) -> Command<Msg> {
         TypeFilterMode::Unified => {
             // Same as source in unified mode
             let available_types = &state.available_target_types;
-            state.unified_type_filter = cycle_type_filter(&state.unified_type_filter, available_types);
+            state.unified_type_filter =
+                cycle_type_filter(&state.unified_type_filter, available_types);
             // Sync both sides
             state.source_type_filter = state.unified_type_filter.clone();
             state.target_type_filter = state.unified_type_filter.clone();
@@ -93,7 +96,8 @@ pub fn handle_cycle_target_type_filter(state: &mut State) -> Command<Msg> {
         TypeFilterMode::Independent => {
             // Cycle target filter only
             let available_types = &state.available_target_types;
-            state.target_type_filter = cycle_type_filter(&state.target_type_filter, available_types);
+            state.target_type_filter =
+                cycle_type_filter(&state.target_type_filter, available_types);
 
             // Reset scroll on target side only when target filter changes
             state.target_fields_tree.reset_scroll();

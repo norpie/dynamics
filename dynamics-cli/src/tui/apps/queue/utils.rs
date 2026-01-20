@@ -1,8 +1,8 @@
 //! Utility functions for queue calculations and formatting
 
-use std::collections::VecDeque;
 use super::app::State;
 use super::models::OperationStatus;
+use std::collections::VecDeque;
 
 /// Calculate average completion time from last N successful operations
 pub fn calculate_avg_time(recent_times: &VecDeque<u64>, n: usize) -> Option<u64> {
@@ -18,7 +18,9 @@ pub fn calculate_avg_time(recent_times: &VecDeque<u64>, n: usize) -> Option<u64>
 /// Estimate time remaining for pending operations
 pub fn estimate_remaining_time(state: &State, n: usize) -> Option<String> {
     let avg_time = calculate_avg_time(&state.recent_completion_times, n)?;
-    let pending_count = state.queue_items.iter()
+    let pending_count = state
+        .queue_items
+        .iter()
         .filter(|item| item.status == OperationStatus::Pending)
         .count();
 

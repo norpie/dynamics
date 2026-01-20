@@ -1,17 +1,17 @@
+use crate::tui::color::color_to_hex;
+use crate::tui::command::DispatchTarget;
+use crate::tui::element::FocusId;
+use crate::tui::renderer::{FocusRegistry, FocusableInfo, InteractionRegistry};
+use crate::tui::widgets::{Channel, ColorPickerEvent, ColorPickerMode, ColorPickerState};
+use crate::tui::{Element, Theme};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::{Rect, Layout, Constraint, Direction},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Style, Stylize},
-    widgets::{Paragraph, Block, Borders},
     text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
 };
-use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::{Element, Theme};
-use crate::tui::element::FocusId;
-use crate::tui::command::DispatchTarget;
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, FocusableInfo};
-use crate::tui::widgets::{ColorPickerEvent, ColorPickerState, ColorPickerMode, Channel};
-use crate::tui::color::color_to_hex;
 
 /// Create on_key handler for color picker
 pub fn color_picker_on_key<Msg: Clone + Send + 'static>(
@@ -24,8 +24,8 @@ pub fn color_picker_on_key<Msg: Clone + Send + 'static>(
         KeyCode::Enter => {
             // Submit with current color
             DispatchTarget::AppMsg(on_event(ColorPickerEvent::Submitted(current_color)))
-        },
-        KeyCode::Esc => DispatchTarget::PassThrough,  // Let runtime handle unfocus/modal close
+        }
+        KeyCode::Esc => DispatchTarget::PassThrough, // Let runtime handle unfocus/modal close
         key_code => {
             // Pass key to app for handling
             DispatchTarget::AppMsg(on_event(ColorPickerEvent::Changed(key_code)))
@@ -74,13 +74,13 @@ pub fn render_color_picker<Msg: Clone + Send + 'static>(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Preview + mode
-            Constraint::Length(1),  // Spacer
-            Constraint::Length(1),  // Channel 1
-            Constraint::Length(1),  // Channel 2
-            Constraint::Length(1),  // Channel 3
-            Constraint::Length(1),  // Spacer
-            Constraint::Length(1),  // Hex input
+            Constraint::Length(3), // Preview + mode
+            Constraint::Length(1), // Spacer
+            Constraint::Length(1), // Channel 1
+            Constraint::Length(1), // Channel 2
+            Constraint::Length(1), // Channel 3
+            Constraint::Length(1), // Spacer
+            Constraint::Length(1), // Hex input
         ])
         .split(area);
 
@@ -188,8 +188,7 @@ pub fn render_color_picker<Msg: Clone + Send + 'static>(
     // Help text at bottom (if there's room)
     if area.height > 9 {
         let help = "  ←/→: Adjust  Tab: Next  M: Mode  Enter: Confirm";
-        let help_para = Paragraph::new(help)
-            .style(Style::default().fg(theme.text_tertiary));
+        let help_para = Paragraph::new(help).style(Style::default().fg(theme.text_tertiary));
 
         if let Some(last_chunk) = chunks.last() {
             if last_chunk.y + last_chunk.height < area.y + area.height {
@@ -228,11 +227,7 @@ fn render_slider(
     let filled = (slider_width as f32 * percentage) as usize;
     let empty = slider_width.saturating_sub(filled);
 
-    let bar = format!(
-        "[{}{}]",
-        "=".repeat(filled),
-        "-".repeat(empty)
-    );
+    let bar = format!("[{}{}]", "=".repeat(filled), "-".repeat(empty));
 
     // Format value
     let value_str = if unit.is_empty() {

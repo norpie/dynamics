@@ -1,19 +1,22 @@
-use ratatui::Frame;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, MouseEvent, MouseEventKind, MouseButton};
 use anyhow::Result;
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
-use std::sync::{Arc, Mutex};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::Frame;
 use serde_json::Value;
-use std::pin::Pin;
-use std::future::Future;
 use std::any::Any;
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use crate::tui::{App, AppId, Command, Renderer, InteractionRegistry, Subscription, AppState, KeyBinding, QuitPolicy, SuspendPolicy};
-use crate::tui::command::{ParallelConfig, DispatchTarget};
-use crate::tui::renderer::{FocusRegistry, FocusableInfo, DropdownRegistry};
+use crate::tui::command::{DispatchTarget, ParallelConfig};
 use crate::tui::element::FocusId;
-use crate::tui::state::{RuntimeConfig, FocusMode};
+use crate::tui::renderer::{DropdownRegistry, FocusRegistry, FocusableInfo};
+use crate::tui::state::{FocusMode, RuntimeConfig};
+use crate::tui::{
+    App, AppId, AppState, Command, InteractionRegistry, KeyBinding, QuitPolicy, Renderer,
+    Subscription, SuspendPolicy,
+};
 
 /// Trait for creating app instances (factory pattern for lazy initialization)
 pub trait AppFactory: Send {
@@ -105,7 +108,8 @@ pub struct Runtime<A: App> {
     pending_async_count: usize,
 
     /// Pending parallel coordination tasks (task_index, task_name)
-    pending_parallel: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = (usize, String)> + Send>>>,
+    pending_parallel:
+        Vec<std::pin::Pin<Box<dyn std::future::Future<Output = (usize, String)> + Send>>>,
 
     /// Pending publish events to broadcast globally
     pending_publishes: Vec<(String, serde_json::Value)>,
@@ -155,7 +159,7 @@ impl<A: App> Runtime<A> {
             parallel_coordinator: None,
             progress_receivers: Vec::new(),
             explicitly_unfocused: false,
-            previous_layer_count: 1,  // Start with 1 (base layer)
+            previous_layer_count: 1, // Start with 1 (base layer)
         };
 
         // Initialize subscriptions
@@ -194,7 +198,9 @@ impl<A: App> Runtime<A> {
         A::subscriptions(&self.state)
             .into_iter()
             .filter_map(|sub| match sub {
-                Subscription::Keyboard { key, description, .. } => Some((key, description)),
+                Subscription::Keyboard {
+                    key, description, ..
+                } => Some((key, description)),
                 _ => None,
             })
             .collect()
@@ -325,7 +331,10 @@ impl<A: App> Runtime<A> {
         let mut had_completions = false;
         while let Ok(msg) = self.async_result_rx.try_recv() {
             self.pending_async_count = self.pending_async_count.saturating_sub(1);
-            log::debug!("⏱️ Async task completed, {} remaining", self.pending_async_count);
+            log::debug!(
+                "⏱️ Async task completed, {} remaining",
+                self.pending_async_count
+            );
             let command = A::update(&mut self.state, msg);
             self.execute_command(command)?;
             had_completions = true;
@@ -373,7 +382,11 @@ impl<A: App> Runtime<A> {
         if !self.pending_parallel.is_empty() {
             let elapsed = poll_start.elapsed();
             if elapsed.as_millis() > 10 {
-                log::warn!("⏱️ poll_async took {}ms with {} parallel tasks", elapsed.as_millis(), self.pending_parallel.len());
+                log::warn!(
+                    "⏱️ poll_async took {}ms with {} parallel tasks",
+                    elapsed.as_millis(),
+                    self.pending_parallel.len()
+                );
             }
         }
 
@@ -383,7 +396,10 @@ impl<A: App> Runtime<A> {
             self.pending_parallel.remove(i);
 
             // Publish task completion to LoadingScreen
-            log::info!("✓ Runtime - task '{}' completed, publishing loading:progress event", task_name);
+            log::info!(
+                "✓ Runtime - task '{}' completed, publishing loading:progress event",
+                task_name
+            );
             self.pending_publishes.push((
                 "loading:progress".to_string(),
                 serde_json::json!({
@@ -441,12 +457,23 @@ impl<A: App> Runtime<A> {
         self.timers.clear();
 
         let subscriptions = A::subscriptions(&self.state);
-        log::debug!("✓ Runtime - updating subscriptions, count: {}", subscriptions.len());
+        log::debug!(
+            "✓ Runtime - updating subscriptions, count: {}",
+            subscriptions.len()
+        );
         for sub in subscriptions {
             match sub {
-                Subscription::Keyboard { key, msg, description } => {
-                    log::debug!("  Registering keyboard subscription: code={:?}, modifiers={:?} -> {}",
-                                key.code, key.modifiers, description);
+                Subscription::Keyboard {
+                    key,
+                    msg,
+                    description,
+                } => {
+                    log::debug!(
+                        "  Registering keyboard subscription: code={:?}, modifiers={:?} -> {}",
+                        key.code,
+                        key.modifiers,
+                        description
+                    );
                     // description is used for help menus, not for runtime lookup
                     self.key_subscriptions.insert(key, msg);
                 }
@@ -475,8 +502,11 @@ impl<A: App> Runtime<A> {
                 match (focusable.on_key)(key_event) {
                     DispatchTarget::WidgetEvent(boxed_event) => {
                         // Try widget auto-dispatch
-                        if self.state.dispatch_widget_event(focused_id, boxed_event.as_ref()) {
-                            return Ok(true);  // Handled!
+                        if self
+                            .state
+                            .dispatch_widget_event(focused_id, boxed_event.as_ref())
+                        {
+                            return Ok(true); // Handled!
                         }
                         // Not handled - widget event was not auto-dispatched
                         // This means the widget has no #[widget] attribute or doesn't match
@@ -496,7 +526,9 @@ impl<A: App> Runtime<A> {
                         if key_event.code == KeyCode::Esc {
                             // Always unfocus when Esc is pressed and widget returns PassThrough
                             let focused_id = self.focused_id.take().unwrap();
-                            if let Some(focusable) = self.focus_registry.find_in_active_layer(&focused_id) {
+                            if let Some(focusable) =
+                                self.focus_registry.find_in_active_layer(&focused_id)
+                            {
                                 if let Some(on_blur) = focusable.on_blur.clone() {
                                     let command = A::update(&mut self.state, on_blur);
                                     self.execute_command(command)?;
@@ -515,14 +547,25 @@ impl<A: App> Runtime<A> {
 
         // No focused element handled it (or it returned PassThrough), check global subscriptions
         let binding = KeyBinding::with_modifiers(key_event.code, key_event.modifiers);
-        log::debug!("🔍 Key event received: code={:?}, modifiers={:?}, created binding={:?}",
-                    key_event.code, key_event.modifiers, binding);
-        log::debug!("🔍 Registered subscriptions count: {}", self.key_subscriptions.len());
+        log::debug!(
+            "🔍 Key event received: code={:?}, modifiers={:?}, created binding={:?}",
+            key_event.code,
+            key_event.modifiers,
+            binding
+        );
+        log::debug!(
+            "🔍 Registered subscriptions count: {}",
+            self.key_subscriptions.len()
+        );
 
         // Debug: show some registered keys for comparison
         if self.key_subscriptions.len() < 20 {
             for (kb, _) in self.key_subscriptions.iter() {
-                log::debug!("  - Registered: code={:?}, modifiers={:?}", kb.code, kb.modifiers);
+                log::debug!(
+                    "  - Registered: code={:?}, modifiers={:?}",
+                    kb.code,
+                    kb.modifiers
+                );
             }
         }
 
@@ -578,7 +621,8 @@ impl<A: App> Runtime<A> {
                     }
                     FocusMode::Hover => {
                         // Always focus on hover
-                        if let Some(hovered_id) = self.focus_registry.find_at_position(pos.0, pos.1) {
+                        if let Some(hovered_id) = self.focus_registry.find_at_position(pos.0, pos.1)
+                        {
                             if self.focused_id.as_ref() != Some(&hovered_id) {
                                 let cmd = Command::set_focus(hovered_id);
                                 self.execute_command(cmd)?;
@@ -588,7 +632,9 @@ impl<A: App> Runtime<A> {
                     FocusMode::HoverWhenUnfocused => {
                         // Only focus on hover if nothing is currently focused
                         if self.focused_id.is_none() {
-                            if let Some(hovered_id) = self.focus_registry.find_at_position(pos.0, pos.1) {
+                            if let Some(hovered_id) =
+                                self.focus_registry.find_at_position(pos.0, pos.1)
+                            {
                                 let cmd = Command::set_focus(hovered_id);
                                 self.execute_command(cmd)?;
                             }
@@ -609,7 +655,10 @@ impl<A: App> Runtime<A> {
                             && pos.1 < focusable.rect.y + focusable.rect.height
                         {
                             // If Shift is held, scroll left (horizontal); otherwise scroll up (vertical)
-                            let key_code = if mouse_event.modifiers.contains(crossterm::event::KeyModifiers::SHIFT) {
+                            let key_code = if mouse_event
+                                .modifiers
+                                .contains(crossterm::event::KeyModifiers::SHIFT)
+                            {
                                 KeyCode::Left
                             } else {
                                 KeyCode::Up
@@ -617,7 +666,10 @@ impl<A: App> Runtime<A> {
                             let scroll_up_event = KeyEvent::new(key_code, mouse_event.modifiers);
                             match (focusable.on_key)(scroll_up_event) {
                                 DispatchTarget::WidgetEvent(boxed_event) => {
-                                    if self.state.dispatch_widget_event(focused_id, boxed_event.as_ref()) {
+                                    if self
+                                        .state
+                                        .dispatch_widget_event(focused_id, boxed_event.as_ref())
+                                    {
                                         return Ok(true);
                                     }
                                     return Ok(true);
@@ -647,7 +699,10 @@ impl<A: App> Runtime<A> {
                             && pos.1 < focusable.rect.y + focusable.rect.height
                         {
                             // If Shift is held, scroll right (horizontal); otherwise scroll down (vertical)
-                            let key_code = if mouse_event.modifiers.contains(crossterm::event::KeyModifiers::SHIFT) {
+                            let key_code = if mouse_event
+                                .modifiers
+                                .contains(crossterm::event::KeyModifiers::SHIFT)
+                            {
                                 KeyCode::Right
                             } else {
                                 KeyCode::Down
@@ -655,7 +710,10 @@ impl<A: App> Runtime<A> {
                             let scroll_down_event = KeyEvent::new(key_code, mouse_event.modifiers);
                             match (focusable.on_key)(scroll_down_event) {
                                 DispatchTarget::WidgetEvent(boxed_event) => {
-                                    if self.state.dispatch_widget_event(focused_id, boxed_event.as_ref()) {
+                                    if self
+                                        .state
+                                        .dispatch_widget_event(focused_id, boxed_event.as_ref())
+                                    {
                                         return Ok(true);
                                     }
                                     return Ok(true);
@@ -748,7 +806,7 @@ impl<A: App> Runtime<A> {
                     serde_json::json!({
                         "app_id": encoded,
                         "params_type": std::any::type_name_of_val(&*params),
-                    })
+                    }),
                 ));
                 self.navigation_target = Some(app_id);
                 Ok(true)
@@ -756,19 +814,15 @@ impl<A: App> Runtime<A> {
 
             Command::QuitSelf => {
                 // Signal to MultiAppRuntime that this app wants to quit
-                self.pending_publishes.push((
-                    "__lifecycle:quit_self".to_string(),
-                    Value::Null,
-                ));
+                self.pending_publishes
+                    .push(("__lifecycle:quit_self".to_string(), Value::Null));
                 Ok(true)
             }
 
             Command::SleepSelf => {
                 // Signal to MultiAppRuntime that this app wants to sleep
-                self.pending_publishes.push((
-                    "__lifecycle:sleep_self".to_string(),
-                    Value::Null,
-                ));
+                self.pending_publishes
+                    .push(("__lifecycle:sleep_self".to_string(), Value::Null));
                 Ok(true)
             }
 
@@ -791,7 +845,11 @@ impl<A: App> Runtime<A> {
                 Ok(true)
             }
 
-            Command::PerformParallel { tasks, config, msg_mapper } => {
+            Command::PerformParallel {
+                tasks,
+                config,
+                msg_mapper,
+            } => {
                 // Navigate to LoadingScreen immediately
                 let task_names: Vec<String> = tasks.iter().map(|t| t.description.clone()).collect();
                 let total_tasks = tasks.len();
@@ -805,12 +863,14 @@ impl<A: App> Runtime<A> {
                         target: config.on_complete,
                         caller: config.caller,
                         cancellable: config.cancellable,
-                    })
+                    }),
                 ));
                 self.navigation_target = Some(AppId::LoadingScreen);
 
                 // Initialize shared state for task results
-                let results = Arc::new(Mutex::new((0..total_tasks).map(|_| None).collect::<Vec<_>>()));
+                let results = Arc::new(Mutex::new(
+                    (0..total_tasks).map(|_| None).collect::<Vec<_>>(),
+                ));
                 let msg_mapper = Arc::new(msg_mapper);
 
                 // Set up coordinator
@@ -864,7 +924,11 @@ impl<A: App> Runtime<A> {
             }
 
             Command::SetFocus(id) => {
-                log::debug!("Command::SetFocus({:?}) - current focus: {:?}", id, self.focused_id);
+                log::debug!(
+                    "Command::SetFocus({:?}) - current focus: {:?}",
+                    id,
+                    self.focused_id
+                );
                 // Send blur to currently focused element (if any)
                 if let Some(old_id) = self.focused_id.take() {
                     log::debug!("  Blurring old focus: {:?}", old_id);
@@ -915,17 +979,27 @@ impl<A: App> Runtime<A> {
 
     /// Render the app to a specific area
     pub fn render_to_area(&mut self, frame: &mut Frame, area: ratatui::layout::Rect) {
-        log::debug!("=== Runtime::render_to_area START - current focus: {:?} ===", self.focused_id);
+        log::debug!(
+            "=== Runtime::render_to_area START - current focus: {:?} ===",
+            self.focused_id
+        );
 
         // Sync runtime's focus to active layer ONLY if it exists in the current registry
         // This prevents Command::SetFocus from corrupting layer 0 when focusing modal elements
         // that haven't been rendered yet
         if let Some(ref focused_id) = self.focused_id {
             if self.focus_registry.contains(focused_id) {
-                log::debug!("Runtime: saving validated focus {:?} to active layer before clear", focused_id);
-                self.focus_registry.save_layer_focus(Some(focused_id.clone()));
+                log::debug!(
+                    "Runtime: saving validated focus {:?} to active layer before clear",
+                    focused_id
+                );
+                self.focus_registry
+                    .save_layer_focus(Some(focused_id.clone()));
             } else {
-                log::debug!("Runtime: NOT saving focus {:?} - doesn't exist in current registry", focused_id);
+                log::debug!(
+                    "Runtime: NOT saving focus {:?} - doesn't exist in current registry",
+                    focused_id
+                );
             }
         } else {
             // No focus - clear the active layer's saved focus
@@ -949,7 +1023,6 @@ impl<A: App> Runtime<A> {
         // Render using the new layered API
         Renderer::render_layers(
             frame,
-            
             &mut self.registry,
             &mut self.focus_registry,
             self.focused_id.as_ref(),
@@ -959,10 +1032,17 @@ impl<A: App> Runtime<A> {
         );
 
         // Detect layer count changes (modal open/close)
-        let current_layer_count = self.focus_registry.active_layer().map(|l| l.layer_index + 1).unwrap_or(1);
+        let current_layer_count = self
+            .focus_registry
+            .active_layer()
+            .map(|l| l.layer_index + 1)
+            .unwrap_or(1);
         if current_layer_count != self.previous_layer_count {
-            log::debug!("Runtime: layer count changed {} -> {}, clearing explicit unfocus flag",
-                       self.previous_layer_count, current_layer_count);
+            log::debug!(
+                "Runtime: layer count changed {} -> {}, clearing explicit unfocus flag",
+                self.previous_layer_count,
+                current_layer_count
+            );
             self.explicitly_unfocused = false;
             self.previous_layer_count = current_layer_count;
         }
@@ -971,7 +1051,10 @@ impl<A: App> Runtime<A> {
         // Check if focused element still exists in the tree
         if let Some(focused_id) = &self.focused_id {
             if !self.focus_registry.contains(focused_id) {
-                log::debug!("Runtime: focused element {:?} no longer exists, clearing and attempting restore", focused_id);
+                log::debug!(
+                    "Runtime: focused element {:?} no longer exists, clearing and attempting restore",
+                    focused_id
+                );
                 // Clear stale focus first
                 self.focused_id = None;
 
@@ -986,7 +1069,9 @@ impl<A: App> Runtime<A> {
             if self.explicitly_unfocused {
                 // User explicitly unfocused via Escape - don't restore
                 // This allows the second Escape to reach global subscriptions (e.g., close modal)
-                log::debug!("Runtime: no current focus, user explicitly unfocused, leaving unfocused");
+                log::debug!(
+                    "Runtime: no current focus, user explicitly unfocused, leaving unfocused"
+                );
             } else {
                 // Focus lost due to layer change or element disappearing - try to restore
                 log::debug!("Runtime: no current focus, attempting restore from layers");
@@ -1001,13 +1086,20 @@ impl<A: App> Runtime<A> {
         }
 
         // Save validated/restored focus to the active layer for next frame
-        log::debug!("Runtime: saving focus {:?} to active layer", self.focused_id);
-        self.focus_registry.save_layer_focus(self.focused_id.clone());
+        log::debug!(
+            "Runtime: saving focus {:?} to active layer",
+            self.focused_id
+        );
+        self.focus_registry
+            .save_layer_focus(self.focused_id.clone());
 
         // Process any render messages (e.g., from on_render callbacks)
         let render_messages = self.registry.take_render_messages();
         if !render_messages.is_empty() {
-            log::debug!("Runtime: processing {} render messages", render_messages.len());
+            log::debug!(
+                "Runtime: processing {} render messages",
+                render_messages.len()
+            );
             for msg in render_messages {
                 let command = A::update(&mut self.state, msg);
                 if let Err(e) = self.execute_command(command) {
@@ -1122,7 +1214,8 @@ where
 {
     fn create(&self, params: Box<dyn Any + Send>) -> Result<Box<dyn AppRuntime>> {
         // Downcast params to the correct type
-        let typed_params = params.downcast::<A::InitParams>()
+        let typed_params = params
+            .downcast::<A::InitParams>()
             .map_err(|_| anyhow::anyhow!("Invalid parameter type for app"))?;
 
         Ok(Box::new(Runtime::<A>::with_params(*typed_params)))

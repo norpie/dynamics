@@ -3,12 +3,12 @@ use std::collections::HashMap;
 /// Type of field match/mapping
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MatchType {
-    Exact,        // Exact name match, types match
-    Prefix,       // Prefix name match, types match
+    Exact,                        // Exact name match, types match
+    Prefix,                       // Prefix name match, types match
     TypeMismatch(Box<MatchType>), // Name match but types differ - wraps underlying match type
-    Manual,       // User-created mapping (overrides type checking)
-    ExampleValue, // Value-based match from example data
-    Import,       // Imported from C# mapping file
+    Manual,                       // User-created mapping (overrides type checking)
+    ExampleValue,                 // Value-based match from example data
+    Import,                       // Imported from C# mapping file
 }
 
 impl MatchType {
@@ -22,7 +22,7 @@ impl MatchType {
                 let inner_label_full = inner.label();
                 let inner_label = inner_label_full.trim_matches(|c| c == '[' || c == ']');
                 format!("[{} - Type Mismatch]", inner_label)
-            },
+            }
             MatchType::Manual => "[Manual]".to_string(),
             MatchType::ExampleValue => "[Example]".to_string(),
             MatchType::Import => "[Import]".to_string(),
@@ -33,9 +33,9 @@ impl MatchType {
 /// Information about a field/relationship/entity match
 #[derive(Debug, Clone)]
 pub struct MatchInfo {
-    pub target_fields: Vec<String>,                   // List of target field names
-    pub match_types: HashMap<String, MatchType>,      // target_field -> match_type
-    pub confidences: HashMap<String, f64>,            // target_field -> confidence
+    pub target_fields: Vec<String>, // List of target field names
+    pub match_types: HashMap<String, MatchType>, // target_field -> match_type
+    pub confidences: HashMap<String, f64>, // target_field -> confidence
 }
 
 impl MatchInfo {

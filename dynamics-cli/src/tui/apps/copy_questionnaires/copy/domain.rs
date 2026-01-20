@@ -1,6 +1,5 @@
 /// Domain model representing the complete questionnaire structure
 /// This is what will actually be copied, and what the tree view displays
-
 use serde_json::Value;
 
 /// Complete questionnaire with all related entities in hierarchical structure

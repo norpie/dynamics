@@ -6,14 +6,14 @@ use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 
 use crate::api::models::Environment as ApiEnvironment;
-use crate::tui::element::Element;
-use crate::tui::widgets::ListItem;
-use crate::tui::state::theme::Theme;
 use crate::tui::Resource;
+use crate::tui::element::Element;
+use crate::tui::state::theme::Theme;
+use crate::tui::widgets::ListItem;
 use crate::{col, row, spacer, use_constraints};
 
-use super::super::state::{State, EnvironmentSelectState};
 use super::super::msg::Msg;
+use super::super::state::{EnvironmentSelectState, State};
 
 /// Environment list item for rendering
 #[derive(Clone)]
@@ -26,7 +26,12 @@ struct EnvListItem {
 impl ListItem for EnvListItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_focused: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_focused: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         // Show selection state for this specific list
@@ -42,7 +47,9 @@ impl ListItem for EnvListItem {
             Style::default()
         };
 
-        let host_text = self.host.as_ref()
+        let host_text = self
+            .host
+            .as_ref()
             .map(|h| format!(" ({})", truncate_host(h, 40)))
             .unwrap_or_default();
 
@@ -70,9 +77,7 @@ pub fn render_environment_select(state: &mut State, theme: &Theme) -> Element<Ms
     // Build content based on loading state
     // We need to clone the error/envs to avoid borrow issues
     let content = match &state.env_select.environments {
-        Resource::NotAsked | Resource::Loading => {
-            render_loading(theme)
-        }
+        Resource::NotAsked | Resource::Loading => render_loading(theme),
         Resource::Failure(err) => {
             let err_clone = err.clone();
             render_error(&err_clone, theme)
@@ -104,9 +109,7 @@ fn render_loading(_theme: &Theme) -> Element<Msg> {
 /// Render error state
 fn render_error(err: &str, _theme: &Theme) -> Element<Msg> {
     let text = format!("Error: {}", err);
-    Element::panel(Element::text(text))
-        .title("Error")
-        .build()
+    Element::panel(Element::text(text)).title("Error").build()
 }
 
 /// Render the dual environment lists
@@ -114,22 +117,24 @@ fn render_env_lists(state: &mut State, envs: &[ApiEnvironment], theme: &Theme) -
     use_constraints!();
 
     // Build list items for origin (shows origin selection)
-    let origin_items: Vec<EnvListItem> = envs.iter().map(|env| {
-        EnvListItem {
+    let origin_items: Vec<EnvListItem> = envs
+        .iter()
+        .map(|env| EnvListItem {
             name: env.name.clone(),
             host: Some(env.host.clone()),
             is_selected_for_this_list: state.env_select.origin_env.as_ref() == Some(&env.name),
-        }
-    }).collect();
+        })
+        .collect();
 
     // Build list items for target (shows target selection)
-    let target_items: Vec<EnvListItem> = envs.iter().map(|env| {
-        EnvListItem {
+    let target_items: Vec<EnvListItem> = envs
+        .iter()
+        .map(|env| EnvListItem {
             name: env.name.clone(),
             host: Some(env.host.clone()),
             is_selected_for_this_list: state.env_select.target_env.as_ref() == Some(&env.name),
-        }
-    }).collect();
+        })
+        .collect();
 
     // Origin list
     let origin_title = if let Some(ref env) = state.env_select.origin_env {
@@ -149,9 +154,7 @@ fn render_env_lists(state: &mut State, envs: &[ApiEnvironment], theme: &Theme) -
     .on_navigate(Msg::OriginListNavigate)
     .build();
 
-    let origin_panel = Element::panel(origin_list)
-        .title(origin_title)
-        .build();
+    let origin_panel = Element::panel(origin_list).title(origin_title).build();
 
     // Target list
     let target_title = if let Some(ref env) = state.env_select.target_env {
@@ -171,9 +174,7 @@ fn render_env_lists(state: &mut State, envs: &[ApiEnvironment], theme: &Theme) -
     .on_navigate(Msg::TargetListNavigate)
     .build();
 
-    let target_panel = Element::panel(target_list)
-        .title(target_title)
-        .build();
+    let target_panel = Element::panel(target_list).title(target_title).build();
 
     row![
         origin_panel => Fill(1),
@@ -185,8 +186,9 @@ fn render_env_lists(state: &mut State, envs: &[ApiEnvironment], theme: &Theme) -
 fn render_step_header(title: &str, theme: &Theme) -> Element<Msg> {
     Element::styled_text(Line::from(Span::styled(
         title.to_string(),
-        Style::default().fg(theme.accent_primary).bold()
-    ))).build()
+        Style::default().fg(theme.accent_primary).bold(),
+    )))
+    .build()
 }
 
 /// Render step footer with navigation and validation

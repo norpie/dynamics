@@ -1,10 +1,10 @@
+use crate::tui::element::FocusId;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
-use std::any::Any;
-use serde_json::Value;
 use tokio::sync::mpsc;
-use crate::tui::element::FocusId;
-use serde::{Serialize, Deserialize};
 
 /// Sender for reporting progress from within a parallel task
 pub type ProgressSender = mpsc::UnboundedSender<String>;
@@ -39,13 +39,19 @@ pub enum Command<Msg> {
     NavigateTo(AppId),
 
     /// Start app with typed parameters (always create fresh instance)
-    StartApp { app_id: AppId, params: Box<dyn Any + Send> },
+    StartApp {
+        app_id: AppId,
+        params: Box<dyn Any + Send>,
+    },
 
     /// Wake background app (error if not already created)
     WakeApp(AppId),
 
     /// Destroy and recreate app with new params
-    RestartApp { app_id: AppId, params: Box<dyn Any + Send> },
+    RestartApp {
+        app_id: AppId,
+        params: Box<dyn Any + Send>,
+    },
 
     /// Request to destroy this app (graceful quit)
     QuitSelf,
@@ -301,7 +307,10 @@ impl<Msg: Send + 'static> ParallelBuilder<Msg> {
 
     /// Build the command with a message mapper that converts task results to messages
     /// The mapper receives (task_index, result) and should downcast the result to the expected type
-    pub fn build(self, msg_mapper: impl Fn(usize, Box<dyn Any + Send>) -> Msg + Send + 'static) -> Command<Msg> {
+    pub fn build(
+        self,
+        msg_mapper: impl Fn(usize, Box<dyn Any + Send>) -> Msg + Send + 'static,
+    ) -> Command<Msg> {
         Command::PerformParallel {
             tasks: self.tasks,
             config: self.config,

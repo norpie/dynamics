@@ -16,27 +16,26 @@
 //! - Additive schema sync (no deletions - report for manual review)
 //! - Excel report for manual follow-up tasks
 
-pub mod types;
-pub mod state;
-pub mod msg;
-pub mod logic;
-pub mod steps;
 pub mod app;
+pub mod logic;
+pub mod msg;
+pub mod state;
+pub mod steps;
+pub mod types;
 
-pub use types::*;
-pub use state::State;
-pub use msg::Msg;
-pub use steps::*;
 pub use app::EntitySyncApp;
+pub use msg::Msg;
+pub use state::State;
+pub use steps::*;
+pub use types::*;
 
-use std::sync::RwLock;
-use std::collections::HashMap;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
+use std::sync::RwLock;
 
 /// Global progress state for analysis (allows async task to update UI)
-static ANALYSIS_PROGRESS: Lazy<RwLock<AnalysisProgressState>> = Lazy::new(|| {
-    RwLock::new(AnalysisProgressState::default())
-});
+static ANALYSIS_PROGRESS: Lazy<RwLock<AnalysisProgressState>> =
+    Lazy::new(|| RwLock::new(AnalysisProgressState::default()));
 
 /// Status of a single fetch operation
 #[derive(Debug, Clone, PartialEq)]

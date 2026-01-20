@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Type, Attribute, Token};
 use syn::parse::{Parse, ParseStream};
+use syn::{Attribute, Data, DeriveInput, Fields, Token, Type, parse_macro_input};
 
 /// Parse #[widget(...)] attribute
 /// Supports: #[widget("id")] or #[widget("id", options = "expr")]
@@ -76,7 +76,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
             // Determine event type and handle_event call based on field type
             let field_type = &field.ty;
-            let (event_type, handle_call) = infer_event_type_and_handler(field_type, field_name, &options_expr);
+            let (event_type, handle_call) =
+                infer_event_type_and_handler(field_type, field_name, &options_expr);
 
             match_arms.push(quote! {
                 #widget_id => {
@@ -158,8 +159,9 @@ fn infer_event_type_and_handler(
 /// Extract simple type name from Type (e.g., "TextInputField" from TextInputField)
 fn extract_type_name(ty: &Type) -> String {
     if let Type::Path(type_path) = ty
-        && let Some(segment) = type_path.path.segments.last() {
-            return segment.ident.to_string();
-        }
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        return segment.ident.to_string();
+    }
     "Unknown".to_string()
 }

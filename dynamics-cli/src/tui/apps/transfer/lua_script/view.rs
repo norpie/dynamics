@@ -12,19 +12,13 @@ use super::state::{Msg, State};
 
 pub fn render(state: &mut State, theme: &crate::tui::Theme) -> LayeredView<Msg> {
     let content = match &state.config {
-        Resource::NotAsked | Resource::Loading => {
-            Element::text("Loading config...")
-        }
-        Resource::Failure(err) => {
-            Element::styled_text(Line::from(vec![
-                Span::styled("Error: ", Style::default().fg(theme.accent_error)),
-                Span::styled(err.clone(), Style::default().fg(theme.text_primary)),
-            ]))
-            .build()
-        }
-        Resource::Success(config) => {
-            render_main_view(state, config, theme)
-        }
+        Resource::NotAsked | Resource::Loading => Element::text("Loading config..."),
+        Resource::Failure(err) => Element::styled_text(Line::from(vec![
+            Span::styled("Error: ", Style::default().fg(theme.accent_error)),
+            Span::styled(err.clone(), Style::default().fg(theme.text_primary)),
+        ]))
+        .build(),
+        Resource::Success(config) => render_main_view(state, config, theme),
     };
 
     let title = format!("Lua Script - {}", state.config_name);
@@ -77,17 +71,19 @@ fn render_no_script_view(theme: &crate::tui::Theme) -> Element<Msg> {
     let content = ColumnBuilder::new()
         .add(Element::text(""), LayoutConstraint::Fill(1))
         .add(
-            Element::styled_text(Line::from(vec![
-                Span::styled("No Lua script loaded.", Style::default().fg(theme.text_secondary)),
-            ]))
+            Element::styled_text(Line::from(vec![Span::styled(
+                "No Lua script loaded.",
+                Style::default().fg(theme.text_secondary),
+            )]))
             .build(),
             LayoutConstraint::Length(1),
         )
         .add(Element::text(""), LayoutConstraint::Length(1))
         .add(
-            Element::styled_text(Line::from(vec![
-                Span::styled("Select a Lua script file to configure the transform.", Style::default().fg(theme.text_tertiary)),
-            ]))
+            Element::styled_text(Line::from(vec![Span::styled(
+                "Select a Lua script file to configure the transform.",
+                Style::default().fg(theme.text_tertiary),
+            )]))
             .build(),
             LayoutConstraint::Length(1),
         )
@@ -106,7 +102,11 @@ fn render_script_view(
     let mut rows = Vec::new();
 
     // Script path
-    let path_text = config.lua_script_path.as_deref().unwrap_or("(embedded script)").to_string();
+    let path_text = config
+        .lua_script_path
+        .as_deref()
+        .unwrap_or("(embedded script)")
+        .to_string();
     rows.push((
         Element::styled_text(Line::from(vec![
             Span::styled("Script: ", Style::default().fg(theme.text_secondary)),
@@ -134,12 +134,18 @@ fn render_script_view(
             let error_count = result.errors.len();
             Line::from(vec![
                 Span::styled("Status: ", Style::default().fg(theme.text_secondary)),
-                Span::styled(format!("Invalid ({} errors)", error_count), Style::default().fg(theme.accent_error)),
+                Span::styled(
+                    format!("Invalid ({} errors)", error_count),
+                    Style::default().fg(theme.accent_error),
+                ),
             ])
         }
         Resource::Failure(err) => Line::from(vec![
             Span::styled("Status: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(format!("Error: {}", err), Style::default().fg(theme.accent_error)),
+            Span::styled(
+                format!("Error: {}", err),
+                Style::default().fg(theme.accent_error),
+            ),
         ]),
     };
     rows.push((
@@ -153,9 +159,10 @@ fn render_script_view(
     if let Resource::Success(result) = &state.validation {
         if let Some(decl) = &result.declaration {
             rows.push((
-                Element::styled_text(Line::from(vec![
-                    Span::styled("Source entities:", Style::default().fg(theme.text_secondary)),
-                ]))
+                Element::styled_text(Line::from(vec![Span::styled(
+                    "Source entities:",
+                    Style::default().fg(theme.text_secondary),
+                )]))
                 .build(),
                 LayoutConstraint::Length(1),
             ));
@@ -168,9 +175,10 @@ fn render_script_view(
                     format!("  - {} (all fields)", entity)
                 };
                 rows.push((
-                    Element::styled_text(Line::from(vec![
-                        Span::styled(text, Style::default().fg(theme.text_primary)),
-                    ]))
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        text,
+                        Style::default().fg(theme.text_primary),
+                    )]))
                     .build(),
                     LayoutConstraint::Length(1),
                 ));
@@ -178,9 +186,10 @@ fn render_script_view(
 
             if decl.source.is_empty() {
                 rows.push((
-                    Element::styled_text(Line::from(vec![
-                        Span::styled("  (none)", Style::default().fg(theme.text_tertiary)),
-                    ]))
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        "  (none)",
+                        Style::default().fg(theme.text_tertiary),
+                    )]))
                     .build(),
                     LayoutConstraint::Length(1),
                 ));
@@ -189,9 +198,10 @@ fn render_script_view(
             rows.push((Element::text(""), LayoutConstraint::Length(1)));
 
             rows.push((
-                Element::styled_text(Line::from(vec![
-                    Span::styled("Target entities:", Style::default().fg(theme.text_secondary)),
-                ]))
+                Element::styled_text(Line::from(vec![Span::styled(
+                    "Target entities:",
+                    Style::default().fg(theme.text_secondary),
+                )]))
                 .build(),
                 LayoutConstraint::Length(1),
             ));
@@ -204,9 +214,10 @@ fn render_script_view(
                     format!("  - {} (all fields)", entity)
                 };
                 rows.push((
-                    Element::styled_text(Line::from(vec![
-                        Span::styled(text, Style::default().fg(theme.text_primary)),
-                    ]))
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        text,
+                        Style::default().fg(theme.text_primary),
+                    )]))
                     .build(),
                     LayoutConstraint::Length(1),
                 ));
@@ -214,9 +225,10 @@ fn render_script_view(
 
             if decl.target.is_empty() {
                 rows.push((
-                    Element::styled_text(Line::from(vec![
-                        Span::styled("  (none)", Style::default().fg(theme.text_tertiary)),
-                    ]))
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        "  (none)",
+                        Style::default().fg(theme.text_tertiary),
+                    )]))
                     .build(),
                     LayoutConstraint::Length(1),
                 ));
@@ -227,17 +239,19 @@ fn render_script_view(
         if !result.warnings.is_empty() {
             rows.push((Element::text(""), LayoutConstraint::Length(1)));
             rows.push((
-                Element::styled_text(Line::from(vec![
-                    Span::styled("Warnings:", Style::default().fg(theme.accent_warning)),
-                ]))
+                Element::styled_text(Line::from(vec![Span::styled(
+                    "Warnings:",
+                    Style::default().fg(theme.accent_warning),
+                )]))
                 .build(),
                 LayoutConstraint::Length(1),
             ));
             for warning in &result.warnings {
                 rows.push((
-                    Element::styled_text(Line::from(vec![
-                        Span::styled(format!("  - {}", warning), Style::default().fg(theme.accent_warning)),
-                    ]))
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        format!("  - {}", warning),
+                        Style::default().fg(theme.accent_warning),
+                    )]))
                     .build(),
                     LayoutConstraint::Length(1),
                 ));
@@ -248,17 +262,19 @@ fn render_script_view(
         if !result.errors.is_empty() {
             rows.push((Element::text(""), LayoutConstraint::Length(1)));
             rows.push((
-                Element::styled_text(Line::from(vec![
-                    Span::styled("Errors:", Style::default().fg(theme.accent_error)),
-                ]))
+                Element::styled_text(Line::from(vec![Span::styled(
+                    "Errors:",
+                    Style::default().fg(theme.accent_error),
+                )]))
                 .build(),
                 LayoutConstraint::Length(1),
             ));
             for error in &result.errors {
                 rows.push((
-                    Element::styled_text(Line::from(vec![
-                        Span::styled(format!("  - {}", error), Style::default().fg(theme.accent_error)),
-                    ]))
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        format!("  - {}", error),
+                        Style::default().fg(theme.accent_error),
+                    )]))
                     .build(),
                     LayoutConstraint::Length(1),
                 ));
@@ -269,11 +285,16 @@ fn render_script_view(
     // Status message
     if let Some(status) = &state.status_message {
         rows.push((Element::text(""), LayoutConstraint::Length(1)));
-        let color = if status.is_error { theme.accent_error } else { theme.accent_success };
+        let color = if status.is_error {
+            theme.accent_error
+        } else {
+            theme.accent_success
+        };
         rows.push((
-            Element::styled_text(Line::from(vec![
-                Span::styled(status.text.clone(), Style::default().fg(color)),
-            ]))
+            Element::styled_text(Line::from(vec![Span::styled(
+                status.text.clone(),
+                Style::default().fg(color),
+            )]))
             .build(),
             LayoutConstraint::Length(1),
         ));
@@ -330,7 +351,10 @@ fn render_file_browser(state: &State, theme: &crate::tui::Theme) -> Element<Msg>
         .build();
 
     Element::panel(browser)
-        .title(format!("Select Lua Script - {}", state.file_browser.current_path().display()))
+        .title(format!(
+            "Select Lua Script - {}",
+            state.file_browser.current_path().display()
+        ))
         .width(70)
         .height(20)
         .build()
@@ -341,13 +365,29 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
 
     if state.show_file_browser {
         // File browser handles its own navigation via on_navigate
-        subs.push(Subscription::keyboard(KeyCode::Esc, "Close", Msg::CloseFileBrowser));
+        subs.push(Subscription::keyboard(
+            KeyCode::Esc,
+            "Close",
+            Msg::CloseFileBrowser,
+        ));
     } else {
         // Main view subscriptions
         subs.push(Subscription::keyboard(KeyCode::Esc, "Back", Msg::GoBack));
-        subs.push(Subscription::keyboard(KeyCode::Char('f'), "Load file", Msg::OpenFileBrowser));
-        subs.push(Subscription::keyboard(KeyCode::Char('v'), "Validate", Msg::Validate));
-        subs.push(Subscription::keyboard(KeyCode::Char('p'), "Preview", Msg::StartPreview));
+        subs.push(Subscription::keyboard(
+            KeyCode::Char('f'),
+            "Load file",
+            Msg::OpenFileBrowser,
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Char('v'),
+            "Validate",
+            Msg::Validate,
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Char('p'),
+            "Preview",
+            Msg::StartPreview,
+        ));
     }
 
     subs

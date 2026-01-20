@@ -1,11 +1,10 @@
-use super::super::entity_sets;
-use super::super::field_specs;
 /// Step 2: Create questionnaire pages
-
 use super::super::super::super::copy::domain::Questionnaire;
 use super::super::super::models::{CopyError, CopyPhase};
-use super::super::execution::{execute_creation_step, process_creation_results, EntityInfo};
-use super::super::helpers::{get_shared_entities, build_payload};
+use super::super::entity_sets;
+use super::super::execution::{EntityInfo, execute_creation_step, process_creation_results};
+use super::super::field_specs;
+use super::super::helpers::{build_payload, get_shared_entities};
 use crate::api::operations::Operations;
 use serde_json::json;
 use std::collections::HashMap;
@@ -32,7 +31,8 @@ pub async fn step2_create_pages(
         2,
         expected_count,
         |q, id_map| {
-            let new_questionnaire_id = id_map.get(&q.id)
+            let new_questionnaire_id = id_map
+                .get(&q.id)
                 .ok_or_else(|| "Questionnaire ID not found in map".to_string())?;
 
             let shared_entities = get_shared_entities();
@@ -40,8 +40,13 @@ pub async fn step2_create_pages(
             let mut entity_info = Vec::new();
 
             for page in &q.pages {
-                let data = build_payload(&page.raw, field_specs::PAGE_FIELDS, &id_map, &shared_entities)
-                    .map_err(|e| format!("Failed to build page payload: {}", e))?;
+                let data = build_payload(
+                    &page.raw,
+                    field_specs::PAGE_FIELDS,
+                    &id_map,
+                    &shared_entities,
+                )
+                .map_err(|e| format!("Failed to build page payload: {}", e))?;
 
                 // Note: Pages are standalone entities - relationship to questionnaire
                 // is established via page_lines junction table (step 3)
@@ -54,11 +59,19 @@ pub async fn step2_create_pages(
             }
 
             Ok((operations, entity_info))
-        }
-    ).await?;
+        },
+    )
+    .await?;
 
     // Process results using generic helper
-    process_creation_results(&results, entity_info, &mut new_id_map, &mut created_ids, CopyPhase::CreatingPages, 2)?;
+    process_creation_results(
+        &results,
+        entity_info,
+        &mut new_id_map,
+        &mut created_ids,
+        CopyPhase::CreatingPages,
+        2,
+    )?;
 
     Ok((new_id_map, created_ids))
 }

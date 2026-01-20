@@ -1,7 +1,7 @@
 mod app;
 mod models;
-mod view;
 mod step_commands;
+mod view;
 
 pub use app::PushQuestionnaireApp;
-pub use models::{Msg, State, PushQuestionnaireParams};
+pub use models::{Msg, PushQuestionnaireParams, State};

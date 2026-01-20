@@ -3,7 +3,10 @@
 use std::collections::HashMap;
 
 use crate::api::operations::{Operation, Operations};
-use crate::transfer::{LookupBindingContext, OrphanAction, RecordAction, ResolvedEntity, ResolvedRecord, ResolvedTransfer, Value};
+use crate::transfer::{
+    LookupBindingContext, OrphanAction, RecordAction, ResolvedEntity, ResolvedRecord,
+    ResolvedTransfer, Value,
+};
 use crate::tui::apps::queue::models::{QueueItem, QueueMetadata};
 
 /// Base priority for transfer operations (start low to maximize priority space)
@@ -167,10 +170,7 @@ fn build_entity_queue_items(
 
     if !deletes.is_empty() {
         items.extend(build_delete_queue_items(
-            entity,
-            transfer,
-            &deletes,
-            options,
+            entity, transfer, &deletes, options,
         ));
     }
 
@@ -210,10 +210,7 @@ fn build_entity_queue_items(
         // This handles records that were inactive in source - they must be created
         // as active first, then deactivated in a separate operation
         items.extend(build_post_create_deactivate_queue_items(
-            entity,
-            transfer,
-            &creates,
-            options,
+            entity, transfer, &creates, options,
         ));
     }
 
@@ -286,11 +283,9 @@ fn build_phase_queue_items(
                     Operation::delete(entity_set, record.source_id.to_string())
                 }
                 Phase::Create => Operation::create(entity_set, payload),
-                Phase::Update => Operation::update(
-                    entity_set,
-                    record.source_id.to_string(),
-                    payload,
-                ),
+                Phase::Update => {
+                    Operation::update(entity_set, record.source_id.to_string(), payload)
+                }
             }
         })
         .collect();
@@ -650,9 +645,7 @@ fn build_target_only_queue_items(
         .iter()
         .map(|record| {
             match orphan_action {
-                OrphanAction::Delete => {
-                    Operation::delete(entity_set, record.source_id.to_string())
-                }
+                OrphanAction::Delete => Operation::delete(entity_set, record.source_id.to_string()),
                 OrphanAction::Deactivate => {
                     // PATCH with statecode = 1 (inactive)
                     let mut payload = serde_json::Map::new();
@@ -748,7 +741,10 @@ mod tests {
         let mut contacts = ResolvedEntity::new("contacts", 2, "contactid");
         contacts.add_record(ResolvedRecord::create(
             Uuid::new_v4(),
-            HashMap::from([("fullname".to_string(), Value::String("John Doe".to_string()))]),
+            HashMap::from([(
+                "fullname".to_string(),
+                Value::String("John Doe".to_string()),
+            )]),
         ));
         contacts.add_record(ResolvedRecord::error(Uuid::new_v4(), "transform failed"));
 
@@ -913,9 +909,15 @@ mod tests {
         // Test that update_partial records only include changed fields in payload
         let id = Uuid::new_v4();
         let fields = HashMap::from([
-            ("name".to_string(), Value::String("Updated Name".to_string())),
+            (
+                "name".to_string(),
+                Value::String("Updated Name".to_string()),
+            ),
             ("revenue".to_string(), Value::Int(1000000)),
-            ("description".to_string(), Value::String("Same description".to_string())),
+            (
+                "description".to_string(),
+                Value::String("Same description".to_string()),
+            ),
         ]);
         // Only name and revenue changed, not description
         let changed = HashSet::from(["name".to_string(), "revenue".to_string()]);
@@ -938,9 +940,15 @@ mod tests {
         // Test that regular update (no changed_fields) includes all fields
         let id = Uuid::new_v4();
         let fields = HashMap::from([
-            ("name".to_string(), Value::String("Updated Name".to_string())),
+            (
+                "name".to_string(),
+                Value::String("Updated Name".to_string()),
+            ),
             ("revenue".to_string(), Value::Int(1000000)),
-            ("description".to_string(), Value::String("Description".to_string())),
+            (
+                "description".to_string(),
+                Value::String("Description".to_string()),
+            ),
         ]);
 
         let record = ResolvedRecord::update(id, fields);
@@ -980,7 +988,10 @@ mod tests {
         // Test that create records skip statecode/statuscode when skip_state_fields is true
         let id = Uuid::new_v4();
         let fields = HashMap::from([
-            ("name".to_string(), Value::String("Inactive Record".to_string())),
+            (
+                "name".to_string(),
+                Value::String("Inactive Record".to_string()),
+            ),
             ("statecode".to_string(), Value::Int(1)),
             ("statuscode".to_string(), Value::Int(2)),
         ]);
@@ -1002,7 +1013,10 @@ mod tests {
         // Test that create records include statuscode when statecode is 0 (active)
         let id = Uuid::new_v4();
         let fields = HashMap::from([
-            ("name".to_string(), Value::String("Active Record".to_string())),
+            (
+                "name".to_string(),
+                Value::String("Active Record".to_string()),
+            ),
             ("statecode".to_string(), Value::Int(0)),
             ("statuscode".to_string(), Value::Int(170590005)), // Non-default active status
         ]);
@@ -1029,7 +1043,10 @@ mod tests {
         entity.add_record(ResolvedRecord::create(
             Uuid::new_v4(),
             HashMap::from([
-                ("name".to_string(), Value::String("Inactive Account".to_string())),
+                (
+                    "name".to_string(),
+                    Value::String("Inactive Account".to_string()),
+                ),
                 ("statecode".to_string(), Value::Int(1)),
                 ("statuscode".to_string(), Value::Int(2)),
             ]),
@@ -1038,9 +1055,10 @@ mod tests {
         // Add an active create record
         entity.add_record(ResolvedRecord::create(
             Uuid::new_v4(),
-            HashMap::from([
-                ("name".to_string(), Value::String("Active Account".to_string())),
-            ]),
+            HashMap::from([(
+                "name".to_string(),
+                Value::String("Active Account".to_string()),
+            )]),
         ));
 
         transfer.add_entity(entity);
@@ -1057,7 +1075,12 @@ mod tests {
         assert_eq!(items[0].priority, 6); // 1 + 1*4 + 1 = 6
 
         // Second item: post-create-deactivate (1 inactive record)
-        assert!(items[1].metadata.description.contains("post-create-deactivate"));
+        assert!(
+            items[1]
+                .metadata
+                .description
+                .contains("post-create-deactivate")
+        );
         assert!(items[1].metadata.description.contains("1 records"));
         assert_eq!(items[1].priority, 7); // 1 + 1*4 + 2 = 7
 

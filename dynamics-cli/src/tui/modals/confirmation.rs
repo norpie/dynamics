@@ -1,5 +1,5 @@
-use crate::tui::{Element, Theme, FocusId};
-use crate::tui::element::{LayoutConstraint, RowBuilder, ColumnBuilder};
+use crate::tui::element::{ColumnBuilder, LayoutConstraint, RowBuilder};
+use crate::tui::{Element, FocusId, Theme};
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
 
@@ -105,44 +105,45 @@ impl<Msg: Clone> ConfirmationModal<Msg> {
     pub fn build(self) -> Element<Msg> {
         // Title line
         let theme = &crate::global_runtime_config().theme;
-        let title_element = Element::styled_text(Line::from(vec![
-            Span::styled(self.title, Style::default().fg(theme.accent_tertiary).bold())
-        ])).build();
+        let title_element = Element::styled_text(Line::from(vec![Span::styled(
+            self.title,
+            Style::default().fg(theme.accent_tertiary).bold(),
+        )]))
+        .build();
 
         // Message element (if present)
-        let message_elements: Vec<(LayoutConstraint, Element<Msg>)> = if let Some(msg) = self.message {
-            vec![
-                (LayoutConstraint::Length(1), Element::text("")),
-                (LayoutConstraint::Length(2), Element::text(msg)),
-            ]
-        } else {
-            vec![]
-        };
+        let message_elements: Vec<(LayoutConstraint, Element<Msg>)> =
+            if let Some(msg) = self.message {
+                vec![
+                    (LayoutConstraint::Length(1), Element::text("")),
+                    (LayoutConstraint::Length(2), Element::text(msg)),
+                ]
+            } else {
+                vec![]
+            };
 
         // Extract messages to ensure proper typing
-        let cancel_msg = self.on_cancel.clone()
+        let cancel_msg = self
+            .on_cancel
+            .clone()
             .expect("ConfirmationModal requires on_cancel callback");
-        let confirm_msg = self.on_confirm.clone()
+        let confirm_msg = self
+            .on_confirm
+            .clone()
             .expect("ConfirmationModal requires on_confirm callback");
 
         // Cancel button with auto-generated hotkey
         let cancel_label = format!("[ {} ]", Self::generate_hotkey_label(&self.cancel_text));
-        let cancel_button = Element::button(
-            FocusId::new("confirmation-cancel"),
-            cancel_label,
-        )
-        .on_press(cancel_msg)
-        .build();
+        let cancel_button = Element::button(FocusId::new("confirmation-cancel"), cancel_label)
+            .on_press(cancel_msg)
+            .build();
 
         // Confirm button with auto-generated hotkey
         let confirm_label = format!("[ {} ]", Self::generate_hotkey_label(&self.confirm_text));
-        let confirm_button = Element::button(
-            FocusId::new("confirmation-confirm"),
-            confirm_label,
-        )
-        .on_press(confirm_msg)
-        .style(Style::default().fg(theme.accent_success))
-        .build();
+        let confirm_button = Element::button(FocusId::new("confirmation-confirm"), confirm_label)
+            .on_press(confirm_msg)
+            .style(Style::default().fg(theme.accent_success))
+            .build();
 
         // Button row - explicitly set Fill constraints for width distribution
         let buttons = RowBuilder::new()

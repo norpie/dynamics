@@ -1,6 +1,6 @@
-use crate::tui::widgets::TreeState;
 use super::ActiveTab;
 use super::app::State;
+use crate::tui::widgets::TreeState;
 
 /// Update target tree navigation to mirror source tree navigation (without selection)
 /// Only updates the navigation cursor, does NOT modify multi-selection
@@ -8,12 +8,14 @@ pub fn update_mirrored_navigation(state: &mut State, source_id: &str) {
     // Extract the key to lookup in match maps (strip prefixes for relationships/entities)
     let source_key = match state.active_tab {
         ActiveTab::Fields => source_id.to_string(),
-        ActiveTab::Relationships => {
-            source_id.strip_prefix("rel_").unwrap_or(source_id).to_string()
-        }
-        ActiveTab::Entities => {
-            source_id.strip_prefix("entity_").unwrap_or(source_id).to_string()
-        }
+        ActiveTab::Relationships => source_id
+            .strip_prefix("rel_")
+            .unwrap_or(source_id)
+            .to_string(),
+        ActiveTab::Entities => source_id
+            .strip_prefix("entity_")
+            .unwrap_or(source_id)
+            .to_string(),
         ActiveTab::Forms | ActiveTab::Views => {
             // For hierarchical tabs, use full path as key
             source_id.to_string()
@@ -24,25 +26,37 @@ pub fn update_mirrored_navigation(state: &mut State, source_id: &str) {
     let target_ids: Vec<String> = match state.active_tab {
         ActiveTab::Fields | ActiveTab::Forms | ActiveTab::Views => {
             // Use field_matches for Fields and hierarchical tabs
-            state.field_matches.get(&source_key)
+            state
+                .field_matches
+                .get(&source_key)
                 .map(|m| m.target_fields.clone())
                 .unwrap_or_default()
         }
         ActiveTab::Relationships => {
             // Use relationship_matches
-            state.relationship_matches.get(&source_key)
+            state
+                .relationship_matches
+                .get(&source_key)
                 .map(|m| {
                     // Add back the "rel_" prefix for target tree ID
-                    m.target_fields.iter().map(|tf| format!("rel_{}", tf)).collect()
+                    m.target_fields
+                        .iter()
+                        .map(|tf| format!("rel_{}", tf))
+                        .collect()
                 })
                 .unwrap_or_default()
         }
         ActiveTab::Entities => {
             // Use entity_matches
-            state.entity_matches.get(&source_key)
+            state
+                .entity_matches
+                .get(&source_key)
                 .map(|m| {
                     // Add back the "entity_" prefix for target tree ID
-                    m.target_fields.iter().map(|tf| format!("entity_{}", tf)).collect()
+                    m.target_fields
+                        .iter()
+                        .map(|tf| format!("entity_{}", tf))
+                        .collect()
                 })
                 .unwrap_or_default()
         }
@@ -75,12 +89,14 @@ pub fn update_mirrored_selection(state: &mut State, source_id: &str) {
     // Extract the key to lookup in match maps (strip prefixes for relationships/entities)
     let source_key = match state.active_tab {
         ActiveTab::Fields => source_id.to_string(),
-        ActiveTab::Relationships => {
-            source_id.strip_prefix("rel_").unwrap_or(source_id).to_string()
-        }
-        ActiveTab::Entities => {
-            source_id.strip_prefix("entity_").unwrap_or(source_id).to_string()
-        }
+        ActiveTab::Relationships => source_id
+            .strip_prefix("rel_")
+            .unwrap_or(source_id)
+            .to_string(),
+        ActiveTab::Entities => source_id
+            .strip_prefix("entity_")
+            .unwrap_or(source_id)
+            .to_string(),
         ActiveTab::Forms | ActiveTab::Views => {
             // For hierarchical tabs, use full path as key
             source_id.to_string()
@@ -91,25 +107,37 @@ pub fn update_mirrored_selection(state: &mut State, source_id: &str) {
     let target_ids: Vec<String> = match state.active_tab {
         ActiveTab::Fields | ActiveTab::Forms | ActiveTab::Views => {
             // Use field_matches for Fields and hierarchical tabs
-            state.field_matches.get(&source_key)
+            state
+                .field_matches
+                .get(&source_key)
                 .map(|m| m.target_fields.clone())
                 .unwrap_or_default()
         }
         ActiveTab::Relationships => {
             // Use relationship_matches
-            state.relationship_matches.get(&source_key)
+            state
+                .relationship_matches
+                .get(&source_key)
                 .map(|m| {
                     // Add back the "rel_" prefix for target tree ID
-                    m.target_fields.iter().map(|tf| format!("rel_{}", tf)).collect()
+                    m.target_fields
+                        .iter()
+                        .map(|tf| format!("rel_{}", tf))
+                        .collect()
                 })
                 .unwrap_or_default()
         }
         ActiveTab::Entities => {
             // Use entity_matches
-            state.entity_matches.get(&source_key)
+            state
+                .entity_matches
+                .get(&source_key)
                 .map(|m| {
                     // Add back the "entity_" prefix for target tree ID
-                    m.target_fields.iter().map(|tf| format!("entity_{}", tf)).collect()
+                    m.target_fields
+                        .iter()
+                        .map(|tf| format!("entity_{}", tf))
+                        .collect()
                 })
                 .unwrap_or_default()
         }
@@ -164,12 +192,14 @@ pub fn mirror_container_toggle(state: &mut State, source_id: &str, is_expanded: 
     // Extract the key to lookup in match maps (same logic as update_mirrored_selection)
     let source_key = match state.active_tab {
         ActiveTab::Fields => source_id.to_string(),
-        ActiveTab::Relationships => {
-            source_id.strip_prefix("rel_").unwrap_or(source_id).to_string()
-        }
-        ActiveTab::Entities => {
-            source_id.strip_prefix("entity_").unwrap_or(source_id).to_string()
-        }
+        ActiveTab::Relationships => source_id
+            .strip_prefix("rel_")
+            .unwrap_or(source_id)
+            .to_string(),
+        ActiveTab::Entities => source_id
+            .strip_prefix("entity_")
+            .unwrap_or(source_id)
+            .to_string(),
         ActiveTab::Forms | ActiveTab::Views => {
             // For hierarchical tabs, use full path as key
             source_id.to_string()
@@ -180,25 +210,37 @@ pub fn mirror_container_toggle(state: &mut State, source_id: &str, is_expanded: 
     let target_ids: Vec<String> = match state.active_tab {
         ActiveTab::Fields | ActiveTab::Forms | ActiveTab::Views => {
             // Use field_matches for Fields and hierarchical tabs
-            state.field_matches.get(&source_key)
+            state
+                .field_matches
+                .get(&source_key)
                 .map(|m| m.target_fields.clone())
                 .unwrap_or_default()
         }
         ActiveTab::Relationships => {
             // Use relationship_matches
-            state.relationship_matches.get(&source_key)
+            state
+                .relationship_matches
+                .get(&source_key)
                 .map(|m| {
                     // Add back the "rel_" prefix for target tree ID
-                    m.target_fields.iter().map(|tf| format!("rel_{}", tf)).collect()
+                    m.target_fields
+                        .iter()
+                        .map(|tf| format!("rel_{}", tf))
+                        .collect()
                 })
                 .unwrap_or_default()
         }
         ActiveTab::Entities => {
             // Use entity_matches
-            state.entity_matches.get(&source_key)
+            state
+                .entity_matches
+                .get(&source_key)
                 .map(|m| {
                     // Add back the "entity_" prefix for target tree ID
-                    m.target_fields.iter().map(|tf| format!("entity_{}", tf)).collect()
+                    m.target_fields
+                        .iter()
+                        .map(|tf| format!("entity_{}", tf))
+                        .collect()
                 })
                 .unwrap_or_default()
         }
@@ -229,12 +271,14 @@ pub fn update_reverse_mirrored_navigation(state: &mut State, target_id: &str) {
     // Extract the key to lookup in match maps (strip prefixes for relationships/entities)
     let target_key = match state.active_tab {
         ActiveTab::Fields => target_id.to_string(),
-        ActiveTab::Relationships => {
-            target_id.strip_prefix("rel_").unwrap_or(target_id).to_string()
-        }
-        ActiveTab::Entities => {
-            target_id.strip_prefix("entity_").unwrap_or(target_id).to_string()
-        }
+        ActiveTab::Relationships => target_id
+            .strip_prefix("rel_")
+            .unwrap_or(target_id)
+            .to_string(),
+        ActiveTab::Entities => target_id
+            .strip_prefix("entity_")
+            .unwrap_or(target_id)
+            .to_string(),
         ActiveTab::Forms | ActiveTab::Views => {
             // For hierarchical tabs, use full path as key
             target_id.to_string()
@@ -245,21 +289,27 @@ pub fn update_reverse_mirrored_navigation(state: &mut State, target_id: &str) {
     let source_ids: Vec<String> = match state.active_tab {
         ActiveTab::Fields | ActiveTab::Forms | ActiveTab::Views => {
             // Search field_matches for sources that map to this target
-            state.field_matches.iter()
+            state
+                .field_matches
+                .iter()
                 .filter(|(_, m)| m.target_fields.contains(&target_key))
                 .map(|(source_key, _)| source_key.clone())
                 .collect()
         }
         ActiveTab::Relationships => {
             // Search relationship_matches and add "rel_" prefix back
-            state.relationship_matches.iter()
+            state
+                .relationship_matches
+                .iter()
                 .filter(|(_, m)| m.target_fields.contains(&target_key))
                 .map(|(source_key, _)| format!("rel_{}", source_key))
                 .collect()
         }
         ActiveTab::Entities => {
             // Search entity_matches and add "entity_" prefix back
-            state.entity_matches.iter()
+            state
+                .entity_matches
+                .iter()
                 .filter(|(_, m)| m.target_fields.contains(&target_key))
                 .map(|(source_key, _)| format!("entity_{}", source_key))
                 .collect()
@@ -293,12 +343,14 @@ pub fn update_reverse_mirrored_selection(state: &mut State, target_id: &str) {
     // Extract the key to lookup in match maps (strip prefixes for relationships/entities)
     let target_key = match state.active_tab {
         ActiveTab::Fields => target_id.to_string(),
-        ActiveTab::Relationships => {
-            target_id.strip_prefix("rel_").unwrap_or(target_id).to_string()
-        }
-        ActiveTab::Entities => {
-            target_id.strip_prefix("entity_").unwrap_or(target_id).to_string()
-        }
+        ActiveTab::Relationships => target_id
+            .strip_prefix("rel_")
+            .unwrap_or(target_id)
+            .to_string(),
+        ActiveTab::Entities => target_id
+            .strip_prefix("entity_")
+            .unwrap_or(target_id)
+            .to_string(),
         ActiveTab::Forms | ActiveTab::Views => {
             // For hierarchical tabs, use full path as key
             target_id.to_string()
@@ -309,21 +361,27 @@ pub fn update_reverse_mirrored_selection(state: &mut State, target_id: &str) {
     let source_ids: Vec<String> = match state.active_tab {
         ActiveTab::Fields | ActiveTab::Forms | ActiveTab::Views => {
             // Search field_matches for sources that map to this target
-            state.field_matches.iter()
+            state
+                .field_matches
+                .iter()
                 .filter(|(_, m)| m.target_fields.contains(&target_key))
                 .map(|(source_key, _)| source_key.clone())
                 .collect()
         }
         ActiveTab::Relationships => {
             // Search relationship_matches and add "rel_" prefix back
-            state.relationship_matches.iter()
+            state
+                .relationship_matches
+                .iter()
                 .filter(|(_, m)| m.target_fields.contains(&target_key))
                 .map(|(source_key, _)| format!("rel_{}", source_key))
                 .collect()
         }
         ActiveTab::Entities => {
             // Search entity_matches and add "entity_" prefix back
-            state.entity_matches.iter()
+            state
+                .entity_matches
+                .iter()
                 .filter(|(_, m)| m.target_fields.contains(&target_key))
                 .map(|(source_key, _)| format!("entity_{}", source_key))
                 .collect()
@@ -366,12 +424,14 @@ pub fn mirror_container_toggle_reverse(state: &mut State, target_id: &str, is_ex
     // Extract the key to lookup in match maps
     let target_key = match state.active_tab {
         ActiveTab::Fields => target_id.to_string(),
-        ActiveTab::Relationships => {
-            target_id.strip_prefix("rel_").unwrap_or(target_id).to_string()
-        }
-        ActiveTab::Entities => {
-            target_id.strip_prefix("entity_").unwrap_or(target_id).to_string()
-        }
+        ActiveTab::Relationships => target_id
+            .strip_prefix("rel_")
+            .unwrap_or(target_id)
+            .to_string(),
+        ActiveTab::Entities => target_id
+            .strip_prefix("entity_")
+            .unwrap_or(target_id)
+            .to_string(),
         ActiveTab::Forms | ActiveTab::Views => {
             // For hierarchical tabs, use full path as key
             target_id.to_string()
@@ -382,21 +442,27 @@ pub fn mirror_container_toggle_reverse(state: &mut State, target_id: &str, is_ex
     let source_ids: Vec<String> = match state.active_tab {
         ActiveTab::Fields | ActiveTab::Forms | ActiveTab::Views => {
             // Search field_matches for sources that map to this target
-            state.field_matches.iter()
+            state
+                .field_matches
+                .iter()
                 .filter(|(_, m)| m.target_fields.contains(&target_key))
                 .map(|(source_key, _)| source_key.clone())
                 .collect()
         }
         ActiveTab::Relationships => {
             // Search relationship_matches and add "rel_" prefix back
-            state.relationship_matches.iter()
+            state
+                .relationship_matches
+                .iter()
                 .filter(|(_, m)| m.target_fields.contains(&target_key))
                 .map(|(source_key, _)| format!("rel_{}", source_key))
                 .collect()
         }
         ActiveTab::Entities => {
             // Search entity_matches and add "entity_" prefix back
-            state.entity_matches.iter()
+            state
+                .entity_matches
+                .iter()
                 .filter(|(_, m)| m.target_fields.contains(&target_key))
                 .map(|(source_key, _)| format!("entity_{}", source_key))
                 .collect()

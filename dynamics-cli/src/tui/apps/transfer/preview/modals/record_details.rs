@@ -47,7 +47,10 @@ fn render_view_mode(
     // Source ID row
     let source_id_row = Element::styled_text(Line::from(vec![
         Span::styled("Source ID: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(record.source_id.to_string(), Style::default().fg(theme.text_primary)),
+        Span::styled(
+            record.source_id.to_string(),
+            Style::default().fg(theme.text_primary),
+        ),
     ]))
     .build();
 
@@ -63,9 +66,7 @@ fn render_view_mode(
 
     // Fields section
     let fields_content = render_fields_view(state, lookup_context, theme);
-    let fields_panel = Element::panel(fields_content)
-        .title("Fields")
-        .build();
+    let fields_panel = Element::panel(fields_content).title("Fields").build();
 
     // Error panel (if present) - scrollable list of error lines
     // Errors may be separated by newlines or "; " (semicolon + space)
@@ -90,9 +91,7 @@ fn render_view_mode(
             .on_render(Msg::DetailErrorsSetViewportHeight)
             .build();
 
-            Element::panel(error_list)
-                .title("Errors")
-                .build()
+            Element::panel(error_list).title("Errors").build()
         }
     } else {
         Element::text("")
@@ -129,7 +128,10 @@ fn render_edit_mode(
     // Source ID row (read-only)
     let source_id_row = Element::styled_text(Line::from(vec![
         Span::styled("Source ID: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(record.source_id.to_string(), Style::default().fg(theme.text_primary)),
+        Span::styled(
+            record.source_id.to_string(),
+            Style::default().fg(theme.text_primary),
+        ),
     ]))
     .build();
 
@@ -143,9 +145,7 @@ fn render_edit_mode(
     } else {
         "Fields - ↑↓: navigate, Enter: edit, 1-4: action"
     };
-    let fields_panel = Element::panel(fields_content)
-        .title(fields_title)
-        .build();
+    let fields_panel = Element::panel(fields_content).title(fields_title).build();
 
     // Buttons row
     let buttons = render_edit_buttons(state, theme);
@@ -164,13 +164,18 @@ fn render_edit_mode(
 /// Render the action selector for edit mode
 fn render_action_selector(state: &RecordDetailState, theme: &Theme) -> Element<Msg> {
     let actions = RecordDetailState::available_actions();
-    let mut spans = vec![Span::styled("Action:    ", Style::default().fg(theme.text_secondary))];
+    let mut spans = vec![Span::styled(
+        "Action:    ",
+        Style::default().fg(theme.text_secondary),
+    )];
 
     for (idx, action) in actions.iter().enumerate() {
         let is_selected = *action == state.current_action;
         let color = action_color(*action, theme);
         let style = if is_selected {
-            Style::default().fg(color).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            Style::default()
+                .fg(color)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
         } else {
             Style::default().fg(theme.text_tertiary)
         };
@@ -179,7 +184,10 @@ fn render_action_selector(state: &RecordDetailState, theme: &Theme) -> Element<M
             spans.push(Span::raw(" | "));
         }
         // Show keyboard shortcut number
-        spans.push(Span::styled(format!("[{}] ", idx + 1), Style::default().fg(theme.text_tertiary)));
+        spans.push(Span::styled(
+            format!("[{}] ", idx + 1),
+            Style::default().fg(theme.text_tertiary),
+        ));
         spans.push(Span::styled(format!("{}", action), style));
     }
 
@@ -193,18 +201,27 @@ pub struct ErrorLineItem(pub String);
 impl ListItem for ErrorLineItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         let (fg_color, bg_style) = if is_selected {
-            (theme.accent_error, Some(Style::default().bg(theme.bg_surface)))
+            (
+                theme.accent_error,
+                Some(Style::default().bg(theme.bg_surface)),
+            )
         } else {
             (theme.accent_error, None)
         };
 
-        let mut builder = Element::styled_text(Line::from(vec![
-            Span::styled(self.0.clone(), Style::default().fg(fg_color)),
-        ]));
+        let mut builder = Element::styled_text(Line::from(vec![Span::styled(
+            self.0.clone(),
+            Style::default().fg(fg_color),
+        )]));
 
         if let Some(bg) = bg_style {
             builder = builder.background(bg);
@@ -226,11 +243,20 @@ pub struct FieldViewItem {
 impl ListItem for FieldViewItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         let (name_color, value_color, bg_style) = if is_selected {
-            (theme.accent_primary, theme.text_primary, Some(Style::default().bg(theme.bg_surface)))
+            (
+                theme.accent_primary,
+                theme.text_primary,
+                Some(Style::default().bg(theme.bg_surface)),
+            )
         } else if self.is_lookup {
             (theme.text_secondary, theme.accent_secondary, None)
         } else {
@@ -335,7 +361,9 @@ fn render_fields_edit(
 
         // Label with focus indicator and lookup hint
         let label_style = if is_focused {
-            Style::default().fg(theme.accent_primary).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme.text_secondary)
         };
@@ -351,10 +379,7 @@ fn render_fields_edit(
 
         let label = Element::styled_text(Line::from(vec![
             Span::raw(focus_indicator),
-            Span::styled(
-                format!("{:<18}", field_label),
-                label_style,
-            ),
+            Span::styled(format!("{:<18}", field_label), label_style),
             Span::raw(" │ "),
         ]))
         .build();
@@ -377,9 +402,10 @@ fn render_fields_edit(
             .placeholder(&placeholder)
             .build();
 
-            let dirty_span = Element::styled_text(Line::from(vec![
-                Span::styled(dirty_indicator, Style::default().fg(theme.accent_warning)),
-            ]))
+            let dirty_span = Element::styled_text(Line::from(vec![Span::styled(
+                dirty_indicator,
+                Style::default().fg(theme.accent_warning),
+            )]))
             .build();
 
             let row = RowBuilder::new()
@@ -402,9 +428,13 @@ fn render_fields_edit(
 
             let value_style = if is_focused {
                 if is_lookup && is_guid_string(field.input.value()) {
-                    Style::default().fg(theme.accent_secondary).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(theme.accent_secondary)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(theme.text_primary).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(theme.text_primary)
+                        .add_modifier(Modifier::BOLD)
                 }
             } else if is_lookup && is_guid_string(field.input.value()) {
                 Style::default().fg(theme.accent_secondary)
@@ -414,15 +444,9 @@ fn render_fields_edit(
 
             let row = Element::styled_text(Line::from(vec![
                 Span::raw(focus_indicator),
-                Span::styled(
-                    format!("{:<18}", field_label),
-                    label_style,
-                ),
+                Span::styled(format!("{:<18}", field_label), label_style),
                 Span::raw(" │ "),
-                Span::styled(
-                    truncate_str(&value_display, 45),
-                    value_style,
-                ),
+                Span::styled(truncate_str(&value_display, 45), value_style),
                 Span::styled(dirty_indicator, Style::default().fg(theme.accent_warning)),
             ]))
             .build();

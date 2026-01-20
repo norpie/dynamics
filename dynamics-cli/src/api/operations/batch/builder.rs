@@ -31,9 +31,7 @@ pub enum BatchItem {
         body: Option<String>,
     },
     /// Operations grouped in a changeset (transactional)
-    ChangeSet {
-        operations: Vec<ChangeSetOperation>,
-    },
+    ChangeSet { operations: Vec<ChangeSetOperation> },
 }
 
 /// Operation within a changeset
@@ -63,7 +61,8 @@ impl BatchRequestBuilder {
     /// Dynamics 365 requires bypass headers on each individual request within
     /// a batch, not just on the outer HTTP request.
     pub fn with_bypass_headers(mut self, headers: Vec<(&str, String)>) -> Self {
-        self.bypass_headers = headers.into_iter()
+        self.bypass_headers = headers
+            .into_iter()
             .map(|(k, v)| (k.to_string(), v))
             .collect();
         self
@@ -78,7 +77,9 @@ impl BatchRequestBuilder {
         let changeset_operations: Vec<ChangeSetOperation> = operations
             .iter()
             .enumerate()
-            .map(|(index, operation)| self.operation_to_changeset_operation(operation, (index + 1) as u32))
+            .map(|(index, operation)| {
+                self.operation_to_changeset_operation(operation, (index + 1) as u32)
+            })
             .collect();
 
         self.requests.push(BatchItem::ChangeSet {
@@ -104,7 +105,11 @@ impl BatchRequestBuilder {
     }
 
     /// Convert an Operation to a ChangeSetOperation
-    fn operation_to_changeset_operation(&self, operation: &Operation, content_id: u32) -> ChangeSetOperation {
+    fn operation_to_changeset_operation(
+        &self,
+        operation: &Operation,
+        content_id: u32,
+    ) -> ChangeSetOperation {
         match operation {
             Operation::Create { entity, data } => {
                 let path = format!("{}/{}", constants::api_path(), entity);
@@ -115,13 +120,23 @@ impl BatchRequestBuilder {
                     method: methods::POST.to_string(),
                     path,
                     headers: self.build_op_headers(vec![
-                        ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
-                        ("Prefer".to_string(), headers::PREFER_RETURN_REPRESENTATION.to_string()),
+                        (
+                            "Content-Type".to_string(),
+                            headers::CONTENT_TYPE_JSON.to_string(),
+                        ),
+                        (
+                            "Prefer".to_string(),
+                            headers::PREFER_RETURN_REPRESENTATION.to_string(),
+                        ),
                     ]),
                     body: Some(body),
                 }
             }
-            Operation::CreateWithRefs { entity, data, content_id_refs } => {
+            Operation::CreateWithRefs {
+                entity,
+                data,
+                content_id_refs,
+            } => {
                 let path = format!("{}/{}", constants::api_path(), entity);
 
                 // Merge data with content-ID references
@@ -139,8 +154,14 @@ impl BatchRequestBuilder {
                     method: methods::POST.to_string(),
                     path,
                     headers: self.build_op_headers(vec![
-                        ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
-                        ("Prefer".to_string(), headers::PREFER_RETURN_REPRESENTATION.to_string()),
+                        (
+                            "Content-Type".to_string(),
+                            headers::CONTENT_TYPE_JSON.to_string(),
+                        ),
+                        (
+                            "Prefer".to_string(),
+                            headers::PREFER_RETURN_REPRESENTATION.to_string(),
+                        ),
                     ]),
                     body: Some(body),
                 }
@@ -154,9 +175,15 @@ impl BatchRequestBuilder {
                     method: methods::PATCH.to_string(),
                     path,
                     headers: self.build_op_headers(vec![
-                        ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
+                        (
+                            "Content-Type".to_string(),
+                            headers::CONTENT_TYPE_JSON.to_string(),
+                        ),
                         ("If-Match".to_string(), headers::IF_MATCH_ANY.to_string()),
-                        ("Prefer".to_string(), headers::PREFER_RETURN_REPRESENTATION.to_string()),
+                        (
+                            "Prefer".to_string(),
+                            headers::PREFER_RETURN_REPRESENTATION.to_string(),
+                        ),
                     ]),
                     body: Some(body),
                 }
@@ -172,8 +199,19 @@ impl BatchRequestBuilder {
                     body: None,
                 }
             }
-            Operation::Upsert { entity, key_field, key_value, data } => {
-                let path = format!("{}/{}({}='{}')", constants::api_path(), entity, key_field, key_value);
+            Operation::Upsert {
+                entity,
+                key_field,
+                key_value,
+                data,
+            } => {
+                let path = format!(
+                    "{}/{}({}='{}')",
+                    constants::api_path(),
+                    entity,
+                    key_field,
+                    key_value
+                );
                 let body = serde_json::to_string(data).unwrap_or_default();
 
                 ChangeSetOperation {
@@ -181,15 +219,27 @@ impl BatchRequestBuilder {
                     method: methods::PATCH.to_string(),
                     path,
                     headers: self.build_op_headers(vec![
-                        ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
-                        ("Prefer".to_string(), headers::PREFER_RETURN_REPRESENTATION.to_string()),
+                        (
+                            "Content-Type".to_string(),
+                            headers::CONTENT_TYPE_JSON.to_string(),
+                        ),
+                        (
+                            "Prefer".to_string(),
+                            headers::PREFER_RETURN_REPRESENTATION.to_string(),
+                        ),
                     ]),
                     body: Some(body),
                 }
             }
-            Operation::AssociateRef { entity, entity_ref, navigation_property, target_ref } => {
+            Operation::AssociateRef {
+                entity,
+                entity_ref,
+                navigation_property,
+                target_ref,
+            } => {
                 // POST /entities(id)/navigation_property/$ref with body {"@odata.id": "target"}
-                let path = format!("{}/{}({})/{}/$ref",
+                let path = format!(
+                    "{}/{}({})/{}/$ref",
                     constants::api_path(),
                     entity,
                     entity_ref,
@@ -197,16 +247,17 @@ impl BatchRequestBuilder {
                 );
 
                 // Convert relative target_ref to absolute URL for @odata.id
-                let absolute_target_ref = if target_ref.starts_with("http://") || target_ref.starts_with("https://") {
-                    target_ref.clone()
-                } else {
-                    // target_ref is like "/nrq_categories(guid)", need to prepend base_url + api path
-                    let base = self.base_url.trim_end_matches('/');
-                    let api_path = constants::api_path();
-                    let api_path = api_path.trim_start_matches('/');
-                    let path = target_ref.trim_start_matches('/');
-                    format!("{}/{}/{}", base, api_path, path)
-                };
+                let absolute_target_ref =
+                    if target_ref.starts_with("http://") || target_ref.starts_with("https://") {
+                        target_ref.clone()
+                    } else {
+                        // target_ref is like "/nrq_categories(guid)", need to prepend base_url + api path
+                        let base = self.base_url.trim_end_matches('/');
+                        let api_path = constants::api_path();
+                        let api_path = api_path.trim_start_matches('/');
+                        let path = target_ref.trim_start_matches('/');
+                        format!("{}/{}/{}", base, api_path, path)
+                    };
 
                 let body_json = serde_json::json!({
                     "@odata.id": absolute_target_ref
@@ -217,15 +268,22 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::POST.to_string(),
                     path,
-                    headers: self.build_op_headers(vec![
-                        ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
-                    ]),
+                    headers: self.build_op_headers(vec![(
+                        "Content-Type".to_string(),
+                        headers::CONTENT_TYPE_JSON.to_string(),
+                    )]),
                     body: Some(body),
                 }
             }
-            Operation::DisassociateRef { entity, entity_ref, navigation_property, target_id } => {
+            Operation::DisassociateRef {
+                entity,
+                entity_ref,
+                navigation_property,
+                target_id,
+            } => {
                 // DELETE /entities(id)/navigation_property(target_id)/$ref
-                let path = format!("{}/{}({})/{}({})/$ref",
+                let path = format!(
+                    "{}/{}({})/{}({})/$ref",
                     constants::api_path(),
                     entity,
                     entity_ref,
@@ -243,13 +301,22 @@ impl BatchRequestBuilder {
             }
             // Schema operations - these typically shouldn't be in batch changesets,
             // but we handle them for completeness
-            Operation::CreateAttribute { entity, attribute_data, solution_name } => {
-                let path = format!("{}/EntityDefinitions(LogicalName='{}')/Attributes", constants::api_path(), entity);
+            Operation::CreateAttribute {
+                entity,
+                attribute_data,
+                solution_name,
+            } => {
+                let path = format!(
+                    "{}/EntityDefinitions(LogicalName='{}')/Attributes",
+                    constants::api_path(),
+                    entity
+                );
                 let body = serde_json::to_string(attribute_data).unwrap_or_default();
 
-                let mut op_headers = vec![
-                    ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
-                ];
+                let mut op_headers = vec![(
+                    "Content-Type".to_string(),
+                    headers::CONTENT_TYPE_JSON.to_string(),
+                )];
                 if let Some(solution) = solution_name {
                     op_headers.push(("MSCRM.SolutionUniqueName".to_string(), solution.clone()));
                 }
@@ -262,24 +329,37 @@ impl BatchRequestBuilder {
                     body: Some(body),
                 }
             }
-            Operation::UpdateAttribute { entity, attribute, attribute_data } => {
-                let path = format!("{}/EntityDefinitions(LogicalName='{}')/Attributes(LogicalName='{}')",
-                    constants::api_path(), entity, attribute);
+            Operation::UpdateAttribute {
+                entity,
+                attribute,
+                attribute_data,
+            } => {
+                let path = format!(
+                    "{}/EntityDefinitions(LogicalName='{}')/Attributes(LogicalName='{}')",
+                    constants::api_path(),
+                    entity,
+                    attribute
+                );
                 let body = serde_json::to_string(attribute_data).unwrap_or_default();
 
                 ChangeSetOperation {
                     content_id,
                     method: "PUT".to_string(), // Schema updates use PUT
                     path,
-                    headers: self.build_op_headers(vec![
-                        ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
-                    ]),
+                    headers: self.build_op_headers(vec![(
+                        "Content-Type".to_string(),
+                        headers::CONTENT_TYPE_JSON.to_string(),
+                    )]),
                     body: Some(body),
                 }
             }
             Operation::DeleteAttribute { entity, attribute } => {
-                let path = format!("{}/EntityDefinitions(LogicalName='{}')/Attributes(LogicalName='{}')",
-                    constants::api_path(), entity, attribute);
+                let path = format!(
+                    "{}/EntityDefinitions(LogicalName='{}')/Attributes(LogicalName='{}')",
+                    constants::api_path(),
+                    entity,
+                    attribute
+                );
 
                 ChangeSetOperation {
                     content_id,
@@ -296,9 +376,10 @@ impl BatchRequestBuilder {
                     content_id,
                     method: methods::POST.to_string(),
                     path,
-                    headers: self.build_op_headers(vec![
-                        ("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string()),
-                    ]),
+                    headers: self.build_op_headers(vec![(
+                        "Content-Type".to_string(),
+                        headers::CONTENT_TYPE_JSON.to_string(),
+                    )]),
                     body: None,
                 }
             }
@@ -311,7 +392,12 @@ impl BatchRequestBuilder {
 
         for request in &self.requests {
             match request {
-                BatchItem::DirectRequest { method, path, headers, body: req_body } => {
+                BatchItem::DirectRequest {
+                    method,
+                    path,
+                    headers,
+                    body: req_body,
+                } => {
                     // Add direct request to batch
                     body.push_str(&format!("--{}{}", self.batch_id, CRLF));
                     body.push_str(&format!("Content-Type: application/http{}", CRLF));
@@ -338,7 +424,10 @@ impl BatchRequestBuilder {
                 BatchItem::ChangeSet { operations } => {
                     // Start changeset
                     body.push_str(&format!("--{}{}", self.batch_id, CRLF));
-                    body.push_str(&format!("Content-Type: multipart/mixed; boundary=\"{}\"{}", self.changeset_id, CRLF));
+                    body.push_str(&format!(
+                        "Content-Type: multipart/mixed; boundary=\"{}\"{}",
+                        self.changeset_id, CRLF
+                    ));
                     body.push_str(CRLF);
 
                     // Add each operation in changeset
@@ -350,7 +439,10 @@ impl BatchRequestBuilder {
                         body.push_str(CRLF);
 
                         // HTTP request line
-                        body.push_str(&format!("{} {} HTTP/1.1{}", operation.method, operation.path, CRLF));
+                        body.push_str(&format!(
+                            "{} {} HTTP/1.1{}",
+                            operation.method, operation.path, CRLF
+                        ));
 
                         // Headers
                         for (name, value) in &operation.headers {
@@ -420,16 +512,23 @@ mod tests {
 
     #[test]
     fn test_single_create_operation() {
-        let operation = Operation::create("contacts", json!({
-            "firstname": "John",
-            "lastname": "Doe"
-        }));
+        let operation = Operation::create(
+            "contacts",
+            json!({
+                "firstname": "John",
+                "lastname": "Doe"
+            }),
+        );
 
         let batch = BatchRequestBuilder::new("https://test.crm.dynamics.com")
             .add_operation(&operation)
             .build();
 
-        assert!(batch.content_type.starts_with("multipart/mixed; boundary=\"batch_"));
+        assert!(
+            batch
+                .content_type
+                .starts_with("multipart/mixed; boundary=\"batch_")
+        );
         assert!(batch.body.contains("POST /api/data/v9.2/contacts HTTP/1.1"));
         assert!(batch.body.contains("Content-Type: application/json"));
         assert!(batch.body.contains("\"firstname\":\"John\""));
@@ -449,10 +548,22 @@ mod tests {
             .build();
 
         // Check structure
-        assert!(batch.body.contains("Content-Type: multipart/mixed; boundary=\"changeset_"));
+        assert!(
+            batch
+                .body
+                .contains("Content-Type: multipart/mixed; boundary=\"changeset_")
+        );
         assert!(batch.body.contains("POST /api/data/v9.2/contacts HTTP/1.1"));
-        assert!(batch.body.contains("PATCH /api/data/v9.2/contacts(123-456) HTTP/1.1"));
-        assert!(batch.body.contains("DELETE /api/data/v9.2/contacts(789-012) HTTP/1.1"));
+        assert!(
+            batch
+                .body
+                .contains("PATCH /api/data/v9.2/contacts(123-456) HTTP/1.1")
+        );
+        assert!(
+            batch
+                .body
+                .contains("DELETE /api/data/v9.2/contacts(789-012) HTTP/1.1")
+        );
 
         // Check Content-IDs
         assert!(batch.body.contains("Content-ID: 1"));
@@ -469,14 +580,18 @@ mod tests {
             "contacts",
             "emailaddress1",
             "test@example.com",
-            json!({"firstname": "Jane"})
+            json!({"firstname": "Jane"}),
         );
 
         let batch = BatchRequestBuilder::new("https://test.crm.dynamics.com")
             .add_operation(&operation)
             .build();
 
-        assert!(batch.body.contains("PATCH /api/data/v9.2/contacts(emailaddress1='test@example.com') HTTP/1.1"));
+        assert!(
+            batch.body.contains(
+                "PATCH /api/data/v9.2/contacts(emailaddress1='test@example.com') HTTP/1.1"
+            )
+        );
         assert!(batch.body.contains("\"firstname\":\"Jane\""));
     }
 }

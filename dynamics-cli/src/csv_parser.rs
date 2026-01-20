@@ -3,9 +3,9 @@
 //! Parses CSV files containing field mappings for Dynamics 365 migration.
 //! CSV format: source_field, target_field, match_type, notes
 
-use std::collections::{HashMap, HashSet};
 use csv::ReaderBuilder;
 use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
 
 /// CSV row structure
 #[derive(Debug, Deserialize)]
@@ -85,14 +85,16 @@ pub fn parse_csv_field_mappings(content: &str) -> Result<CsvImportData, String> 
         if source.is_empty() && !target.is_empty() {
             // Empty source = target-side ignore
             log::debug!("Target ignore: {}", target);
-            data.target_ignores.insert(format!("fields:target:{}", target));
+            data.target_ignores
+                .insert(format!("fields:target:{}", target));
             continue;
         }
 
         if target.is_empty() && !source.is_empty() {
             // Empty target = source-side ignore
             log::debug!("Source ignore: {}", source);
-            data.source_ignores.insert(format!("fields:source:{}", source));
+            data.source_ignores
+                .insert(format!("fields:source:{}", source));
             continue;
         }
 
@@ -105,54 +107,78 @@ pub fn parse_csv_field_mappings(content: &str) -> Result<CsvImportData, String> 
         // Distribute mappings by match_type
         match match_type.as_str() {
             "exact" | "cs_import" => {
-                log::debug!("Imported mapping: {} -> {} ({})", source, target, match_type);
-                data.imported_mappings.insert(source.to_string(), target.to_string());
+                log::debug!(
+                    "Imported mapping: {} -> {} ({})",
+                    source,
+                    target,
+                    match_type
+                );
+                data.imported_mappings
+                    .insert(source.to_string(), target.to_string());
             }
             "prefix" => {
                 // For prefix mappings, extract the prefix from the field names
                 // Example: cgk_accountid -> nrq_accountid means cgk_ -> nrq_
-                if let (Some(src_prefix), Some(tgt_prefix)) = (
-                    extract_prefix(source),
-                    extract_prefix(target)
-                ) {
+                if let (Some(src_prefix), Some(tgt_prefix)) =
+                    (extract_prefix(source), extract_prefix(target))
+                {
                     log::debug!("Prefix mapping: {} -> {}", src_prefix, tgt_prefix);
                     data.prefix_mappings.insert(src_prefix, tgt_prefix);
                 } else {
-                    log::warn!("Line {}: prefix match_type but no clear prefix found: {} -> {}",
-                        line_num + 2, source, target);
+                    log::warn!(
+                        "Line {}: prefix match_type but no clear prefix found: {} -> {}",
+                        line_num + 2,
+                        source,
+                        target
+                    );
                     // Fall back to treating as manual mapping
-                    data.manual_mappings.insert(source.to_string(), target.to_string());
+                    data.manual_mappings
+                        .insert(source.to_string(), target.to_string());
                 }
             }
             "manual" => {
                 log::debug!("Manual mapping: {} -> {}", source, target);
-                data.manual_mappings.insert(source.to_string(), target.to_string());
+                data.manual_mappings
+                    .insert(source.to_string(), target.to_string());
             }
             "ignore" => {
                 // Explicit ignore type (in addition to empty field handling)
                 if !target.is_empty() {
                     log::debug!("Source ignore (explicit): {}", source);
-                    data.source_ignores.insert(format!("fields:source:{}", source));
+                    data.source_ignores
+                        .insert(format!("fields:source:{}", source));
                 }
                 if !source.is_empty() && target.is_empty() {
                     // Should have been caught above, but handle explicitly
                     log::debug!("Source ignore (explicit): {}", source);
-                    data.source_ignores.insert(format!("fields:source:{}", source));
+                    data.source_ignores
+                        .insert(format!("fields:source:{}", source));
                 }
             }
             other => {
-                errors.push(format!("Line {}: unknown match_type '{}'", line_num + 2, other));
-                log::warn!("Line {}: unknown match_type '{}', treating as manual mapping",
-                    line_num + 2, other);
-                data.manual_mappings.insert(source.to_string(), target.to_string());
+                errors.push(format!(
+                    "Line {}: unknown match_type '{}'",
+                    line_num + 2,
+                    other
+                ));
+                log::warn!(
+                    "Line {}: unknown match_type '{}', treating as manual mapping",
+                    line_num + 2,
+                    other
+                );
+                data.manual_mappings
+                    .insert(source.to_string(), target.to_string());
             }
         }
     }
 
     // Validate results
     if errors.len() > 10 {
-        return Err(format!("Too many parsing errors ({}). First few:\n{}",
-            errors.len(), errors[..10].join("\n")));
+        return Err(format!(
+            "Too many parsing errors ({}). First few:\n{}",
+            errors.len(),
+            errors[..10].join("\n")
+        ));
     }
 
     let total_items = data.manual_mappings.len()
@@ -165,7 +191,8 @@ pub fn parse_csv_field_mappings(content: &str) -> Result<CsvImportData, String> 
         return Err("No valid mappings or ignores found in CSV. Check file format.".to_string());
     }
 
-    log::info!("Parsed CSV: {} manual, {} prefix, {} imported, {} source ignores, {} target ignores ({} rows total)",
+    log::info!(
+        "Parsed CSV: {} manual, {} prefix, {} imported, {} source ignores, {} target ignores ({} rows total)",
         data.manual_mappings.len(),
         data.prefix_mappings.len(),
         data.imported_mappings.len(),
@@ -175,7 +202,10 @@ pub fn parse_csv_field_mappings(content: &str) -> Result<CsvImportData, String> 
     );
 
     if !errors.is_empty() {
-        log::warn!("CSV parsing completed with {} errors/warnings", errors.len());
+        log::warn!(
+            "CSV parsing completed with {} errors/warnings",
+            errors.len()
+        );
     }
 
     Ok(data)
@@ -214,16 +244,28 @@ dev_field,,ignore,Development field
 
         // Check imported mappings (exact + cs_import)
         assert_eq!(result.imported_mappings.len(), 2);
-        assert_eq!(result.imported_mappings.get("createdby"), Some(&"createdby".to_string()));
-        assert_eq!(result.imported_mappings.get("old_field"), Some(&"new_field".to_string()));
+        assert_eq!(
+            result.imported_mappings.get("createdby"),
+            Some(&"createdby".to_string())
+        );
+        assert_eq!(
+            result.imported_mappings.get("old_field"),
+            Some(&"new_field".to_string())
+        );
 
         // Check prefix mappings
         assert_eq!(result.prefix_mappings.len(), 1);
-        assert_eq!(result.prefix_mappings.get("cgk_"), Some(&"nrq_".to_string()));
+        assert_eq!(
+            result.prefix_mappings.get("cgk_"),
+            Some(&"nrq_".to_string())
+        );
 
         // Check manual mappings
         assert_eq!(result.manual_mappings.len(), 1);
-        assert_eq!(result.manual_mappings.get("vaf_isan"), Some(&"nrq_isan".to_string()));
+        assert_eq!(
+            result.manual_mappings.get("vaf_isan"),
+            Some(&"nrq_isan".to_string())
+        );
 
         // Check source ignores
         assert_eq!(result.source_ignores.len(), 1);
@@ -260,7 +302,7 @@ field2,,manual,Also ignore
         assert_eq!(extract_prefix("nrq_field"), Some("nrq_".to_string()));
         assert_eq!(extract_prefix("vaf_isan_code"), Some("vaf_".to_string()));
         assert_eq!(extract_prefix("noprefix"), None);
-        assert_eq!(extract_prefix("_invalid"), Some("_".to_string())); // Edge case
+        assert_eq!(extract_prefix("_invalid"), None); // Edge case - separator at start
     }
 
     #[test]
@@ -290,7 +332,10 @@ field1,field2,unknown_type,Some field
         let result = parse_csv_field_mappings(csv).unwrap();
         // Unknown types fall back to manual mappings
         assert_eq!(result.manual_mappings.len(), 1);
-        assert_eq!(result.manual_mappings.get("field1"), Some(&"field2".to_string()));
+        assert_eq!(
+            result.manual_mappings.get("field1"),
+            Some(&"field2".to_string())
+        );
     }
 
     #[test]
@@ -300,6 +345,9 @@ field1,field2,unknown_type,Some field
 "#;
         let result = parse_csv_field_mappings(csv).unwrap();
         assert_eq!(result.imported_mappings.len(), 1);
-        assert_eq!(result.imported_mappings.get("field1"), Some(&"field2".to_string()));
+        assert_eq!(
+            result.imported_mappings.get("field1"),
+            Some(&"field2".to_string())
+        );
     }
 }

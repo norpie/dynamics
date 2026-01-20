@@ -119,7 +119,10 @@ pub enum FieldSyncStatus {
     /// Field exists only in target (will be reported for manual review)
     TargetOnly,
     /// Field exists in both but with different types (requires attention)
-    TypeMismatch { origin_type: String, target_type: String },
+    TypeMismatch {
+        origin_type: String,
+        target_type: String,
+    },
 }
 
 impl FieldSyncStatus {
@@ -276,7 +279,9 @@ impl SyncPlan {
     pub fn delete_order(&self) -> Vec<&EntitySyncPlan> {
         let mut plans: Vec<_> = self.entity_plans.iter().collect();
         plans.sort_by(|a, b| {
-            b.entity_info.delete_priority.cmp(&a.entity_info.delete_priority)
+            b.entity_info
+                .delete_priority
+                .cmp(&a.entity_info.delete_priority)
         });
         plans
     }
@@ -285,7 +290,9 @@ impl SyncPlan {
     pub fn insert_order(&self) -> Vec<&EntitySyncPlan> {
         let mut plans: Vec<_> = self.entity_plans.iter().collect();
         plans.sort_by(|a, b| {
-            a.entity_info.insert_priority.cmp(&b.entity_info.insert_priority)
+            a.entity_info
+                .insert_priority
+                .cmp(&b.entity_info.insert_priority)
         });
         plans
     }

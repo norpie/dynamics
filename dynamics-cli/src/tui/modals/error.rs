@@ -1,5 +1,5 @@
-use crate::tui::{Element, Theme, FocusId};
-use crate::tui::element::{LayoutConstraint, RowBuilder, ColumnBuilder};
+use crate::tui::element::{ColumnBuilder, LayoutConstraint, RowBuilder};
+use crate::tui::{Element, FocusId, Theme};
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
 
@@ -62,30 +62,32 @@ impl<Msg: Clone> ErrorModal<Msg> {
         let theme = &crate::global_runtime_config().theme;
         let title_element = Element::styled_text(Line::from(vec![
             Span::styled("✗ ", Style::default().fg(theme.accent_error).bold()),
-            Span::styled(self.title, Style::default().fg(theme.accent_error).bold())
-        ])).build();
+            Span::styled(self.title, Style::default().fg(theme.accent_error).bold()),
+        ]))
+        .build();
 
         // Details element (if present)
-        let details_elements: Vec<(LayoutConstraint, Element<Msg>)> = if let Some(details) = self.details {
-            vec![
-                (LayoutConstraint::Length(1), Element::text("")),
-                (LayoutConstraint::Min(3), Element::text(details)),
-            ]
-        } else {
-            vec![]
-        };
+        let details_elements: Vec<(LayoutConstraint, Element<Msg>)> =
+            if let Some(details) = self.details {
+                vec![
+                    (LayoutConstraint::Length(1), Element::text("")),
+                    (LayoutConstraint::Min(3), Element::text(details)),
+                ]
+            } else {
+                vec![]
+            };
 
         // Extract message to ensure proper typing
-        let close_msg = self.on_close.clone()
+        let close_msg = self
+            .on_close
+            .clone()
             .expect("ErrorModal requires on_close callback");
 
         // Close button with hotkey indicator
-        let close_button = Element::button(
-            FocusId::new("error-close"),
-            "[ Close (Esc) ]".to_string(),
-        )
-        .on_press(close_msg)
-        .build();
+        let close_button =
+            Element::button(FocusId::new("error-close"), "[ Close (Esc) ]".to_string())
+                .on_press(close_msg)
+                .build();
 
         // Button row - explicitly set Fill constraints for width distribution
         let button_row = RowBuilder::new()

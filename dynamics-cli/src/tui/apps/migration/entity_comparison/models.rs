@@ -1,7 +1,7 @@
 //! Data models for entity comparison app
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Sort mode for tree items
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -58,7 +58,7 @@ impl SortDirection {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum HideMode {
     #[default]
-    Off,                   // Show all items
+    Off, // Show all items
     HideMatched,           // Hide items with matches (except example matches)
     HideIgnored,           // Hide ignored items
     HideMatchedAndIgnored, // Hide matched (except examples) AND ignored items
@@ -149,9 +149,9 @@ pub enum Side {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MirrorMode {
     #[default]
-    Off,     // No mirroring
-    Source,  // Mirror source → target (target follows source selection)
-    Target,  // Mirror target → source (source follows target selection)
+    Off, // No mirroring
+    Source, // Mirror source → target (target follows source selection)
+    Target, // Mirror target → source (source follows target selection)
 }
 
 impl MirrorMode {
@@ -176,8 +176,8 @@ impl MirrorMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SearchMode {
     #[default]
-    Unified,      // One search box filters both sides
-    Independent,  // Two search boxes, each filters one side
+    Unified, // One search box filters both sides
+    Independent, // Two search boxes, each filters one side
 }
 
 impl SearchMode {
@@ -193,8 +193,8 @@ impl SearchMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MatchMode {
     #[default]
-    Fuzzy,      // Fuzzy matching (typo-tolerant, approximate)
-    Substring,  // Case-insensitive substring matching (exact)
+    Fuzzy, // Fuzzy matching (typo-tolerant, approximate)
+    Substring, // Case-insensitive substring matching (exact)
 }
 
 impl MatchMode {
@@ -217,8 +217,8 @@ impl MatchMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TypeFilterMode {
     #[default]
-    Unified,      // One type filter for both sides
-    Independent,  // Two type filters, each for one side
+    Unified, // One type filter for both sides
+    Independent, // Two type filters, each for one side
 }
 
 impl TypeFilterMode {
@@ -296,13 +296,15 @@ impl ExamplePair {
 
     pub fn display_name(&self) -> String {
         if let Some(label) = &self.label {
-            format!("{} ({}...→{}...)",
+            format!(
+                "{} ({}...→{}...)",
                 label,
                 &self.source_record_id[..8.min(self.source_record_id.len())],
                 &self.target_record_id[..8.min(self.target_record_id.len())]
             )
         } else {
-            format!("{}... → {}...",
+            format!(
+                "{}... → {}...",
                 &self.source_record_id[..8.min(self.source_record_id.len())],
                 &self.target_record_id[..8.min(self.target_record_id.len())]
             )
@@ -354,7 +356,12 @@ impl ExamplesState {
     /// For hierarchical paths (Forms/Views), extracts just the field name from the path
     /// field_name can be either a simple name like "accountname" or a path like "formtype/main/form/MainForm/tab/General/accountname"
     /// entity_name is the entity logical name (e.g., "cgk_deadline", "nrq_deadline")
-    pub fn get_field_value(&self, field_name: &str, is_source: bool, entity_name: &str) -> Option<String> {
+    pub fn get_field_value(
+        &self,
+        field_name: &str,
+        is_source: bool,
+        entity_name: &str,
+    ) -> Option<String> {
         if !self.enabled {
             return None;
         }
@@ -372,33 +379,53 @@ impl ExamplesState {
         // Create composite cache key: entity:record_id
         let cache_key = format!("{}:{}", entity_name, record_id);
 
-        log::debug!("Looking up field '{}' for cache_key '{}' (is_source: {})", field_name, cache_key, is_source);
+        log::debug!(
+            "Looking up field '{}' for cache_key '{}' (is_source: {})",
+            field_name,
+            cache_key,
+            is_source
+        );
 
         // Get the cached record data
         let record_data = self.cache.get(&cache_key);
 
         if record_data.is_none() {
-            log::warn!("No cached data for cache_key: {} (is_source: {})", cache_key, is_source);
-            log::warn!("Available cache keys: {:?}", self.cache.keys().collect::<Vec<_>>());
+            log::warn!(
+                "No cached data for cache_key: {} (is_source: {})",
+                cache_key,
+                is_source
+            );
+            log::warn!(
+                "Available cache keys: {:?}",
+                self.cache.keys().collect::<Vec<_>>()
+            );
             return None;
         }
 
         let record_data = record_data.unwrap();
 
-        log::debug!("Found cached data with {} fields", record_data.as_object().map(|o| o.len()).unwrap_or(0));
+        log::debug!(
+            "Found cached data with {} fields",
+            record_data.as_object().map(|o| o.len()).unwrap_or(0)
+        );
 
         // Extract just the field name from hierarchical path if present
         // e.g., "formtype/main/form/MainForm/tab/General/accountname" -> "accountname"
-        let extracted_field_name = field_name
-            .split('/')
-            .last()
-            .unwrap_or(field_name);
+        let extracted_field_name = field_name.split('/').last().unwrap_or(field_name);
 
-        log::debug!("Extracted field name: '{}' (from '{}')", extracted_field_name, field_name);
+        log::debug!(
+            "Extracted field name: '{}' (from '{}')",
+            extracted_field_name,
+            field_name
+        );
 
         // Try to get the field value from the JSON
         if let Some(value) = record_data.get(extracted_field_name) {
-            log::debug!("Found value for field '{}': {:?}", extracted_field_name, value);
+            log::debug!(
+                "Found value for field '{}': {:?}",
+                extracted_field_name,
+                value
+            );
             // Format the value based on its type
             match value {
                 serde_json::Value::String(s) => Some(format!("\"{}\"", s)),
@@ -408,7 +435,8 @@ impl ExamplesState {
                 serde_json::Value::Array(_) => Some("[...]".to_string()),
                 serde_json::Value::Object(_) => {
                     // For lookups, try to get the formatted value
-                    if let Some(formatted) = value.get("@OData.Community.Display.V1.FormattedValue") {
+                    if let Some(formatted) = value.get("@OData.Community.Display.V1.FormattedValue")
+                    {
                         if let Some(s) = formatted.as_str() {
                             return Some(format!("\"{}\"", s));
                         }
@@ -425,11 +453,15 @@ impl ExamplesState {
             // Pattern: {field}name -> _{field}_value@FormattedValue
             let lookup_formatted_key = if extracted_field_name.ends_with("yominame") {
                 // Remove "yominame" suffix
-                let base = extracted_field_name.strip_suffix("yominame").unwrap_or(extracted_field_name);
+                let base = extracted_field_name
+                    .strip_suffix("yominame")
+                    .unwrap_or(extracted_field_name);
                 format!("_{}_value@OData.Community.Display.V1.FormattedValue", base)
             } else if extracted_field_name.ends_with("name") {
                 // Remove "name" suffix
-                let base = extracted_field_name.strip_suffix("name").unwrap_or(extracted_field_name);
+                let base = extracted_field_name
+                    .strip_suffix("name")
+                    .unwrap_or(extracted_field_name);
                 format!("_{}_value@OData.Community.Display.V1.FormattedValue", base)
             } else {
                 String::new()
@@ -437,7 +469,11 @@ impl ExamplesState {
 
             if !lookup_formatted_key.is_empty() {
                 if let Some(formatted_value) = record_data.get(&lookup_formatted_key) {
-                    log::debug!("Found formatted value for virtual field '{}' at key '{}'", extracted_field_name, lookup_formatted_key);
+                    log::debug!(
+                        "Found formatted value for virtual field '{}' at key '{}'",
+                        extracted_field_name,
+                        lookup_formatted_key
+                    );
                     if let Some(s) = formatted_value.as_str() {
                         return Some(format!("\"{}\"", s));
                     }
@@ -446,10 +482,14 @@ impl ExamplesState {
                 // If formatted value not found, check if the base lookup field exists and is null
                 // e.g., for "organizationidname", check "_organizationid_value"
                 let base_lookup_key = if extracted_field_name.ends_with("yominame") {
-                    let base = extracted_field_name.strip_suffix("yominame").unwrap_or(extracted_field_name);
+                    let base = extracted_field_name
+                        .strip_suffix("yominame")
+                        .unwrap_or(extracted_field_name);
                     format!("_{}_value", base)
                 } else if extracted_field_name.ends_with("name") {
-                    let base = extracted_field_name.strip_suffix("name").unwrap_or(extracted_field_name);
+                    let base = extracted_field_name
+                        .strip_suffix("name")
+                        .unwrap_or(extracted_field_name);
                     format!("_{}_value", base)
                 } else {
                     String::new()
@@ -459,14 +499,22 @@ impl ExamplesState {
                     if let Some(base_value) = record_data.get(&base_lookup_key) {
                         // Lookup field exists - check if it's null
                         if base_value.is_null() {
-                            log::debug!("Virtual field '{}' has null lookup value at '{}'", extracted_field_name, base_lookup_key);
+                            log::debug!(
+                                "Virtual field '{}' has null lookup value at '{}'",
+                                extracted_field_name,
+                                base_lookup_key
+                            );
                             return Some("null".to_string());
                         }
                     }
                 }
             }
 
-            log::debug!("Field '{}' not found in cached data (tried lookup key: '{}')", extracted_field_name, lookup_formatted_key);
+            log::debug!(
+                "Field '{}' not found in cached data (tried lookup key: '{}')",
+                extracted_field_name,
+                lookup_formatted_key
+            );
             None
         }
     }

@@ -1,11 +1,10 @@
-use super::super::entity_sets;
-use super::super::field_specs;
 /// Step 8: Create conditions
-
 use super::super::super::super::copy::domain::Questionnaire;
 use super::super::super::models::{CopyError, CopyPhase};
-use super::super::execution::{execute_creation_step, process_creation_results, EntityInfo};
-use super::super::helpers::{get_shared_entities, build_payload, remap_condition_json};
+use super::super::entity_sets;
+use super::super::execution::{EntityInfo, execute_creation_step, process_creation_results};
+use super::super::field_specs;
+use super::super::helpers::{build_payload, get_shared_entities, remap_condition_json};
 use crate::api::operations::Operations;
 use serde_json::json;
 use std::collections::HashMap;
@@ -36,11 +35,20 @@ pub async fn step8_create_conditions(
             let mut entity_info = Vec::new();
 
             for condition in &q.conditions {
-                let mut data = build_payload(&condition.raw, field_specs::CONDITION_FIELDS, &id_map, &shared_entities)
-                    .map_err(|e| format!("Failed to build condition payload: {}", e))?;
+                let mut data = build_payload(
+                    &condition.raw,
+                    field_specs::CONDITION_FIELDS,
+                    &id_map,
+                    &shared_entities,
+                )
+                .map_err(|e| format!("Failed to build condition payload: {}", e))?;
 
                 // CRITICAL: Remap condition JSON with embedded question IDs
-                if let Some(condition_json_str) = condition.raw.get("nrq_conditionjson").and_then(|v| v.as_str()) {
+                if let Some(condition_json_str) = condition
+                    .raw
+                    .get("nrq_conditionjson")
+                    .and_then(|v| v.as_str())
+                {
                     let remapped_json = remap_condition_json(condition_json_str, &id_map)
                         .map_err(|e| format!("Failed to remap condition JSON: {}", e))?;
                     data["nrq_conditionjson"] = json!(remapped_json);
@@ -59,10 +67,18 @@ pub async fn step8_create_conditions(
             }
 
             Ok((operations, entity_info))
-        }
-    ).await?;
+        },
+    )
+    .await?;
 
-    process_creation_results(&results, entity_info, &mut new_id_map, &mut created_ids, CopyPhase::CreatingConditions, 8)?;
+    process_creation_results(
+        &results,
+        entity_info,
+        &mut new_id_map,
+        &mut created_ids,
+        CopyPhase::CreatingConditions,
+        8,
+    )?;
 
     Ok((new_id_map, created_ids))
 }

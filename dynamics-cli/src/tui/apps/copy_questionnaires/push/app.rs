@@ -1,12 +1,12 @@
-use super::models::*;
-use super::view;
-use super::step_commands;
 use super::super::copy::domain::Questionnaire;
+use super::models::*;
+use super::step_commands;
+use super::view;
 use crate::tui::{
     app::App,
     command::{AppId, Command},
-    subscription::Subscription,
     renderer::LayeredView,
+    subscription::Subscription,
 };
 use crossterm::event::KeyCode;
 use ratatui::text::Line;
@@ -18,7 +18,12 @@ use std::sync::Arc;
 pub struct PushQuestionnaireApp;
 
 /// Type alias for step command futures
-type StepFuture = Pin<Box<dyn Future<Output = Result<(HashMap<String, String>, Vec<(String, String)>), CopyError>> + Send>>;
+type StepFuture = Pin<
+    Box<
+        dyn Future<Output = Result<(HashMap<String, String>, Vec<(String, String)>), CopyError>>
+            + Send,
+    >,
+>;
 
 /// Generic handler for step completion messages (Steps 2-10)
 /// Reduces code duplication by handling common logic
@@ -28,7 +33,11 @@ fn handle_step_complete<F>(
     next_phase: CopyPhase,
     next_step: usize,
     update_progress: F,
-    next_command: impl FnOnce(Arc<Questionnaire>, HashMap<String, String>, Vec<(String, String)>) -> StepFuture,
+    next_command: impl FnOnce(
+        Arc<Questionnaire>,
+        HashMap<String, String>,
+        Vec<(String, String)>,
+    ) -> StepFuture,
     next_msg: fn(Result<(HashMap<String, String>, Vec<(String, String)>), CopyError>) -> Msg,
 ) -> Command<Msg>
 where
@@ -63,7 +72,7 @@ where
                 let created_ids = state.created_ids.clone();
                 return Command::perform(
                     super::step_commands::rollback_created_entities(created_ids),
-                    Msg::RollbackComplete
+                    Msg::RollbackComplete,
                 );
             }
 
@@ -72,10 +81,7 @@ where
             let id_map = state.id_map.clone();
             let created_ids = state.created_ids.clone();
 
-            Command::perform(
-                next_command(questionnaire, id_map, created_ids),
-                next_msg
-            )
+            Command::perform(next_command(questionnaire, id_map, created_ids), next_msg)
         }
         Err(error) => {
             state.push_state = PushState::Failed(error);
@@ -83,7 +89,7 @@ where
             let created_ids = state.created_ids.clone();
             Command::perform(
                 super::step_commands::rollback_created_entities(created_ids),
-                Msg::RollbackComplete
+                Msg::RollbackComplete,
             )
         }
     }
@@ -133,8 +139,12 @@ impl App for PushQuestionnaireApp {
                 let copy_code = state.copy_code.clone();
 
                 Command::perform(
-                    super::step_commands::step1_create_questionnaire(questionnaire, copy_name, copy_code),
-                    |result| Msg::Step1Complete(result.map(|(id, _)| id))
+                    super::step_commands::step1_create_questionnaire(
+                        questionnaire,
+                        copy_name,
+                        copy_code,
+                    ),
+                    |result| Msg::Step1Complete(result.map(|(id, _)| id)),
                 )
             }
 
@@ -157,13 +167,17 @@ impl App for PushQuestionnaireApp {
                             let created_ids = state.created_ids.clone();
                             return Command::perform(
                                 super::step_commands::rollback_created_entities(created_ids),
-                                Msg::RollbackComplete
+                                Msg::RollbackComplete,
                             );
                         }
 
                         // Update id map and created_ids
-                        state.id_map.insert(state.questionnaire_id.clone(), new_q_id.clone());
-                        state.created_ids.push(("nrq_questionnaires".to_string(), new_q_id));
+                        state
+                            .id_map
+                            .insert(state.questionnaire_id.clone(), new_q_id.clone());
+                        state
+                            .created_ids
+                            .push(("nrq_questionnaires".to_string(), new_q_id));
 
                         // Update progress
                         if let PushState::Copying(ref mut progress) = state.push_state {
@@ -178,8 +192,12 @@ impl App for PushQuestionnaireApp {
                         let created_ids = state.created_ids.clone();
 
                         Command::perform(
-                            super::step_commands::step2_create_pages(questionnaire, id_map, created_ids),
-                            Msg::Step2Complete  // Keep full tuple
+                            super::step_commands::step2_create_pages(
+                                questionnaire,
+                                id_map,
+                                created_ids,
+                            ),
+                            Msg::Step2Complete, // Keep full tuple
                         )
                     }
                     Err(error) => {
@@ -188,109 +206,137 @@ impl App for PushQuestionnaireApp {
                         let created_ids = state.created_ids.clone();
                         Command::perform(
                             super::step_commands::rollback_created_entities(created_ids),
-                            Msg::RollbackComplete
+                            Msg::RollbackComplete,
                         )
                     }
                 }
             }
 
-            Msg::Step2Complete(result) => {
-                handle_step_complete(
-                    state,
-                    result,
-                    CopyPhase::CreatingPageLines,
-                    3,
-                    |progress| {
-                        progress.complete(EntityType::Pages);
-                    },
-                    |q, id_map, created_ids| Box::pin(super::step_commands::step3_create_page_lines(q, id_map, created_ids)),
-                    Msg::Step3Complete,
-                )
-            }
+            Msg::Step2Complete(result) => handle_step_complete(
+                state,
+                result,
+                CopyPhase::CreatingPageLines,
+                3,
+                |progress| {
+                    progress.complete(EntityType::Pages);
+                },
+                |q, id_map, created_ids| {
+                    Box::pin(super::step_commands::step3_create_page_lines(
+                        q,
+                        id_map,
+                        created_ids,
+                    ))
+                },
+                Msg::Step3Complete,
+            ),
 
-            Msg::Step3Complete(result) => {
-                handle_step_complete(
-                    state,
-                    result,
-                    CopyPhase::CreatingGroups,
-                    4,
-                    |progress| {
-                        progress.complete(EntityType::PageLines);
-                    },
-                    |q, id_map, created_ids| Box::pin(super::step_commands::step4_create_groups(q, id_map, created_ids)),
-                    Msg::Step4Complete,
-                )
-            }
+            Msg::Step3Complete(result) => handle_step_complete(
+                state,
+                result,
+                CopyPhase::CreatingGroups,
+                4,
+                |progress| {
+                    progress.complete(EntityType::PageLines);
+                },
+                |q, id_map, created_ids| {
+                    Box::pin(super::step_commands::step4_create_groups(
+                        q,
+                        id_map,
+                        created_ids,
+                    ))
+                },
+                Msg::Step4Complete,
+            ),
 
-            Msg::Step4Complete(result) => {
-                handle_step_complete(
-                    state,
-                    result,
-                    CopyPhase::CreatingGroupLines,
-                    5,
-                    |progress| {
-                        progress.complete(EntityType::Groups);
-                    },
-                    |q, id_map, created_ids| Box::pin(super::step_commands::step5_create_group_lines(q, id_map, created_ids)),
-                    Msg::Step5Complete,
-                )
-            }
+            Msg::Step4Complete(result) => handle_step_complete(
+                state,
+                result,
+                CopyPhase::CreatingGroupLines,
+                5,
+                |progress| {
+                    progress.complete(EntityType::Groups);
+                },
+                |q, id_map, created_ids| {
+                    Box::pin(super::step_commands::step5_create_group_lines(
+                        q,
+                        id_map,
+                        created_ids,
+                    ))
+                },
+                Msg::Step5Complete,
+            ),
 
-            Msg::Step5Complete(result) => {
-                handle_step_complete(
-                    state,
-                    result,
-                    CopyPhase::CreatingQuestions,
-                    6,
-                    |progress| {
-                        progress.complete(EntityType::GroupLines);
-                    },
-                    |q, id_map, created_ids| Box::pin(super::step_commands::step6_create_questions(q, id_map, created_ids)),
-                    Msg::Step6Complete,
-                )
-            }
+            Msg::Step5Complete(result) => handle_step_complete(
+                state,
+                result,
+                CopyPhase::CreatingQuestions,
+                6,
+                |progress| {
+                    progress.complete(EntityType::GroupLines);
+                },
+                |q, id_map, created_ids| {
+                    Box::pin(super::step_commands::step6_create_questions(
+                        q,
+                        id_map,
+                        created_ids,
+                    ))
+                },
+                Msg::Step6Complete,
+            ),
 
-            Msg::Step6Complete(result) => {
-                handle_step_complete(
-                    state,
-                    result,
-                    CopyPhase::CreatingTemplateLines,
-                    7,
-                    |progress| {
-                        progress.complete(EntityType::Questions);
-                    },
-                    |q, id_map, created_ids| Box::pin(super::step_commands::step7_create_template_lines(q, id_map, created_ids)),
-                    Msg::Step7Complete,
-                )
-            }
+            Msg::Step6Complete(result) => handle_step_complete(
+                state,
+                result,
+                CopyPhase::CreatingTemplateLines,
+                7,
+                |progress| {
+                    progress.complete(EntityType::Questions);
+                },
+                |q, id_map, created_ids| {
+                    Box::pin(super::step_commands::step7_create_template_lines(
+                        q,
+                        id_map,
+                        created_ids,
+                    ))
+                },
+                Msg::Step7Complete,
+            ),
 
-            Msg::Step7Complete(result) => {
-                handle_step_complete(
-                    state,
-                    result,
-                    CopyPhase::CreatingConditions,
-                    8,
-                    |progress| {
-                        progress.complete(EntityType::TemplateLines);
-                    },
-                    |q, id_map, created_ids| Box::pin(super::step_commands::step8_create_conditions(q, id_map, created_ids)),
-                    Msg::Step8Complete,
-                )
-            }
+            Msg::Step7Complete(result) => handle_step_complete(
+                state,
+                result,
+                CopyPhase::CreatingConditions,
+                8,
+                |progress| {
+                    progress.complete(EntityType::TemplateLines);
+                },
+                |q, id_map, created_ids| {
+                    Box::pin(super::step_commands::step8_create_conditions(
+                        q,
+                        id_map,
+                        created_ids,
+                    ))
+                },
+                Msg::Step8Complete,
+            ),
 
-            Msg::Step8Complete(result) => {
-                handle_step_complete(
-                    state,
-                    result,
-                    CopyPhase::CreatingConditionActions,
-                    9,
-                    |progress| {
-                        progress.complete(EntityType::Conditions);
-                    },
-                    |q, id_map, created_ids| Box::pin(super::step_commands::step9_create_condition_actions(q, id_map, created_ids)),
-                    Msg::Step9Complete,
-                )
-            }
+            Msg::Step8Complete(result) => handle_step_complete(
+                state,
+                result,
+                CopyPhase::CreatingConditionActions,
+                9,
+                |progress| {
+                    progress.complete(EntityType::Conditions);
+                },
+                |q, id_map, created_ids| {
+                    Box::pin(super::step_commands::step9_create_condition_actions(
+                        q,
+                        id_map,
+                        created_ids,
+                    ))
+                },
+                Msg::Step9Complete,
+            ),
 
             Msg::Step9Complete(result) => {
                 match result {
@@ -310,8 +356,12 @@ impl App for PushQuestionnaireApp {
                         let id_map = state.id_map.clone();
                         let created_ids = state.created_ids.clone();
                         Command::perform(
-                            super::step_commands::step10_create_classifications(questionnaire, id_map, created_ids),
-                            Msg::Step10Complete
+                            super::step_commands::step10_create_classifications(
+                                questionnaire,
+                                id_map,
+                                created_ids,
+                            ),
+                            Msg::Step10Complete,
                         )
                     }
                     Err(error) => {
@@ -320,7 +370,7 @@ impl App for PushQuestionnaireApp {
                         let created_ids = state.created_ids.clone();
                         Command::perform(
                             super::step_commands::rollback_created_entities(created_ids),
-                            Msg::RollbackComplete
+                            Msg::RollbackComplete,
                         )
                     }
                 }
@@ -345,8 +395,12 @@ impl App for PushQuestionnaireApp {
                         let id_map = state.id_map.clone();
                         let created_ids = state.created_ids.clone();
                         Command::perform(
-                            super::step_commands::step11_publish_conditions(questionnaire, id_map, created_ids),
-                            Msg::Step11Complete
+                            super::step_commands::step11_publish_conditions(
+                                questionnaire,
+                                id_map,
+                                created_ids,
+                            ),
+                            Msg::Step11Complete,
                         )
                     }
                     Err(error) => {
@@ -355,7 +409,7 @@ impl App for PushQuestionnaireApp {
                         let created_ids = state.created_ids.clone();
                         Command::perform(
                             super::step_commands::rollback_created_entities(created_ids),
-                            Msg::RollbackComplete
+                            Msg::RollbackComplete,
                         )
                     }
                 }
@@ -373,26 +427,33 @@ impl App for PushQuestionnaireApp {
                         }
 
                         // Calculate final statistics
-                        let new_questionnaire_id = state.id_map.get(&state.questionnaire_id)
+                        let new_questionnaire_id = state
+                            .id_map
+                            .get(&state.questionnaire_id)
                             .cloned()
                             .unwrap_or_else(|| "unknown".to_string());
 
                         // Map entity_set names to friendly names for UI display
                         let mut entities_created = HashMap::new();
                         for (entity_set, _) in &state.created_ids {
-                            let friendly_name = step_commands::entity_set_to_friendly_name(entity_set.as_str());
-                            *entities_created.entry(friendly_name.to_string()).or_insert(0) += 1;
+                            let friendly_name =
+                                step_commands::entity_set_to_friendly_name(entity_set.as_str());
+                            *entities_created
+                                .entry(friendly_name.to_string())
+                                .or_insert(0) += 1;
                         }
 
                         // Add classifications associated count (not in created_ids since they're associations, not entities)
                         if state.classifications_associated > 0 {
-                            entities_created.insert("classifications".to_string(), state.classifications_associated);
+                            entities_created.insert(
+                                "classifications".to_string(),
+                                state.classifications_associated,
+                            );
                         }
 
-                        let total_entities = state.created_ids.len() + state.classifications_associated;
-                        let duration = state.start_time
-                            .map(|t| t.elapsed())
-                            .unwrap_or_default();
+                        let total_entities =
+                            state.created_ids.len() + state.classifications_associated;
+                        let duration = state.start_time.map(|t| t.elapsed()).unwrap_or_default();
 
                         // Transition to success state
                         state.push_state = PushState::Success(CopyResult {
@@ -411,7 +472,7 @@ impl App for PushQuestionnaireApp {
                         let created_ids = state.created_ids.clone();
                         Command::perform(
                             super::step_commands::rollback_created_entities(created_ids),
-                            Msg::RollbackComplete
+                            Msg::RollbackComplete,
                         )
                     }
                 }
@@ -440,19 +501,20 @@ impl App for PushQuestionnaireApp {
                         Err(csv_path) => {
                             error.rollback_complete = false;
                             error.orphaned_entities_csv = Some(csv_path.clone());
-                            log::error!("Rollback failed - orphaned entities exported to: {}", csv_path);
+                            log::error!(
+                                "Rollback failed - orphaned entities exported to: {}",
+                                csv_path
+                            );
                         }
                     }
                 }
                 Command::None
             }
 
-            Msg::Cancel | Msg::Back => {
-                Command::batch(vec![
-                    Command::navigate_to(AppId::CopyQuestionnaire),
-                    Command::quit_self(),
-                ])
-            }
+            Msg::Cancel | Msg::Back => Command::batch(vec![
+                Command::navigate_to(AppId::CopyQuestionnaire),
+                Command::quit_self(),
+            ]),
 
             Msg::Done => {
                 // Success - go back to questionnaire list
@@ -502,7 +564,7 @@ impl App for PushQuestionnaireApp {
                         step: 10,
                         error_message: "Manual undo requested by user".to_string(),
                         partial_counts: result.entities_created.clone(),
-                        rollback_complete: false,  // Will be set by RollbackComplete
+                        rollback_complete: false, // Will be set by RollbackComplete
                         orphaned_entities_csv: None,
                     };
                     state.push_state = PushState::Failed(synthetic_error);
@@ -511,7 +573,7 @@ impl App for PushQuestionnaireApp {
                 let created_ids = state.created_ids.clone();
                 Command::perform(
                     super::step_commands::rollback_created_entities(created_ids),
-                    Msg::RollbackComplete
+                    Msg::RollbackComplete,
                 )
             }
 
@@ -546,15 +608,21 @@ impl App for PushQuestionnaireApp {
                 ]
             }
             PushState::Copying(_) => {
-                vec![
-                    Subscription::keyboard(KeyCode::Esc, "Cancel (will rollback)", Msg::CancelCopy),
-                ]
+                vec![Subscription::keyboard(
+                    KeyCode::Esc,
+                    "Cancel (will rollback)",
+                    Msg::CancelCopy,
+                )]
             }
             PushState::Success(_) => {
                 if state.show_undo_confirmation {
                     // Show y/n confirmation keys
                     vec![
-                        Subscription::keyboard(KeyCode::Char('y'), "Yes, delete all", Msg::ConfirmUndo),
+                        Subscription::keyboard(
+                            KeyCode::Char('y'),
+                            "Yes, delete all",
+                            Msg::ConfirmUndo,
+                        ),
                         Subscription::keyboard(KeyCode::Char('n'), "No, keep it", Msg::CancelUndo),
                         Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CancelUndo),
                     ]
@@ -563,7 +631,11 @@ impl App for PushQuestionnaireApp {
                     vec![
                         Subscription::keyboard(KeyCode::Enter, "Done", Msg::Done),
                         Subscription::keyboard(KeyCode::Char('u'), "Undo Copy", Msg::UndoCopy),
-                        Subscription::keyboard(KeyCode::Char('c'), "Copy Another", Msg::CopyAnother),
+                        Subscription::keyboard(
+                            KeyCode::Char('c'),
+                            "Copy Another",
+                            Msg::CopyAnother,
+                        ),
                         Subscription::keyboard(KeyCode::Char('v'), "View Copy", Msg::ViewCopy),
                     ]
                 }

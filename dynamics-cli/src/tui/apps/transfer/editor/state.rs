@@ -1,10 +1,15 @@
 use std::collections::HashMap;
 
-use crate::transfer::{TransferConfig, EntityMapping, FieldMapping, OperationFilter, Transform, Replacement, Resolver, ResolverFallback, SourceFilter, FieldPath, Condition};
-use crate::tui::resource::Resource;
-use crate::tui::widgets::{TreeState, AutocompleteField, TextInputField, ScrollableState, ListState};
-use crate::tui::widgets::events::{TreeEvent, AutocompleteEvent, TextInputEvent, ListEvent};
 use crate::api::FieldMetadata;
+use crate::transfer::{
+    Condition, EntityMapping, FieldMapping, FieldPath, OperationFilter, Replacement, Resolver,
+    ResolverFallback, SourceFilter, TransferConfig, Transform,
+};
+use crate::tui::resource::Resource;
+use crate::tui::widgets::events::{AutocompleteEvent, ListEvent, TextInputEvent, TreeEvent};
+use crate::tui::widgets::{
+    AutocompleteField, ListState, ScrollableState, TextInputField, TreeState,
+};
 
 /// Parameters to initialize the editor
 #[derive(Clone, Debug)]
@@ -142,9 +147,14 @@ impl State {
     /// Compute fields available for quick-add
     /// Returns fields that exist in both source and target (matching by base name after stripping prefixes),
     /// excluding already-mapped fields and system fields
-    pub fn compute_quick_fields(&self, entity_idx: usize, source_prefix: &str, target_prefix: &str) -> Vec<QuickFieldMatch> {
-        use std::collections::{HashSet, HashMap};
+    pub fn compute_quick_fields(
+        &self,
+        entity_idx: usize,
+        source_prefix: &str,
+        target_prefix: &str,
+    ) -> Vec<QuickFieldMatch> {
         use crate::tui::apps::sync::types::is_system_field;
+        use std::collections::{HashMap, HashSet};
 
         let source_fields = match &self.source_fields {
             Resource::Success(fields) => fields,
@@ -178,7 +188,9 @@ impl State {
             .iter()
             .map(|f| {
                 let base = if !target_prefix.is_empty() {
-                    f.logical_name.strip_prefix(target_prefix).unwrap_or(&f.logical_name)
+                    f.logical_name
+                        .strip_prefix(target_prefix)
+                        .unwrap_or(&f.logical_name)
                 } else {
                     &f.logical_name
                 };
@@ -191,7 +203,9 @@ impl State {
             .iter()
             .filter_map(|f| {
                 let base = if !source_prefix.is_empty() {
-                    f.logical_name.strip_prefix(source_prefix).unwrap_or(&f.logical_name)
+                    f.logical_name
+                        .strip_prefix(source_prefix)
+                        .unwrap_or(&f.logical_name)
                 } else {
                     &f.logical_name
                 };
@@ -286,9 +300,7 @@ impl EntityMappingForm {
             form.filter_field.value = filter.field_path.to_string();
             form.filter_condition_type = ConditionType::from_condition(&filter.condition);
             form.filter_value.value = match &filter.condition {
-                Condition::Equals { value } | Condition::NotEquals { value } => {
-                    value.to_string()
-                }
+                Condition::Equals { value } | Condition::NotEquals { value } => value.to_string(),
                 Condition::IsNull | Condition::IsNotNull => String::new(),
             };
         }
@@ -299,9 +311,7 @@ impl EntityMappingForm {
             form.target_filter_field.value = filter.field_path.to_string();
             form.target_filter_condition_type = ConditionType::from_condition(&filter.condition);
             form.target_filter_value.value = match &filter.condition {
-                Condition::Equals { value } | Condition::NotEquals { value } => {
-                    value.to_string()
-                }
+                Condition::Equals { value } | Condition::NotEquals { value } => value.to_string(),
                 Condition::IsNull | Condition::IsNotNull => String::new(),
             };
         }
@@ -314,21 +324,26 @@ impl EntityMappingForm {
         let source_filter = if self.filter_enabled && !self.filter_field.value.trim().is_empty() {
             let field_path = FieldPath::parse(self.filter_field.value.trim())
                 .unwrap_or_else(|_| FieldPath::simple(self.filter_field.value.trim()));
-            let condition = self.filter_condition_type.to_condition(&self.filter_value.value);
+            let condition = self
+                .filter_condition_type
+                .to_condition(&self.filter_value.value);
             Some(SourceFilter::new(field_path, condition))
         } else {
             None
         };
 
         // Build target filter if enabled
-        let target_filter = if self.target_filter_enabled && !self.target_filter_field.value.trim().is_empty() {
-            let field_path = FieldPath::parse(self.target_filter_field.value.trim())
-                .unwrap_or_else(|_| FieldPath::simple(self.target_filter_field.value.trim()));
-            let condition = self.target_filter_condition_type.to_condition(&self.target_filter_value.value);
-            Some(SourceFilter::new(field_path, condition))
-        } else {
-            None
-        };
+        let target_filter =
+            if self.target_filter_enabled && !self.target_filter_field.value.trim().is_empty() {
+                let field_path = FieldPath::parse(self.target_filter_field.value.trim())
+                    .unwrap_or_else(|_| FieldPath::simple(self.target_filter_field.value.trim()));
+                let condition = self
+                    .target_filter_condition_type
+                    .to_condition(&self.target_filter_value.value);
+                Some(SourceFilter::new(field_path, condition))
+            } else {
+                None
+            };
 
         EntityMapping {
             id: None,
@@ -419,7 +434,9 @@ impl ResolverForm {
             self.match_field_rows.iter().all(|row| row.is_valid())
         } else {
             // Compound key - source_path required
-            self.match_field_rows.iter().all(|row| row.is_valid_compound())
+            self.match_field_rows
+                .iter()
+                .all(|row| row.is_valid_compound())
         };
 
         let base_valid = !self.name.value.trim().is_empty()
@@ -487,7 +504,8 @@ impl ResolverForm {
                 } else {
                     source_path
                 };
-                MatchField::from_paths(effective_source, target_field).unwrap_or_else(|_| MatchField::simple(target_field))
+                MatchField::from_paths(effective_source, target_field)
+                    .unwrap_or_else(|_| MatchField::simple(target_field))
             })
             .collect();
 
@@ -727,17 +745,20 @@ impl FieldMappingForm {
             TransformType::Constant => true, // constant can be empty (null)
             TransformType::Conditional => {
                 !self.condition_source.value.trim().is_empty()
-                    && (!self.condition_type.needs_value() || !self.condition_value.value.trim().is_empty())
+                    && (!self.condition_type.needs_value()
+                        || !self.condition_value.value.trim().is_empty())
             }
             TransformType::ValueMap => {
-                !self.value_map_source.value.trim().is_empty()
-                    && !self.value_map_entries.is_empty()
+                !self.value_map_source.value.trim().is_empty() && !self.value_map_entries.is_empty()
             }
             TransformType::Format => !self.format_template.value.trim().is_empty(),
             TransformType::Replace => {
                 !self.replace_source.value.trim().is_empty()
                     && !self.replace_entries.is_empty()
-                    && self.replace_entries.iter().all(|e| !e.pattern.value.trim().is_empty())
+                    && self
+                        .replace_entries
+                        .iter()
+                        .all(|e| !e.pattern.value.trim().is_empty())
             }
         };
         target_valid && transform_valid
@@ -750,7 +771,9 @@ impl FieldMappingForm {
         target_fields: &[crate::api::FieldMetadata],
         source_fields: &[crate::api::FieldMetadata],
     ) -> FormValidation {
-        use super::validation::{ValidationResult, validate_constant_value, validate_copy_types, validate_optionset_copy};
+        use super::validation::{
+            ValidationResult, validate_constant_value, validate_copy_types, validate_optionset_copy,
+        };
 
         let mut validation = FormValidation::default();
 
@@ -789,8 +812,11 @@ impl FieldMappingForm {
                     }
 
                     // Check for OptionSet copy warning (only if no existing warning/error)
-                    if validation.transform_warning.is_none() && validation.transform_error.is_none() {
-                        let optionset_result = validate_optionset_copy(&source.field_type, &target.field_type);
+                    if validation.transform_warning.is_none()
+                        && validation.transform_error.is_none()
+                    {
+                        let optionset_result =
+                            validate_optionset_copy(&source.field_type, &target.field_type);
                         if let ValidationResult::Warning(msg) = optionset_result {
                             validation.transform_warning = Some(msg);
                         }
@@ -902,7 +928,8 @@ impl FieldMappingForm {
                 }
 
                 if self.replace_entries.is_empty() {
-                    validation.transform_error = Some("At least one replacement is required".into());
+                    validation.transform_error =
+                        Some("At least one replacement is required".into());
                     return validation;
                 }
 
@@ -964,7 +991,8 @@ impl FormValidation {
 
     /// Get the first error message, if any
     pub fn first_error(&self) -> Option<&str> {
-        self.target_error.as_deref()
+        self.target_error
+            .as_deref()
             .or(self.source_error.as_deref())
             .or(self.value_error.as_deref())
             .or(self.transform_error.as_deref())
@@ -976,7 +1004,8 @@ impl FormValidation {
 
     /// Get the first warning message, if any
     pub fn first_warning(&self) -> Option<&str> {
-        self.target_warning.as_deref()
+        self.target_warning
+            .as_deref()
             .or(self.source_warning.as_deref())
             .or(self.value_warning.as_deref())
             .or(self.transform_warning.as_deref())
@@ -994,7 +1023,10 @@ impl FieldMappingForm {
         form.target_field.value = mapping.target_field.clone();
 
         match &mapping.transform {
-            Transform::Copy { source_path, resolver } => {
+            Transform::Copy {
+                source_path,
+                resolver,
+            } => {
                 form.transform_type = TransformType::Copy;
                 form.source_path.value = source_path.to_string();
                 form.resolver_name = resolver.clone();
@@ -1003,7 +1035,12 @@ impl FieldMappingForm {
                 form.transform_type = TransformType::Constant;
                 form.constant_value.value = value.to_string();
             }
-            Transform::Conditional { source_path, condition, then_value, else_value } => {
+            Transform::Conditional {
+                source_path,
+                condition,
+                then_value,
+                else_value,
+            } => {
                 form.transform_type = TransformType::Conditional;
                 form.condition_source.value = source_path.to_string();
                 match condition {
@@ -1025,7 +1062,11 @@ impl FieldMappingForm {
                 form.then_value.value = then_value.to_string();
                 form.else_value.value = else_value.to_string();
             }
-            Transform::ValueMap { source_path, mappings, fallback } => {
+            Transform::ValueMap {
+                source_path,
+                mappings,
+                fallback,
+            } => {
                 form.transform_type = TransformType::ValueMap;
                 form.value_map_source.value = source_path.to_string();
                 match fallback {
@@ -1037,14 +1078,24 @@ impl FieldMappingForm {
                     Fallback::PassThrough => form.value_map_fallback = FallbackType::PassThrough,
                     Fallback::Null => form.value_map_fallback = FallbackType::Null,
                 }
-                form.value_map_entries = mappings.iter().map(|(src, tgt)| {
-                    ValueMapEntry {
-                        source_value: TextInputField { value: src.to_string(), ..Default::default() },
-                        target_value: TextInputField { value: tgt.to_string(), ..Default::default() },
-                    }
-                }).collect();
+                form.value_map_entries = mappings
+                    .iter()
+                    .map(|(src, tgt)| ValueMapEntry {
+                        source_value: TextInputField {
+                            value: src.to_string(),
+                            ..Default::default()
+                        },
+                        target_value: TextInputField {
+                            value: tgt.to_string(),
+                            ..Default::default()
+                        },
+                    })
+                    .collect();
             }
-            Transform::Format { template, null_handling } => {
+            Transform::Format {
+                template,
+                null_handling,
+            } => {
                 use crate::transfer::transform::format::NullHandling;
                 form.transform_type = TransformType::Format;
                 form.format_template.value = template.to_string();
@@ -1054,23 +1105,33 @@ impl FieldMappingForm {
                     NullHandling::Zero => NullHandlingType::Zero,
                 };
             }
-            Transform::Replace { source_path, replacements } => {
+            Transform::Replace {
+                source_path,
+                replacements,
+            } => {
                 form.transform_type = TransformType::Replace;
                 form.replace_source.value = source_path.to_string();
-                form.replace_entries = replacements.iter().map(|r| {
-                    ReplaceEntry {
-                        pattern: TextInputField { value: r.pattern.clone(), ..Default::default() },
-                        replacement: TextInputField { value: r.replacement.clone(), ..Default::default() },
+                form.replace_entries = replacements
+                    .iter()
+                    .map(|r| ReplaceEntry {
+                        pattern: TextInputField {
+                            value: r.pattern.clone(),
+                            ..Default::default()
+                        },
+                        replacement: TextInputField {
+                            value: r.replacement.clone(),
+                            ..Default::default()
+                        },
                         is_regex: r.is_regex,
-                    }
-                }).collect();
+                    })
+                    .collect();
             }
         }
         form
     }
 
     pub fn to_mapping(&self) -> Option<FieldMapping> {
-        use crate::transfer::{FieldPath, Value, Condition, Fallback};
+        use crate::transfer::{Condition, Fallback, FieldPath, Value};
 
         let target = self.target_field.value.trim().to_string();
 
@@ -1100,15 +1161,24 @@ impl FieldMappingForm {
                 };
                 let then_value = parse_value(self.then_value.value.trim());
                 let else_value = parse_value(self.else_value.value.trim());
-                Transform::Conditional { source_path, condition, then_value, else_value }
+                Transform::Conditional {
+                    source_path,
+                    condition,
+                    then_value,
+                    else_value,
+                }
             }
             TransformType::ValueMap => {
                 let source_path = FieldPath::parse(self.value_map_source.value.trim()).ok()?;
-                let mappings: Vec<(Value, Value)> = self.value_map_entries.iter()
-                    .map(|e| (
-                        parse_value(e.source_value.value.trim()),
-                        parse_value(e.target_value.value.trim()),
-                    ))
+                let mappings: Vec<(Value, Value)> = self
+                    .value_map_entries
+                    .iter()
+                    .map(|e| {
+                        (
+                            parse_value(e.source_value.value.trim()),
+                            parse_value(e.target_value.value.trim()),
+                        )
+                    })
                     .collect();
                 let fallback = match self.value_map_fallback {
                     FallbackType::Error => Fallback::Error,
@@ -1118,31 +1188,46 @@ impl FieldMappingForm {
                     FallbackType::PassThrough => Fallback::PassThrough,
                     FallbackType::Null => Fallback::Null,
                 };
-                Transform::ValueMap { source_path, mappings, fallback }
+                Transform::ValueMap {
+                    source_path,
+                    mappings,
+                    fallback,
+                }
             }
             TransformType::Format => {
                 use crate::transfer::transform::format::NullHandling;
                 let template = crate::transfer::transform::format::parse_template(
-                    self.format_template.value.trim()
-                ).ok()?;
+                    self.format_template.value.trim(),
+                )
+                .ok()?;
                 let null_handling = match self.format_null_handling {
                     NullHandlingType::Error => NullHandling::Error,
                     NullHandlingType::Empty => NullHandling::Empty,
                     NullHandlingType::Zero => NullHandling::Zero,
                 };
-                Transform::Format { template, null_handling }
+                Transform::Format {
+                    template,
+                    null_handling,
+                }
             }
             TransformType::Replace => {
                 let source_path = FieldPath::parse(self.replace_source.value.trim()).ok()?;
-                let replacements: Vec<Replacement> = self.replace_entries.iter()
+                let replacements: Vec<Replacement> = self
+                    .replace_entries
+                    .iter()
                     .filter(|e| !e.pattern.value.trim().is_empty())
-                    .map(|e| Replacement::new(
-                        e.pattern.value.trim(),
-                        e.replacement.value.trim(),
-                        e.is_regex,
-                    ))
+                    .map(|e| {
+                        Replacement::new(
+                            e.pattern.value.trim(),
+                            e.replacement.value.trim(),
+                            e.is_regex,
+                        )
+                    })
                     .collect();
-                Transform::Replace { source_path, replacements }
+                Transform::Replace {
+                    source_path,
+                    replacements,
+                }
             }
         };
 
@@ -1187,11 +1272,14 @@ impl FieldMappingForm {
     pub fn prefill_valuemap_from_optionset(&mut self, source_field: &crate::api::FieldMetadata) {
         // Only prefill if we have option values and entries are currently empty
         if !source_field.option_values.is_empty() && self.value_map_entries.is_empty() {
-            self.value_map_entries = source_field.option_values
+            self.value_map_entries = source_field
+                .option_values
                 .iter()
                 .map(|opt| {
                     // Format source value with label for clarity (e.g., "1 (Active)")
-                    let source_display = opt.label.as_ref()
+                    let source_display = opt
+                        .label
+                        .as_ref()
                         .map(|l| format!("{} ({})", opt.value, l))
                         .unwrap_or_else(|| opt.value.to_string());
 
@@ -1223,9 +1311,15 @@ impl FieldMappingForm {
         };
 
         let base_field = source_path.trim().split('.').next().unwrap_or("");
-        source_fields.iter()
+        source_fields
+            .iter()
             .find(|f| f.logical_name == base_field)
-            .map(|f| matches!(f.field_type, FieldType::OptionSet | FieldType::MultiSelectOptionSet))
+            .map(|f| {
+                matches!(
+                    f.field_type,
+                    FieldType::OptionSet | FieldType::MultiSelectOptionSet
+                )
+            })
             .unwrap_or(false)
     }
 }
@@ -1290,11 +1384,11 @@ pub enum Msg {
     EntityModalViewport(usize, usize, usize, usize), // viewport_height, content_height, viewport_width, content_width
 
     // Field mapping actions
-    AddField(usize), // entity_idx
+    AddField(usize),         // entity_idx
     EditField(usize, usize), // entity_idx, field_idx
     DeleteField(usize, usize),
     CopyField(usize, usize), // entity_idx, field_idx - copy to clipboard
-    PasteField(usize), // entity_idx - paste from clipboard
+    PasteField(usize),       // entity_idx - paste from clipboard
     CloseFieldModal,
     SaveField,
     FieldFormTarget(AutocompleteEvent),

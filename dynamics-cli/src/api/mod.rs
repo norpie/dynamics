@@ -19,12 +19,15 @@ pub mod resilience;
 pub use auth::AuthManager;
 pub use client::{DynamicsClient, EntityMetadataInfo, IncomingReference, ManyToManyRelationship};
 pub use manager::ClientManager;
-pub use models::{Environment, CredentialSet, TokenInfo};
-pub use operations::{Operation, OperationResult, Operations};
-pub use query::{Query, QueryBuilder, QueryResult, Filter, FilterValue, OrderBy};
-pub use resilience::{RetryPolicy, RetryConfig, ResilienceConfig, RateLimitConfig, MonitoringConfig, LogLevel, RateLimiterStats, RateLimiter, RetryableError, ApiLogger, OperationContext, OperationMetrics, MetricsCollector, MetricsSnapshot, OperationTypeMetrics, EntityMetrics, GlobalMetrics};
 pub use metadata::{
-    parse_entity_list, parse_entity_metadata,
-    EntityMetadata, FieldMetadata, FieldType, FormMetadata, RelationshipMetadata,
-    RelationshipType, ViewMetadata,
+    EntityMetadata, FieldMetadata, FieldType, FormMetadata, RelationshipMetadata, RelationshipType,
+    ViewMetadata, parse_entity_list, parse_entity_metadata,
+};
+pub use models::{CredentialSet, Environment, TokenInfo};
+pub use operations::{Operation, OperationResult, Operations};
+pub use query::{Filter, FilterValue, OrderBy, Query, QueryBuilder, QueryResult};
+pub use resilience::{
+    ApiLogger, EntityMetrics, GlobalMetrics, LogLevel, MetricsCollector, MetricsSnapshot,
+    MonitoringConfig, OperationContext, OperationMetrics, OperationTypeMetrics, RateLimitConfig,
+    RateLimiter, RateLimiterStats, ResilienceConfig, RetryConfig, RetryPolicy, RetryableError,
 };

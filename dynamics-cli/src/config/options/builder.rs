@@ -88,7 +88,9 @@ impl OptionDefBuilder {
     /// accepts KeyBinding or KeyCode types for convenience.
     pub fn keybind_type(mut self, default: impl Into<crate::tui::KeyBinding>) -> Self {
         let keybind: crate::tui::KeyBinding = default.into();
-        self.ty = Some(OptionType::String { max_length: Some(32) });
+        self.ty = Some(OptionType::String {
+            max_length: Some(32),
+        });
         self.default = Some(OptionValue::String(keybind.to_string()));
         self
     }
@@ -100,9 +102,9 @@ impl OptionDefBuilder {
         let display_name = self
             .display_name
             .ok_or_else(|| anyhow::anyhow!("display_name is required"))?;
-        let ty = self
-            .ty
-            .ok_or_else(|| anyhow::anyhow!("type is required (use bool_type, uint_type, enum_type, etc.)"))?;
+        let ty = self.ty.ok_or_else(|| {
+            anyhow::anyhow!("type is required (use bool_type, uint_type, enum_type, etc.)")
+        })?;
         let default = self
             .default
             .ok_or_else(|| anyhow::anyhow!("default value is required"))?;

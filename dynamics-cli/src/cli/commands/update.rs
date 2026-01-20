@@ -45,7 +45,10 @@ pub async fn handle_update_command(cmd: UpdateCommands) -> anyhow::Result<()> {
                     if info.needs_update {
                         println!("\n{}", "🎉 A new version is available!".green().bold());
                         println!("Release notes: {}", info.release_url.blue());
-                        println!("\nRun {} to install the latest version", "dynamics-cli update install".cyan());
+                        println!(
+                            "\nRun {} to install the latest version",
+                            "dynamics-cli update install".cyan()
+                        );
                     } else {
                         println!("\n{}", "✓ You are running the latest version".green());
                     }
@@ -53,11 +56,18 @@ pub async fn handle_update_command(cmd: UpdateCommands) -> anyhow::Result<()> {
                     // Update last check timestamp
                     let config = crate::config::Config::load().await?;
                     let now = chrono::Utc::now();
-                    crate::config::repository::update_metadata::set_last_check_time(&config.pool, now).await?;
+                    crate::config::repository::update_metadata::set_last_check_time(
+                        &config.pool,
+                        now,
+                    )
+                    .await?;
                 }
                 Err(e) => {
                     eprintln!("{} {}", "Error:".red(), e);
-                    eprintln!("{}", "Failed to check for updates. Please try again later.".yellow());
+                    eprintln!(
+                        "{}",
+                        "Failed to check for updates. Please try again later.".yellow()
+                    );
                 }
             }
         }
@@ -93,17 +103,30 @@ pub async fn handle_update_command(cmd: UpdateCommands) -> anyhow::Result<()> {
             println!("\n{}", "Installing update...".dimmed());
             match crate::update::install_update(true).await {
                 Ok(version) => {
-                    println!("{}", format!("✓ Successfully updated to version {}", version).green());
-                    println!("{}", "Please restart the application to use the new version".cyan());
+                    println!(
+                        "{}",
+                        format!("✓ Successfully updated to version {}", version).green()
+                    );
+                    println!(
+                        "{}",
+                        "Please restart the application to use the new version".cyan()
+                    );
 
                     // Update last check timestamp
                     let config = crate::config::Config::load().await?;
                     let now = chrono::Utc::now();
-                    crate::config::repository::update_metadata::set_last_check_time(&config.pool, now).await?;
+                    crate::config::repository::update_metadata::set_last_check_time(
+                        &config.pool,
+                        now,
+                    )
+                    .await?;
                 }
                 Err(e) => {
                     eprintln!("{} {}", "Error:".red(), e);
-                    eprintln!("{}", "Failed to install update. Please try again or download manually.".yellow());
+                    eprintln!(
+                        "{}",
+                        "Failed to install update. Please try again or download manually.".yellow()
+                    );
                 }
             }
         }
@@ -132,17 +155,31 @@ pub async fn handle_update_command(cmd: UpdateCommands) -> anyhow::Result<()> {
             println!("\n{}", "Installing...".dimmed());
             match crate::update::install_version(&version, true).await {
                 Ok(installed_version) => {
-                    println!("{}", format!("✓ Successfully installed version {}", installed_version).green());
-                    println!("{}", "Please restart the application to use the new version".cyan());
+                    println!(
+                        "{}",
+                        format!("✓ Successfully installed version {}", installed_version).green()
+                    );
+                    println!(
+                        "{}",
+                        "Please restart the application to use the new version".cyan()
+                    );
 
                     // Update last check timestamp
                     let config = crate::config::Config::load().await?;
                     let now = chrono::Utc::now();
-                    crate::config::repository::update_metadata::set_last_check_time(&config.pool, now).await?;
+                    crate::config::repository::update_metadata::set_last_check_time(
+                        &config.pool,
+                        now,
+                    )
+                    .await?;
                 }
                 Err(e) => {
                     eprintln!("{} {}", "Error:".red(), e);
-                    eprintln!("{}", "Failed to install version. Please check the version number and try again.".yellow());
+                    eprintln!(
+                        "{}",
+                        "Failed to install version. Please check the version number and try again."
+                            .yellow()
+                    );
                 }
             }
         }

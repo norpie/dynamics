@@ -1,29 +1,42 @@
-use ratatui::Frame;
-use ratatui::text::{Line, Span};
-use ratatui::style::Style;
-use ratatui::prelude::Stylize;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use anyhow::Result;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
+use ratatui::Frame;
+use ratatui::prelude::Stylize;
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::tui::{AppId, Runtime, AppRuntime, apps::{AppLauncher, LoadingScreen, ErrorScreen, SettingsApp, UpdateApp, EnvironmentSelectorApp, migration::{MigrationEnvironmentApp, MigrationComparisonSelectApp, EntityComparisonApp}, DeadlinesFileSelectApp, DeadlinesMappingApp, DeadlinesInspectionApp, OperationQueueApp, SelectQuestionnaireApp, copy_questionnaires::{CopyQuestionnaireApp, PushQuestionnaireApp}, EntitySyncApp, TransferConfigListApp, transfer::{MappingEditorApp, TransferPreviewApp, LuaScriptApp}}, Element, LayoutConstraint, Layer, Theme, ThemeVariant, App, ModalState, KeyBinding, AppLifecycle};
-use crate::tui::runtime::AppFactory;
-use crate::tui::element::{ColumnBuilder, RowBuilder, FocusId};
-use crate::tui::widgets::ScrollableState;
+use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::modals::AppOverviewModal;
+use crate::tui::runtime::AppFactory;
+use crate::tui::widgets::ScrollableState;
+use crate::tui::{
+    App, AppId, AppLifecycle, AppRuntime, Element, KeyBinding, Layer, LayoutConstraint, ModalState,
+    Runtime, Theme, ThemeVariant,
+    apps::{
+        AppLauncher, DeadlinesFileSelectApp, DeadlinesInspectionApp, DeadlinesMappingApp,
+        EntitySyncApp, EnvironmentSelectorApp, ErrorScreen, LoadingScreen, OperationQueueApp,
+        SelectQuestionnaireApp, SettingsApp, TransferConfigListApp, UpdateApp,
+        copy_questionnaires::{CopyQuestionnaireApp, PushQuestionnaireApp},
+        migration::{EntityComparisonApp, MigrationComparisonSelectApp, MigrationEnvironmentApp},
+        transfer::{LuaScriptApp, MappingEditorApp, TransferPreviewApp},
+    },
+};
 
 /// Group key bindings by description, combining keys with the same description into aliases
 fn group_bindings_by_description(bindings: &[(KeyBinding, &str)]) -> Vec<(String, String)> {
     let mut grouped: HashMap<&str, Vec<String>> = HashMap::new();
 
     for (key, desc) in bindings {
-        grouped.entry(*desc)
+        grouped
+            .entry(*desc)
             .or_insert_with(Vec::new)
             .push(key.to_string());
     }
 
-    let mut result: Vec<(String, String)> = grouped.into_iter()
+    let mut result: Vec<(String, String)> = grouped
+        .into_iter()
         .map(|(desc, mut keys)| {
             // Sort keys to ensure consistent ordering (shorter keys first)
             keys.sort_by_key(|k| k.len());
@@ -100,27 +113,90 @@ impl MultiAppRuntime {
         let mut lifecycles = HashMap::new();
 
         // Register all app factories here - this is the ONLY place you need to add new apps!
-        factories.insert(AppId::AppLauncher, Box::new(std::marker::PhantomData::<AppLauncher>));
-        factories.insert(AppId::LoadingScreen, Box::new(std::marker::PhantomData::<LoadingScreen>));
-        factories.insert(AppId::ErrorScreen, Box::new(std::marker::PhantomData::<ErrorScreen>));
-        factories.insert(AppId::Settings, Box::new(std::marker::PhantomData::<SettingsApp>));
-        factories.insert(AppId::UpdateApp, Box::new(std::marker::PhantomData::<UpdateApp>));
-        factories.insert(AppId::EnvironmentSelector, Box::new(std::marker::PhantomData::<EnvironmentSelectorApp>));
-        factories.insert(AppId::MigrationEnvironment, Box::new(std::marker::PhantomData::<MigrationEnvironmentApp>));
-        factories.insert(AppId::MigrationComparisonSelect, Box::new(std::marker::PhantomData::<MigrationComparisonSelectApp>));
-        factories.insert(AppId::EntityComparison, Box::new(std::marker::PhantomData::<EntityComparisonApp>));
-        factories.insert(AppId::DeadlinesFileSelect, Box::new(std::marker::PhantomData::<DeadlinesFileSelectApp>));
-        factories.insert(AppId::DeadlinesMapping, Box::new(std::marker::PhantomData::<DeadlinesMappingApp>));
-        factories.insert(AppId::DeadlinesInspection, Box::new(std::marker::PhantomData::<DeadlinesInspectionApp>));
-        factories.insert(AppId::OperationQueue, Box::new(std::marker::PhantomData::<OperationQueueApp>));
-        factories.insert(AppId::SelectQuestionnaire, Box::new(std::marker::PhantomData::<SelectQuestionnaireApp>));
-        factories.insert(AppId::CopyQuestionnaire, Box::new(std::marker::PhantomData::<CopyQuestionnaireApp>));
-        factories.insert(AppId::PushQuestionnaire, Box::new(std::marker::PhantomData::<PushQuestionnaireApp>));
-        factories.insert(AppId::EntitySync, Box::new(std::marker::PhantomData::<EntitySyncApp>));
-        factories.insert(AppId::TransferConfigList, Box::new(std::marker::PhantomData::<TransferConfigListApp>));
-        factories.insert(AppId::TransferMappingEditor, Box::new(std::marker::PhantomData::<MappingEditorApp>));
-        factories.insert(AppId::TransferPreview, Box::new(std::marker::PhantomData::<TransferPreviewApp>));
-        factories.insert(AppId::TransferLuaScript, Box::new(std::marker::PhantomData::<LuaScriptApp>));
+        factories.insert(
+            AppId::AppLauncher,
+            Box::new(std::marker::PhantomData::<AppLauncher>),
+        );
+        factories.insert(
+            AppId::LoadingScreen,
+            Box::new(std::marker::PhantomData::<LoadingScreen>),
+        );
+        factories.insert(
+            AppId::ErrorScreen,
+            Box::new(std::marker::PhantomData::<ErrorScreen>),
+        );
+        factories.insert(
+            AppId::Settings,
+            Box::new(std::marker::PhantomData::<SettingsApp>),
+        );
+        factories.insert(
+            AppId::UpdateApp,
+            Box::new(std::marker::PhantomData::<UpdateApp>),
+        );
+        factories.insert(
+            AppId::EnvironmentSelector,
+            Box::new(std::marker::PhantomData::<EnvironmentSelectorApp>),
+        );
+        factories.insert(
+            AppId::MigrationEnvironment,
+            Box::new(std::marker::PhantomData::<MigrationEnvironmentApp>),
+        );
+        factories.insert(
+            AppId::MigrationComparisonSelect,
+            Box::new(std::marker::PhantomData::<MigrationComparisonSelectApp>),
+        );
+        factories.insert(
+            AppId::EntityComparison,
+            Box::new(std::marker::PhantomData::<EntityComparisonApp>),
+        );
+        factories.insert(
+            AppId::DeadlinesFileSelect,
+            Box::new(std::marker::PhantomData::<DeadlinesFileSelectApp>),
+        );
+        factories.insert(
+            AppId::DeadlinesMapping,
+            Box::new(std::marker::PhantomData::<DeadlinesMappingApp>),
+        );
+        factories.insert(
+            AppId::DeadlinesInspection,
+            Box::new(std::marker::PhantomData::<DeadlinesInspectionApp>),
+        );
+        factories.insert(
+            AppId::OperationQueue,
+            Box::new(std::marker::PhantomData::<OperationQueueApp>),
+        );
+        factories.insert(
+            AppId::SelectQuestionnaire,
+            Box::new(std::marker::PhantomData::<SelectQuestionnaireApp>),
+        );
+        factories.insert(
+            AppId::CopyQuestionnaire,
+            Box::new(std::marker::PhantomData::<CopyQuestionnaireApp>),
+        );
+        factories.insert(
+            AppId::PushQuestionnaire,
+            Box::new(std::marker::PhantomData::<PushQuestionnaireApp>),
+        );
+        factories.insert(
+            AppId::EntitySync,
+            Box::new(std::marker::PhantomData::<EntitySyncApp>),
+        );
+        factories.insert(
+            AppId::TransferConfigList,
+            Box::new(std::marker::PhantomData::<TransferConfigListApp>),
+        );
+        factories.insert(
+            AppId::TransferMappingEditor,
+            Box::new(std::marker::PhantomData::<MappingEditorApp>),
+        );
+        factories.insert(
+            AppId::TransferPreview,
+            Box::new(std::marker::PhantomData::<TransferPreviewApp>),
+        );
+        factories.insert(
+            AppId::TransferLuaScript,
+            Box::new(std::marker::PhantomData::<LuaScriptApp>),
+        );
 
         // Mark all apps as NotCreated initially
         for app_id in factories.keys() {
@@ -148,24 +224,39 @@ impl MultiAppRuntime {
         };
 
         // Eagerly create the AppLauncher since it's the starting app
-        runtime.ensure_app_exists(AppId::AppLauncher, Box::new(())).ok();
-        runtime.last_active_time.insert(AppId::AppLauncher, Instant::now());
+        runtime
+            .ensure_app_exists(AppId::AppLauncher, Box::new(()))
+            .ok();
+        runtime
+            .last_active_time
+            .insert(AppId::AppLauncher, Instant::now());
 
         // Eagerly create the OperationQueue so it can receive pub/sub messages from any app
-        runtime.ensure_app_exists(AppId::OperationQueue, Box::new(())).ok();
+        runtime
+            .ensure_app_exists(AppId::OperationQueue, Box::new(()))
+            .ok();
 
         runtime
     }
 
     /// Ensure an app exists (create it if not already created)
-    fn ensure_app_exists(&mut self, app_id: AppId, params: Box<dyn std::any::Any + Send>) -> Result<()> {
+    fn ensure_app_exists(
+        &mut self,
+        app_id: AppId,
+        params: Box<dyn std::any::Any + Send>,
+    ) -> Result<()> {
         // If app already exists and is running or background, do nothing
-        if matches!(self.lifecycles.get(&app_id), Some(AppLifecycle::Running) | Some(AppLifecycle::Background)) {
+        if matches!(
+            self.lifecycles.get(&app_id),
+            Some(AppLifecycle::Running) | Some(AppLifecycle::Background)
+        ) {
             return Ok(());
         }
 
         // Get the factory for this app
-        let factory = self.factories.get(&app_id)
+        let factory = self
+            .factories
+            .get(&app_id)
             .ok_or_else(|| anyhow::anyhow!("No factory registered for app {:?}", app_id))?;
 
         // Create the app instance
@@ -188,9 +279,11 @@ impl MultiAppRuntime {
     /// Move focus within global UI elements (Tab/Shift-Tab)
     fn move_global_focus(&mut self, forward: bool) {
         self.global_focused_id = if forward {
-            self.global_focus_registry.next_focus(self.global_focused_id.as_ref())
+            self.global_focus_registry
+                .next_focus(self.global_focused_id.as_ref())
         } else {
-            self.global_focus_registry.prev_focus(self.global_focused_id.as_ref())
+            self.global_focus_registry
+                .prev_focus(self.global_focused_id.as_ref())
         };
     }
 
@@ -200,7 +293,10 @@ impl MultiAppRuntime {
         // Check if there's a focused element in the global focus registry
         if let Some(focused_id) = &self.global_focused_id {
             // Get the key handler for the focused element
-            if let Some(msg) = self.global_focus_registry.dispatch_key(focused_id, key_event) {
+            if let Some(msg) = self
+                .global_focus_registry
+                .dispatch_key(focused_id, key_event)
+            {
                 return Ok(Some(self.handle_global_msg(msg)?));
             }
         }
@@ -233,31 +329,38 @@ impl MultiAppRuntime {
                     (KeyBinding::new(KeyCode::Esc), "Close help menu"),
                 ];
 
-                let mut all_app_bindings: Vec<(AppId, &'static str, Vec<(KeyBinding, String)>)> = vec![];
+                let mut all_app_bindings: Vec<(AppId, &'static str, Vec<(KeyBinding, String)>)> =
+                    vec![];
                 for (app_id, runtime) in &self.runtimes {
                     let title = runtime.get_title();
                     let bindings = runtime.get_key_bindings();
                     all_app_bindings.push((*app_id, title, bindings));
                 }
 
-                let current_app_data = all_app_bindings.iter()
+                let current_app_data = all_app_bindings
+                    .iter()
                     .find(|(id, _, _)| *id == self.active_app)
                     .expect("Active app not found");
 
-                let other_apps: Vec<_> = all_app_bindings.iter()
+                let other_apps: Vec<_> = all_app_bindings
+                    .iter()
                     .filter(|(id, _, bindings)| *id != self.active_app && !bindings.is_empty())
                     .collect();
 
                 // Calculate total items using grouped bindings
                 let global_grouped = group_bindings_by_description(&global_bindings);
-                let current_bindings_ref: Vec<(KeyBinding, &str)> = current_app_data.2.iter()
+                let current_bindings_ref: Vec<(KeyBinding, &str)> = current_app_data
+                    .2
+                    .iter()
                     .map(|(key, desc)| (*key, desc.as_str()))
                     .collect();
                 let current_grouped = group_bindings_by_description(&current_bindings_ref);
 
-                let other_apps_grouped_count: usize = other_apps.iter()
+                let other_apps_grouped_count: usize = other_apps
+                    .iter()
                     .map(|(_, _, bindings)| {
-                        let bindings_ref: Vec<(KeyBinding, &str)> = bindings.iter()
+                        let bindings_ref: Vec<(KeyBinding, &str)> = bindings
+                            .iter()
                             .map(|(key, desc)| (*key, desc.as_str()))
                             .collect();
                         let grouped = group_bindings_by_description(&bindings_ref);
@@ -273,7 +376,8 @@ impl MultiAppRuntime {
 
                 // Get viewport height from last render (approximation: 20 lines for modal)
                 let content_height = 20usize.saturating_sub(4);
-                self.help_scroll_state.handle_key(key, total_items, content_height);
+                self.help_scroll_state
+                    .handle_key(key, total_items, content_height);
                 return Ok(true);
             }
             GlobalMsg::CloseHelp => {
@@ -290,10 +394,17 @@ impl MultiAppRuntime {
     }
 
     pub fn handle_key(&mut self, key_event: KeyEvent) -> Result<bool> {
-        log::debug!("🎹 MultiRuntime::handle_key: key={:?}, mods={:?}", key_event.code, key_event.modifiers);
+        log::debug!(
+            "🎹 MultiRuntime::handle_key: key={:?}, mods={:?}",
+            key_event.code,
+            key_event.modifiers
+        );
 
         // Priority 1: Global modal keyboard handling (Tab, focused elements)
-        if self.quit_modal.is_open() || self.help_modal.is_open() || self.app_overview_modal.is_open() {
+        if self.quit_modal.is_open()
+            || self.help_modal.is_open()
+            || self.app_overview_modal.is_open()
+        {
             // Tab/Shift-Tab: Move focus within global modal
             if KeyBinding::new(KeyCode::Tab).matches(&key_event) {
                 // Check debouncing
@@ -302,8 +413,12 @@ impl MultiAppRuntime {
                 if let Some(last_press) = self.last_tab_press {
                     let elapsed_ms = now.duration_since(last_press).as_millis() as u64;
                     if elapsed_ms < config.tab_debouncing_ms {
-                        log::debug!("Tab press debounced in modal ({}ms < {}ms)", elapsed_ms, config.tab_debouncing_ms);
-                        return Ok(true);  // Debounced - ignore this press
+                        log::debug!(
+                            "Tab press debounced in modal ({}ms < {}ms)",
+                            elapsed_ms,
+                            config.tab_debouncing_ms
+                        );
+                        return Ok(true); // Debounced - ignore this press
                     }
                 }
                 self.last_tab_press = Some(now);
@@ -311,15 +426,21 @@ impl MultiAppRuntime {
                 self.move_global_focus(true);
                 return Ok(true);
             }
-            if KeyBinding::shift(KeyCode::Tab).matches(&key_event) || key_event.code == KeyCode::BackTab {
+            if KeyBinding::shift(KeyCode::Tab).matches(&key_event)
+                || key_event.code == KeyCode::BackTab
+            {
                 // Check debouncing
                 let config = crate::global_runtime_config();
                 let now = Instant::now();
                 if let Some(last_press) = self.last_tab_press {
                     let elapsed_ms = now.duration_since(last_press).as_millis() as u64;
                     if elapsed_ms < config.tab_debouncing_ms {
-                        log::debug!("Shift-Tab press debounced in modal ({}ms < {}ms)", elapsed_ms, config.tab_debouncing_ms);
-                        return Ok(true);  // Debounced - ignore this press
+                        log::debug!(
+                            "Shift-Tab press debounced in modal ({}ms < {}ms)",
+                            elapsed_ms,
+                            config.tab_debouncing_ms
+                        );
+                        return Ok(true); // Debounced - ignore this press
                     }
                 }
                 self.last_tab_press = Some(now);
@@ -343,7 +464,7 @@ impl MultiAppRuntime {
                 KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                     return self.handle_global_msg(GlobalMsg::QuitCancel);
                 }
-                _ => return Ok(true),  // Consume all other keys
+                _ => return Ok(true), // Consume all other keys
             }
         }
 
@@ -352,7 +473,7 @@ impl MultiAppRuntime {
             if key_event.code == KeyCode::Esc {
                 return self.handle_global_msg(GlobalMsg::CloseHelp);
             }
-            return Ok(true);  // Consume all other keys (except Tab, handled above)
+            return Ok(true); // Consume all other keys (except Tab, handled above)
         }
 
         // Priority 3.5: App overview modal Esc to close
@@ -360,22 +481,28 @@ impl MultiAppRuntime {
             if key_event.code == KeyCode::Esc {
                 return self.handle_global_msg(GlobalMsg::CloseAppOverview);
             }
-            return Ok(true);  // Consume all other keys (except Tab, handled above)
+            return Ok(true); // Consume all other keys (except Tab, handled above)
         }
 
         // Priority 3.75: Check if app is capturing raw input (e.g., keybind capture mode)
         // If so, skip global keybind handling and delegate directly to the app
-        let runtime = self.runtimes.get(&self.active_app)
+        let runtime = self
+            .runtimes
+            .get(&self.active_app)
             .expect("Active app not found in runtimes");
         if runtime.is_capturing_raw_input() {
             log::debug!("App is capturing raw input, skipping global keybinds");
             // Skip global keybinds - jump to Tab/Shift-Tab or app delegation
             // Since Tab/Shift-Tab are handled earlier (priority 1), we can delegate to app here
-            let result = self.runtimes
+            let result = self
+                .runtimes
                 .get_mut(&self.active_app)
                 .expect("Active app not found in runtimes")
                 .handle_key(key_event)?;
-            log::debug!("🔄 After delegating key to {:?} (capture mode), checking for side effects", self.active_app);
+            log::debug!(
+                "🔄 After delegating key to {:?} (capture mode), checking for side effects",
+                self.active_app
+            );
             self.broadcast_events()?;
             let _ = self.check_navigation()?;
             return Ok(result);
@@ -395,7 +522,10 @@ impl MultiAppRuntime {
         // Priority 5: Configurable app launcher keybind
         let launcher_key = config.get_keybind("global.app_launcher");
         if launcher_key.matches(&key_event) {
-                log::info!("🚀 App launcher keybind pressed - navigating to AppLauncher from {:?}", self.active_app);
+            log::info!(
+                "🚀 App launcher keybind pressed - navigating to AppLauncher from {:?}",
+                self.active_app
+            );
 
             // Clear any pending navigation that would go BACK to the current app (zombie navigations)
             // But preserve legitimate background operations going to other apps
@@ -407,7 +537,11 @@ impl MultiAppRuntime {
                         if nav_target == current_app {
                             // This is a zombie navigation back to where we already are - clear it
                             runtime.take_navigation();
-                            log::info!("  🧹 Cleared zombie navigation from {:?} back to current app {:?}", app_id, current_app);
+                            log::info!(
+                                "  🧹 Cleared zombie navigation from {:?} back to current app {:?}",
+                                app_id,
+                                current_app
+                            );
                         }
                     }
                 }
@@ -419,7 +553,9 @@ impl MultiAppRuntime {
             if current_app != AppId::AppLauncher {
                 log::debug!("  Switching from {:?} to AppLauncher", current_app);
                 // Handle current app based on quit and suspend policies
-                let quit_policy = self.factories.get(&current_app)
+                let quit_policy = self
+                    .factories
+                    .get(&current_app)
                     .map(|f| f.quit_policy())
                     .unwrap_or(crate::tui::QuitPolicy::Sleep);
 
@@ -428,7 +564,9 @@ impl MultiAppRuntime {
                 match quit_policy {
                     crate::tui::QuitPolicy::Sleep | crate::tui::QuitPolicy::QuitOnIdle(_) => {
                         // Check suspend policy
-                        let suspend_policy = self.factories.get(&current_app)
+                        let suspend_policy = self
+                            .factories
+                            .get(&current_app)
                             .map(|f| f.suspend_policy())
                             .unwrap_or(crate::tui::SuspendPolicy::Suspend);
 
@@ -437,16 +575,24 @@ impl MultiAppRuntime {
                         match suspend_policy {
                             crate::tui::SuspendPolicy::Suspend => {
                                 // Keep app in background and call on_suspend
-                                log::info!("  🛑 Suspending {:?} (calling on_suspend)", current_app);
-                                self.lifecycles.insert(current_app, AppLifecycle::Background);
+                                log::info!(
+                                    "  🛑 Suspending {:?} (calling on_suspend)",
+                                    current_app
+                                );
+                                self.lifecycles
+                                    .insert(current_app, AppLifecycle::Background);
                                 if let Some(runtime) = self.runtimes.get_mut(&current_app) {
                                     runtime.on_suspend().ok();
                                 }
                             }
                             crate::tui::SuspendPolicy::AlwaysActive => {
                                 // Keep app in background but don't call on_suspend
-                                log::info!("  📍 Backgrounding {:?} (AlwaysActive - no on_suspend)", current_app);
-                                self.lifecycles.insert(current_app, AppLifecycle::Background);
+                                log::info!(
+                                    "  📍 Backgrounding {:?} (AlwaysActive - no on_suspend)",
+                                    current_app
+                                );
+                                self.lifecycles
+                                    .insert(current_app, AppLifecycle::Background);
                             }
                             crate::tui::SuspendPolicy::QuitOnSuspend => {
                                 // Destroy app instead of suspending
@@ -468,17 +614,22 @@ impl MultiAppRuntime {
                 }
 
                 // Resume app launcher if it was backgrounded
-                if matches!(self.lifecycles.get(&AppId::AppLauncher), Some(AppLifecycle::Background)) {
+                if matches!(
+                    self.lifecycles.get(&AppId::AppLauncher),
+                    Some(AppLifecycle::Background)
+                ) {
                     log::info!("  ▶️  Resuming AppLauncher from Background");
                     if let Some(runtime) = self.runtimes.get_mut(&AppId::AppLauncher) {
                         runtime.on_resume().ok();
                     }
                 }
-                self.lifecycles.insert(AppId::AppLauncher, AppLifecycle::Running);
+                self.lifecycles
+                    .insert(AppId::AppLauncher, AppLifecycle::Running);
             }
 
             self.active_app = AppId::AppLauncher;
-            self.last_active_time.insert(AppId::AppLauncher, Instant::now());
+            self.last_active_time
+                .insert(AppId::AppLauncher, Instant::now());
             log::info!("✅ AppLauncher is now active");
             return Ok(true);
         }
@@ -498,8 +649,12 @@ impl MultiAppRuntime {
                     self.help_modal.close();
                     return Ok(true);
                 }
-                KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown
-                | KeyCode::Home | KeyCode::End => {
+                KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Home
+                | KeyCode::End => {
                     // Delegate to GlobalMsg::HelpScroll handler which knows the dimensions
                     return self.handle_global_msg(GlobalMsg::HelpScroll(key_event.code));
                 }
@@ -518,32 +673,43 @@ impl MultiAppRuntime {
             if let Some(last_press) = self.last_tab_press {
                 let elapsed_ms = now.duration_since(last_press).as_millis() as u64;
                 if elapsed_ms < config.tab_debouncing_ms {
-                    log::debug!("Tab press debounced ({}ms < {}ms)", elapsed_ms, config.tab_debouncing_ms);
-                    return Ok(true);  // Debounced - ignore this press
+                    log::debug!(
+                        "Tab press debounced ({}ms < {}ms)",
+                        elapsed_ms,
+                        config.tab_debouncing_ms
+                    );
+                    return Ok(true); // Debounced - ignore this press
                 }
             }
             self.last_tab_press = Some(now);
 
-            let runtime = self.runtimes
+            let runtime = self
+                .runtimes
                 .get_mut(&self.active_app)
                 .expect("Active app not found in runtimes");
             runtime.focus_next()?;
             return Ok(true);
         }
-        if KeyBinding::shift(KeyCode::Tab).matches(&key_event) || key_event.code == KeyCode::BackTab {
+        if KeyBinding::shift(KeyCode::Tab).matches(&key_event) || key_event.code == KeyCode::BackTab
+        {
             // Check debouncing
             let config = crate::global_runtime_config();
             let now = Instant::now();
             if let Some(last_press) = self.last_tab_press {
                 let elapsed_ms = now.duration_since(last_press).as_millis() as u64;
                 if elapsed_ms < config.tab_debouncing_ms {
-                    log::debug!("Shift-Tab press debounced ({}ms < {}ms)", elapsed_ms, config.tab_debouncing_ms);
-                    return Ok(true);  // Debounced - ignore this press
+                    log::debug!(
+                        "Shift-Tab press debounced ({}ms < {}ms)",
+                        elapsed_ms,
+                        config.tab_debouncing_ms
+                    );
+                    return Ok(true); // Debounced - ignore this press
                 }
             }
             self.last_tab_press = Some(now);
 
-            let runtime = self.runtimes
+            let runtime = self
+                .runtimes
                 .get_mut(&self.active_app)
                 .expect("Active app not found in runtimes");
             runtime.focus_previous()?;
@@ -551,12 +717,16 @@ impl MultiAppRuntime {
         }
 
         // Normal: delegate to active app
-        let result = self.runtimes
+        let result = self
+            .runtimes
             .get_mut(&self.active_app)
             .expect("Active app not found in runtimes")
             .handle_key(key_event)?;
 
-        log::debug!("🔄 After delegating key to {:?}, checking for side effects", self.active_app);
+        log::debug!(
+            "🔄 After delegating key to {:?}, checking for side effects",
+            self.active_app
+        );
         self.broadcast_events()?;
         let _ = self.check_navigation()?;
         Ok(result)
@@ -570,7 +740,10 @@ impl MultiAppRuntime {
             match mouse_event.kind {
                 MouseEventKind::Down(_) => {
                     // Check for button clicks in global interaction registry
-                    if let Some(msg) = self.global_interaction_registry.find_click(mouse_event.column, mouse_event.row) {
+                    if let Some(msg) = self
+                        .global_interaction_registry
+                        .find_click(mouse_event.column, mouse_event.row)
+                    {
                         return self.handle_global_msg(msg);
                     }
                 }
@@ -597,7 +770,8 @@ impl MultiAppRuntime {
             return Ok(true); // Consume all mouse events when modal is open
         }
 
-        let result = self.runtimes
+        let result = self
+            .runtimes
             .get_mut(&self.active_app)
             .expect("Active app not found in runtimes")
             .handle_mouse(mouse_event)?;
@@ -628,14 +802,17 @@ impl MultiAppRuntime {
         };
 
         // Render global header
-        let active_runtime = self.runtimes.get(&self.active_app)
+        let active_runtime = self
+            .runtimes
+            .get(&self.active_app)
             .expect("Active app not found in runtimes");
         let app_title = active_runtime.get_title();
         let app_status = active_runtime.get_status();
         self.render_header(frame, header_area, app_title, app_status);
 
         // Render active app content
-        self.runtimes.get_mut(&self.active_app)
+        self.runtimes
+            .get_mut(&self.active_app)
             .expect("Active app not found in runtimes")
             .render_to_area(frame, app_area);
 
@@ -655,7 +832,13 @@ impl MultiAppRuntime {
         }
     }
 
-    fn render_header(&mut self, frame: &mut Frame, area: ratatui::layout::Rect, title: &str, status: Option<Line<'static>>) {
+    fn render_header(
+        &mut self,
+        frame: &mut Frame,
+        area: ratatui::layout::Rect,
+        title: &str,
+        status: Option<Line<'static>>,
+    ) {
         let config = crate::global_runtime_config();
         let theme = &config.theme;
 
@@ -671,7 +854,9 @@ impl MultiAppRuntime {
         let separator_width = 3; // " │ "
         let spacing_width = 1; // Spacing between status and help text
         let panel_borders = 2; // Panel left + right borders (1 + 1)
-        let available_for_status = area.width.saturating_sub(title_width as u16)
+        let available_for_status = area
+            .width
+            .saturating_sub(title_width as u16)
             .saturating_sub(separator_width as u16)
             .saturating_sub(help_text_width as u16)
             .saturating_sub(spacing_width)
@@ -691,45 +876,63 @@ impl MultiAppRuntime {
 
             // Combine title and status with separator
             let mut spans = vec![
-                Span::styled(String::from(title), Style::default().fg(theme.accent_secondary).bold()),
+                Span::styled(
+                    String::from(title),
+                    Style::default().fg(theme.accent_secondary).bold(),
+                ),
                 Span::styled(" │ ", Style::default().fg(theme.border_primary)),
             ];
             spans.extend(scrolled_status.spans);
             Line::from(spans)
         } else {
             // Just title
-            Line::from(Span::styled(String::from(title), Style::default().fg(theme.accent_secondary).bold()))
+            Line::from(Span::styled(
+                String::from(title),
+                Style::default().fg(theme.accent_secondary).bold(),
+            ))
         };
 
         let header_left = Element::styled_text(title_line).build();
-        let header_right = Element::styled_text(Line::from(vec![
-            Span::styled(help_text, Style::default().fg(theme.border_primary))
-        ])).build();
+        let header_right = Element::styled_text(Line::from(vec![Span::styled(
+            help_text,
+            Style::default().fg(theme.border_primary),
+        )]))
+        .build();
 
         let header = Element::panel(
             RowBuilder::new()
                 .add(header_left, LayoutConstraint::Fill(1))
-                .add(header_right, LayoutConstraint::Length(help_text_width as u16))
+                .add(
+                    header_right,
+                    LayoutConstraint::Length(help_text_width as u16),
+                )
                 .spacing(1)
-                .build()
+                .build(),
         )
         .build();
 
-        use crate::tui::{Renderer, InteractionRegistry};
-        use crate::tui::renderer::{FocusRegistry, DropdownRegistry};
+        use crate::tui::renderer::{DropdownRegistry, FocusRegistry};
+        use crate::tui::{InteractionRegistry, Renderer};
         let mut registry: InteractionRegistry<()> = InteractionRegistry::new();
         let mut focus_registry: FocusRegistry<()> = FocusRegistry::new();
         let mut dropdown_registry: DropdownRegistry<()> = DropdownRegistry::new();
-        Renderer::render(frame, &mut registry, &mut focus_registry, &mut dropdown_registry, None, &header, area);
+        Renderer::render(
+            frame,
+            &mut registry,
+            &mut focus_registry,
+            &mut dropdown_registry,
+            None,
+            &header,
+            area,
+        );
     }
 
     fn render_help_menu(&mut self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let theme = &crate::global_runtime_config().theme;
         // First, render a dim overlay over the entire area
-        use ratatui::widgets::Paragraph;
         use ratatui::style::Style;
-        let dim_overlay = Paragraph::new("")
-            .style(Style::default().bg(theme.bg_surface));
+        use ratatui::widgets::Paragraph;
+        let dim_overlay = Paragraph::new("").style(Style::default().bg(theme.bg_surface));
         frame.render_widget(dim_overlay, area);
 
         // Build help content directly as Element<GlobalMsg>
@@ -752,25 +955,31 @@ impl MultiAppRuntime {
             all_app_bindings.push((*app_id, title, bindings));
         }
 
-        let current_app_data = all_app_bindings.iter()
+        let current_app_data = all_app_bindings
+            .iter()
             .find(|(id, _, _)| *id == self.active_app)
             .expect("Active app not found");
 
-        let other_apps: Vec<_> = all_app_bindings.iter()
+        let other_apps: Vec<_> = all_app_bindings
+            .iter()
             .filter(|(id, _, bindings)| *id != self.active_app && !bindings.is_empty())
             .collect();
 
         // Pre-group all bindings to calculate max width across entire help menu
         let global_grouped = group_bindings_by_description(&global_bindings);
 
-        let current_bindings_ref: Vec<(KeyBinding, &str)> = current_app_data.2.iter()
+        let current_bindings_ref: Vec<(KeyBinding, &str)> = current_app_data
+            .2
+            .iter()
             .map(|(key, desc)| (*key, desc.as_str()))
             .collect();
         let current_grouped = group_bindings_by_description(&current_bindings_ref);
 
-        let other_apps_grouped: Vec<(AppId, &'static str, Vec<(String, String)>)> = other_apps.iter()
+        let other_apps_grouped: Vec<(AppId, &'static str, Vec<(String, String)>)> = other_apps
+            .iter()
             .map(|(id, title, bindings)| {
-                let bindings_ref: Vec<(KeyBinding, &str)> = bindings.iter()
+                let bindings_ref: Vec<(KeyBinding, &str)> = bindings
+                    .iter()
                     .map(|(key, desc)| (*key, desc.as_str()))
                     .collect();
                 let grouped = group_bindings_by_description(&bindings_ref);
@@ -779,31 +988,45 @@ impl MultiAppRuntime {
             .collect();
 
         // Calculate max key width across ALL sections
-        let max_key_width = global_grouped.iter()
+        let max_key_width = global_grouped
+            .iter()
             .chain(current_grouped.iter())
-            .chain(other_apps_grouped.iter().flat_map(|(_, _, grouped)| grouped.iter()))
+            .chain(
+                other_apps_grouped
+                    .iter()
+                    .flat_map(|(_, _, grouped)| grouped.iter()),
+            )
             .map(|(keys, _)| keys.len())
             .max()
             .unwrap_or(0);
 
         // Build help content
         let mut help_items: Vec<Element<GlobalMsg>> = vec![
-            Element::styled_text(Line::from(vec![
-                Span::styled("Keyboard Shortcuts", Style::default().fg(theme.accent_primary).bold())
-            ])).build(),
+            Element::styled_text(Line::from(vec![Span::styled(
+                "Keyboard Shortcuts",
+                Style::default().fg(theme.accent_primary).bold(),
+            )]))
+            .build(),
             Element::text(""),
         ];
 
         // Global section
         if !global_grouped.is_empty() {
-            help_items.push(Element::styled_text(Line::from(vec![
-                Span::styled("▼ Global", Style::default().fg(theme.accent_muted).bold())
-            ])).build());
+            help_items.push(
+                Element::styled_text(Line::from(vec![Span::styled(
+                    "▼ Global",
+                    Style::default().fg(theme.accent_muted).bold(),
+                )]))
+                .build(),
+            );
 
             for (keys, desc) in global_grouped {
                 let padding = " ".repeat(max_key_width - keys.len());
                 let line = Line::from(vec![
-                    Span::styled(format!("  {}{}", keys, padding), Style::default().fg(theme.accent_tertiary)),
+                    Span::styled(
+                        format!("  {}{}", keys, padding),
+                        Style::default().fg(theme.accent_tertiary),
+                    ),
                     Span::raw("  "),
                     Span::styled(desc, Style::default().fg(theme.text_primary)),
                 ]);
@@ -814,14 +1037,21 @@ impl MultiAppRuntime {
 
         // Current app section (only show if it has bindings)
         if !current_grouped.is_empty() {
-            help_items.push(Element::styled_text(Line::from(vec![
-                Span::styled(format!("▼ {}", current_app_data.1), Style::default().fg(theme.accent_secondary).bold())
-            ])).build());
+            help_items.push(
+                Element::styled_text(Line::from(vec![Span::styled(
+                    format!("▼ {}", current_app_data.1),
+                    Style::default().fg(theme.accent_secondary).bold(),
+                )]))
+                .build(),
+            );
 
             for (keys, desc) in current_grouped {
                 let padding = " ".repeat(max_key_width - keys.len());
                 let line = Line::from(vec![
-                    Span::styled(format!("  {}{}", keys, padding), Style::default().fg(theme.accent_success)),
+                    Span::styled(
+                        format!("  {}{}", keys, padding),
+                        Style::default().fg(theme.accent_success),
+                    ),
                     Span::raw("  "),
                     Span::styled(desc, Style::default().fg(theme.text_primary)),
                 ]);
@@ -832,14 +1062,21 @@ impl MultiAppRuntime {
 
         // Other apps sections
         for (_, app_title, grouped) in other_apps_grouped {
-            help_items.push(Element::styled_text(Line::from(vec![
-                Span::styled(format!("▼ {}", app_title), Style::default().fg(theme.border_primary).bold())
-            ])).build());
+            help_items.push(
+                Element::styled_text(Line::from(vec![Span::styled(
+                    format!("▼ {}", app_title),
+                    Style::default().fg(theme.border_primary).bold(),
+                )]))
+                .build(),
+            );
 
             for (keys, desc) in grouped {
                 let padding = " ".repeat(max_key_width - keys.len());
                 let line = Line::from(vec![
-                    Span::styled(format!("  {}{}", keys, padding), Style::default().fg(theme.border_tertiary)),
+                    Span::styled(
+                        format!("  {}{}", keys, padding),
+                        Style::default().fg(theme.border_tertiary),
+                    ),
                     Span::raw("  "),
                     Span::styled(desc, Style::default().fg(theme.text_tertiary)),
                 ]);
@@ -849,9 +1086,13 @@ impl MultiAppRuntime {
         }
 
         help_items.push(Element::text(""));
-        help_items.push(Element::styled_text(Line::from(vec![
-            Span::styled("[ESC to close | ↑↓/PgUp/PgDn/Home/End to scroll]", Style::default().fg(theme.border_primary))
-        ])).build());
+        help_items.push(
+            Element::styled_text(Line::from(vec![Span::styled(
+                "[ESC to close | ↑↓/PgUp/PgDn/Home/End to scroll]",
+                Style::default().fg(theme.border_primary),
+            )]))
+            .build(),
+        );
 
         // Build column with all items
         let mut column_builder = ColumnBuilder::new();
@@ -885,16 +1126,15 @@ impl MultiAppRuntime {
 
         // Set viewport height for scrolloff calculations
         self.help_scroll_state.set_viewport_height(content_height);
-        self.help_scroll_state.update_scroll(content_height, total_items);
+        self.help_scroll_state
+            .update_scroll(content_height, total_items);
 
         // Wrap in scrollable with on_navigate
         let scrollable = Element::scrollable("help-scroll", help_column, &self.help_scroll_state)
             .on_navigate(GlobalMsg::HelpScroll)
             .build();
 
-        let modal = Element::panel(scrollable)
-            .title("Help")
-            .build();
+        let modal = Element::panel(scrollable).title("Help").build();
 
         // Render with global registries
         use crate::tui::Renderer;
@@ -902,12 +1142,21 @@ impl MultiAppRuntime {
         let mut dropdown_registry: DropdownRegistry<GlobalMsg> = DropdownRegistry::new();
 
         // Sync runtime's focus to active layer BEFORE clearing registries
-        self.global_focus_registry.save_layer_focus(self.global_focused_id.clone());
+        self.global_focus_registry
+            .save_layer_focus(self.global_focused_id.clone());
 
         // Clear and render to global registries
         self.global_interaction_registry = crate::tui::InteractionRegistry::new();
         self.global_focus_registry = crate::tui::renderer::FocusRegistry::new();
-        Renderer::render(frame, &mut self.global_interaction_registry, &mut self.global_focus_registry, &mut dropdown_registry, self.global_focused_id.as_ref(), &modal, modal_area);
+        Renderer::render(
+            frame,
+            &mut self.global_interaction_registry,
+            &mut self.global_focus_registry,
+            &mut dropdown_registry,
+            self.global_focused_id.as_ref(),
+            &modal,
+            modal_area,
+        );
 
         // Check if focused element still exists in the tree
         if let Some(focused_id) = &self.global_focused_id {
@@ -924,18 +1173,18 @@ impl MultiAppRuntime {
         }
 
         // Save validated/restored focus to the active layer for next frame
-        self.global_focus_registry.save_layer_focus(self.global_focused_id.clone());
+        self.global_focus_registry
+            .save_layer_focus(self.global_focused_id.clone());
     }
 
     /// Render quit confirmation modal
     fn render_quit_confirm(&mut self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let theme = &crate::global_runtime_config().theme;
-        use ratatui::widgets::Paragraph;
         use ratatui::style::Style;
+        use ratatui::widgets::Paragraph;
 
         // Render dim overlay
-        let dim_overlay = Paragraph::new("")
-            .style(Style::default().bg(theme.bg_surface));
+        let dim_overlay = Paragraph::new("").style(Style::default().bg(theme.bg_surface));
         frame.render_widget(dim_overlay, area);
 
         // Build quit confirmation modal using Element<GlobalMsg>
@@ -946,10 +1195,7 @@ impl MultiAppRuntime {
                     .build(),
                 LayoutConstraint::Fill(1),
             )
-            .add(
-                Element::text("  "),
-                LayoutConstraint::Length(2),
-            )
+            .add(Element::text("  "), LayoutConstraint::Length(2))
             .add(
                 Element::button("quit-confirm-btn", "Yes (Y)")
                     .on_press(GlobalMsg::QuitConfirm)
@@ -964,34 +1210,21 @@ impl MultiAppRuntime {
                 Element::text("Quit Application"),
                 LayoutConstraint::Length(1),
             )
-            .add(
-                Element::text(""),
-                LayoutConstraint::Length(1),
-            )
+            .add(Element::text(""), LayoutConstraint::Length(1))
             .add(
                 Element::text("Are you sure you want to quit?"),
                 LayoutConstraint::Length(1),
             )
-            .add(
-                Element::text(""),
-                LayoutConstraint::Length(1),
-            )
-            .add(
-                button_row,
-                LayoutConstraint::Length(3),
-            )
+            .add(Element::text(""), LayoutConstraint::Length(1))
+            .add(button_row, LayoutConstraint::Length(3))
             .spacing(0)
             .build();
 
-        let quit_modal = Element::panel(
-            Element::container(modal_content)
-                .padding(1)
-                .build()
-        )
-        .title("Confirmation")
-        .width(50)
-        .height(11)
-        .build();
+        let quit_modal = Element::panel(Element::container(modal_content).padding(1).build())
+            .title("Confirmation")
+            .width(50)
+            .height(11)
+            .build();
 
         // Calculate modal position
         let modal_width = 50;
@@ -1013,12 +1246,21 @@ impl MultiAppRuntime {
         let mut dropdown_registry: DropdownRegistry<GlobalMsg> = DropdownRegistry::new();
 
         // Sync runtime's focus to active layer BEFORE clearing registries
-        self.global_focus_registry.save_layer_focus(self.global_focused_id.clone());
+        self.global_focus_registry
+            .save_layer_focus(self.global_focused_id.clone());
 
         // Clear and render to global registries
         self.global_interaction_registry = crate::tui::InteractionRegistry::new();
         self.global_focus_registry = crate::tui::renderer::FocusRegistry::new();
-        Renderer::render(frame, &mut self.global_interaction_registry, &mut self.global_focus_registry, &mut dropdown_registry, self.global_focused_id.as_ref(), &quit_modal, modal_area);
+        Renderer::render(
+            frame,
+            &mut self.global_interaction_registry,
+            &mut self.global_focus_registry,
+            &mut dropdown_registry,
+            self.global_focused_id.as_ref(),
+            &quit_modal,
+            modal_area,
+        );
 
         // Check if focused element still exists in the tree
         if let Some(focused_id) = &self.global_focused_id {
@@ -1035,30 +1277,31 @@ impl MultiAppRuntime {
         }
 
         // Save validated/restored focus to the active layer for next frame
-        self.global_focus_registry.save_layer_focus(self.global_focused_id.clone());
+        self.global_focus_registry
+            .save_layer_focus(self.global_focused_id.clone());
     }
 
     /// Render app overview modal
     fn render_app_overview(&mut self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let theme = &crate::global_runtime_config().theme;
-        use ratatui::widgets::Paragraph;
         use ratatui::style::Style;
+        use ratatui::widgets::Paragraph;
 
         // Render dim overlay
-        let dim_overlay = Paragraph::new("")
-            .style(Style::default().bg(theme.bg_surface));
+        let dim_overlay = Paragraph::new("").style(Style::default().bg(theme.bg_surface));
         frame.render_widget(dim_overlay, area);
 
         // Get recent apps first (Running/Background in recency order)
         let recent_app_ids = self.get_recent_apps();
-        let mut apps: Vec<(AppId, AppLifecycle)> = recent_app_ids.iter()
-            .filter_map(|id| {
-                self.lifecycles.get(id).map(|lifecycle| (*id, *lifecycle))
-            })
+        let mut apps: Vec<(AppId, AppLifecycle)> = recent_app_ids
+            .iter()
+            .filter_map(|id| self.lifecycles.get(id).map(|lifecycle| (*id, *lifecycle)))
             .collect();
 
         // Then add other apps (NotCreated, Dead, QuittingRequested) sorted by name
-        let mut other_apps: Vec<(AppId, AppLifecycle)> = self.lifecycles.iter()
+        let mut other_apps: Vec<(AppId, AppLifecycle)> = self
+            .lifecycles
+            .iter()
             .filter(|(id, lifecycle)| {
                 !matches!(lifecycle, AppLifecycle::Running | AppLifecycle::Background)
             })
@@ -1095,12 +1338,21 @@ impl MultiAppRuntime {
         let mut dropdown_registry: DropdownRegistry<GlobalMsg> = DropdownRegistry::new();
 
         // Sync runtime's focus to active layer BEFORE clearing registries
-        self.global_focus_registry.save_layer_focus(self.global_focused_id.clone());
+        self.global_focus_registry
+            .save_layer_focus(self.global_focused_id.clone());
 
         // Clear and render to global registries
         self.global_interaction_registry = crate::tui::InteractionRegistry::new();
         self.global_focus_registry = crate::tui::renderer::FocusRegistry::new();
-        Renderer::render(frame, &mut self.global_interaction_registry, &mut self.global_focus_registry, &mut dropdown_registry, self.global_focused_id.as_ref(), &modal, modal_area);
+        Renderer::render(
+            frame,
+            &mut self.global_interaction_registry,
+            &mut self.global_focus_registry,
+            &mut dropdown_registry,
+            self.global_focused_id.as_ref(),
+            &modal,
+            modal_area,
+        );
 
         // Check if focused element still exists in the tree
         if let Some(focused_id) = &self.global_focused_id {
@@ -1117,17 +1369,21 @@ impl MultiAppRuntime {
         }
 
         // Save validated/restored focus to the active layer for next frame
-        self.global_focus_registry.save_layer_focus(self.global_focused_id.clone());
+        self.global_focus_registry
+            .save_layer_focus(self.global_focused_id.clone());
     }
 
     /// Get apps ordered by recency (most recent first), filtered to Running/Background apps only
     pub fn get_recent_apps(&self) -> Vec<AppId> {
-        let mut apps: Vec<(AppId, Instant)> = self.last_active_time
+        let mut apps: Vec<(AppId, Instant)> = self
+            .last_active_time
             .iter()
             .filter(|(id, _)| {
                 // Only include Running or Background apps
-                matches!(self.lifecycles.get(id),
-                    Some(AppLifecycle::Running) | Some(AppLifecycle::Background))
+                matches!(
+                    self.lifecycles.get(id),
+                    Some(AppLifecycle::Running) | Some(AppLifecycle::Background)
+                )
             })
             .map(|(id, time)| (*id, *time))
             .collect();
@@ -1162,8 +1418,8 @@ impl MultiAppRuntime {
 
     /// Apply scroll offset to status line
     fn apply_scroll_to_status(&self, status_line: Line<'static>) -> Line<'static> {
-        use unicode_width::UnicodeWidthStr;
         use unicode_width::UnicodeWidthChar;
+        use unicode_width::UnicodeWidthStr;
 
         // Calculate character positions for each span
         let mut char_positions: Vec<(usize, usize, &Span)> = Vec::new(); // (start_pos, end_pos, span)
@@ -1217,7 +1473,9 @@ impl MultiAppRuntime {
         if let Some(runtime) = self.runtimes.get(&self.active_app) {
             if let Some(status_line) = runtime.get_status() {
                 // Convert status Line to plain text for length calculation
-                let status_text: String = status_line.spans.iter()
+                let status_text: String = status_line
+                    .spans
+                    .iter()
                     .map(|span| span.content.as_ref())
                     .collect::<Vec<_>>()
                     .join("");
@@ -1294,7 +1552,11 @@ impl MultiAppRuntime {
                 log::info!("  ✓ Active app {:?} has start_app request", self.active_app);
             }
             if nav_target.is_some() {
-                log::info!("  ✓ Active app {:?} has navigation request to {:?}", self.active_app, nav_target);
+                log::info!(
+                    "  ✓ Active app {:?} has navigation request to {:?}",
+                    self.active_app,
+                    nav_target
+                );
             }
         }
 
@@ -1310,7 +1572,11 @@ impl MultiAppRuntime {
                         break;
                     }
                     if let Some(target) = runtime.take_navigation() {
-                        log::info!("  🎯 Background app {:?} has navigation request to {:?}", app_id, target);
+                        log::info!(
+                            "  🎯 Background app {:?} has navigation request to {:?}",
+                            app_id,
+                            target
+                        );
                         nav_target = Some(target);
                         nav_source_app = *app_id;
                         break;
@@ -1321,31 +1587,44 @@ impl MultiAppRuntime {
 
         // Handle start_app first (it includes params)
         if let Some((target, params)) = start_app_request {
-            log::info!("⚡ Processing start_app navigation: {:?} -> {:?} (from {:?})", self.active_app, target, nav_source_app);
+            log::info!(
+                "⚡ Processing start_app navigation: {:?} -> {:?} (from {:?})",
+                self.active_app,
+                target,
+                nav_source_app
+            );
             // Handle current app based on quit and suspend policies (skip if navigating to self - it will be recreated)
-            if target != self.active_app && let Some(current_runtime) = self.runtimes.get(&self.active_app) {
-                let quit_policy = self.factories.get(&self.active_app)
+            if target != self.active_app
+                && let Some(current_runtime) = self.runtimes.get(&self.active_app)
+            {
+                let quit_policy = self
+                    .factories
+                    .get(&self.active_app)
                     .map(|f| f.quit_policy())
                     .unwrap_or(crate::tui::QuitPolicy::Sleep);
 
                 match quit_policy {
                     crate::tui::QuitPolicy::Sleep | crate::tui::QuitPolicy::QuitOnIdle(_) => {
                         // Check suspend policy
-                        let suspend_policy = self.factories.get(&self.active_app)
+                        let suspend_policy = self
+                            .factories
+                            .get(&self.active_app)
                             .map(|f| f.suspend_policy())
                             .unwrap_or(crate::tui::SuspendPolicy::Suspend);
 
                         match suspend_policy {
                             crate::tui::SuspendPolicy::Suspend => {
                                 // Keep app in background and call on_suspend
-                                self.lifecycles.insert(self.active_app, AppLifecycle::Background);
+                                self.lifecycles
+                                    .insert(self.active_app, AppLifecycle::Background);
                                 if let Some(runtime) = self.runtimes.get_mut(&self.active_app) {
                                     runtime.on_suspend().ok();
                                 }
                             }
                             crate::tui::SuspendPolicy::AlwaysActive => {
                                 // Keep app in background but don't call on_suspend
-                                self.lifecycles.insert(self.active_app, AppLifecycle::Background);
+                                self.lifecycles
+                                    .insert(self.active_app, AppLifecycle::Background);
                             }
                             crate::tui::SuspendPolicy::QuitOnSuspend => {
                                 // Destroy app instead of suspending
@@ -1381,31 +1660,42 @@ impl MultiAppRuntime {
         }
 
         if let Some(target) = nav_target {
-            log::info!("⚡ Processing navigation: {:?} -> {:?} (from {:?})", self.active_app, target, nav_source_app);
+            log::info!(
+                "⚡ Processing navigation: {:?} -> {:?} (from {:?})",
+                self.active_app,
+                target,
+                nav_source_app
+            );
             // Handle current app based on quit and suspend policies
             if let Some(current_runtime) = self.runtimes.get(&self.active_app) {
-                let quit_policy = self.factories.get(&self.active_app)
+                let quit_policy = self
+                    .factories
+                    .get(&self.active_app)
                     .map(|f| f.quit_policy())
                     .unwrap_or(crate::tui::QuitPolicy::Sleep);
 
                 match quit_policy {
                     crate::tui::QuitPolicy::Sleep | crate::tui::QuitPolicy::QuitOnIdle(_) => {
                         // Check suspend policy
-                        let suspend_policy = self.factories.get(&self.active_app)
+                        let suspend_policy = self
+                            .factories
+                            .get(&self.active_app)
                             .map(|f| f.suspend_policy())
                             .unwrap_or(crate::tui::SuspendPolicy::Suspend);
 
                         match suspend_policy {
                             crate::tui::SuspendPolicy::Suspend => {
                                 // Keep app in background and call on_suspend
-                                self.lifecycles.insert(self.active_app, AppLifecycle::Background);
+                                self.lifecycles
+                                    .insert(self.active_app, AppLifecycle::Background);
                                 if let Some(runtime) = self.runtimes.get_mut(&self.active_app) {
                                     runtime.on_suspend().ok();
                                 }
                             }
                             crate::tui::SuspendPolicy::AlwaysActive => {
                                 // Keep app in background but don't call on_suspend
-                                self.lifecycles.insert(self.active_app, AppLifecycle::Background);
+                                self.lifecycles
+                                    .insert(self.active_app, AppLifecycle::Background);
                             }
                             crate::tui::SuspendPolicy::QuitOnSuspend => {
                                 // Destroy app instead of suspending

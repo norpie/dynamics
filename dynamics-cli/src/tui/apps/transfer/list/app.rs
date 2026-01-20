@@ -1,6 +1,6 @@
 use crate::config::repository::transfer::{
-    delete_transfer_config, get_transfer_config, list_transfer_configs, save_transfer_config,
-    touch_transfer_config, transfer_config_exists, TransferConfigSummary,
+    TransferConfigSummary, delete_transfer_config, get_transfer_config, list_transfer_configs,
+    save_transfer_config, touch_transfer_config, transfer_config_exists,
 };
 use crate::transfer::{TransferConfig, TransferMode};
 use crate::tui::element::FocusId;
@@ -108,7 +108,10 @@ impl App for TransferConfigListApp {
                     Resource::Success(envs) => envs.clone(),
                     _ => vec![],
                 };
-                state.create_form.source_env.handle_event::<Msg>(event, &options);
+                state
+                    .create_form
+                    .source_env
+                    .handle_event::<Msg>(event, &options);
                 Command::None
             }
 
@@ -117,7 +120,10 @@ impl App for TransferConfigListApp {
                     Resource::Success(envs) => envs.clone(),
                     _ => vec![],
                 };
-                state.create_form.target_env.handle_event::<Msg>(event, &options);
+                state
+                    .create_form
+                    .target_env
+                    .handle_event::<Msg>(event, &options);
                 Command::None
             }
 
@@ -393,9 +399,7 @@ impl App for TransferConfigListApp {
 
 async fn load_configs() -> Result<Vec<TransferConfigSummary>, String> {
     let pool = &crate::global_config().pool;
-    list_transfer_configs(pool)
-        .await
-        .map_err(|e| e.to_string())
+    list_transfer_configs(pool).await.map_err(|e| e.to_string())
 }
 
 async fn load_environments() -> Result<Vec<String>, String> {
@@ -414,7 +418,12 @@ async fn delete_config(name: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-async fn create_config(name: String, source_env: String, target_env: String, mode: TransferMode) -> Result<(String, TransferMode), String> {
+async fn create_config(
+    name: String,
+    source_env: String,
+    target_env: String,
+    mode: TransferMode,
+) -> Result<(String, TransferMode), String> {
     let pool = &crate::global_config().pool;
 
     let config = TransferConfig {
@@ -434,7 +443,10 @@ async fn create_config(name: String, source_env: String, target_env: String, mod
         .map_err(|e| e.to_string())
 }
 
-async fn clone_config(original_name: String, new_name: String) -> Result<(String, TransferMode), String> {
+async fn clone_config(
+    original_name: String,
+    new_name: String,
+) -> Result<(String, TransferMode), String> {
     let pool = &crate::global_config().pool;
 
     // Check if new name already exists
@@ -551,27 +563,25 @@ fn navigate_to_editor_by_mode(config_name: &str, mode: TransferMode) -> Command<
     let name = config_name.to_string();
     tokio::spawn(async move {
         let pool = &crate::global_config().pool;
-        if let Err(e) = crate::config::repository::transfer::touch_transfer_config(pool, &name).await {
+        if let Err(e) =
+            crate::config::repository::transfer::touch_transfer_config(pool, &name).await
+        {
             log::warn!("Failed to update last_used_at for {}: {}", name, e);
         }
     });
 
     match mode {
-        TransferMode::Declarative => {
-            Command::start_app(
-                AppId::TransferMappingEditor,
-                EditorParams {
-                    config_name: config_name.to_string(),
-                },
-            )
-        }
-        TransferMode::Lua => {
-            Command::start_app(
-                AppId::TransferLuaScript,
-                LuaScriptParams {
-                    config_name: config_name.to_string(),
-                },
-            )
-        }
+        TransferMode::Declarative => Command::start_app(
+            AppId::TransferMappingEditor,
+            EditorParams {
+                config_name: config_name.to_string(),
+            },
+        ),
+        TransferMode::Lua => Command::start_app(
+            AppId::TransferLuaScript,
+            LuaScriptParams {
+                config_name: config_name.to_string(),
+            },
+        ),
     }
 }

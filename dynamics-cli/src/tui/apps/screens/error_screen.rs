@@ -1,10 +1,12 @@
-use crossterm::event::KeyCode;
-use ratatui::text::{Line, Span};
-use ratatui::style::Style;
-use ratatui::prelude::Stylize;
-use serde_json::Value;
-use crate::tui::{App, AppId, Command, Element, Subscription, Theme, LayoutConstraint, LayeredView};
 use crate::tui::element::ColumnBuilder;
+use crate::tui::{
+    App, AppId, Command, Element, LayeredView, LayoutConstraint, Subscription, Theme,
+};
+use crossterm::event::KeyCode;
+use ratatui::prelude::Stylize;
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
+use serde_json::Value;
 
 pub struct ErrorScreen;
 
@@ -68,15 +70,19 @@ impl App for ErrorScreen {
     fn view(state: &mut State) -> LayeredView<Msg> {
         let theme = &crate::global_runtime_config().theme;
         let content = vec![
-            Element::styled_text(Line::from(vec![
-                Span::styled("❌ Error", Style::default().fg(theme.accent_error).bold()),
-            ])).build(),
+            Element::styled_text(Line::from(vec![Span::styled(
+                "❌ Error",
+                Style::default().fg(theme.accent_error).bold(),
+            )]))
+            .build(),
             Element::text(""),
             Element::text(&state.error_message),
             Element::text(""),
-            Element::styled_text(Line::from(vec![
-                Span::styled("Press Enter to continue", Style::default().fg(theme.border_primary)),
-            ])).build(),
+            Element::styled_text(Line::from(vec![Span::styled(
+                "Press Enter to continue",
+                Style::default().fg(theme.border_primary),
+            )]))
+            .build(),
         ];
 
         // Wrap in panel
@@ -84,10 +90,10 @@ impl App for ErrorScreen {
             Element::container(
                 ColumnBuilder::new()
                     .add(Element::column(content).build(), LayoutConstraint::Fill(1))
-                    .build()
+                    .build(),
             )
             .padding(2)
-            .build()
+            .build(),
         )
         .title("Error")
         .build();
@@ -96,9 +102,11 @@ impl App for ErrorScreen {
     }
 
     fn subscriptions(_state: &State) -> Vec<Subscription<Msg>> {
-        vec![
-            Subscription::keyboard(KeyCode::Enter, "Continue", Msg::Continue),
-        ]
+        vec![Subscription::keyboard(
+            KeyCode::Enter,
+            "Continue",
+            Msg::Continue,
+        )]
     }
 
     fn title() -> &'static str {
@@ -107,6 +115,9 @@ impl App for ErrorScreen {
 
     fn status(state: &State) -> Option<Line<'static>> {
         let theme = &crate::global_runtime_config().theme;
-        Some(Line::from(Span::styled("[Error]", Style::default().fg(theme.accent_error))))
+        Some(Line::from(Span::styled(
+            "[Error]",
+            Style::default().fg(theme.accent_error),
+        )))
     }
 }

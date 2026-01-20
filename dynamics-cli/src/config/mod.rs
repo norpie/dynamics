@@ -11,18 +11,18 @@ use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub mod db;
-pub mod models;
-pub mod repository;
-pub mod migrations;
-pub mod migration;
 pub mod compat;
+pub mod db;
+pub mod migration;
+pub mod migrations;
+pub mod models;
 pub mod options;
+pub mod repository;
 
 pub use models::*;
-pub use repository::migrations::{SavedMigration, SavedComparison};
+pub use repository::migrations::{SavedComparison, SavedMigration};
 
-use crate::api::models::{Environment as ApiEnvironment, CredentialSet as ApiCredentialSet};
+use crate::api::models::{CredentialSet as ApiCredentialSet, Environment as ApiEnvironment};
 
 /// Main configuration manager using SQLite backend
 pub struct Config {
@@ -162,7 +162,11 @@ impl Config {
     }
 
     // Token management methods
-    pub async fn save_token(&self, env_name: String, token: crate::api::models::TokenInfo) -> Result<()> {
+    pub async fn save_token(
+        &self,
+        env_name: String,
+        token: crate::api::models::TokenInfo,
+    ) -> Result<()> {
         repository::tokens::save(&self.pool, env_name, token).await
     }
 
@@ -201,13 +205,16 @@ impl Config {
     }
 
     pub async fn get_default_query_limit(&self) -> Result<u32> {
-        let value = self.get_setting("default_query_limit").await?
+        let value = self
+            .get_setting("default_query_limit")
+            .await?
             .unwrap_or_else(|| "100".to_string());
         value.parse().context("Invalid default_query_limit")
     }
 
     pub async fn set_default_query_limit(&self, limit: u32) -> Result<()> {
-        self.set_setting("default_query_limit".to_string(), limit.to_string()).await
+        self.set_setting("default_query_limit".to_string(), limit.to_string())
+            .await
     }
 
     // Export to TOML for debugging/backup
@@ -263,8 +270,14 @@ impl Config {
     }
 
     // Entity cache methods
-    pub async fn get_entity_cache(&self, environment_name: &str, max_age_hours: i64) -> Result<Option<Vec<String>>> {
-        if let Some((entities, cached_at)) = repository::entity_cache::get(&self.pool, environment_name).await? {
+    pub async fn get_entity_cache(
+        &self,
+        environment_name: &str,
+        max_age_hours: i64,
+    ) -> Result<Option<Vec<String>>> {
+        if let Some((entities, cached_at)) =
+            repository::entity_cache::get(&self.pool, environment_name).await?
+        {
             let age = chrono::Utc::now().signed_duration_since(cached_at);
             if age.num_hours() < max_age_hours {
                 return Ok(Some(entities));
@@ -273,7 +286,11 @@ impl Config {
         Ok(None)
     }
 
-    pub async fn set_entity_cache(&self, environment_name: &str, entities: Vec<String>) -> Result<()> {
+    pub async fn set_entity_cache(
+        &self,
+        environment_name: &str,
+        entities: Vec<String>,
+    ) -> Result<()> {
         repository::entity_cache::set(&self.pool, environment_name, entities).await
     }
 
@@ -288,7 +305,10 @@ impl Config {
         entity_name: &str,
         max_age_hours: i64,
     ) -> Result<Option<crate::api::EntityMetadata>> {
-        if let Some((metadata, cached_at)) = repository::entity_metadata_cache::get(&self.pool, environment_name, entity_name).await? {
+        if let Some((metadata, cached_at)) =
+            repository::entity_metadata_cache::get(&self.pool, environment_name, entity_name)
+                .await?
+        {
             let age = chrono::Utc::now().signed_duration_since(cached_at);
             if age.num_hours() < max_age_hours {
                 return Ok(Some(metadata));
@@ -303,15 +323,21 @@ impl Config {
         entity_name: &str,
         metadata: &crate::api::EntityMetadata,
     ) -> Result<()> {
-        repository::entity_metadata_cache::set(&self.pool, environment_name, entity_name, metadata).await
+        repository::entity_metadata_cache::set(&self.pool, environment_name, entity_name, metadata)
+            .await
     }
 
-    pub async fn delete_entity_metadata_cache(&self, environment_name: &str, entity_name: &str) -> Result<()> {
+    pub async fn delete_entity_metadata_cache(
+        &self,
+        environment_name: &str,
+        entity_name: &str,
+    ) -> Result<()> {
         repository::entity_metadata_cache::delete(&self.pool, environment_name, entity_name).await
     }
 
     pub async fn delete_all_entity_metadata_cache(&self, environment_name: &str) -> Result<()> {
-        repository::entity_metadata_cache::delete_all_for_environment(&self.pool, environment_name).await
+        repository::entity_metadata_cache::delete_all_for_environment(&self.pool, environment_name)
+            .await
     }
 
     // Entity data cache methods
@@ -321,7 +347,9 @@ impl Config {
         entity_name: &str,
         max_age_hours: i64,
     ) -> Result<Option<Vec<serde_json::Value>>> {
-        if let Some((data, cached_at)) = repository::entity_data_cache::get(&self.pool, environment_name, entity_name).await? {
+        if let Some((data, cached_at)) =
+            repository::entity_data_cache::get(&self.pool, environment_name, entity_name).await?
+        {
             let age = chrono::Utc::now().signed_duration_since(cached_at);
             if age.num_hours() < max_age_hours {
                 return Ok(Some(data));
@@ -339,90 +367,231 @@ impl Config {
         repository::entity_data_cache::set(&self.pool, environment_name, entity_name, data).await
     }
 
-    pub async fn delete_entity_data_cache(&self, environment_name: &str, entity_name: &str) -> Result<()> {
+    pub async fn delete_entity_data_cache(
+        &self,
+        environment_name: &str,
+        entity_name: &str,
+    ) -> Result<()> {
         repository::entity_data_cache::delete(&self.pool, environment_name, entity_name).await
     }
 
     pub async fn delete_all_entity_data_cache(&self, environment_name: &str) -> Result<()> {
-        repository::entity_data_cache::delete_all_for_environment(&self.pool, environment_name).await
+        repository::entity_data_cache::delete_all_for_environment(&self.pool, environment_name)
+            .await
     }
 
     // Field and prefix mapping methods
-    pub async fn get_field_mappings(&self, source_entity: &str, target_entity: &str) -> Result<std::collections::HashMap<String, Vec<String>>> {
+    pub async fn get_field_mappings(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+    ) -> Result<std::collections::HashMap<String, Vec<String>>> {
         repository::mappings::get_field_mappings(&self.pool, source_entity, target_entity).await
     }
 
-    pub async fn get_field_mappings_multi(&self, source_entities: &[String], target_entities: &[String]) -> Result<std::collections::HashMap<String, Vec<String>>> {
-        repository::mappings::get_field_mappings_multi(&self.pool, source_entities, target_entities).await
+    pub async fn get_field_mappings_multi(
+        &self,
+        source_entities: &[String],
+        target_entities: &[String],
+    ) -> Result<std::collections::HashMap<String, Vec<String>>> {
+        repository::mappings::get_field_mappings_multi(&self.pool, source_entities, target_entities)
+            .await
     }
 
-    pub async fn set_field_mapping(&self, source_entity: &str, target_entity: &str, source_field: &str, target_field: &str) -> Result<()> {
-        repository::mappings::set_field_mapping(&self.pool, source_entity, target_entity, source_field, target_field).await
+    pub async fn set_field_mapping(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+        source_field: &str,
+        target_field: &str,
+    ) -> Result<()> {
+        repository::mappings::set_field_mapping(
+            &self.pool,
+            source_entity,
+            target_entity,
+            source_field,
+            target_field,
+        )
+        .await
     }
 
-    pub async fn delete_field_mapping(&self, source_entity: &str, target_entity: &str, source_field: &str) -> Result<()> {
-        repository::mappings::delete_field_mapping(&self.pool, source_entity, target_entity, source_field).await
+    pub async fn delete_field_mapping(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+        source_field: &str,
+    ) -> Result<()> {
+        repository::mappings::delete_field_mapping(
+            &self.pool,
+            source_entity,
+            target_entity,
+            source_field,
+        )
+        .await
     }
 
-    pub async fn get_prefix_mappings(&self, source_entity: &str, target_entity: &str) -> Result<std::collections::HashMap<String, Vec<String>>> {
+    pub async fn get_prefix_mappings(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+    ) -> Result<std::collections::HashMap<String, Vec<String>>> {
         repository::mappings::get_prefix_mappings(&self.pool, source_entity, target_entity).await
     }
 
-    pub async fn set_prefix_mapping(&self, source_entity: &str, target_entity: &str, source_prefix: &str, target_prefix: &str) -> Result<()> {
-        repository::mappings::set_prefix_mapping(&self.pool, source_entity, target_entity, source_prefix, target_prefix).await
+    pub async fn set_prefix_mapping(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+        source_prefix: &str,
+        target_prefix: &str,
+    ) -> Result<()> {
+        repository::mappings::set_prefix_mapping(
+            &self.pool,
+            source_entity,
+            target_entity,
+            source_prefix,
+            target_prefix,
+        )
+        .await
     }
 
-    pub async fn delete_prefix_mapping(&self, source_entity: &str, target_entity: &str, source_prefix: &str) -> Result<()> {
-        repository::mappings::delete_prefix_mapping(&self.pool, source_entity, target_entity, source_prefix).await
+    pub async fn delete_prefix_mapping(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+        source_prefix: &str,
+    ) -> Result<()> {
+        repository::mappings::delete_prefix_mapping(
+            &self.pool,
+            source_entity,
+            target_entity,
+            source_prefix,
+        )
+        .await
     }
 
-    pub async fn get_imported_mappings(&self, source_entity: &str, target_entity: &str) -> Result<(std::collections::HashMap<String, Vec<String>>, Option<String>)> {
+    pub async fn get_imported_mappings(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+    ) -> Result<(
+        std::collections::HashMap<String, Vec<String>>,
+        Option<String>,
+    )> {
         repository::mappings::get_imported_mappings(&self.pool, source_entity, target_entity).await
     }
 
-    pub async fn set_imported_mappings(&self, source_entity: &str, target_entity: &str, mappings: &std::collections::HashMap<String, Vec<String>>, source_file: &str) -> Result<()> {
-        repository::mappings::set_imported_mappings(&self.pool, source_entity, target_entity, mappings, source_file).await
+    pub async fn set_imported_mappings(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+        mappings: &std::collections::HashMap<String, Vec<String>>,
+        source_file: &str,
+    ) -> Result<()> {
+        repository::mappings::set_imported_mappings(
+            &self.pool,
+            source_entity,
+            target_entity,
+            mappings,
+            source_file,
+        )
+        .await
     }
 
-    pub async fn clear_imported_mappings(&self, source_entity: &str, target_entity: &str) -> Result<()> {
-        repository::mappings::clear_imported_mappings(&self.pool, source_entity, target_entity).await
+    pub async fn clear_imported_mappings(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+    ) -> Result<()> {
+        repository::mappings::clear_imported_mappings(&self.pool, source_entity, target_entity)
+            .await
     }
 
     /// Get ignored items for entity comparison
-    pub async fn get_ignored_items(&self, source_entity: &str, target_entity: &str) -> Result<std::collections::HashSet<String>> {
+    pub async fn get_ignored_items(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+    ) -> Result<std::collections::HashSet<String>> {
         repository::mappings::get_ignored_items(&self.pool, source_entity, target_entity).await
     }
 
     /// Set ignored items for entity comparison
-    pub async fn set_ignored_items(&self, source_entity: &str, target_entity: &str, ignored: &std::collections::HashSet<String>) -> Result<()> {
-        repository::mappings::set_ignored_items(&self.pool, source_entity, target_entity, ignored).await
+    pub async fn set_ignored_items(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+        ignored: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        repository::mappings::set_ignored_items(&self.pool, source_entity, target_entity, ignored)
+            .await
     }
 
     /// Clear all ignored items for entity comparison
-    pub async fn clear_ignored_items(&self, source_entity: &str, target_entity: &str) -> Result<()> {
+    pub async fn clear_ignored_items(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+    ) -> Result<()> {
         repository::mappings::clear_ignored_items(&self.pool, source_entity, target_entity).await
     }
 
-    pub async fn get_negative_matches(&self, source_entity: &str, target_entity: &str) -> Result<std::collections::HashSet<String>> {
+    pub async fn get_negative_matches(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+    ) -> Result<std::collections::HashSet<String>> {
         repository::mappings::get_negative_matches(&self.pool, source_entity, target_entity).await
     }
 
-    pub async fn add_negative_match(&self, source_entity: &str, target_entity: &str, source_field: &str) -> Result<()> {
-        repository::mappings::add_negative_match(&self.pool, source_entity, target_entity, source_field).await
+    pub async fn add_negative_match(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+        source_field: &str,
+    ) -> Result<()> {
+        repository::mappings::add_negative_match(
+            &self.pool,
+            source_entity,
+            target_entity,
+            source_field,
+        )
+        .await
     }
 
-    pub async fn delete_negative_match(&self, source_entity: &str, target_entity: &str, source_field: &str) -> Result<()> {
-        repository::mappings::delete_negative_match(&self.pool, source_entity, target_entity, source_field).await
+    pub async fn delete_negative_match(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+        source_field: &str,
+    ) -> Result<()> {
+        repository::mappings::delete_negative_match(
+            &self.pool,
+            source_entity,
+            target_entity,
+            source_field,
+        )
+        .await
     }
 
     /// Get example pairs for entity comparison
-    pub async fn get_example_pairs(&self, source_entity: &str, target_entity: &str) -> Result<Vec<crate::tui::apps::migration::entity_comparison::ExamplePair>> {
+    pub async fn get_example_pairs(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+    ) -> Result<Vec<crate::tui::apps::migration::entity_comparison::ExamplePair>> {
         repository::examples::get_example_pairs(&self.pool, source_entity, target_entity).await
     }
 
     /// Save example pair
-    pub async fn save_example_pair(&self, source_entity: &str, target_entity: &str, pair: &crate::tui::apps::migration::entity_comparison::ExamplePair) -> Result<()> {
-        repository::examples::save_example_pair(&self.pool, source_entity, target_entity, pair).await
+    pub async fn save_example_pair(
+        &self,
+        source_entity: &str,
+        target_entity: &str,
+        pair: &crate::tui::apps::migration::entity_comparison::ExamplePair,
+    ) -> Result<()> {
+        repository::examples::save_example_pair(&self.pool, source_entity, target_entity, pair)
+            .await
     }
 
     /// Delete example pair
@@ -431,19 +600,31 @@ impl Config {
     }
 
     // Queue item methods
-    pub async fn save_queue_item(&self, item: &crate::tui::apps::queue::models::QueueItem) -> Result<()> {
+    pub async fn save_queue_item(
+        &self,
+        item: &crate::tui::apps::queue::models::QueueItem,
+    ) -> Result<()> {
         repository::queue::save_queue_item(&self.pool, item).await
     }
 
-    pub async fn get_queue_item(&self, id: &str) -> Result<Option<crate::tui::apps::queue::models::QueueItem>> {
+    pub async fn get_queue_item(
+        &self,
+        id: &str,
+    ) -> Result<Option<crate::tui::apps::queue::models::QueueItem>> {
         repository::queue::get_queue_item(&self.pool, id).await
     }
 
-    pub async fn list_queue_items(&self) -> Result<Vec<crate::tui::apps::queue::models::QueueItem>> {
+    pub async fn list_queue_items(
+        &self,
+    ) -> Result<Vec<crate::tui::apps::queue::models::QueueItem>> {
         repository::queue::list_queue_items(&self.pool).await
     }
 
-    pub async fn update_queue_item_status(&self, id: &str, status: crate::tui::apps::queue::models::OperationStatus) -> Result<()> {
+    pub async fn update_queue_item_status(
+        &self,
+        id: &str,
+        status: crate::tui::apps::queue::models::OperationStatus,
+    ) -> Result<()> {
         repository::queue::update_queue_item_status(&self.pool, id, status).await
     }
 
@@ -451,15 +632,28 @@ impl Config {
         repository::queue::update_queue_item_priority(&self.pool, id, priority).await
     }
 
-    pub async fn update_queue_item_result(&self, id: &str, result: &crate::tui::apps::queue::models::QueueResult) -> Result<()> {
+    pub async fn update_queue_item_result(
+        &self,
+        id: &str,
+        result: &crate::tui::apps::queue::models::QueueResult,
+    ) -> Result<()> {
         repository::queue::update_queue_item_result(&self.pool, id, result).await
     }
 
-    pub async fn update_queue_item_succeeded_indices(&self, id: &str, succeeded_indices: &[usize]) -> Result<()> {
-        repository::queue::update_queue_item_succeeded_indices(&self.pool, id, succeeded_indices).await
+    pub async fn update_queue_item_succeeded_indices(
+        &self,
+        id: &str,
+        succeeded_indices: &[usize],
+    ) -> Result<()> {
+        repository::queue::update_queue_item_succeeded_indices(&self.pool, id, succeeded_indices)
+            .await
     }
 
-    pub async fn mark_queue_item_interrupted(&self, id: &str, interrupted_at: chrono::DateTime<chrono::Utc>) -> Result<()> {
+    pub async fn mark_queue_item_interrupted(
+        &self,
+        id: &str,
+        interrupted_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()> {
         repository::queue::mark_queue_item_interrupted(&self.pool, id, interrupted_at).await
     }
 
@@ -479,7 +673,10 @@ impl Config {
         repository::queue::get_queue_settings(&self.pool).await
     }
 
-    pub async fn save_queue_settings(&self, settings: &repository::queue::QueueSettings) -> Result<()> {
+    pub async fn save_queue_settings(
+        &self,
+        settings: &repository::queue::QueueSettings,
+    ) -> Result<()> {
         repository::queue::save_queue_settings(&self.pool, settings).await
     }
 }

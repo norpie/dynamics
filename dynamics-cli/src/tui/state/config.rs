@@ -1,7 +1,7 @@
-use super::{Theme, ThemeVariant, FocusMode};
+use super::{FocusMode, Theme, ThemeVariant};
 use crate::config::options::Options;
-use crate::tui::color::hex_to_color;
 use crate::tui::KeyBinding;
+use crate::tui::color::hex_to_color;
 use ratatui::style::Color;
 use std::collections::HashMap;
 
@@ -42,7 +42,12 @@ impl RuntimeConfig {
     /// Create a new config with explicit settings
     pub fn new(theme: Theme, focus_mode: FocusMode, keybinds: HashMap<String, KeyBinding>) -> Self {
         let default = Self::default();
-        Self { theme, focus_mode, keybinds, tab_debouncing_ms: default.tab_debouncing_ms }
+        Self {
+            theme,
+            focus_mode,
+            keybinds,
+            tab_debouncing_ms: default.tab_debouncing_ms,
+        }
     }
 
     /// Create config with custom theme variant and default focus mode
@@ -94,7 +99,10 @@ impl RuntimeConfig {
 
         // No default registered - panic in debug, return F24 in release
         #[cfg(debug_assertions)]
-        panic!("No keybind registered for '{}' - please register it in keybinds.rs", key);
+        panic!(
+            "No keybind registered for '{}' - please register it in keybinds.rs",
+            key
+        );
 
         #[cfg(not(debug_assertions))]
         {
@@ -105,13 +113,16 @@ impl RuntimeConfig {
 
     /// Load runtime config from the options system
     pub async fn load_from_options() -> anyhow::Result<Self> {
-        use std::str::FromStr;
         use crate::config::options::registrations::keybinds;
+        use std::str::FromStr;
 
         let config = crate::global_config();
 
         // Load focus mode from options (defaults to Hover if not found)
-        let focus_mode_str = config.options.get_string("tui.focus_mode").await
+        let focus_mode_str = config
+            .options
+            .get_string("tui.focus_mode")
+            .await
             .unwrap_or_else(|_| "hover".to_string());
 
         let focus_mode = match focus_mode_str.as_str() {
@@ -122,18 +133,29 @@ impl RuntimeConfig {
         };
 
         // Load active theme from options (defaults to mocha if not found)
-        let theme_name = config.options.get_string("theme.active").await
+        let theme_name = config
+            .options
+            .get_string("theme.active")
+            .await
             .unwrap_or_else(|_| "mocha".to_string());
 
         // Load theme colors from options database
-        let theme = load_theme_from_options(&config.options, &theme_name).await
+        let theme = load_theme_from_options(&config.options, &theme_name)
+            .await
             .unwrap_or_else(|e| {
-                log::warn!("Failed to load theme '{}': {}. Falling back to mocha.", theme_name, e);
+                log::warn!(
+                    "Failed to load theme '{}': {}. Falling back to mocha.",
+                    theme_name,
+                    e
+                );
                 Theme::mocha()
             });
 
         // Load tab debouncing from options (defaults to 150ms if not found)
-        let tab_debouncing_ms = config.options.get_uint("keys.tab.debouncing").await
+        let tab_debouncing_ms = config
+            .options
+            .get_uint("keys.tab.debouncing")
+            .await
             .unwrap_or_else(|_| 150);
 
         // Load keybinds from options database (now app-scoped)
@@ -147,21 +169,32 @@ impl RuntimeConfig {
                 let full_key = format!("{}.{}", app, action);
                 let option_key = format!("keybind.{}.{}", app, action);
 
-                let keybind_str = config.options.get_string(&option_key).await
-                    .unwrap_or_else(|_| {
-                        // Fall back to default keybind if not found
-                        let default_config = Self::default();
-                        default_config.keybinds.get(&full_key)
-                            .map(|kb| kb.to_string())
-                            .unwrap_or_else(|| "F1".to_string())
-                    });
+                let keybind_str =
+                    config
+                        .options
+                        .get_string(&option_key)
+                        .await
+                        .unwrap_or_else(|_| {
+                            // Fall back to default keybind if not found
+                            let default_config = Self::default();
+                            default_config
+                                .keybinds
+                                .get(&full_key)
+                                .map(|kb| kb.to_string())
+                                .unwrap_or_else(|| "F1".to_string())
+                        });
 
                 match KeyBinding::from_str(&keybind_str) {
                     Ok(keybind) => {
                         keybinds.insert(full_key.clone(), keybind);
                     }
                     Err(e) => {
-                        log::warn!("Failed to parse keybind '{}' for action '{}': {}. Using default.", keybind_str, full_key, e);
+                        log::warn!(
+                            "Failed to parse keybind '{}' for action '{}': {}. Using default.",
+                            keybind_str,
+                            full_key,
+                            e
+                        );
                         // Use default keybind for this action
                         let default_config = Self::default();
                         if let Some(default_kb) = default_config.keybinds.get(&full_key) {
@@ -240,7 +273,10 @@ async fn load_theme_from_options(options: &Options, name: &str) -> anyhow::Resul
 ///
 /// Returns a HashMap mapping theme names to Theme structs.
 /// Themes that fail to load are logged and skipped.
-pub async fn load_all_themes(options: &Options, names: Vec<String>) -> std::collections::HashMap<String, Theme> {
+pub async fn load_all_themes(
+    options: &Options,
+    names: Vec<String>,
+) -> std::collections::HashMap<String, Theme> {
     let mut themes = std::collections::HashMap::new();
 
     for name in names {

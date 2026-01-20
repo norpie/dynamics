@@ -3,11 +3,11 @@ use clap::{Args, Subcommand};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEvent},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
-    backend::{Backend, CrosstermBackend},
     Terminal,
+    backend::{Backend, CrosstermBackend},
 };
 use std::io;
 use std::time::Instant;
@@ -89,7 +89,11 @@ async fn run_tui<B: Backend>(
                             && last_key.code == key.code
                             && last_key.modifiers == key.modifiers
                         {
-                            log::debug!("Skipping duplicate key event: {:?} ({}ms since last)", key.code, elapsed);
+                            log::debug!(
+                                "Skipping duplicate key event: {:?} ({}ms since last)",
+                                key.code,
+                                elapsed
+                            );
                             continue;
                         }
                     }
@@ -97,10 +101,12 @@ async fn run_tui<B: Backend>(
                 last_key_event = Some((*key, frame_start));
 
                 if key.code == crossterm::event::KeyCode::Char('q')
-                    && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                    && key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::CONTROL)
                 {
                     runtime.request_quit();
-                    continue;  // Let runtime handle the confirmation
+                    continue; // Let runtime handle the confirmation
                 }
 
                 // Pass key event to runtime

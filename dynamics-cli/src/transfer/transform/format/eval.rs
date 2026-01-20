@@ -1,9 +1,9 @@
 //! Evaluator for format templates
 
 use super::ast::*;
-use crate::transfer::transform::resolve_path;
 use crate::transfer::FieldPath;
 use crate::transfer::Value;
+use crate::transfer::transform::resolve_path;
 
 /// Evaluate a format template against a record
 pub fn evaluate(
@@ -88,14 +88,23 @@ fn eval_expr(
 }
 
 /// Evaluate a math operation
-fn eval_math(left: &Value, op: MathOp, right: &Value, null_handling: NullHandling) -> Result<Value, String> {
+fn eval_math(
+    left: &Value,
+    op: MathOp,
+    right: &Value,
+    null_handling: NullHandling,
+) -> Result<Value, String> {
     // Handle null
     if left.is_null() || right.is_null() {
         return match null_handling {
             NullHandling::Error => Err("null value in math operation".to_string()),
             NullHandling::Zero => {
                 let left = if left.is_null() { &Value::Int(0) } else { left };
-                let right = if right.is_null() { &Value::Int(0) } else { right };
+                let right = if right.is_null() {
+                    &Value::Int(0)
+                } else {
+                    right
+                };
                 eval_math(left, op, right, NullHandling::Error)
             }
             NullHandling::Empty => Ok(Value::Null),
@@ -165,9 +174,10 @@ fn eval_math(left: &Value, op: MathOp, right: &Value, null_handling: NullHandlin
         (Value::Bool(_), _) | (_, Value::Bool(_)) => {
             Err("boolean values cannot be used in math operations".to_string())
         }
-        (Value::String(_), _) | (_, Value::String(_)) => {
-            Err("string values cannot be used in math operations (use multiple ${} for concatenation)".to_string())
-        }
+        (Value::String(_), _) | (_, Value::String(_)) => Err(
+            "string values cannot be used in math operations (use multiple ${} for concatenation)"
+                .to_string(),
+        ),
         _ => Err(format!(
             "cannot perform {} on {} and {}",
             op,
@@ -178,15 +188,22 @@ fn eval_math(left: &Value, op: MathOp, right: &Value, null_handling: NullHandlin
 }
 
 /// Evaluate a comparison operation
-fn eval_compare(left: &Value, op: CompareOp, right: &Value, null_handling: NullHandling) -> Result<bool, String> {
+fn eval_compare(
+    left: &Value,
+    op: CompareOp,
+    right: &Value,
+    null_handling: NullHandling,
+) -> Result<bool, String> {
     // Null comparisons
     if left.is_null() || right.is_null() {
         return match null_handling {
             NullHandling::Error => Err("null value in comparison".to_string()),
             NullHandling::Zero | NullHandling::Empty => {
                 // null == null is true, null == anything else is false
-                Ok(matches!(op, CompareOp::Eq) && left.is_null() && right.is_null()
-                    || matches!(op, CompareOp::Ne) && !(left.is_null() && right.is_null()))
+                Ok(
+                    matches!(op, CompareOp::Eq) && left.is_null() && right.is_null()
+                        || matches!(op, CompareOp::Ne) && !(left.is_null() && right.is_null()),
+                )
             }
         };
     }
@@ -233,8 +250,12 @@ fn compare_ordered(left: &Value, op: CompareOp, right: &Value) -> Result<bool, S
     let ordering = match (left, right) {
         (Value::Int(a), Value::Int(b)) => a.cmp(b),
         (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Int(a), Value::Float(b)) => (*a as f64).partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Float(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Int(a), Value::Float(b)) => (*a as f64)
+            .partial_cmp(b)
+            .unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Float(a), Value::Int(b)) => a
+            .partial_cmp(&(*b as f64))
+            .unwrap_or(std::cmp::Ordering::Equal),
         (Value::String(a), Value::String(b)) => a.cmp(b),
         (Value::DateTime(a), Value::DateTime(b)) => a.cmp(b),
         _ => {
@@ -243,7 +264,7 @@ fn compare_ordered(left: &Value, op: CompareOp, right: &Value) -> Result<bool, S
                 type_name(left),
                 type_name(right),
                 op
-            ))
+            ));
         }
     };
 
@@ -333,18 +354,14 @@ fn apply_format_spec(val: &Value, spec: &FormatSpec) -> Result<String, String> {
             let n = to_int(val)?;
             format_int(n, spec)
         }
-        FormatType::Date => {
-            match val {
-                Value::DateTime(dt) => Ok(dt.format("%Y-%m-%d").to_string()),
-                _ => Err(format!("cannot format {} as date", type_name(val))),
-            }
-        }
-        FormatType::DateTime => {
-            match val {
-                Value::DateTime(dt) => Ok(dt.to_rfc3339()),
-                _ => Err(format!("cannot format {} as datetime", type_name(val))),
-            }
-        }
+        FormatType::Date => match val {
+            Value::DateTime(dt) => Ok(dt.format("%Y-%m-%d").to_string()),
+            _ => Err(format!("cannot format {} as date", type_name(val))),
+        },
+        FormatType::DateTime => match val {
+            Value::DateTime(dt) => Ok(dt.to_rfc3339()),
+            _ => Err(format!("cannot format {} as datetime", type_name(val))),
+        },
         FormatType::Percent => {
             let n = to_float(val)?;
             let pct = n * 100.0;
@@ -497,7 +514,8 @@ mod tests {
 
     #[test]
     fn test_eval_math_multiply() {
-        let result = eval_template("${quantity * price}", json!({"quantity": 3, "price": 10.5})).unwrap();
+        let result =
+            eval_template("${quantity * price}", json!({"quantity": 3, "price": 10.5})).unwrap();
         assert_eq!(result, "31.5");
     }
 
@@ -544,18 +562,10 @@ mod tests {
 
     #[test]
     fn test_eval_coalesce() {
-        let result = eval_template(
-            "${name ?? 'Unknown'}",
-            json!({"name": null}),
-        )
-        .unwrap();
+        let result = eval_template("${name ?? 'Unknown'}", json!({"name": null})).unwrap();
         assert_eq!(result, "Unknown");
 
-        let result = eval_template(
-            "${name ?? 'Unknown'}",
-            json!({"name": "John"}),
-        )
-        .unwrap();
+        let result = eval_template("${name ?? 'Unknown'}", json!({"name": "John"})).unwrap();
         assert_eq!(result, "John");
     }
 
@@ -624,11 +634,13 @@ mod tests {
     #[test]
     fn test_eval_truthiness() {
         // 0 is falsy
-        let result = eval_template("${count ? 'Has items' : 'Empty'}", json!({"count": 0})).unwrap();
+        let result =
+            eval_template("${count ? 'Has items' : 'Empty'}", json!({"count": 0})).unwrap();
         assert_eq!(result, "Empty");
 
         // Non-zero is truthy
-        let result = eval_template("${count ? 'Has items' : 'Empty'}", json!({"count": 5})).unwrap();
+        let result =
+            eval_template("${count ? 'Has items' : 'Empty'}", json!({"count": 5})).unwrap();
         assert_eq!(result, "Has items");
 
         // Empty string is falsy

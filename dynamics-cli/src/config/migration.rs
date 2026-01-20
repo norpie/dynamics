@@ -1,11 +1,11 @@
 //! TOML to SQLite migration logic
 
 use anyhow::{Context, Result};
-use std::path::Path;
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::Path;
 
-use crate::api::models::{Environment, CredentialSet};
+use crate::api::models::{CredentialSet, Environment};
 use crate::config::db;
 
 /// Legacy TOML configuration structure for migration
@@ -112,24 +112,36 @@ pub async fn migrate_from_toml(toml_path: &Path, db_path: &Path) -> Result<()> {
     let legacy_config: LegacyConfig = toml::from_str(&toml_content)
         .with_context(|| format!("Failed to parse TOML config: {:?}", toml_path))?;
 
-    log::info!("Parsed legacy config with {} environments", legacy_config.environments.len());
+    log::info!(
+        "Parsed legacy config with {} environments",
+        legacy_config.environments.len()
+    );
 
     // Connect to new SQLite database
     let pool = db::connect(db_path).await?;
     db::run_migrations(&pool).await?;
 
     // Start migration transaction
-    let mut tx = pool.begin().await.context("Failed to start migration transaction")?;
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to start migration transaction")?;
 
     // 1. Migrate credentials and environments
     let mut credential_name_map: HashMap<String, String> = HashMap::new();
 
     for (env_name, auth_config) in &legacy_config.environments {
         // Create a credential name (reuse if same credentials exist)
-        let credential_key = format!("{}:{}:{}:{}",
-            auth_config.username, auth_config.client_id, auth_config.client_secret, auth_config.host);
+        let credential_key = format!(
+            "{}:{}:{}:{}",
+            auth_config.username,
+            auth_config.client_id,
+            auth_config.client_secret,
+            auth_config.host
+        );
 
-        let credential_name = if let Some(existing_name) = credential_name_map.get(&credential_key) {
+        let credential_name = if let Some(existing_name) = credential_name_map.get(&credential_key)
+        {
             existing_name.clone()
         } else {
             // Create new credential name
@@ -147,15 +159,13 @@ pub async fn migrate_from_toml(toml_path: &Path, db_path: &Path) -> Result<()> {
             let data_json = serde_json::to_string(&credential_data)
                 .context("Failed to serialize credential data")?;
 
-            sqlx::query(
-                "INSERT INTO credentials (name, type, data) VALUES (?, ?, ?)",
-            )
-            .bind(&cred_name)
-            .bind("username_password")
-            .bind(&data_json)
-            .execute(&mut *tx)
-            .await
-            .context("Failed to insert credential")?;
+            sqlx::query("INSERT INTO credentials (name, type, data) VALUES (?, ?, ?)")
+                .bind(&cred_name)
+                .bind("username_password")
+                .bind(&data_json)
+                .execute(&mut *tx)
+                .await
+                .context("Failed to insert credential")?;
 
             log::debug!("Created credential: {}", cred_name);
             cred_name
@@ -180,30 +190,29 @@ pub async fn migrate_from_toml(toml_path: &Path, db_path: &Path) -> Result<()> {
 
     // 2. Migrate entity mappings
     for (singular, plural) in &legacy_config.entity_mappings {
-        sqlx::query(
-            "INSERT INTO entity_mappings (singular_name, plural_name) VALUES (?, ?)",
-        )
-        .bind(singular)
-        .bind(plural)
-        .execute(&mut *tx)
-        .await
-        .context("Failed to insert entity mapping")?;
+        sqlx::query("INSERT INTO entity_mappings (singular_name, plural_name) VALUES (?, ?)")
+            .bind(singular)
+            .bind(plural)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to insert entity mapping")?;
     }
-    log::info!("Migrated {} entity mappings", legacy_config.entity_mappings.len());
+    log::info!(
+        "Migrated {} entity mappings",
+        legacy_config.entity_mappings.len()
+    );
 
     // 3. Migrate settings
     let settings = &legacy_config.settings;
 
     // Default query limit
-    sqlx::query(
-        "INSERT INTO settings (key, value, type) VALUES (?, ?, ?)",
-    )
-    .bind("default_query_limit")
-    .bind(settings.default_query_limit.to_string())
-    .bind("integer")
-    .execute(&mut *tx)
-    .await
-    .context("Failed to insert default_query_limit setting")?;
+    sqlx::query("INSERT INTO settings (key, value, type) VALUES (?, ?, ?)")
+        .bind("default_query_limit")
+        .bind(settings.default_query_limit.to_string())
+        .bind("integer")
+        .execute(&mut *tx)
+        .await
+        .context("Failed to insert default_query_limit setting")?;
 
     // Field mappings
     for (entity_pair, mappings) in &settings.field_mappings {
@@ -222,7 +231,10 @@ pub async fn migrate_from_toml(toml_path: &Path, db_path: &Path) -> Result<()> {
             }
         }
     }
-    log::info!("Migrated field mappings for {} entity pairs", settings.field_mappings.len());
+    log::info!(
+        "Migrated field mappings for {} entity pairs",
+        settings.field_mappings.len()
+    );
 
     // Prefix mappings
     for (entity_pair, mappings) in &settings.prefix_mappings {
@@ -241,7 +253,10 @@ pub async fn migrate_from_toml(toml_path: &Path, db_path: &Path) -> Result<()> {
             }
         }
     }
-    log::info!("Migrated prefix mappings for {} entity pairs", settings.prefix_mappings.len());
+    log::info!(
+        "Migrated prefix mappings for {} entity pairs",
+        settings.prefix_mappings.len()
+    );
 
     // Example pairs
     for (entity_pair, examples) in &settings.examples {
@@ -262,7 +277,10 @@ pub async fn migrate_from_toml(toml_path: &Path, db_path: &Path) -> Result<()> {
             }
         }
     }
-    log::info!("Migrated example pairs for {} entity pairs", settings.examples.len());
+    log::info!(
+        "Migrated example pairs for {} entity pairs",
+        settings.examples.len()
+    );
 
     // 4. Migrate saved migrations
     for (migration_name, migration) in &legacy_config.migrations {
@@ -337,22 +355,28 @@ pub async fn migrate_from_toml(toml_path: &Path, db_path: &Path) -> Result<()> {
                 let column_mappings = if view_comp.column_mappings.is_empty() {
                     None
                 } else {
-                    Some(serde_json::to_string(&view_comp.column_mappings)
-                        .context("Failed to serialize column mappings")?)
+                    Some(
+                        serde_json::to_string(&view_comp.column_mappings)
+                            .context("Failed to serialize column mappings")?,
+                    )
                 };
 
                 let filter_mappings = if view_comp.filter_mappings.is_empty() {
                     None
                 } else {
-                    Some(serde_json::to_string(&view_comp.filter_mappings)
-                        .context("Failed to serialize filter mappings")?)
+                    Some(
+                        serde_json::to_string(&view_comp.filter_mappings)
+                            .context("Failed to serialize filter mappings")?,
+                    )
                 };
 
                 let sort_mappings = if view_comp.sort_mappings.is_empty() {
                     None
                 } else {
-                    Some(serde_json::to_string(&view_comp.sort_mappings)
-                        .context("Failed to serialize sort mappings")?)
+                    Some(
+                        serde_json::to_string(&view_comp.sort_mappings)
+                            .context("Failed to serialize sort mappings")?,
+                    )
                 };
 
                 sqlx::query(
@@ -370,23 +394,51 @@ pub async fn migrate_from_toml(toml_path: &Path, db_path: &Path) -> Result<()> {
             }
         }
     }
-    log::info!("Migrated {} saved migrations", legacy_config.migrations.len());
+    log::info!(
+        "Migrated {} saved migrations",
+        legacy_config.migrations.len()
+    );
 
     // Commit transaction
-    tx.commit().await.context("Failed to commit migration transaction")?;
+    tx.commit()
+        .await
+        .context("Failed to commit migration transaction")?;
 
     // Backup original TOML file
     let backup_path = toml_path.with_extension("toml.backup");
     std::fs::rename(toml_path, &backup_path)
         .with_context(|| format!("Failed to backup TOML config to {:?}", backup_path))?;
 
-    log::info!("Migration completed successfully. Original config backed up to {:?}", backup_path);
+    log::info!(
+        "Migration completed successfully. Original config backed up to {:?}",
+        backup_path
+    );
     log::info!("Migrated:");
-    log::info!("  - {} environments with credentials", legacy_config.environments.len());
-    log::info!("  - {} entity mappings", legacy_config.entity_mappings.len());
-    log::info!("  - {} field mapping pairs", legacy_config.settings.field_mappings.len());
-    log::info!("  - {} prefix mapping pairs", legacy_config.settings.prefix_mappings.len());
-    log::info!("  - {} example pairs", legacy_config.settings.examples.values().map(|v| v.len()).sum::<usize>());
+    log::info!(
+        "  - {} environments with credentials",
+        legacy_config.environments.len()
+    );
+    log::info!(
+        "  - {} entity mappings",
+        legacy_config.entity_mappings.len()
+    );
+    log::info!(
+        "  - {} field mapping pairs",
+        legacy_config.settings.field_mappings.len()
+    );
+    log::info!(
+        "  - {} prefix mapping pairs",
+        legacy_config.settings.prefix_mappings.len()
+    );
+    log::info!(
+        "  - {} example pairs",
+        legacy_config
+            .settings
+            .examples
+            .values()
+            .map(|v| v.len())
+            .sum::<usize>()
+    );
     log::info!("  - {} saved migrations", legacy_config.migrations.len());
 
     Ok(())

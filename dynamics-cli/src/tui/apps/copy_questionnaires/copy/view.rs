@@ -1,13 +1,13 @@
 use super::models::State;
 use super::tree_builder::build_snapshot_tree;
 use crate::tui::{Element, Resource, renderer::LayeredView};
-use ratatui::{
-    text::{Line, Span},
-    style::Style,
-    prelude::Stylize,
-    layout::Constraint as LayoutConstraint,
-};
 use crate::{col, row, use_constraints};
+use ratatui::{
+    layout::Constraint as LayoutConstraint,
+    prelude::Stylize,
+    style::Style,
+    text::{Line, Span},
+};
 
 pub fn render_view(state: &mut State) -> LayeredView<super::models::Msg> {
     let theme = &crate::global_runtime_config().theme;
@@ -21,9 +21,7 @@ pub fn render_view(state: &mut State) -> LayeredView<super::models::Msg> {
         Element::text("")
     };
 
-    let panel = Element::panel(content)
-        .title("Copy Questionnaire")
-        .build();
+    let panel = Element::panel(content).title("Copy Questionnaire").build();
 
     LayeredView::new(panel)
 }
@@ -138,7 +136,8 @@ fn render_error(err: &str, theme: &crate::tui::Theme) -> Element<super::models::
         Element::styled_text(Line::from(vec![
             Span::styled("Error: ", Style::default().fg(theme.accent_error).bold()),
             Span::styled(err.to_string(), Style::default().fg(theme.text_primary)),
-        ])).build(),
+        ]))
+        .build(),
     ])
     .build()
 }
@@ -147,21 +146,17 @@ pub fn render_status(state: &State) -> Option<Line<'static>> {
     let theme = &crate::global_runtime_config().theme;
 
     match &state.questionnaire {
-        Resource::Success(questionnaire) => {
-            Some(Line::from(vec![
-                Span::styled(
-                    format!("{} ({} entities)", state.questionnaire_name, questionnaire.total_entities()),
-                    Style::default().fg(theme.text_primary),
-                ),
-            ]))
-        }
-        _ => {
-            Some(Line::from(vec![
-                Span::styled(
-                    state.questionnaire_name.clone(),
-                    Style::default().fg(theme.text_primary),
-                ),
-            ]))
-        }
+        Resource::Success(questionnaire) => Some(Line::from(vec![Span::styled(
+            format!(
+                "{} ({} entities)",
+                state.questionnaire_name,
+                questionnaire.total_entities()
+            ),
+            Style::default().fg(theme.text_primary),
+        )])),
+        _ => Some(Line::from(vec![Span::styled(
+            state.questionnaire_name.clone(),
+            Style::default().fg(theme.text_primary),
+        )])),
     }
 }

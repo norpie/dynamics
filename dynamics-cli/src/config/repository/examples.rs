@@ -23,7 +23,10 @@ pub async fn get_example_pairs(
     Ok(rows
         .into_iter()
         .map(|(id, source_uuid, target_uuid, label)| {
-            let mut pair = crate::tui::apps::migration::entity_comparison::ExamplePair::new(source_uuid, target_uuid);
+            let mut pair = crate::tui::apps::migration::entity_comparison::ExamplePair::new(
+                source_uuid,
+                target_uuid,
+            );
             pair.id = id;
             pair.label = label;
             pair

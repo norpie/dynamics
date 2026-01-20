@@ -1,10 +1,12 @@
-use crossterm::event::KeyCode;
-use ratatui::text::{Line, Span};
-use ratatui::style::Style;
-use ratatui::prelude::Stylize;
-use crate::tui::{App, AppId, Command, Element, Subscription, Theme, LayoutConstraint, FocusId, LayeredView};
 use crate::tui::element::ColumnBuilder;
 use crate::tui::widgets::{ListItem, ListState};
+use crate::tui::{
+    App, AppId, Command, Element, FocusId, LayeredView, LayoutConstraint, Subscription, Theme,
+};
+use crossterm::event::KeyCode;
+use ratatui::prelude::Stylize;
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
 
 pub struct AppLauncher;
 
@@ -43,17 +45,21 @@ impl Default for State {
                 AppInfo {
                     id: AppId::SelectQuestionnaire,
                     name: "Copy Questionnaire".to_string(),
-                    description: "Copy Dynamics 365 questionnaires with all related entities".to_string(),
+                    description: "Copy Dynamics 365 questionnaires with all related entities"
+                        .to_string(),
                 },
                 AppInfo {
                     id: AppId::EntitySync,
                     name: "Entity Sync".to_string(),
-                    description: "Sync settings entities between Dynamics 365 environments".to_string(),
+                    description: "Sync settings entities between Dynamics 365 environments"
+                        .to_string(),
                 },
                 AppInfo {
                     id: AppId::TransferConfigList,
                     name: "Data Transfer".to_string(),
-                    description: "Transfer data between Dynamics 365 environments with field mapping".to_string(),
+                    description:
+                        "Transfer data between Dynamics 365 environments with field mapping"
+                            .to_string(),
                 },
                 AppInfo {
                     id: AppId::OperationQueue,
@@ -87,17 +93,26 @@ struct AppInfo {
 impl ListItem for AppInfo {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Msg> {
         let theme = &crate::global_runtime_config().theme;
         let (fg_color, bg_style) = if is_selected {
-            (theme.accent_primary, Some(Style::default().bg(theme.bg_surface)))
+            (
+                theme.accent_primary,
+                Some(Style::default().bg(theme.bg_surface)),
+            )
         } else {
             (theme.text_primary, None)
         };
 
-        let mut builder = Element::styled_text(Line::from(vec![
-            Span::styled(format!("  {} - {}", self.name, self.description), Style::default().fg(fg_color)),
-        ]));
+        let mut builder = Element::styled_text(Line::from(vec![Span::styled(
+            format!("  {} - {}", self.name, self.description),
+            Style::default().fg(fg_color),
+        )]));
 
         if let Some(bg) = bg_style {
             builder = builder.background(bg);
@@ -120,11 +135,9 @@ impl App for AppLauncher {
             Command::perform(
                 async {
                     let manager = crate::client_manager();
-                    manager.get_current_environment_name().await
-                        .ok()
-                        .flatten()
+                    manager.get_current_environment_name().await.ok().flatten()
                 },
-                Msg::EnvironmentLoaded
+                Msg::EnvironmentLoaded,
             ),
             Command::set_focus(FocusId::new("app-list")),
         ]);
@@ -143,7 +156,9 @@ impl App for AppLauncher {
             Msg::ListNavigate(key) => {
                 // Handle list navigation
                 let visible_height = 20; // Approximate, will be corrected during render
-                state.list_state.handle_key(key, state.apps.len(), visible_height);
+                state
+                    .list_state
+                    .handle_key(key, state.apps.len(), visible_height);
                 Command::None
             }
             Msg::EnvironmentLoaded(env) => {
@@ -167,9 +182,7 @@ impl App for AppLauncher {
         .build();
 
         // Just the list in a panel, filling the entire area
-        let panel = Element::panel(list)
-            .title("Apps")
-            .build();
+        let panel = Element::panel(list).title("Apps").build();
 
         LayeredView::new(panel)
     }

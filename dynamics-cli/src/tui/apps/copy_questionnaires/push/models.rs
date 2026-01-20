@@ -1,20 +1,20 @@
-use std::time::Instant;
+use super::super::copy::domain::Questionnaire;
 use std::collections::HashMap;
 use std::sync::Arc;
-use super::super::copy::domain::Questionnaire;
+use std::time::Instant;
 
 #[derive(Clone)]
 pub struct State {
     pub questionnaire_id: String,
     pub copy_name: String,
     pub copy_code: String,
-    pub questionnaire: Arc<Questionnaire>,  // Shared, not cloned
+    pub questionnaire: Arc<Questionnaire>, // Shared, not cloned
     pub push_state: PushState,
 
     // Copy engine state (persists across steps)
-    pub id_map: HashMap<String, String>,  // old_id -> new_id
-    pub created_ids: Vec<(String, String)>,  // (entity_set, id) for rollback
-    pub classifications_associated: usize,  // Count of classification associations (not in created_ids since they're not entities)
+    pub id_map: HashMap<String, String>,    // old_id -> new_id
+    pub created_ids: Vec<(String, String)>, // (entity_set, id) for rollback
+    pub classifications_associated: usize, // Count of classification associations (not in created_ids since they're not entities)
     pub start_time: Option<std::time::Instant>,
 
     // Cancellation flag
@@ -115,7 +115,7 @@ pub enum PushState {
 #[derive(Clone)]
 pub struct CopyProgress {
     pub phase: CopyPhase,
-    pub step: usize,  // 1-10 (10 steps total)
+    pub step: usize, // 1-10 (10 steps total)
 
     // Per-entity counts (done, total) - indexed by EntityType
     pub entity_progress: HashMap<EntityType, (usize, usize)>,
@@ -130,7 +130,9 @@ impl CopyProgress {
     pub fn new(questionnaire: &Questionnaire) -> Self {
         let pages_count = questionnaire.pages.len();
         let groups_count: usize = questionnaire.pages.iter().map(|p| p.groups.len()).sum();
-        let questions_count: usize = questionnaire.pages.iter()
+        let questions_count: usize = questionnaire
+            .pages
+            .iter()
             .flat_map(|p| &p.groups)
             .map(|g| g.questions.len())
             .sum();
@@ -138,17 +140,18 @@ impl CopyProgress {
         let group_lines_count = questionnaire.group_lines.len();
         let template_lines_count = questionnaire.template_lines.len();
         let conditions_count = questionnaire.conditions.len();
-        let condition_actions_count: usize = questionnaire.conditions.iter()
+        let condition_actions_count: usize = questionnaire
+            .conditions
+            .iter()
             .map(|c| c.actions.len())
             .sum();
-        let classifications_count =
-            questionnaire.classifications.categories.len() +
-            questionnaire.classifications.domains.len() +
-            questionnaire.classifications.funds.len() +
-            questionnaire.classifications.supports.len() +
-            questionnaire.classifications.types.len() +
-            questionnaire.classifications.subcategories.len() +
-            questionnaire.classifications.flemish_shares.len();
+        let classifications_count = questionnaire.classifications.categories.len()
+            + questionnaire.classifications.domains.len()
+            + questionnaire.classifications.funds.len()
+            + questionnaire.classifications.supports.len()
+            + questionnaire.classifications.types.len()
+            + questionnaire.classifications.subcategories.len()
+            + questionnaire.classifications.flemish_shares.len();
 
         let total_entities = questionnaire.total_entities();
 
@@ -187,7 +190,10 @@ impl CopyProgress {
 
     /// Get the progress counts for a specific entity type
     pub fn get(&self, entity_type: EntityType) -> (usize, usize) {
-        self.entity_progress.get(&entity_type).copied().unwrap_or((0, 0))
+        self.entity_progress
+            .get(&entity_type)
+            .copied()
+            .unwrap_or((0, 0))
     }
 
     /// Set progress for a specific entity type (mainly for testing or manual updates)
@@ -262,7 +268,7 @@ impl CopyPhase {
 pub struct CopyResult {
     pub new_questionnaire_id: String,
     pub new_questionnaire_name: String,
-    pub entities_created: HashMap<String, usize>,  // entity_type -> count
+    pub entities_created: HashMap<String, usize>, // entity_type -> count
     pub total_entities: usize,
     pub duration: std::time::Duration,
 }
@@ -275,7 +281,7 @@ pub struct CopyError {
     pub error_message: String,
     pub partial_counts: HashMap<String, usize>,
     pub rollback_complete: bool,
-    pub orphaned_entities_csv: Option<String>,  // Path to CSV if rollback failed
+    pub orphaned_entities_csv: Option<String>, // Path to CSV if rollback failed
 }
 
 #[derive(Clone)]
@@ -285,7 +291,7 @@ pub enum Msg {
     Cancel,
 
     // Screen 2: Progress (per-step messages)
-    Step1Complete(Result<String, CopyError>),  // Returns new questionnaire ID
+    Step1Complete(Result<String, CopyError>), // Returns new questionnaire ID
     Step2Complete(Result<(HashMap<String, String>, Vec<(String, String)>), CopyError>),
     Step3Complete(Result<(HashMap<String, String>, Vec<(String, String)>), CopyError>),
     Step4Complete(Result<(HashMap<String, String>, Vec<(String, String)>), CopyError>),
@@ -302,7 +308,7 @@ pub enum Msg {
     CopyFailed(CopyError),
 
     // Rollback
-    RollbackComplete(Result<(), String>),  // Ok if successful, Err(csv_path) if failed
+    RollbackComplete(Result<(), String>), // Ok if successful, Err(csv_path) if failed
 
     // Actions
     ViewCopy,
@@ -310,8 +316,8 @@ pub enum Msg {
     Retry,
     Done,
     Back,
-    UndoCopy,  // Show undo confirmation
-    ConfirmUndo,  // Actually rollback after confirmation
+    UndoCopy,    // Show undo confirmation
+    ConfirmUndo, // Actually rollback after confirmation
     CancelUndo,  // Cancel the undo confirmation
     CancelCopy,  // Cancel during copy (triggers rollback)
 }
@@ -320,7 +326,7 @@ pub struct PushQuestionnaireParams {
     pub questionnaire_id: String,
     pub copy_name: String,
     pub copy_code: String,
-    pub questionnaire: Arc<Questionnaire>,  // Shared, not cloned
+    pub questionnaire: Arc<Questionnaire>, // Shared, not cloned
 }
 
 impl Default for PushQuestionnaireParams {

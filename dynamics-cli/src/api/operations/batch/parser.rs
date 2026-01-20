@@ -35,7 +35,10 @@ pub struct BatchResponseParser;
 
 impl BatchResponseParser {
     /// Parse a batch response into individual results
-    pub fn parse(response_text: &str, operations: &[Operation]) -> anyhow::Result<Vec<OperationResult>> {
+    pub fn parse(
+        response_text: &str,
+        operations: &[Operation],
+    ) -> anyhow::Result<Vec<OperationResult>> {
         let batch_response = Self::parse_multipart(response_text)?;
         Self::map_to_operation_results(batch_response, operations)
     }
@@ -59,7 +62,8 @@ impl BatchResponseParser {
             }
 
             // Check if this part contains a changeset
-            if part.contains("Content-Type: multipart/mixed") && part.contains("changesetresponse") {
+            if part.contains("Content-Type: multipart/mixed") && part.contains("changesetresponse")
+            {
                 let changeset_results = Self::parse_changeset(part)?;
                 results.extend(changeset_results);
             } else if part.contains("Content-Type: application/http") {
@@ -111,7 +115,6 @@ impl BatchResponseParser {
         let mut state = ParsingState::MultipartHeaders;
         let mut body_lines = Vec::new();
 
-
         for line in lines {
             let line = line.trim();
 
@@ -126,7 +129,9 @@ impl BatchResponseParser {
                     }
 
                     // Skip other multipart headers
-                    if line.starts_with("Content-Type:") || line.starts_with("Content-Transfer-Encoding:") {
+                    if line.starts_with("Content-Type:")
+                        || line.starts_with("Content-Transfer-Encoding:")
+                    {
                         continue;
                     }
 
@@ -260,24 +265,20 @@ impl BatchResponseParser {
             let response_item = batch_response
                 .results
                 .iter()
-                .find(|item| {
-                    item.content_id.map(|id| id as usize) == Some(index + 1)
-                })
+                .find(|item| item.content_id.map(|id| id as usize) == Some(index + 1))
                 .or_else(|| batch_response.results.get(index));
 
             if let Some(item) = response_item {
                 let data = if item.is_success {
                     // Try to parse JSON response
-                    item.body
-                        .as_ref()
-                        .and_then(|body| {
-                            let trimmed = body.trim();
-                            if trimmed.is_empty() {
-                                None
-                            } else {
-                                serde_json::from_str::<Value>(trimmed).ok()
-                            }
-                        })
+                    item.body.as_ref().and_then(|body| {
+                        let trimmed = body.trim();
+                        if trimmed.is_empty() {
+                            None
+                        } else {
+                            serde_json::from_str::<Value>(trimmed).ok()
+                        }
+                    })
                 } else {
                     None
                 };
@@ -324,7 +325,10 @@ impl BatchResponseParser {
             // Standard Dynamics 365 error format: {"error":{"code":"...","message":"..."}}
             if let Some(error_obj) = json_value.get("error") {
                 if let Some(message) = error_obj.get("message").and_then(|m| m.as_str()) {
-                    let code = error_obj.get("code").and_then(|c| c.as_str()).unwrap_or("Unknown");
+                    let code = error_obj
+                        .get("code")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("Unknown");
                     return Some(format!("Dynamics 365 Error [{}]: {}", code, message));
                 }
             }
@@ -374,9 +378,7 @@ Location: https://test.crm.dynamics.com/api/data/v9.2/contacts(abc-123)
 --changesetresponse_ee30dcdb-1094-4c24-8170-262eae9336a4--
 --batchresponse_f44bd09d-573f-4a30-bca0-2e500ee7e139--"#;
 
-        let operations = vec![
-            Operation::create("contacts", json!({"firstname": "John"}))
-        ];
+        let operations = vec![Operation::create("contacts", json!({"firstname": "John"}))];
 
         let results = BatchResponseParser::parse(response, &operations).unwrap();
         assert_eq!(results.len(), 1);
@@ -402,9 +404,7 @@ OData-Version: 4.0
 --changesetresponse_ee30dcdb-1094-4c24-8170-262eae9336a4--
 --batchresponse_f44bd09d-573f-4a30-bca0-2e500ee7e139--"#;
 
-        let operations = vec![
-            Operation::create("contacts", json!({"firstname": "John"}))
-        ];
+        let operations = vec![Operation::create("contacts", json!({"firstname": "John"}))];
 
         let results = BatchResponseParser::parse(response, &operations).unwrap();
         assert_eq!(results.len(), 1);
@@ -427,14 +427,24 @@ OData-Version: 4.0
     #[test]
     fn test_extract_error_message() {
         // Test standard Dynamics 365 error format
-        let error_json = r#"{"error":{"code":"0x80060888","message":"Bad Request - Error in query syntax."}}"#;
+        let error_json =
+            r#"{"error":{"code":"0x80060888","message":"Bad Request - Error in query syntax."}}"#;
         let error_msg = BatchResponseParser::extract_error_message(Some(&error_json.to_string()));
-        assert_eq!(error_msg, Some("Dynamics 365 Error [0x80060888]: Bad Request - Error in query syntax.".to_string()));
+        assert_eq!(
+            error_msg,
+            Some(
+                "Dynamics 365 Error [0x80060888]: Bad Request - Error in query syntax.".to_string()
+            )
+        );
 
         // Test alternative Message format
         let message_json = r#"{"Message":"Invalid entity name"}"#;
-        let message_msg = BatchResponseParser::extract_error_message(Some(&message_json.to_string()));
-        assert_eq!(message_msg, Some("Dynamics 365 Error: Invalid entity name".to_string()));
+        let message_msg =
+            BatchResponseParser::extract_error_message(Some(&message_json.to_string()));
+        assert_eq!(
+            message_msg,
+            Some("Dynamics 365 Error: Invalid entity name".to_string())
+        );
 
         // Test plain text error
         let plain_error = "Not Found";

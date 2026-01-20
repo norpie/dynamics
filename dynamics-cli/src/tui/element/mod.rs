@@ -85,7 +85,10 @@ pub enum Element<Msg> {
     None,
 
     /// Static text
-    Text { content: String, style: Option<Style> },
+    Text {
+        content: String,
+        style: Option<Style>,
+    },
 
     /// Styled text with multiple spans
     StyledText {
@@ -132,9 +135,7 @@ pub enum Element<Msg> {
     },
 
     /// Stack of layered elements (for modals, overlays)
-    Stack {
-        layers: Vec<Layer<Msg>>,
-    },
+    Stack { layers: Vec<Layer<Msg>> },
 
     /// Scrollable list of items
     List {
@@ -147,7 +148,7 @@ pub enum Element<Msg> {
         on_navigate: Option<fn(crossterm::event::KeyCode) -> Msg>,
         on_focus: Option<Msg>,
         on_blur: Option<Msg>,
-        on_render: Option<fn(usize) -> Msg>,  // Called with actual viewport height from renderer
+        on_render: Option<fn(usize) -> Msg>, // Called with actual viewport height from renderer
     },
 
     /// Single-line text input
@@ -161,7 +162,7 @@ pub enum Element<Msg> {
         masked: bool,
         on_change: Option<fn(crossterm::event::KeyCode) -> Msg>,
         on_submit: Option<Msg>,
-        on_event: Option<fn(crate::tui::widgets::TextInputEvent) -> Msg>,  // Unified event handler
+        on_event: Option<fn(crate::tui::widgets::TextInputEvent) -> Msg>, // Unified event handler
         on_focus: Option<Msg>,
         on_blur: Option<Msg>,
     },
@@ -169,33 +170,33 @@ pub enum Element<Msg> {
     /// Hierarchical tree with expand/collapse
     Tree {
         id: FocusId,
-        items: Vec<Element<Msg>>,       // Flattened nodes
-        node_ids: Vec<String>,           // Parallel array of node IDs
-        selected: Option<String>,        // Selected node ID (not index!)
+        items: Vec<Element<Msg>>, // Flattened nodes
+        node_ids: Vec<String>,    // Parallel array of node IDs
+        selected: Option<String>, // Selected node ID (not index!)
         scroll_offset: usize,
-        on_select: Option<fn(String) -> Msg>,     // ID-based callbacks
-        on_toggle: Option<fn(String) -> Msg>,     // Expand/collapse callback
+        on_select: Option<fn(String) -> Msg>, // ID-based callbacks
+        on_toggle: Option<fn(String) -> Msg>, // Expand/collapse callback
         on_navigate: Option<fn(crossterm::event::KeyCode) -> Msg>,
-        on_event: Option<fn(crate::tui::widgets::TreeEvent) -> Msg>,  // Unified event pattern
+        on_event: Option<fn(crate::tui::widgets::TreeEvent) -> Msg>, // Unified event pattern
         on_focus: Option<Msg>,
         on_blur: Option<Msg>,
-        on_render: Option<fn(usize) -> Msg>,  // Called with actual viewport height from renderer
+        on_render: Option<fn(usize) -> Msg>, // Called with actual viewport height from renderer
     },
 
     /// Table-style tree with columns and borders
     TableTree {
         id: FocusId,
-        flattened_nodes: Vec<crate::tui::widgets::FlatTableNode>,  // Pre-flattened table nodes
-        node_ids: Vec<String>,           // Parallel array of node IDs
-        selected: Option<String>,        // Selected node ID (not index!)
+        flattened_nodes: Vec<crate::tui::widgets::FlatTableNode>, // Pre-flattened table nodes
+        node_ids: Vec<String>,                                    // Parallel array of node IDs
+        selected: Option<String>,                                 // Selected node ID (not index!)
         scroll_offset: usize,
-        column_widths: Vec<ratatui::layout::Constraint>,  // Column layout constraints
-        column_headers: Vec<String>,     // Column header labels
-        on_select: Option<fn(String) -> Msg>,     // ID-based callbacks
-        on_event: Option<fn(crate::tui::widgets::TreeEvent) -> Msg>,  // Unified event pattern
+        column_widths: Vec<ratatui::layout::Constraint>, // Column layout constraints
+        column_headers: Vec<String>,                     // Column header labels
+        on_select: Option<fn(String) -> Msg>,            // ID-based callbacks
+        on_event: Option<fn(crate::tui::widgets::TreeEvent) -> Msg>, // Unified event pattern
         on_focus: Option<Msg>,
         on_blur: Option<Msg>,
-        on_render: Option<fn(usize) -> Msg>,  // Called with actual viewport height from renderer
+        on_render: Option<fn(usize) -> Msg>, // Called with actual viewport height from renderer
     },
 
     /// Scrollable wrapper for any element
@@ -203,11 +204,11 @@ pub enum Element<Msg> {
         id: FocusId,
         child: Box<Element<Msg>>,
         scroll_offset: usize,
-        content_height: Option<usize>,   // If None, auto-detect from Column
+        content_height: Option<usize>, // If None, auto-detect from Column
         horizontal_scroll_offset: usize,
-        content_width: Option<usize>,    // If None, auto-detect
+        content_width: Option<usize>, // If None, auto-detect
         on_navigate: Option<fn(crossterm::event::KeyCode) -> Msg>,
-        on_render: Option<fn(usize, usize, usize, usize) -> Msg>,  // (viewport_height, content_height, viewport_width, content_width)
+        on_render: Option<fn(usize, usize, usize, usize) -> Msg>, // (viewport_height, content_height, viewport_width, content_width)
         on_focus: Option<Msg>,
         on_blur: Option<Msg>,
     },
@@ -215,14 +216,14 @@ pub enum Element<Msg> {
     /// Select/Dropdown widget
     Select {
         id: FocusId,
-        options: Vec<String>,               // Display labels for options
-        selected: usize,                    // Selected index
-        is_open: bool,                      // Dropdown open?
-        highlight: usize,                   // Highlighted option (when open)
-        on_select: Option<fn(usize) -> Msg>,  // Called when option selected
-        on_toggle: Option<Msg>,             // Called when dropdown toggled
-        on_navigate: Option<fn(crossterm::event::KeyCode) -> Msg>,  // Called for keyboard navigation when open
-        on_event: Option<fn(crate::tui::widgets::SelectEvent) -> Msg>,  // Unified event handler
+        options: Vec<String>,                // Display labels for options
+        selected: usize,                     // Selected index
+        is_open: bool,                       // Dropdown open?
+        highlight: usize,                    // Highlighted option (when open)
+        on_select: Option<fn(usize) -> Msg>, // Called when option selected
+        on_toggle: Option<Msg>,              // Called when dropdown toggled
+        on_navigate: Option<fn(crossterm::event::KeyCode) -> Msg>, // Called for keyboard navigation when open
+        on_event: Option<fn(crate::tui::widgets::SelectEvent) -> Msg>, // Unified event handler
         on_focus: Option<Msg>,
         on_blur: Option<Msg>,
     },
@@ -230,18 +231,18 @@ pub enum Element<Msg> {
     /// Autocomplete input with fuzzy-matched dropdown
     Autocomplete {
         id: FocusId,
-        all_options: Vec<String>,           // Full list to filter against
-        current_input: String,              // Current input text
-        cursor_pos: usize,                  // Cursor position in text
-        scroll_offset: usize,               // Horizontal scroll offset
-        placeholder: Option<String>,        // Placeholder text when empty
-        is_open: bool,                      // Dropdown open?
-        filtered_options: Vec<String>,      // Filtered options (top 15)
-        highlight: usize,                   // Highlighted index in dropdown
-        on_input: Option<fn(crossterm::event::KeyCode) -> Msg>,  // Text input changes
-        on_select: Option<fn(String) -> Msg>,  // Option selected from dropdown
-        on_navigate: Option<fn(crossterm::event::KeyCode) -> Msg>,  // Dropdown navigation
-        on_event: Option<fn(crate::tui::widgets::AutocompleteEvent) -> Msg>,  // Unified event handler
+        all_options: Vec<String>,      // Full list to filter against
+        current_input: String,         // Current input text
+        cursor_pos: usize,             // Cursor position in text
+        scroll_offset: usize,          // Horizontal scroll offset
+        placeholder: Option<String>,   // Placeholder text when empty
+        is_open: bool,                 // Dropdown open?
+        filtered_options: Vec<String>, // Filtered options (top 15)
+        highlight: usize,              // Highlighted index in dropdown
+        on_input: Option<fn(crossterm::event::KeyCode) -> Msg>, // Text input changes
+        on_select: Option<fn(String) -> Msg>, // Option selected from dropdown
+        on_navigate: Option<fn(crossterm::event::KeyCode) -> Msg>, // Dropdown navigation
+        on_event: Option<fn(crate::tui::widgets::AutocompleteEvent) -> Msg>, // Unified event handler
         on_focus: Option<Msg>,
         on_blur: Option<Msg>,
     },
@@ -249,14 +250,14 @@ pub enum Element<Msg> {
     /// Multi-select input with fuzzy-matched dropdown and chips for selected items
     MultiSelect {
         id: FocusId,
-        all_options: Vec<String>,           // Full list to filter against
-        selected_items: Vec<String>,        // Currently selected items
-        search_input: String,               // Current search text
-        placeholder: Option<String>,        // Placeholder text when empty
-        is_open: bool,                      // Dropdown open?
-        filtered_options: Vec<String>,      // Filtered options (top 15)
-        highlight: usize,                   // Highlighted index in dropdown
-        on_event: Option<fn(crate::tui::widgets::MultiSelectEvent) -> Msg>,  // Unified event handler
+        all_options: Vec<String>,      // Full list to filter against
+        selected_items: Vec<String>,   // Currently selected items
+        search_input: String,          // Current search text
+        placeholder: Option<String>,   // Placeholder text when empty
+        is_open: bool,                 // Dropdown open?
+        filtered_options: Vec<String>, // Filtered options (top 15)
+        highlight: usize,              // Highlighted index in dropdown
+        on_event: Option<fn(crate::tui::widgets::MultiSelectEvent) -> Msg>, // Unified event handler
         on_focus: Option<Msg>,
         on_blur: Option<Msg>,
     },
@@ -265,7 +266,7 @@ pub enum Element<Msg> {
     FileBrowser {
         id: FocusId,
         current_path: std::path::PathBuf,
-        entries: Vec<Element<Msg>>,         // Pre-rendered entries as list items
+        entries: Vec<Element<Msg>>, // Pre-rendered entries as list items
         selected: Option<usize>,
         scroll_offset: usize,
         on_file_selected: Option<fn(std::path::PathBuf) -> Msg>,
@@ -275,16 +276,16 @@ pub enum Element<Msg> {
         on_event: Option<fn(crate::tui::widgets::FileBrowserEvent) -> Msg>,
         on_focus: Option<Msg>,
         on_blur: Option<Msg>,
-        on_render: Option<fn(usize) -> Msg>,  // Called with actual viewport height from renderer
+        on_render: Option<fn(usize) -> Msg>, // Called with actual viewport height from renderer
     },
 
     /// Color picker widget (HSL/RGB sliders + hex input)
     ColorPicker {
         id: FocusId,
-        value: ratatui::style::Color,                       // Current color
-        mode: crate::tui::widgets::ColorPickerMode,         // HSL or RGB mode
-        state: crate::tui::widgets::ColorPickerState,       // Widget state
-        on_event: Option<fn(crate::tui::widgets::ColorPickerEvent) -> Msg>,  // Unified event handler
+        value: ratatui::style::Color,                 // Current color
+        mode: crate::tui::widgets::ColorPickerMode,   // HSL or RGB mode
+        state: crate::tui::widgets::ColorPickerState, // Widget state
+        on_event: Option<fn(crate::tui::widgets::ColorPickerEvent) -> Msg>, // Unified event handler
         on_focus: Option<Msg>,
         on_blur: Option<Msg>,
     },
@@ -356,7 +357,11 @@ impl<Msg> Element<Msg> {
     }
 
     /// Create a checkbox element
-    pub fn checkbox(id: impl Into<FocusId>, label: impl Into<String>, checked: bool) -> CheckboxBuilder<Msg> {
+    pub fn checkbox(
+        id: impl Into<FocusId>,
+        label: impl Into<String>,
+        checked: bool,
+    ) -> CheckboxBuilder<Msg> {
         CheckboxBuilder {
             id: id.into(),
             label: label.into(),
@@ -375,10 +380,7 @@ impl<Msg> Element<Msg> {
             .map(|child| (child.default_constraint(), child))
             .collect();
 
-        ColumnBuilder {
-            items,
-            spacing: 1,
-        }
+        ColumnBuilder { items, spacing: 1 }
     }
 
     /// Create a row layout (old API - backward compatible)
@@ -389,10 +391,7 @@ impl<Msg> Element<Msg> {
             .map(|child| (child.default_constraint(), child))
             .collect();
 
-        RowBuilder {
-            items,
-            spacing: 1,
-        }
+        RowBuilder { items, spacing: 1 }
     }
 
     /// Wrap element in a container
@@ -432,57 +431,40 @@ impl<Msg> Element<Msg> {
 
         let button_row = RowBuilder::new()
             .add(
-                Element::button(cancel_id, "Cancel").on_press(on_cancel).build(),
+                Element::button(cancel_id, "Cancel")
+                    .on_press(on_cancel)
+                    .build(),
                 LayoutConstraint::Fill(1),
             )
+            .add(Element::text("  "), LayoutConstraint::Length(2))
             .add(
-                Element::text("  "),
-                LayoutConstraint::Length(2),
-            )
-            .add(
-                Element::button(confirm_id, "Confirm").on_press(on_confirm).build(),
+                Element::button(confirm_id, "Confirm")
+                    .on_press(on_confirm)
+                    .build(),
                 LayoutConstraint::Fill(1),
             )
             .spacing(0)
             .build();
 
         let modal_content = ColumnBuilder::new()
-            .add(
-                Element::text(title.into()),
-                LayoutConstraint::Length(1),
-            )
-            .add(
-                Element::text(""),
-                LayoutConstraint::Length(1),
-            )
-            .add(
-                Element::text(message.into()),
-                LayoutConstraint::Length(1),
-            )
-            .add(
-                Element::text(""),
-                LayoutConstraint::Length(1),
-            )
-            .add(
-                button_row,
-                LayoutConstraint::Length(3),
-            )
+            .add(Element::text(title.into()), LayoutConstraint::Length(1))
+            .add(Element::text(""), LayoutConstraint::Length(1))
+            .add(Element::text(message.into()), LayoutConstraint::Length(1))
+            .add(Element::text(""), LayoutConstraint::Length(1))
+            .add(button_row, LayoutConstraint::Length(3))
             .spacing(0)
             .build();
 
         Element::stack(vec![
             Layer::new(background),
             Layer::new(
-                Element::panel(
-                    Element::container(modal_content)
-                        .padding(1)
-                        .build()
-                )
-                .title("Confirmation")
-                .width(60)
-                .height(15)
-                .build()
-            ).center(),
+                Element::panel(Element::container(modal_content).padding(1).build())
+                    .title("Confirmation")
+                    .width(60)
+                    .height(15)
+                    .build(),
+            )
+            .center(),
         ])
     }
 
@@ -515,12 +497,12 @@ impl<Msg> Element<Msg> {
             Element::Tree { .. } => LayoutConstraint::Fill(1),
             Element::TableTree { .. } => LayoutConstraint::Fill(1),
             Element::Scrollable { .. } => LayoutConstraint::Fill(1),
-            Element::Select { .. } => LayoutConstraint::Length(1),  // Borderless like TextInput
-            Element::Autocomplete { .. } => LayoutConstraint::Length(1),  // Borderless like TextInput
-            Element::MultiSelect { .. } => LayoutConstraint::Length(3),  // Chips + input + dropdown preview
-            Element::FileBrowser { .. } => LayoutConstraint::Fill(1),  // Fill available space like List
-            Element::ColorPicker { .. } => LayoutConstraint::Length(9),  // 3 sliders + hex + labels
-            Element::ProgressBar { .. } => LayoutConstraint::Length(1),  // Single line
+            Element::Select { .. } => LayoutConstraint::Length(1), // Borderless like TextInput
+            Element::Autocomplete { .. } => LayoutConstraint::Length(1), // Borderless like TextInput
+            Element::MultiSelect { .. } => LayoutConstraint::Length(3), // Chips + input + dropdown preview
+            Element::FileBrowser { .. } => LayoutConstraint::Fill(1), // Fill available space like List
+            Element::ColorPicker { .. } => LayoutConstraint::Length(9), // 3 sliders + hex + labels
+            Element::ProgressBar { .. } => LayoutConstraint::Length(1), // Single line
             Element::Checkbox { .. } => LayoutConstraint::Length(3),  // [x] Label + borders
         }
     }
@@ -725,7 +707,8 @@ impl<Msg> Element<Msg> {
         theme: &crate::tui::Theme,
     ) -> FileBrowserBuilder<Msg> {
         // Convert entries to Elements with proper styling
-        let elements = state.entries()
+        let elements = state
+            .entries()
             .iter()
             .enumerate()
             .map(|(idx, entry)| {

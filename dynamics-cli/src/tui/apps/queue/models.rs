@@ -1,7 +1,7 @@
 //! Data models for the operation queue
 
-use crate::api::operations::{Operations, OperationResult};
-use serde::{Serialize, Deserialize};
+use crate::api::operations::{OperationResult, Operations};
+use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 /// Item in the operation queue
@@ -67,7 +67,9 @@ impl QueueItem {
 
     /// Get the number of operations that still need to be executed
     pub fn pending_operation_count(&self) -> usize {
-        self.operations.len().saturating_sub(self.succeeded_indices.len())
+        self.operations
+            .len()
+            .saturating_sub(self.succeeded_indices.len())
     }
 
     /// Check if this item has partial success (some ops succeeded, some failed)

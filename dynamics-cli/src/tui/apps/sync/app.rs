@@ -7,11 +7,7 @@ use crossterm::event::KeyCode;
 use ratatui::text::{Line, Span};
 
 use crate::tui::{
-    app::App,
-    command::Command,
-    element::FocusId,
-    subscription::Subscription,
-    LayeredView,
+    LayeredView, app::App, command::Command, element::FocusId, subscription::Subscription,
 };
 
 use super::msg::Msg;
@@ -78,12 +74,10 @@ impl App for EntitySyncApp {
             Msg::EnvironmentsLoaded(result) => {
                 match result {
                     Ok(envs) => {
-                        state.env_select.environments =
-                            crate::tui::Resource::Success(envs);
+                        state.env_select.environments = crate::tui::Resource::Success(envs);
                     }
                     Err(e) => {
-                        state.env_select.environments =
-                            crate::tui::Resource::Failure(e);
+                        state.env_select.environments = crate::tui::Resource::Failure(e);
                     }
                 }
                 Command::None
@@ -95,10 +89,7 @@ impl App for EntitySyncApp {
                     .as_ref()
                     .map(|e| e.len())
                     .unwrap_or(0);
-                state
-                    .env_select
-                    .origin_list
-                    .handle_key(key, env_count, 20);
+                state.env_select.origin_list.handle_key(key, env_count, 20);
                 Command::None
             }
             Msg::TargetListNavigate(key) => {
@@ -108,10 +99,7 @@ impl App for EntitySyncApp {
                     .as_ref()
                     .map(|e| e.len())
                     .unwrap_or(0);
-                state
-                    .env_select
-                    .target_list
-                    .handle_key(key, env_count, 20);
+                state.env_select.target_list.handle_key(key, env_count, 20);
                 Command::None
             }
             Msg::OriginListSelect(idx) => {
@@ -150,8 +138,7 @@ impl App for EntitySyncApp {
                             crate::tui::Resource::Success(entities);
                     }
                     Err(e) => {
-                        state.entity_select.available_entities =
-                            crate::tui::Resource::Failure(e);
+                        state.entity_select.available_entities = crate::tui::Resource::Failure(e);
                     }
                 }
                 Command::None
@@ -203,13 +190,15 @@ impl App for EntitySyncApp {
                 use crossterm::event::KeyCode;
 
                 match event {
-                    SelectEvent::Navigate(KeyCode::Enter) | SelectEvent::Navigate(KeyCode::Char(' '))
+                    SelectEvent::Navigate(KeyCode::Enter)
+                    | SelectEvent::Navigate(KeyCode::Char(' '))
                         if !state.entity_select.preset_selector.is_open() =>
                     {
                         // Open dropdown when closed
                         state.entity_select.preset_selector.open();
                     }
-                    SelectEvent::Navigate(KeyCode::Enter) | SelectEvent::Navigate(KeyCode::Char(' '))
+                    SelectEvent::Navigate(KeyCode::Enter)
+                    | SelectEvent::Navigate(KeyCode::Char(' '))
                         if state.entity_select.preset_selector.is_open() =>
                     {
                         // Select highlighted item when open
@@ -221,9 +210,16 @@ impl App for EntitySyncApp {
                             if !preset.entities.is_empty() {
                                 state.entity_select.selected_entities.clear();
                                 for entity_name in preset.entities {
-                                    state.entity_select.selected_entities.insert(entity_name.to_string());
+                                    state
+                                        .entity_select
+                                        .selected_entities
+                                        .insert(entity_name.to_string());
                                 }
-                                log::info!("Applied preset '{}' with {} entities", preset.name, preset.entities.len());
+                                log::info!(
+                                    "Applied preset '{}' with {} entities",
+                                    preset.name,
+                                    preset.entities.len()
+                                );
                                 // Detect junction candidates after preset applied
                                 state.entity_select.detect_junction_candidates();
                             }
@@ -242,9 +238,16 @@ impl App for EntitySyncApp {
                             if !preset.entities.is_empty() {
                                 state.entity_select.selected_entities.clear();
                                 for entity_name in preset.entities {
-                                    state.entity_select.selected_entities.insert(entity_name.to_string());
+                                    state
+                                        .entity_select
+                                        .selected_entities
+                                        .insert(entity_name.to_string());
                                 }
-                                log::info!("Applied preset '{}' with {} entities", preset.name, preset.entities.len());
+                                log::info!(
+                                    "Applied preset '{}' with {} entities",
+                                    preset.name,
+                                    preset.entities.len()
+                                );
                                 // Detect junction candidates after preset applied
                                 state.entity_select.detect_junction_candidates();
                             }
@@ -408,10 +411,14 @@ impl App for EntitySyncApp {
                         // We need to compute this properly based on GUID comparison
                         let preview = &e.data_preview;
                         let pk_field = format!("{}id", e.entity_info.logical_name);
-                        let origin_ids: std::collections::HashSet<&str> = preview.origin_records.iter()
+                        let origin_ids: std::collections::HashSet<&str> = preview
+                            .origin_records
+                            .iter()
                             .filter_map(|r| r.get(&pk_field).and_then(|v| v.as_str()))
                             .collect();
-                        let target_only = preview.target_records.iter()
+                        let target_only = preview
+                            .target_records
+                            .iter()
                             .filter(|tr| !origin_ids.contains(tr.id.as_str()))
                             .count();
                         preview.origin_records.len() + target_only
@@ -542,7 +549,11 @@ impl App for EntitySyncApp {
                 }
                 Command::None
             }
-            Msg::QueueItemCompleted { id, result, metadata: _ } => {
+            Msg::QueueItemCompleted {
+                id,
+                result,
+                metadata: _,
+            } => {
                 // Find which phase this batch belongs to and update progress
                 let confirm = &mut state.confirm;
 
@@ -582,13 +593,19 @@ impl App for EntitySyncApp {
                     // Check which phase completed
                     if let Some(pos) = confirm.delete_batch_ids.iter().position(|bid| bid == &id) {
                         confirm.delete_batch_ids.remove(pos);
-                        confirm.current_batch = confirm.total_batches - confirm.delete_batch_ids.len();
+                        confirm.current_batch =
+                            confirm.total_batches - confirm.delete_batch_ids.len();
                         if confirm.delete_batch_ids.is_empty() {
                             advance_to_next_phase(confirm);
                         }
-                    } else if let Some(pos) = confirm.deactivate_batch_ids.iter().position(|bid| bid == &id) {
+                    } else if let Some(pos) = confirm
+                        .deactivate_batch_ids
+                        .iter()
+                        .position(|bid| bid == &id)
+                    {
                         confirm.deactivate_batch_ids.remove(pos);
-                        confirm.current_batch = confirm.total_batches - confirm.deactivate_batch_ids.len();
+                        confirm.current_batch =
+                            confirm.total_batches - confirm.deactivate_batch_ids.len();
                         if confirm.deactivate_batch_ids.is_empty() {
                             // Skip deactivate in next phase check
                             if !confirm.schema_batch_ids.is_empty() {
@@ -612,9 +629,12 @@ impl App for EntitySyncApp {
                                 confirm.executing = false;
                             }
                         }
-                    } else if let Some(pos) = confirm.schema_batch_ids.iter().position(|bid| bid == &id) {
+                    } else if let Some(pos) =
+                        confirm.schema_batch_ids.iter().position(|bid| bid == &id)
+                    {
                         confirm.schema_batch_ids.remove(pos);
-                        confirm.current_batch = confirm.total_batches - confirm.schema_batch_ids.len();
+                        confirm.current_batch =
+                            confirm.total_batches - confirm.schema_batch_ids.len();
                         if confirm.schema_batch_ids.is_empty() {
                             if !confirm.update_batch_ids.is_empty() {
                                 confirm.phase = super::state::ExecutionPhase::Updating;
@@ -633,9 +653,12 @@ impl App for EntitySyncApp {
                                 confirm.executing = false;
                             }
                         }
-                    } else if let Some(pos) = confirm.update_batch_ids.iter().position(|bid| bid == &id) {
+                    } else if let Some(pos) =
+                        confirm.update_batch_ids.iter().position(|bid| bid == &id)
+                    {
                         confirm.update_batch_ids.remove(pos);
-                        confirm.current_batch = confirm.total_batches - confirm.update_batch_ids.len();
+                        confirm.current_batch =
+                            confirm.total_batches - confirm.update_batch_ids.len();
                         if confirm.update_batch_ids.is_empty() {
                             if !confirm.insert_batch_ids.is_empty() {
                                 confirm.phase = super::state::ExecutionPhase::Inserting;
@@ -650,9 +673,12 @@ impl App for EntitySyncApp {
                                 confirm.executing = false;
                             }
                         }
-                    } else if let Some(pos) = confirm.insert_batch_ids.iter().position(|bid| bid == &id) {
+                    } else if let Some(pos) =
+                        confirm.insert_batch_ids.iter().position(|bid| bid == &id)
+                    {
                         confirm.insert_batch_ids.remove(pos);
-                        confirm.current_batch = confirm.total_batches - confirm.insert_batch_ids.len();
+                        confirm.current_batch =
+                            confirm.total_batches - confirm.insert_batch_ids.len();
                         if confirm.insert_batch_ids.is_empty() {
                             if !confirm.junction_batch_ids.is_empty() {
                                 confirm.phase = super::state::ExecutionPhase::InsertingJunctions;
@@ -663,9 +689,12 @@ impl App for EntitySyncApp {
                                 confirm.executing = false;
                             }
                         }
-                    } else if let Some(pos) = confirm.junction_batch_ids.iter().position(|bid| bid == &id) {
+                    } else if let Some(pos) =
+                        confirm.junction_batch_ids.iter().position(|bid| bid == &id)
+                    {
                         confirm.junction_batch_ids.remove(pos);
-                        confirm.current_batch = confirm.total_batches - confirm.junction_batch_ids.len();
+                        confirm.current_batch =
+                            confirm.total_batches - confirm.junction_batch_ids.len();
                         if confirm.junction_batch_ids.is_empty() {
                             confirm.phase = super::state::ExecutionPhase::Complete;
                             confirm.executing = false;
@@ -774,11 +803,7 @@ impl App for EntitySyncApp {
             }
             SyncStep::Analysis => {
                 if state.analysis.phase == AnalysisPhase::Complete {
-                    subs.push(Subscription::keyboard(
-                        KeyCode::Enter,
-                        "Review",
-                        Msg::Next,
-                    ));
+                    subs.push(Subscription::keyboard(KeyCode::Enter, "Review", Msg::Next));
                 }
             }
             SyncStep::DiffReview => {
@@ -823,7 +848,11 @@ impl App for EntitySyncApp {
                             serde_json::from_value(value.get("result")?.clone()).ok()?;
                         let metadata: crate::tui::apps::queue::models::QueueMetadata =
                             serde_json::from_value(value.get("metadata")?.clone()).ok()?;
-                        Some(Msg::QueueItemCompleted { id, result, metadata })
+                        Some(Msg::QueueItemCompleted {
+                            id,
+                            result,
+                            metadata,
+                        })
                     }));
                 }
             }
@@ -878,9 +907,7 @@ fn handle_next(state: &mut State) -> Command<Msg> {
                 // Load entities from the origin environment
                 let origin_env = state.env_select.origin_env.clone().unwrap();
                 return Command::perform(
-                    async move {
-                        load_entities_for_env(&origin_env).await
-                    },
+                    async move { load_entities_for_env(&origin_env).await },
                     Msg::EntitiesLoaded,
                 );
             }
@@ -895,17 +922,12 @@ fn handle_next(state: &mut State) -> Command<Msg> {
                 // Collect parameters for analysis
                 let origin_env = state.env_select.origin_env.clone().unwrap();
                 let target_env = state.env_select.target_env.clone().unwrap();
-                let selected_entities: Vec<String> = state
-                    .entity_select
-                    .entities_to_sync()
-                    .into_iter()
-                    .collect();
+                let selected_entities: Vec<String> =
+                    state.entity_select.entities_to_sync().into_iter().collect();
 
                 // Start async analysis
                 return Command::perform(
-                    async move {
-                        run_analysis(&origin_env, &target_env, &selected_entities).await
-                    },
+                    async move { run_analysis(&origin_env, &target_env, &selected_entities).await },
                     |result| match result {
                         Ok(plan) => Msg::AnalysisComplete(Box::new(plan)),
                         Err(e) => Msg::AnalysisFailed(e),
@@ -937,15 +959,17 @@ async fn run_analysis(
     target_env: &str,
     selected_entities: &[String],
 ) -> Result<super::types::SyncPlan, String> {
-    use super::logic::{compare_schemas, DependencyGraph};
+    use super::logic::{DependencyGraph, compare_schemas};
     use super::types::*;
-    use super::{init_analysis_progress, set_analysis_phase, set_analysis_complete,
-                set_entity_schema_status, set_entity_records_status, set_entity_refs_status,
-                set_entity_nn_status, FetchStatus};
+    use super::{
+        FetchStatus, init_analysis_progress, set_analysis_complete, set_analysis_phase,
+        set_entity_nn_status, set_entity_records_status, set_entity_refs_status,
+        set_entity_schema_status,
+    };
     use crate::api::metadata::FieldType;
+    use futures::future::join_all;
     use std::collections::HashSet;
     use std::sync::Arc;
-    use futures::future::join_all;
 
     // Initialize progress tracking
     let entities_for_progress: Vec<(String, Option<String>)> = selected_entities
@@ -959,15 +983,19 @@ async fn run_analysis(
     let manager = crate::client_manager();
 
     // Get clients for both environments
-    let origin_client = Arc::new(manager
-        .get_client(origin_env)
-        .await
-        .map_err(|e| format!("Failed to get origin client: {}", e))?);
+    let origin_client = Arc::new(
+        manager
+            .get_client(origin_env)
+            .await
+            .map_err(|e| format!("Failed to get origin client: {}", e))?,
+    );
 
-    let target_client = Arc::new(manager
-        .get_client(target_env)
-        .await
-        .map_err(|e| format!("Failed to get target client: {}", e))?);
+    let target_client = Arc::new(
+        manager
+            .get_client(target_env)
+            .await
+            .map_err(|e| format!("Failed to get target client: {}", e))?,
+    );
 
     let selected_set: HashSet<String> = selected_entities.iter().cloned().collect();
 
@@ -1020,21 +1048,39 @@ async fn run_analysis(
         }
     }).collect();
 
-    type SchemaResult = Result<(String, Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>, crate::api::EntityMetadataInfo, Option<std::collections::HashMap<String, serde_json::Value>>), String>;
+    type SchemaResult = Result<
+        (
+            String,
+            Vec<crate::api::metadata::FieldMetadata>,
+            Vec<crate::api::metadata::FieldMetadata>,
+            crate::api::EntityMetadataInfo,
+            Option<std::collections::HashMap<String, serde_json::Value>>,
+        ),
+        String,
+    >;
     let schema_results: Vec<SchemaResult> = join_all(schema_futures).await;
 
     // Collect successful schema results
     // schema_data now includes raw attribute metadata for CreateAttribute operations
     type RawAttrsMap = Option<std::collections::HashMap<String, serde_json::Value>>;
-    let mut schema_data: std::collections::HashMap<String, (Vec<crate::api::metadata::FieldMetadata>, Vec<crate::api::metadata::FieldMetadata>, RawAttrsMap)> =
-        std::collections::HashMap::new();
+    let mut schema_data: std::collections::HashMap<
+        String,
+        (
+            Vec<crate::api::metadata::FieldMetadata>,
+            Vec<crate::api::metadata::FieldMetadata>,
+            RawAttrsMap,
+        ),
+    > = std::collections::HashMap::new();
     let mut entity_metadata_map: std::collections::HashMap<String, crate::api::EntityMetadataInfo> =
         std::collections::HashMap::new();
 
     for result in schema_results {
         match result {
             Ok((entity_name, origin_fields, target_fields, metadata, origin_attrs_raw)) => {
-                schema_data.insert(entity_name.clone(), (origin_fields, target_fields, origin_attrs_raw));
+                schema_data.insert(
+                    entity_name.clone(),
+                    (origin_fields, target_fields, origin_attrs_raw),
+                );
                 entity_metadata_map.insert(entity_name, metadata);
             }
             Err(e) => {
@@ -1048,7 +1094,8 @@ async fn run_analysis(
 
     let entity_metadata_map = Arc::new(entity_metadata_map);
 
-    let record_futures: Vec<_> = selected_entities.iter()
+    let record_futures: Vec<_> = selected_entities
+        .iter()
         .filter(|name| entity_metadata_map.contains_key(*name))
         .map(|entity_name| {
             let origin_client = Arc::clone(&origin_client);
@@ -1057,7 +1104,8 @@ async fn run_analysis(
             let entity_name = entity_name.clone();
 
             async move {
-                let metadata = entity_metadata_map.get(&entity_name)
+                let metadata = entity_metadata_map
+                    .get(&entity_name)
                     .expect("entity metadata must exist (filtered above)");
 
                 set_entity_records_status(&entity_name, FetchStatus::Fetching, None);
@@ -1066,46 +1114,91 @@ async fn run_analysis(
                 // Including inactive records prevents orphaned children referencing missing parents
                 let active_only = false;
                 let is_intersect = metadata.is_intersect;
-                let origin_records = fetch_all_records(&origin_client, &entity_name, &metadata.entity_set_name, active_only).await;
+                let origin_records = fetch_all_records(
+                    &origin_client,
+                    &entity_name,
+                    &metadata.entity_set_name,
+                    active_only,
+                )
+                .await;
                 let target_result = fetch_target_records(
                     &target_client,
                     &entity_name,
                     &metadata.entity_set_name,
                     metadata.primary_name_attribute.as_deref(),
                     is_intersect,
-                ).await;
+                )
+                .await;
 
                 match (&origin_records, &target_result) {
                     (Ok(records), Ok(target_res)) => {
                         let count = records.len();
                         set_entity_records_status(&entity_name, FetchStatus::Done, Some(count));
-                        Ok((entity_name, records.clone(), target_res.records.clone(), target_res.raw_records.clone()))
+                        Ok((
+                            entity_name,
+                            records.clone(),
+                            target_res.records.clone(),
+                            target_res.raw_records.clone(),
+                        ))
                     }
                     (Err(e), _) => {
-                        set_entity_records_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
-                        Err(format!("Failed to fetch records for {}: {}", entity_name, e))
+                        set_entity_records_status(
+                            &entity_name,
+                            FetchStatus::Failed(e.to_string()),
+                            None,
+                        );
+                        Err(format!(
+                            "Failed to fetch records for {}: {}",
+                            entity_name, e
+                        ))
                     }
                     (_, Err(e)) => {
-                        set_entity_records_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
-                        Err(format!("Failed to fetch target records for {}: {}", entity_name, e))
+                        set_entity_records_status(
+                            &entity_name,
+                            FetchStatus::Failed(e.to_string()),
+                            None,
+                        );
+                        Err(format!(
+                            "Failed to fetch target records for {}: {}",
+                            entity_name, e
+                        ))
                     }
                 }
             }
-        }).collect();
+        })
+        .collect();
 
     // Result tuple: (entity_name, origin_records, target_records, junction_target_raw)
-    let record_results: Vec<Result<(String, Vec<serde_json::Value>, Vec<super::types::TargetRecord>, Vec<serde_json::Value>), String>> =
-        join_all(record_futures).await;
+    let record_results: Vec<
+        Result<
+            (
+                String,
+                Vec<serde_json::Value>,
+                Vec<super::types::TargetRecord>,
+                Vec<serde_json::Value>,
+            ),
+            String,
+        >,
+    > = join_all(record_futures).await;
 
     // Collect successful record results
     // Map: entity_name -> (origin_records, target_records, junction_target_raw)
-    let mut record_data: std::collections::HashMap<String, (Vec<serde_json::Value>, Vec<super::types::TargetRecord>, Vec<serde_json::Value>)> =
-        std::collections::HashMap::new();
+    let mut record_data: std::collections::HashMap<
+        String,
+        (
+            Vec<serde_json::Value>,
+            Vec<super::types::TargetRecord>,
+            Vec<serde_json::Value>,
+        ),
+    > = std::collections::HashMap::new();
 
     for result in record_results {
         match result {
             Ok((entity_name, origin_records, target_records, junction_target_raw)) => {
-                record_data.insert(entity_name, (origin_records, target_records, junction_target_raw));
+                record_data.insert(
+                    entity_name,
+                    (origin_records, target_records, junction_target_raw),
+                );
             }
             Err(e) => {
                 log::error!("Record fetch failed: {}", e);
@@ -1116,26 +1209,33 @@ async fn run_analysis(
     // Phase 3: Fetch incoming references in parallel
     set_analysis_phase("Fetching incoming references...");
 
-    let refs_futures: Vec<_> = selected_entities.iter().map(|entity_name| {
-        let origin_client = Arc::clone(&origin_client);
-        let entity_name = entity_name.clone();
+    let refs_futures: Vec<_> = selected_entities
+        .iter()
+        .map(|entity_name| {
+            let origin_client = Arc::clone(&origin_client);
+            let entity_name = entity_name.clone();
 
-        async move {
-            set_entity_refs_status(&entity_name, FetchStatus::Fetching, None);
+            async move {
+                set_entity_refs_status(&entity_name, FetchStatus::Fetching, None);
 
-            match origin_client.fetch_incoming_references(&entity_name).await {
-                Ok(refs) => {
-                    let count = refs.len();
-                    set_entity_refs_status(&entity_name, FetchStatus::Done, Some(count));
-                    Ok((entity_name, refs))
-                }
-                Err(e) => {
-                    set_entity_refs_status(&entity_name, FetchStatus::Failed(e.to_string()), None);
-                    Err(format!("Failed to fetch refs for {}: {}", entity_name, e))
+                match origin_client.fetch_incoming_references(&entity_name).await {
+                    Ok(refs) => {
+                        let count = refs.len();
+                        set_entity_refs_status(&entity_name, FetchStatus::Done, Some(count));
+                        Ok((entity_name, refs))
+                    }
+                    Err(e) => {
+                        set_entity_refs_status(
+                            &entity_name,
+                            FetchStatus::Failed(e.to_string()),
+                            None,
+                        );
+                        Err(format!("Failed to fetch refs for {}: {}", entity_name, e))
+                    }
                 }
             }
-        }
-    }).collect();
+        })
+        .collect();
 
     let refs_results: Vec<Result<(String, Vec<crate::api::IncomingReference>), String>> =
         join_all(refs_futures).await;
@@ -1158,14 +1258,19 @@ async fn run_analysis(
     // Phase 4: Build entity plans and dependency graph
     set_analysis_phase("Building dependency graph...");
 
-    let mut entities_with_fields: Vec<(String, Option<String>, Vec<crate::api::metadata::FieldMetadata>)> = Vec::new();
+    let mut entities_with_fields: Vec<(
+        String,
+        Option<String>,
+        Vec<crate::api::metadata::FieldMetadata>,
+    )> = Vec::new();
     let mut entity_plans = Vec::new();
     let mut total_delete_count = 0usize;
     let mut total_insert_count = 0usize;
     let mut has_schema_changes = false;
 
     for entity_name in selected_entities {
-        let Some((origin_fields, target_fields, origin_attrs_raw)) = schema_data.get(entity_name) else {
+        let Some((origin_fields, target_fields, origin_attrs_raw)) = schema_data.get(entity_name)
+        else {
             log::warn!("Skipping {} - no schema data", entity_name);
             continue;
         };
@@ -1184,7 +1289,12 @@ async fn run_analysis(
         entities_with_fields.push((entity_name.clone(), None, origin_fields.clone()));
 
         // Compare schemas - pass raw attribute metadata for CreateAttribute operations
-        let schema_diff = compare_schemas(entity_name, origin_fields, target_fields, origin_attrs_raw.as_ref());
+        let schema_diff = compare_schemas(
+            entity_name,
+            origin_fields,
+            target_fields,
+            origin_attrs_raw.as_ref(),
+        );
 
         if schema_diff.has_changes() {
             has_schema_changes = true;
@@ -1250,8 +1360,12 @@ async fn run_analysis(
                             target_entity: target_entity.to_string(),
                             is_internal,
                         });
-                        log::debug!("Junction {} has reference to {} (internal: {})",
-                            entity_name, target_entity, is_internal);
+                        log::debug!(
+                            "Junction {} has reference to {} (internal: {})",
+                            entity_name,
+                            target_entity,
+                            is_internal
+                        );
                     }
                 }
             }
@@ -1330,18 +1444,24 @@ async fn run_analysis(
             for lookup in &plan.entity_info.lookups {
                 if lookup.is_internal {
                     // Add dependency: junction depends on target entity
-                    dep_graph.dependencies
+                    dep_graph
+                        .dependencies
                         .entry(entity_name.clone())
                         .or_default()
                         .insert(lookup.target_entity.clone());
 
                     // Add reverse: target entity has this junction as dependent
-                    dep_graph.dependents
+                    dep_graph
+                        .dependents
                         .entry(lookup.target_entity.clone())
                         .or_default()
                         .insert(entity_name.clone());
 
-                    log::debug!("Added junction dependency: {} -> {}", entity_name, lookup.target_entity);
+                    log::debug!(
+                        "Added junction dependency: {} -> {}",
+                        entity_name,
+                        lookup.target_entity
+                    );
                 }
             }
         }
@@ -1351,7 +1471,10 @@ async fn run_analysis(
     set_analysis_phase("Computing sync order...");
     if let Ok(sorted) = dep_graph.topological_sort() {
         for (insert_priority, name) in sorted.iter().enumerate() {
-            if let Some(plan) = entity_plans.iter_mut().find(|p| &p.entity_info.logical_name == name) {
+            if let Some(plan) = entity_plans
+                .iter_mut()
+                .find(|p| &p.entity_info.logical_name == name)
+            {
                 plan.entity_info.insert_priority = insert_priority as u32;
                 plan.entity_info.delete_priority = (sorted.len() - 1 - insert_priority) as u32;
 
@@ -1394,7 +1517,9 @@ async fn run_analysis(
 
             if let Some(plan) = junction_plan {
                 // Get the first internal lookup target as the parent entity to query
-                let parent_entity = plan.entity_info.lookups
+                let parent_entity = plan
+                    .entity_info
+                    .lookups
                     .iter()
                     .filter(|l| l.is_internal)
                     .map(|l| l.target_entity.clone())
@@ -1402,7 +1527,10 @@ async fn run_analysis(
 
                 if let Some(parent) = parent_entity {
                     // Query ManyToManyRelationships from the parent entity
-                    match origin_client.fetch_many_to_many_relationships(&parent).await {
+                    match origin_client
+                        .fetch_many_to_many_relationships(&parent)
+                        .await
+                    {
                         Ok(relationships) => {
                             // Find the relationship that matches this junction entity
                             let matching_rel = relationships
@@ -1413,13 +1541,17 @@ async fn run_analysis(
                                 // Find the entity_set_names for parent and target
                                 let parent_entity_set = entity_plans
                                     .iter()
-                                    .find(|p| p.entity_info.logical_name == rel.entity1_logical_name)
+                                    .find(|p| {
+                                        p.entity_info.logical_name == rel.entity1_logical_name
+                                    })
                                     .map(|p| p.entity_info.entity_set_name.clone())
                                     .unwrap_or_else(|| format!("{}s", rel.entity1_logical_name));
 
                                 let target_entity_set = entity_plans
                                     .iter()
-                                    .find(|p| p.entity_info.logical_name == rel.entity2_logical_name)
+                                    .find(|p| {
+                                        p.entity_info.logical_name == rel.entity2_logical_name
+                                    })
                                     .map(|p| p.entity_info.entity_set_name.clone())
                                     .unwrap_or_else(|| format!("{}s", rel.entity2_logical_name));
 
@@ -1442,12 +1574,23 @@ async fn run_analysis(
                                 }
 
                                 set_entity_nn_status(junction_name, FetchStatus::Done);
-                                log::info!("Found N:N relationship for {}: nav_prop={}", junction_name, rel.entity1_navigation_property);
+                                log::info!(
+                                    "Found N:N relationship for {}: nav_prop={}",
+                                    junction_name,
+                                    rel.entity1_navigation_property
+                                );
                             } else {
-                                set_entity_nn_status(junction_name, FetchStatus::Failed(
-                                    format!("No matching N:N relationship found for {}", junction_name)
-                                ));
-                                log::warn!("No N:N relationship found for junction entity {}", junction_name);
+                                set_entity_nn_status(
+                                    junction_name,
+                                    FetchStatus::Failed(format!(
+                                        "No matching N:N relationship found for {}",
+                                        junction_name
+                                    )),
+                                );
+                                log::warn!(
+                                    "No N:N relationship found for junction entity {}",
+                                    junction_name
+                                );
                             }
                         }
                         Err(e) => {
@@ -1456,9 +1599,10 @@ async fn run_analysis(
                         }
                     }
                 } else {
-                    set_entity_nn_status(junction_name, FetchStatus::Failed(
-                        "No internal lookup found".to_string()
-                    ));
+                    set_entity_nn_status(
+                        junction_name,
+                        FetchStatus::Failed("No internal lookup found".to_string()),
+                    );
                     log::warn!("Junction entity {} has no internal lookups", junction_name);
                 }
             }
@@ -1479,7 +1623,9 @@ async fn run_analysis(
 }
 
 /// Load entities for a given environment (with caching)
-async fn load_entities_for_env(env_name: &str) -> Result<Vec<super::state::EntityListItem>, String> {
+async fn load_entities_for_env(
+    env_name: &str,
+) -> Result<Vec<super::state::EntityListItem>, String> {
     use super::state::EntityListItem;
 
     let config = crate::global_config();
@@ -1555,7 +1701,12 @@ async fn fetch_all_records(
         }
     }
 
-    log::info!("Fetched {} records from {} ({})", all_records.len(), entity_name, entity_set_name);
+    log::info!(
+        "Fetched {} records from {} ({})",
+        all_records.len(),
+        entity_name,
+        entity_set_name
+    );
     Ok(all_records)
 }
 
@@ -1585,9 +1736,7 @@ async fn fetch_target_records(
     // For junction entities, fetch all fields (we need FK values for DisassociateRef)
     // For regular entities, just fetch ID and name
     let query = if is_intersect {
-        QueryBuilder::new(entity_set_name)
-            .top(5000)
-            .build()
+        QueryBuilder::new(entity_set_name).top(5000).build()
     } else {
         let select_fields: Vec<&str> = if let Some(name_attr) = primary_name_attribute {
             vec![&pk_field, name_attr]
@@ -1645,9 +1794,19 @@ async fn fetch_target_records(
         }
     }
 
-    log::info!("Fetched {} target records from {} ({}){}",
-        all_records.len(), entity_name, entity_set_name,
-        if is_intersect { " (with raw data for junction)" } else { "" }
+    log::info!(
+        "Fetched {} target records from {} ({}){}",
+        all_records.len(),
+        entity_name,
+        entity_set_name,
+        if is_intersect {
+            " (with raw data for junction)"
+        } else {
+            ""
+        }
     );
-    Ok(TargetRecordsResult { records: all_records, raw_records })
+    Ok(TargetRecordsResult {
+        records: all_records,
+        raw_records,
+    })
 }

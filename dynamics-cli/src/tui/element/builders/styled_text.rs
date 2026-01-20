@@ -1,6 +1,6 @@
+use crate::tui::Element;
 use ratatui::style::Style;
 use ratatui::text::Line;
-use crate::tui::Element;
 
 /// Builder for styled text elements
 pub struct StyledTextBuilder<Msg> {

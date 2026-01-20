@@ -6,9 +6,9 @@
 //! - "Delete (entity)" -> Operation::Delete
 
 use anyhow::{Context, Result, bail};
-use calamine::{open_workbook, Data, Reader, Xlsx};
+use calamine::{Data, Reader, Xlsx, open_workbook};
 use regex::Regex;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::path::Path;
 
 use crate::api::operations::Operation;
@@ -75,7 +75,11 @@ fn parse_sheet_name(name: &str) -> Option<(OperationType, String)> {
 fn entity_singular(entity: &str) -> String {
     if entity.ends_with("ies") {
         format!("{}y", &entity[..entity.len() - 3])
-    } else if entity.ends_with("ses") || entity.ends_with("xes") || entity.ends_with("ches") || entity.ends_with("shes") {
+    } else if entity.ends_with("ses")
+        || entity.ends_with("xes")
+        || entity.ends_with("ches")
+        || entity.ends_with("shes")
+    {
         entity[..entity.len() - 2].to_string()
     } else if entity.ends_with('s') {
         entity[..entity.len() - 1].to_string()
@@ -178,8 +182,12 @@ pub fn read_operations_excel<P: AsRef<Path>>(path: P) -> Result<ParsedOperations
 
         // For Update/Delete, find primary key column
         let pk_info = if op_type == OperationType::Update || op_type == OperationType::Delete {
-            let pk = find_primary_key_col(&headers, &entity)
-                .with_context(|| format!("No primary key column found for {} in sheet '{}'", entity, sheet_name))?;
+            let pk = find_primary_key_col(&headers, &entity).with_context(|| {
+                format!(
+                    "No primary key column found for {} in sheet '{}'",
+                    entity, sheet_name
+                )
+            })?;
             Some(pk)
         } else {
             None
@@ -241,8 +249,7 @@ pub fn read_operations_excel<P: AsRef<Path>>(path: P) -> Result<ParsedOperations
                     data: Value::Object(data),
                 },
                 OperationType::Update => {
-                    let id = record_id
-                        .context("Update row missing primary key value")?;
+                    let id = record_id.context("Update row missing primary key value")?;
                     Operation::Update {
                         entity: entity.clone(),
                         id,
@@ -250,8 +257,7 @@ pub fn read_operations_excel<P: AsRef<Path>>(path: P) -> Result<ParsedOperations
                     }
                 }
                 OperationType::Delete => {
-                    let id = record_id
-                        .context("Delete row missing primary key value")?;
+                    let id = record_id.context("Delete row missing primary key value")?;
                     Operation::Delete {
                         entity: entity.clone(),
                         id,

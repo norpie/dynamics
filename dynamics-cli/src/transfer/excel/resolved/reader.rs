@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use calamine::{open_workbook, Reader, Xlsx, Data};
+use calamine::{Data, Reader, Xlsx, open_workbook};
 use uuid::Uuid;
 
 use crate::transfer::{RecordAction, ResolvedEntity, ResolvedRecord, Value};
@@ -25,14 +25,17 @@ pub struct RecordEdit {
 
 /// Read edits from an Excel file and apply them to a ResolvedEntity
 pub fn read_resolved_excel(path: &str, entity: &mut ResolvedEntity) -> Result<ResolvedEdits> {
-    let mut workbook: Xlsx<_> = open_workbook(path)
-        .with_context(|| format!("Failed to open Excel file: {}", path))?;
+    let mut workbook: Xlsx<_> =
+        open_workbook(path).with_context(|| format!("Failed to open Excel file: {}", path))?;
 
-    let sheet_name = workbook.sheet_names().first()
+    let sheet_name = workbook
+        .sheet_names()
+        .first()
         .context("Excel file has no sheets")?
         .clone();
 
-    let range = workbook.worksheet_range(&sheet_name)
+    let range = workbook
+        .worksheet_range(&sheet_name)
         .with_context(|| format!("Failed to read sheet: {}", sheet_name))?;
 
     let rows: Vec<_> = range.rows().collect();
@@ -49,7 +52,8 @@ pub fn read_resolved_excel(path: &str, entity: &mut ResolvedEntity) -> Result<Re
     // Process each data row
     for (row_idx, row) in rows.iter().enumerate().skip(1) {
         // Get source_id
-        let source_id_str = col_indices.source_id_col
+        let source_id_str = col_indices
+            .source_id_col
             .and_then(|c| get_cell_string(row, c))
             .unwrap_or_default();
 
@@ -86,9 +90,15 @@ pub fn read_resolved_excel(path: &str, entity: &mut ResolvedEntity) -> Result<Re
                 let new_value = parse_cell_value(&cell_str);
 
                 // Compare with original
-                let original_value = original.fields.get(field_name).cloned().unwrap_or(Value::Null);
+                let original_value = original
+                    .fields
+                    .get(field_name)
+                    .cloned()
+                    .unwrap_or(Value::Null);
                 if new_value != original_value {
-                    record_edit.changed_fields.insert(field_name.clone(), new_value);
+                    record_edit
+                        .changed_fields
+                        .insert(field_name.clone(), new_value);
                 }
             }
         }

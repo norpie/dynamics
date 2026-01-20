@@ -1,7 +1,7 @@
+use super::models::{CredentialSet, TokenInfo};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use super::models::{CredentialSet, TokenInfo};
 
 /// Manages authentication tokens and credentials for multiple environments
 pub struct AuthManager {
@@ -22,7 +22,10 @@ impl AuthManager {
     }
 
     pub async fn try_select_credentials(&self, name: &str) -> anyhow::Result<CredentialSet> {
-        self.credentials.read().await.get(name)
+        self.credentials
+            .read()
+            .await
+            .get(name)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("Credentials '{}' not found", name))
     }
@@ -34,7 +37,10 @@ impl AuthManager {
 
     // Delete methods
     pub async fn delete_credentials(&self, name: &str) -> anyhow::Result<()> {
-        self.credentials.write().await.remove(name)
+        self.credentials
+            .write()
+            .await
+            .remove(name)
             .ok_or_else(|| anyhow::anyhow!("Credentials '{}' not found", name))?;
         Ok(())
     }
@@ -42,15 +48,21 @@ impl AuthManager {
     // Rename methods
     pub async fn rename_credentials(&self, old_name: &str, new_name: String) -> anyhow::Result<()> {
         let mut credentials = self.credentials.write().await;
-        let creds = credentials.remove(old_name)
+        let creds = credentials
+            .remove(old_name)
             .ok_or_else(|| anyhow::anyhow!("Credentials '{}' not found", old_name))?;
         credentials.insert(new_name, creds);
         Ok(())
     }
 
     // Authentication methods
-    pub async fn authenticate(&self, env_name: &str, host: &str, credentials: &CredentialSet) -> anyhow::Result<()> {
-        use std::time::{SystemTime, Duration};
+    pub async fn authenticate(
+        &self,
+        env_name: &str,
+        host: &str,
+        credentials: &CredentialSet,
+    ) -> anyhow::Result<()> {
+        use std::time::{Duration, SystemTime};
 
         log::info!("Authenticating to {} for environment {}", host, env_name);
 
@@ -82,7 +94,9 @@ impl AuthManager {
                 if response.status().is_success() {
                     let token_data: serde_json::Value = response.json().await?;
 
-                    if let Some(access_token) = token_data.get("access_token").and_then(|t| t.as_str()) {
+                    if let Some(access_token) =
+                        token_data.get("access_token").and_then(|t| t.as_str())
+                    {
                         // Calculate expiration (default to 1 hour if not provided)
                         let expires_in = token_data
                             .get("expires_in")
@@ -102,7 +116,10 @@ impl AuthManager {
                             refresh_token,
                         };
 
-                        self.tokens.write().await.insert(env_name.to_string(), token_info);
+                        self.tokens
+                            .write()
+                            .await
+                            .insert(env_name.to_string(), token_info);
 
                         log::info!("Successfully authenticated for environment {}", env_name);
                         Ok(())
@@ -115,14 +132,20 @@ impl AuthManager {
                 }
             }
             _ => {
-                anyhow::bail!("Authentication method not yet implemented: {:?}", credentials)
+                anyhow::bail!(
+                    "Authentication method not yet implemented: {:?}",
+                    credentials
+                )
             }
         }
     }
 
     /// Get token for environment (used by ClientManager)
     pub async fn get_token(&self, env_name: &str) -> anyhow::Result<TokenInfo> {
-        self.tokens.read().await.get(env_name)
+        self.tokens
+            .read()
+            .await
+            .get(env_name)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("No token found for environment '{}'", env_name))
     }

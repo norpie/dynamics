@@ -149,7 +149,10 @@ impl Transform {
     }
 
     /// Create a copy transform with a resolver
-    pub fn copy_with_resolver(source_field: &str, resolver_name: &str) -> Result<Self, FieldPathError> {
+    pub fn copy_with_resolver(
+        source_field: &str,
+        resolver_name: &str,
+    ) -> Result<Self, FieldPathError> {
         Ok(Transform::Copy {
             source_path: FieldPath::parse(source_field)?,
             resolver: Some(resolver_name.to_string()),
@@ -164,7 +167,10 @@ impl Transform {
     /// Get a human-readable description of this transform
     pub fn describe(&self) -> String {
         match self {
-            Transform::Copy { source_path, resolver } => {
+            Transform::Copy {
+                source_path,
+                resolver,
+            } => {
                 if let Some(resolver_name) = resolver {
                     format!("copy({}) -> {}", source_path, resolver_name)
                 } else {
@@ -201,7 +207,10 @@ impl Transform {
                     format!("format(\"{}\")", s)
                 }
             }
-            Transform::Replace { source_path, replacements } => {
+            Transform::Replace {
+                source_path,
+                replacements,
+            } => {
                 format!("replace({}) [{} rules]", source_path, replacements.len())
             }
         }
@@ -438,7 +447,9 @@ impl FieldPath {
 
     /// Get the final field being accessed (last segment)
     pub fn target_field(&self) -> &str {
-        self.segments.last().expect("FieldPath always has at least one segment")
+        self.segments
+            .last()
+            .expect("FieldPath always has at least one segment")
     }
 
     /// Get all lookup segments (all except the last)
@@ -635,23 +646,31 @@ mod tests {
     fn test_condition_evaluate() {
         let value = Value::Int(42);
 
-        assert!(Condition::Equals {
-            value: Value::Int(42)
-        }
-        .evaluate(&value));
-        assert!(!Condition::Equals {
-            value: Value::Int(0)
-        }
-        .evaluate(&value));
+        assert!(
+            Condition::Equals {
+                value: Value::Int(42)
+            }
+            .evaluate(&value)
+        );
+        assert!(
+            !Condition::Equals {
+                value: Value::Int(0)
+            }
+            .evaluate(&value)
+        );
 
-        assert!(Condition::NotEquals {
-            value: Value::Int(0)
-        }
-        .evaluate(&value));
-        assert!(!Condition::NotEquals {
-            value: Value::Int(42)
-        }
-        .evaluate(&value));
+        assert!(
+            Condition::NotEquals {
+                value: Value::Int(0)
+            }
+            .evaluate(&value)
+        );
+        assert!(
+            !Condition::NotEquals {
+                value: Value::Int(42)
+            }
+            .evaluate(&value)
+        );
 
         assert!(!Condition::IsNull.evaluate(&value));
         assert!(Condition::IsNotNull.evaluate(&value));

@@ -24,7 +24,9 @@ pub async fn fetch_with_cache(
 
     // Check cache first (12 hours) - use full metadata cache, only if use_cache is true
     if use_cache {
-        let cached_metadata = config.get_entity_metadata_cache(environment_name, entity_name, 12).await
+        let cached_metadata = config
+            .get_entity_metadata_cache(environment_name, entity_name, 12)
+            .await
             .ok()
             .flatten();
 
@@ -35,66 +37,102 @@ pub async fn fetch_with_cache(
                 FetchType::SourceFields | FetchType::TargetFields => {
                     // Apply virtual field filtering to cached fields too
                     // (in case cache was created before this filtering was added)
-                    let relationship_names: std::collections::HashSet<String> = cached.relationships.iter()
+                    let relationship_names: std::collections::HashSet<String> = cached
+                        .relationships
+                        .iter()
                         .map(|r| r.name.clone())
                         .collect();
                     let fields = process_lookup_fields(cached.fields, &relationship_names);
 
                     match fetch_type {
-                        FetchType::SourceFields => Ok(FetchedData::SourceFields(entity_name.to_string(), fields)),
-                        FetchType::TargetFields => Ok(FetchedData::TargetFields(entity_name.to_string(), fields)),
-                        _ => unreachable!()
+                        FetchType::SourceFields => {
+                            Ok(FetchedData::SourceFields(entity_name.to_string(), fields))
+                        }
+                        FetchType::TargetFields => {
+                            Ok(FetchedData::TargetFields(entity_name.to_string(), fields))
+                        }
+                        _ => unreachable!(),
                     }
                 }
-                FetchType::SourceForms => Ok(FetchedData::SourceForms(entity_name.to_string(), cached.forms)),
-                FetchType::SourceViews => Ok(FetchedData::SourceViews(entity_name.to_string(), cached.views)),
-                FetchType::TargetForms => Ok(FetchedData::TargetForms(entity_name.to_string(), cached.forms)),
-                FetchType::TargetViews => Ok(FetchedData::TargetViews(entity_name.to_string(), cached.views)),
+                FetchType::SourceForms => Ok(FetchedData::SourceForms(
+                    entity_name.to_string(),
+                    cached.forms,
+                )),
+                FetchType::SourceViews => Ok(FetchedData::SourceViews(
+                    entity_name.to_string(),
+                    cached.views,
+                )),
+                FetchType::TargetForms => Ok(FetchedData::TargetForms(
+                    entity_name.to_string(),
+                    cached.forms,
+                )),
+                FetchType::TargetViews => Ok(FetchedData::TargetViews(
+                    entity_name.to_string(),
+                    cached.views,
+                )),
             };
         }
     }
 
     // Fetch from API
-    let client = manager.get_client(environment_name).await
+    let client = manager
+        .get_client(environment_name)
+        .await
         .map_err(|e| e.to_string())?;
 
     match fetch_type {
         FetchType::SourceFields => {
-            let fields = client.fetch_entity_fields_combined(entity_name).await.map_err(|e| e.to_string())?;
+            let fields = client
+                .fetch_entity_fields_combined(entity_name)
+                .await
+                .map_err(|e| e.to_string())?;
             // Extract relationships to get their names for filtering virtual fields
             let relationships = extract_relationships(&fields);
-            let relationship_names: std::collections::HashSet<String> = relationships.iter()
-                .map(|r| r.name.clone())
-                .collect();
+            let relationship_names: std::collections::HashSet<String> =
+                relationships.iter().map(|r| r.name.clone()).collect();
             // Filter virtual fields using relationship names
             let fields = process_lookup_fields(fields, &relationship_names);
             Ok(FetchedData::SourceFields(entity_name.to_string(), fields))
         }
         FetchType::SourceForms => {
-            let forms = client.fetch_entity_forms(entity_name).await.map_err(|e| e.to_string())?;
+            let forms = client
+                .fetch_entity_forms(entity_name)
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(FetchedData::SourceForms(entity_name.to_string(), forms))
         }
         FetchType::SourceViews => {
-            let views = client.fetch_entity_views(entity_name).await.map_err(|e| e.to_string())?;
+            let views = client
+                .fetch_entity_views(entity_name)
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(FetchedData::SourceViews(entity_name.to_string(), views))
         }
         FetchType::TargetFields => {
-            let fields = client.fetch_entity_fields_combined(entity_name).await.map_err(|e| e.to_string())?;
+            let fields = client
+                .fetch_entity_fields_combined(entity_name)
+                .await
+                .map_err(|e| e.to_string())?;
             // Extract relationships to get their names for filtering virtual fields
             let relationships = extract_relationships(&fields);
-            let relationship_names: std::collections::HashSet<String> = relationships.iter()
-                .map(|r| r.name.clone())
-                .collect();
+            let relationship_names: std::collections::HashSet<String> =
+                relationships.iter().map(|r| r.name.clone()).collect();
             // Filter virtual fields using relationship names
             let fields = process_lookup_fields(fields, &relationship_names);
             Ok(FetchedData::TargetFields(entity_name.to_string(), fields))
         }
         FetchType::TargetForms => {
-            let forms = client.fetch_entity_forms(entity_name).await.map_err(|e| e.to_string())?;
+            let forms = client
+                .fetch_entity_forms(entity_name)
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(FetchedData::TargetForms(entity_name.to_string(), forms))
         }
         FetchType::TargetViews => {
-            let views = client.fetch_entity_views(entity_name).await.map_err(|e| e.to_string())?;
+            let views = client
+                .fetch_entity_views(entity_name)
+                .await
+                .map_err(|e| e.to_string())?;
             Ok(FetchedData::TargetViews(entity_name.to_string(), views))
         }
     }
@@ -102,7 +140,9 @@ pub async fn fetch_with_cache(
 
 /// Extract unique entity types from relationships with usage counts
 /// Returns list of (entity_name, usage_count) tuples, sorted by name
-pub fn extract_entities(relationships: &[crate::api::metadata::RelationshipMetadata]) -> Vec<(String, usize)> {
+pub fn extract_entities(
+    relationships: &[crate::api::metadata::RelationshipMetadata],
+) -> Vec<(String, usize)> {
     use std::collections::HashMap;
 
     let mut entity_counts: HashMap<String, usize> = HashMap::new();
@@ -124,8 +164,11 @@ pub fn extract_entities(relationships: &[crate::api::metadata::RelationshipMetad
 
 /// Extract relationships from field list
 /// Includes all Lookup fields and NavigationProperties (collection relationships)
-pub fn extract_relationships(fields: &[crate::api::metadata::FieldMetadata]) -> Vec<crate::api::metadata::RelationshipMetadata> {
-    fields.iter()
+pub fn extract_relationships(
+    fields: &[crate::api::metadata::FieldMetadata],
+) -> Vec<crate::api::metadata::RelationshipMetadata> {
+    fields
+        .iter()
         .filter_map(|f| {
             // Check for Lookup (ManyToOne) or Relationship:* (OneToMany/ManyToMany)
             let relationship_type = match &f.field_type {
@@ -148,7 +191,10 @@ pub fn extract_relationships(fields: &[crate::api::metadata::FieldMetadata]) -> 
             relationship_type.map(|rel_type| crate::api::metadata::RelationshipMetadata {
                 name: f.logical_name.clone(),
                 relationship_type: rel_type,
-                related_entity: f.related_entity.clone().unwrap_or_else(|| "unknown".to_string()),
+                related_entity: f
+                    .related_entity
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
                 related_attribute: f.logical_name.clone(),
             })
         })
@@ -162,15 +208,22 @@ pub fn extract_relationships(fields: &[crate::api::metadata::FieldMetadata]) -> 
 /// by using the provided relationship names.
 fn process_lookup_fields(
     fields: Vec<crate::api::metadata::FieldMetadata>,
-    relationship_names: &std::collections::HashSet<String>
+    relationship_names: &std::collections::HashSet<String>,
 ) -> Vec<crate::api::metadata::FieldMetadata> {
     use std::collections::HashMap;
 
-    log::info!("🔍 Processing {} fields with {} known relationships", fields.len(), relationship_names.len());
+    log::info!(
+        "🔍 Processing {} fields with {} known relationships",
+        fields.len(),
+        relationship_names.len()
+    );
     if !relationship_names.is_empty() {
         let mut rel_vec: Vec<_> = relationship_names.iter().collect();
         rel_vec.sort();
-        log::info!("📋 Relationships to check for virtual fields: {:?}", rel_vec);
+        log::info!(
+            "📋 Relationships to check for virtual fields: {:?}",
+            rel_vec
+        );
     }
 
     // Build map of _*_value fields to their related entity info
@@ -180,7 +233,8 @@ fn process_lookup_fields(
         // Detect _*_value pattern
         if field.logical_name.starts_with('_') && field.logical_name.ends_with("_value") {
             // Extract base field name: _cgk_deadlineid_value -> cgk_deadlineid
-            if let Some(base_name) = field.logical_name
+            if let Some(base_name) = field
+                .logical_name
                 .strip_prefix('_')
                 .and_then(|s| s.strip_suffix("_value"))
             {
@@ -236,7 +290,11 @@ fn process_lookup_fields(
 
     let filtered_count = original_count - filtered_fields.len();
     if filtered_count > 0 {
-        log::info!("✅ Filtered {} virtual fields, {} fields remaining", filtered_count, filtered_fields.len());
+        log::info!(
+            "✅ Filtered {} virtual fields, {} fields remaining",
+            filtered_count,
+            filtered_fields.len()
+        );
     }
 
     filtered_fields
@@ -251,30 +309,40 @@ pub async fn fetch_example_pair_data(
     target_entity: &str,
     target_record_id: &str,
 ) -> Result<(serde_json::Value, serde_json::Value), String> {
-    log::debug!("Fetching example pair: source={}:{} ({}), target={}:{} ({})",
-        source_env, source_entity, source_record_id,
-        target_env, target_entity, target_record_id);
+    log::debug!(
+        "Fetching example pair: source={}:{} ({}), target={}:{} ({})",
+        source_env,
+        source_entity,
+        source_record_id,
+        target_env,
+        target_entity,
+        target_record_id
+    );
 
     let manager = crate::client_manager();
 
     // Fetch source record
-    let source_client = manager.get_client(source_env)
+    let source_client = manager
+        .get_client(source_env)
         .await
         .map_err(|e| format!("Failed to get source client: {}", e))?;
 
     log::debug!("Fetching source record...");
-    let source_record = source_client.fetch_record_by_id(source_entity, source_record_id)
+    let source_record = source_client
+        .fetch_record_by_id(source_entity, source_record_id)
         .await
         .map_err(|e| format!("Failed to fetch source record: {}", e))?;
     log::debug!("Source record fetched successfully");
 
     // Fetch target record
-    let target_client = manager.get_client(target_env)
+    let target_client = manager
+        .get_client(target_env)
         .await
         .map_err(|e| format!("Failed to get target client: {}", e))?;
 
     log::debug!("Fetching target record...");
-    let target_record = target_client.fetch_record_by_id(target_entity, target_record_id)
+    let target_record = target_client
+        .fetch_record_by_id(target_entity, target_record_id)
         .await
         .map_err(|e| format!("Failed to fetch target record: {}", e))?;
     log::debug!("Target record fetched successfully");

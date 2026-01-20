@@ -58,24 +58,11 @@ impl OptionValue {
 #[derive(Debug, Clone)]
 pub enum OptionType {
     Bool,
-    Int {
-        min: Option<i64>,
-        max: Option<i64>,
-    },
-    UInt {
-        min: Option<u64>,
-        max: Option<u64>,
-    },
-    Float {
-        min: Option<f64>,
-        max: Option<f64>,
-    },
-    String {
-        max_length: Option<usize>,
-    },
-    Enum {
-        variants: Vec<String>,
-    },
+    Int { min: Option<i64>, max: Option<i64> },
+    UInt { min: Option<u64>, max: Option<u64> },
+    Float { min: Option<f64>, max: Option<f64> },
+    String { max_length: Option<usize> },
+    Enum { variants: Vec<String> },
 }
 
 impl OptionType {
@@ -148,7 +135,11 @@ impl OptionType {
             }
             (OptionType::Enum { variants }, OptionValue::String(v)) => {
                 if !variants.contains(v) {
-                    anyhow::bail!("Value '{}' is not a valid variant. Valid values: {:?}", v, variants);
+                    anyhow::bail!(
+                        "Value '{}' is not a valid variant. Valid values: {:?}",
+                        v,
+                        variants
+                    );
                 }
                 Ok(())
             }

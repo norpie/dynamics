@@ -1,6 +1,6 @@
 //! Color picker widget state and logic
 
-use crate::tui::color::{rgb_to_hsl, hsl_to_rgb, HSL};
+use crate::tui::color::{HSL, hsl_to_rgb, rgb_to_hsl};
 use crossterm::event::KeyCode;
 use ratatui::style::Color;
 
@@ -184,14 +184,6 @@ impl ColorPickerState {
 
     /// Adjust the currently focused channel by delta
     fn adjust_channel(&mut self, delta: i32) {
-        let delta = if crossterm::event::KeyModifiers::SHIFT
-            == crossterm::event::KeyModifiers::SHIFT
-        {
-            delta * 10
-        } else {
-            delta
-        };
-
         match self.mode {
             ColorPickerMode::HSL => match self.focused_channel {
                 Channel::Primary => {
@@ -285,10 +277,7 @@ mod tests {
 
     #[test]
     fn test_toggle_mode() {
-        let mut state = ColorPickerState::from_color(
-            Color::Rgb(255, 0, 0),
-            ColorPickerMode::HSL
-        );
+        let mut state = ColorPickerState::from_color(Color::Rgb(255, 0, 0), ColorPickerMode::HSL);
         assert_eq!(state.mode(), ColorPickerMode::HSL);
 
         state.toggle_mode();
@@ -300,10 +289,7 @@ mod tests {
 
     #[test]
     fn test_channel_navigation() {
-        let mut state = ColorPickerState::from_color(
-            Color::Rgb(255, 0, 0),
-            ColorPickerMode::HSL
-        );
+        let mut state = ColorPickerState::from_color(Color::Rgb(255, 0, 0), ColorPickerMode::HSL);
 
         assert_eq!(state.focused_channel(), Channel::Primary);
 
@@ -324,7 +310,7 @@ mod tests {
     fn test_adjust_hsl() {
         let mut state = ColorPickerState::from_color(
             Color::Rgb(255, 0, 0), // Pure red: H=0, S=100, L=50
-            ColorPickerMode::HSL
+            ColorPickerMode::HSL,
         );
 
         // Adjust hue

@@ -15,10 +15,18 @@ use super::state::{Msg, State};
 impl ListItem for TransferConfigSummary {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, is_multi_selected: bool, _is_hovered: bool) -> Element<Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Msg> {
         let theme = &crate::global_runtime_config().theme;
         let (fg_color, bg_style) = if is_selected {
-            (theme.accent_primary, Some(Style::default().bg(theme.bg_surface)))
+            (
+                theme.accent_primary,
+                Some(Style::default().bg(theme.bg_surface)),
+            )
         } else {
             (theme.text_primary, None)
         };
@@ -194,9 +202,16 @@ pub fn render(state: &mut State, theme: &crate::tui::Theme) -> LayeredView<Msg> 
                 .iter()
                 .filter_map(|&i| configs.get(i).map(|c| c.name.clone()))
                 .collect();
-            let env_info = configs.first().map(|c| format!("{} -> {}", c.source_env, c.target_env));
+            let env_info = configs
+                .first()
+                .map(|c| format!("{} -> {}", c.source_env, c.target_env));
             view = view.with_app_modal(
-                render_merge_modal(&mut state.merge_form, &selected_names, env_info.as_deref(), theme),
+                render_merge_modal(
+                    &mut state.merge_form,
+                    &selected_names,
+                    env_info.as_deref(),
+                    theme,
+                ),
                 crate::tui::Alignment::Center,
             );
         }
@@ -269,7 +284,9 @@ fn render_create_modal(
     .placeholder("Select source...")
     .on_event(Msg::CreateFormSourceEnv)
     .build();
-    let source_panel = Element::panel(source_input).title("Source Environment").build();
+    let source_panel = Element::panel(source_input)
+        .title("Source Environment")
+        .build();
 
     let target_input = Element::autocomplete(
         FocusId::new("create-target-env"),
@@ -280,7 +297,9 @@ fn render_create_modal(
     .placeholder("Select target...")
     .on_event(Msg::CreateFormTargetEnv)
     .build();
-    let target_panel = Element::panel(target_input).title("Target Environment").build();
+    let target_panel = Element::panel(target_input)
+        .title("Target Environment")
+        .build();
 
     // Mode selector (toggle button)
     let (mode_text, mode_button_label) = match form.mode {
@@ -361,7 +380,10 @@ fn render_clone_modal(
     // Info text
     let info_text = Element::styled_text(Line::from(vec![
         Span::styled("Cloning: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(original_name.to_string(), Style::default().fg(theme.accent_primary)),
+        Span::styled(
+            original_name.to_string(),
+            Style::default().fg(theme.accent_primary),
+        ),
     ]))
     .build();
 
@@ -408,12 +430,10 @@ fn render_merge_modal(
     use crate::tui::element::RowBuilder;
 
     // Info text showing configs being merged
-    let merge_info = Element::styled_text(Line::from(vec![
-        Span::styled(
-            format!("Merging {} configs", config_names.len()),
-            Style::default().fg(theme.text_secondary),
-        ),
-    ]))
+    let merge_info = Element::styled_text(Line::from(vec![Span::styled(
+        format!("Merging {} configs", config_names.len()),
+        Style::default().fg(theme.text_secondary),
+    )]))
     .build();
 
     // List of config names

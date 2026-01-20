@@ -1,8 +1,8 @@
 //! Examples modal for managing example record pairs
 
-use crate::tui::{Element, Theme, FocusId};
-use crate::tui::element::{LayoutConstraint, RowBuilder, ColumnBuilder};
-use crate::tui::widgets::{ListState, ListItem, TextInputField};
+use crate::tui::element::{ColumnBuilder, LayoutConstraint, RowBuilder};
+use crate::tui::widgets::{ListItem, ListState, TextInputField};
+use crate::tui::{Element, FocusId, Theme};
 use crate::{button_row, col, spacer, use_constraints};
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
@@ -20,24 +20,32 @@ pub struct ExamplePairItem<Msg> {
 impl<Msg: Clone> ListItem for ExamplePairItem<Msg> {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
         let display = if let Some(label) = &self.label {
-            format!("{} ({}... → {}...)",
+            format!(
+                "{} ({}... → {}...)",
                 label,
                 &self.source_id[..8.min(self.source_id.len())],
                 &self.target_id[..8.min(self.target_id.len())]
             )
         } else {
-            format!("{}... → {}...",
+            format!(
+                "{}... → {}...",
                 &self.source_id[..8.min(self.source_id.len())],
                 &self.target_id[..8.min(self.target_id.len())]
             )
         };
 
-        let mut builder = Element::styled_text(Line::from(vec![
-            Span::styled(display, Style::default().fg(theme.text_primary))
-        ]));
+        let mut builder = Element::styled_text(Line::from(vec![Span::styled(
+            display,
+            Style::default().fg(theme.text_primary),
+        )]));
 
         if is_selected {
             builder = builder.background(Style::default().bg(theme.bg_surface));
@@ -133,19 +141,28 @@ impl<Msg: Clone> ExamplesModal<Msg> {
     }
 
     /// Set source input event handler
-    pub fn on_source_input_event(mut self, handler: fn(crate::tui::widgets::TextInputEvent) -> Msg) -> Self {
+    pub fn on_source_input_event(
+        mut self,
+        handler: fn(crate::tui::widgets::TextInputEvent) -> Msg,
+    ) -> Self {
         self.on_source_input_event = Some(handler);
         self
     }
 
     /// Set target input event handler
-    pub fn on_target_input_event(mut self, handler: fn(crate::tui::widgets::TextInputEvent) -> Msg) -> Self {
+    pub fn on_target_input_event(
+        mut self,
+        handler: fn(crate::tui::widgets::TextInputEvent) -> Msg,
+    ) -> Self {
         self.on_target_input_event = Some(handler);
         self
     }
 
     /// Set label input event handler
-    pub fn on_label_input_event(mut self, handler: fn(crate::tui::widgets::TextInputEvent) -> Msg) -> Self {
+    pub fn on_label_input_event(
+        mut self,
+        handler: fn(crate::tui::widgets::TextInputEvent) -> Msg,
+    ) -> Self {
         self.on_label_input_event = Some(handler);
         self
     }
@@ -198,7 +215,8 @@ impl<Msg: Clone> ExamplesModal<Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         // Build text input elements from state
-        let source_handler = self.on_source_input_event
+        let source_handler = self
+            .on_source_input_event
             .expect("ExamplesModal requires on_source_input_event");
         let source_input = Element::text_input(
             FocusId::new("examples-source-input"),
@@ -209,7 +227,8 @@ impl<Msg: Clone> ExamplesModal<Msg> {
         .on_event(source_handler)
         .build();
 
-        let target_handler = self.on_target_input_event
+        let target_handler = self
+            .on_target_input_event
             .expect("ExamplesModal requires on_target_input_event");
         let target_input = Element::text_input(
             FocusId::new("examples-target-input"),
@@ -220,7 +239,8 @@ impl<Msg: Clone> ExamplesModal<Msg> {
         .on_event(target_handler)
         .build();
 
-        let label_handler = self.on_label_input_event
+        let label_handler = self
+            .on_label_input_event
             .expect("ExamplesModal requires on_label_input_event");
         let label_input = Element::text_input(
             FocusId::new("examples-label-input"),
@@ -232,9 +252,11 @@ impl<Msg: Clone> ExamplesModal<Msg> {
         .build();
 
         // Build list
-        let list_handler = self.on_list_navigate
+        let list_handler = self
+            .on_list_navigate
             .expect("ExamplesModal requires on_list_navigate");
-        let select_handler = self.on_list_select
+        let select_handler = self
+            .on_list_select
             .expect("ExamplesModal requires on_list_select");
         let pairs_list = Element::list(
             FocusId::new("examples-list"),
@@ -255,19 +277,31 @@ impl<Msg: Clone> ExamplesModal<Msg> {
             .title("Target Record ID")
             .build();
 
-        let label_panel = Element::panel(label_input)
-            .title("Label")
-            .build();
+        let label_panel = Element::panel(label_input).title("Label").build();
 
-        let pairs_panel = Element::panel(pairs_list)
-            .title("Saved Pairs")
-            .build();
+        let pairs_panel = Element::panel(pairs_list).title("Saved Pairs").build();
 
         // Buttons (examples are fetched automatically)
         let buttons = button_row![
-            ("examples-add", "Add", self.on_add.clone().expect("ExamplesModal requires on_add")),
-            ("examples-delete", "Delete", self.on_delete.clone().expect("ExamplesModal requires on_delete")),
-            ("examples-close", "Close", self.on_close.clone().expect("ExamplesModal requires on_close")),
+            (
+                "examples-add",
+                "Add",
+                self.on_add.clone().expect("ExamplesModal requires on_add")
+            ),
+            (
+                "examples-delete",
+                "Delete",
+                self.on_delete
+                    .clone()
+                    .expect("ExamplesModal requires on_delete")
+            ),
+            (
+                "examples-close",
+                "Close",
+                self.on_close
+                    .clone()
+                    .expect("ExamplesModal requires on_close")
+            ),
         ];
 
         // Layout with explicit constraints
@@ -290,14 +324,10 @@ impl<Msg: Clone> ExamplesModal<Msg> {
         ];
 
         // Wrap in outer panel with title, width, and height
-        Element::panel(
-            Element::container(modal_body)
-                .padding(2)
-                .build()
-        )
-        .width(self.width.unwrap_or(80))
-        .height(self.height.unwrap_or(30))
-        .build()
+        Element::panel(Element::container(modal_body).padding(2).build())
+            .width(self.width.unwrap_or(80))
+            .height(self.height.unwrap_or(30))
+            .build()
     }
 }
 

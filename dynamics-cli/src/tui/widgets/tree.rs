@@ -1,6 +1,6 @@
+use crate::tui::{Element, Theme};
 use crossterm::event::KeyCode;
 use std::collections::{HashMap, HashSet};
-use crate::tui::{Element, Theme};
 
 /// Trait for items that can be displayed in a tree
 pub trait TreeItem: Clone {
@@ -44,12 +44,7 @@ pub trait TableTreeItem: TreeItem {
     /// * `depth` - indentation level (0 = root)
     /// * `is_selected` - whether this node is currently selected
     /// * `is_expanded` - whether this node is currently expanded
-    fn to_table_columns(
-        &self,
-        depth: usize,
-        is_selected: bool,
-        is_expanded: bool,
-    ) -> Vec<String>;
+    fn to_table_columns(&self, depth: usize, is_selected: bool, is_expanded: bool) -> Vec<String>;
 
     /// Define column widths using ratatui Constraints
     ///
@@ -68,22 +63,22 @@ pub trait TableTreeItem: TreeItem {
 #[derive(Debug, Clone)]
 pub struct TreeState {
     // Core state
-    expanded: HashSet<String>,      // IDs of expanded nodes
-    selected: Option<String>,        // Selected node ID (primary/anchor)
+    expanded: HashSet<String>, // IDs of expanded nodes
+    selected: Option<String>,  // Selected node ID (primary/anchor)
     scroll_offset: usize,
-    scroll_off: usize,               // Scrolloff distance (vim-like)
-    wrap_around: bool,               // Wrap to bottom/top when reaching edges
-    viewport_height: Option<usize>,  // Last known viewport height from renderer
+    scroll_off: usize,              // Scrolloff distance (vim-like)
+    wrap_around: bool,              // Wrap to bottom/top when reaching edges
+    viewport_height: Option<usize>, // Last known viewport height from renderer
 
     // Multi-selection support
     multi_selected: HashSet<String>, // Additional selected node IDs (for N:1 mappings)
     anchor_selection: Option<String>, // Anchor for range selection (Shift+Arrow)
 
     // Cached metadata for O(1) lookups (Approach 4 - Smart State)
-    node_parents: HashMap<String, String>,   // child_id → parent_id
-    node_depths: HashMap<String, usize>,     // id → depth
-    visible_order: Vec<String>,              // DFS order of visible nodes
-    cache_valid: bool,                       // Whether cache needs rebuild
+    node_parents: HashMap<String, String>, // child_id → parent_id
+    node_depths: HashMap<String, usize>,   // id → depth
+    visible_order: Vec<String>,            // DFS order of visible nodes
+    cache_valid: bool,                     // Whether cache needs rebuild
 }
 
 impl Default for TreeState {
@@ -304,7 +299,9 @@ impl TreeState {
     /// Select range from anchor to end_node_id (Shift+Arrow)
     /// Adds all nodes between anchor and end to multi_selected
     pub fn select_range(&mut self, end_node_id: String) {
-        let anchor = self.anchor_selection.clone()
+        let anchor = self
+            .anchor_selection
+            .clone()
             .or_else(|| self.selected.clone());
 
         if let Some(anchor) = anchor {
@@ -473,7 +470,8 @@ impl TreeState {
                 }
 
                 // Calculate ideal scroll range to keep selection visible with scrolloff
-                let min_scroll = sel_idx.saturating_sub(visible_height.saturating_sub(self.scroll_off + 1));
+                let min_scroll =
+                    sel_idx.saturating_sub(visible_height.saturating_sub(self.scroll_off + 1));
                 let max_scroll = sel_idx.saturating_sub(self.scroll_off);
 
                 if self.scroll_offset < min_scroll {
@@ -491,7 +489,10 @@ impl TreeState {
 
     /// Handle tree event (unified event pattern)
     /// Returns Some(selected_id) on Toggle event, None otherwise
-    pub fn handle_event(&mut self, event: crate::tui::widgets::events::TreeEvent) -> Option<String> {
+    pub fn handle_event(
+        &mut self,
+        event: crate::tui::widgets::events::TreeEvent,
+    ) -> Option<String> {
         use crate::tui::widgets::events::TreeEvent;
 
         log::debug!("TreeState::handle_event: {:?}", event);
@@ -539,10 +540,7 @@ impl TreeState {
 
     /// Rebuild metadata cache from tree structure
     /// This is called internally when cache is invalid
-    pub(crate) fn rebuild_metadata<T: TreeItem>(
-        &mut self,
-        root_items: &[T],
-    ) {
+    pub(crate) fn rebuild_metadata<T: TreeItem>(&mut self, root_items: &[T]) {
         self.node_parents.clear();
         self.node_depths.clear();
         self.visible_order.clear();
@@ -677,7 +675,11 @@ pub(crate) fn flatten_table_tree<T: TableTreeItem>(
 
     let elapsed = start.elapsed();
     if elapsed.as_micros() > 1000 {
-        log::warn!("PERF flatten_table_tree: {}us for {} items", elapsed.as_micros(), result.len());
+        log::warn!(
+            "PERF flatten_table_tree: {}us for {} items",
+            elapsed.as_micros(),
+            result.len()
+        );
     }
 
     result

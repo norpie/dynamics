@@ -73,19 +73,18 @@
 //! - `lib.log(msg)`, `lib.warn(msg)` - Logging
 //! - `lib.status(msg)`, `lib.progress(current, total)` - Progress updates
 
-mod types;
+mod execute;
 mod runtime;
 mod stdlib;
+mod types;
 mod validate;
-mod execute;
 
 // Re-export public types
-pub use types::{Declaration, EntityDeclaration, LuaOperation, OperationType};
+pub use execute::{
+    ExecutionContext, ExecutionResult, ExecutionUpdate, execute_transform, execute_transform_async,
+    execute_transform_sync, run_declare, validate_operations,
+};
 pub use runtime::LuaRuntime;
 pub use stdlib::{LogMessage, StatusUpdate, StdlibContext};
+pub use types::{Declaration, EntityDeclaration, LuaOperation, OperationType};
 pub use validate::{ValidationError, ValidationResult, validate_script, validate_script_execution};
-pub use execute::{
-    ExecutionContext, ExecutionResult, ExecutionUpdate,
-    execute_transform, execute_transform_async, execute_transform_sync,
-    run_declare, validate_operations,
-};

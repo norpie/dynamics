@@ -1,10 +1,16 @@
-use ratatui::{Frame, style::{Style, Stylize}, widgets::Paragraph, layout::Rect, text::{Line, Span}};
-use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::{Element, Theme};
-use crate::tui::element::FocusId;
 use crate::tui::command::DispatchTarget;
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, FocusableInfo};
+use crate::tui::element::FocusId;
+use crate::tui::renderer::{FocusRegistry, FocusableInfo, InteractionRegistry};
 use crate::tui::widgets::TextInputEvent;
+use crate::tui::{Element, Theme};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Style, Stylize},
+    text::{Line, Span},
+    widgets::Paragraph,
+};
 
 /// Create on_key handler for text inputs (all keys pass to on_change, Enter also fires on_submit)
 pub fn text_input_on_key<Msg: Clone + Send + 'static>(
@@ -21,7 +27,7 @@ pub fn text_input_on_key<Msg: Clone + Send + 'static>(
                 DispatchTarget::WidgetEvent(Box::new(TextInputEvent::Submit))
             }
         }
-        KeyCode::Esc => DispatchTarget::PassThrough,  // Let runtime handle unfocus/modal close
+        KeyCode::Esc => DispatchTarget::PassThrough, // Let runtime handle unfocus/modal close
         _ => {
             // All other keys go to on_change for app to handle via TextInputState
             if let Some(f) = on_change {
@@ -40,7 +46,7 @@ pub fn text_input_on_key_event<Msg: Clone + Send + 'static>(
 ) -> Box<dyn Fn(KeyEvent) -> DispatchTarget<Msg> + Send> {
     Box::new(move |key_event| match key_event.code {
         KeyCode::Enter => DispatchTarget::AppMsg(on_event(TextInputEvent::Submit)),
-        KeyCode::Esc => DispatchTarget::PassThrough,  // Let runtime handle unfocus/modal close
+        KeyCode::Esc => DispatchTarget::PassThrough, // Let runtime handle unfocus/modal close
         _ => DispatchTarget::AppMsg(on_event(TextInputEvent::Changed(key_event.code))),
     })
 }
@@ -48,7 +54,7 @@ pub fn text_input_on_key_event<Msg: Clone + Send + 'static>(
 /// Render TextInput element
 pub fn render_text_input<Msg: Clone + Send + 'static>(
     frame: &mut Frame,
-    
+
     registry: &mut InteractionRegistry<Msg>,
     focus_registry: &mut FocusRegistry<Msg>,
     focused_id: Option<&FocusId>,
@@ -109,7 +115,7 @@ pub fn render_text_input<Msg: Clone + Send + 'static>(
     let widget = if value.is_empty() && !is_focused {
         // Show placeholder
         let placeholder_text = if let Some(ph) = placeholder {
-            format!(" {}", ph)  // Add left padding
+            format!(" {}", ph) // Add left padding
         } else {
             String::from(" ")
         };
@@ -124,7 +130,7 @@ pub fn render_text_input<Msg: Clone + Send + 'static>(
         let cursor_char = if cursor_in_visible < chars.len() {
             chars[cursor_in_visible].to_string()
         } else {
-            " ".to_string()  // Cursor at end - use space
+            " ".to_string() // Cursor at end - use space
         };
         let after: String = if cursor_in_visible < chars.len() {
             chars[cursor_in_visible + 1..].iter().collect()
@@ -136,9 +142,9 @@ pub fn render_text_input<Msg: Clone + Send + 'static>(
         let text_style = Style::default().fg(theme.text_primary);
         let cursor_style = Style::default()
             .fg(theme.text_primary)
-            .bg(theme.border_primary);  // Semi-transparent block cursor
+            .bg(theme.border_primary); // Semi-transparent block cursor
 
-        let mut spans = vec![Span::raw(" ")];  // Left padding
+        let mut spans = vec![Span::raw(" ")]; // Left padding
         if !before.is_empty() {
             spans.push(Span::styled(before, text_style));
         }

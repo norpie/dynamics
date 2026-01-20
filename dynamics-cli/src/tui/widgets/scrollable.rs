@@ -5,8 +5,8 @@ pub struct ScrollableState {
     viewport_height: Option<usize>, // Last known viewport height from renderer
     content_height: Option<usize>,  // Last known content height from renderer
     horizontal_scroll_offset: usize,
-    viewport_width: Option<usize>,  // Last known viewport width from renderer
-    content_width: Option<usize>,   // Last known content width from renderer
+    viewport_width: Option<usize>, // Last known viewport width from renderer
+    content_width: Option<usize>,  // Last known content width from renderer
 }
 
 impl Default for ScrollableState {
@@ -69,7 +69,12 @@ impl ScrollableState {
     }
 
     /// Handle keyboard navigation
-    pub fn handle_key(&mut self, key: crossterm::event::KeyCode, content_height: usize, visible_height: usize) {
+    pub fn handle_key(
+        &mut self,
+        key: crossterm::event::KeyCode,
+        content_height: usize,
+        visible_height: usize,
+    ) {
         if content_height == 0 {
             return;
         }
@@ -101,9 +106,12 @@ impl ScrollableState {
                 self.horizontal_scroll_offset = self.horizontal_scroll_offset.saturating_sub(1);
             }
             crossterm::event::KeyCode::Right => {
-                if let (Some(content_width), Some(viewport_width)) = (self.content_width, self.viewport_width) {
+                if let (Some(content_width), Some(viewport_width)) =
+                    (self.content_width, self.viewport_width)
+                {
                     let max_h_scroll = content_width.saturating_sub(viewport_width);
-                    self.horizontal_scroll_offset = (self.horizontal_scroll_offset + 1).min(max_h_scroll);
+                    self.horizontal_scroll_offset =
+                        (self.horizontal_scroll_offset + 1).min(max_h_scroll);
                 }
             }
             _ => {}

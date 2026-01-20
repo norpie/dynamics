@@ -1,6 +1,6 @@
 // Test file for ResourceHandlers derive macro
-use dynamics_lib_macros::ResourceHandlers;
 use crate::tui::{Command, Resource};
+use dynamics_lib_macros::ResourceHandlers;
 
 // Mock async functions that would normally fetch data
 async fn fetch_user_data() -> Result<String, String> {

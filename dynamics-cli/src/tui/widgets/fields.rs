@@ -1,6 +1,6 @@
+use super::events::{AutocompleteEvent, MultiSelectEvent, SelectEvent, TextInputEvent};
+use super::{AutocompleteState, MultiSelectState, SelectState, TextInputState};
 use crate::tui::command::Command;
-use super::{AutocompleteState, TextInputState, SelectState, MultiSelectState};
-use super::events::{AutocompleteEvent, TextInputEvent, SelectEvent, MultiSelectEvent};
 
 /// Field that combines value + state for Autocomplete widget
 #[derive(Clone, Default)]
@@ -16,7 +16,11 @@ impl AutocompleteField {
 
     /// Handle autocomplete event and return command (usually None)
     /// Pass in the available options for filtering
-    pub fn handle_event<Msg>(&mut self, event: AutocompleteEvent, options: &[String]) -> Command<Msg> {
+    pub fn handle_event<Msg>(
+        &mut self,
+        event: AutocompleteEvent,
+        options: &[String],
+    ) -> Command<Msg> {
         match event {
             AutocompleteEvent::Input(key) => {
                 if let Some(new_value) = self.state.handle_input_key(key, &self.value, None) {
@@ -79,7 +83,11 @@ impl TextInputField {
 
     /// Handle text input event and return command (usually None unless Submit)
     /// Returns Some(value) on Submit, None otherwise
-    pub fn handle_event(&mut self, event: TextInputEvent, max_length: Option<usize>) -> Option<String> {
+    pub fn handle_event(
+        &mut self,
+        event: TextInputEvent,
+        max_length: Option<usize>,
+    ) -> Option<String> {
         match event {
             TextInputEvent::Changed(key) => {
                 if let Some(new_value) = self.state.handle_key(key, &self.value, max_length) {
@@ -87,9 +95,7 @@ impl TextInputField {
                 }
                 None
             }
-            TextInputEvent::Submit => {
-                Some(self.value.clone())
-            }
+            TextInputEvent::Submit => Some(self.value.clone()),
         }
     }
 
@@ -120,7 +126,11 @@ impl SelectField {
 
     /// Handle select event and update selected value
     /// Returns a SelectEvent::Select if an item was selected (for app notification)
-    pub fn handle_event<Msg>(&mut self, event: SelectEvent, options: &[String]) -> (Command<Msg>, Option<SelectEvent>) {
+    pub fn handle_event<Msg>(
+        &mut self,
+        event: SelectEvent,
+        options: &[String],
+    ) -> (Command<Msg>, Option<SelectEvent>) {
         use crossterm::event::KeyCode;
 
         let mut selection_made = None;
@@ -213,7 +223,7 @@ impl SelectField {
 #[derive(Clone, Default)]
 pub struct MultiSelectField {
     pub selected_items: Vec<String>,
-    pub search_input: String,  // Current search text
+    pub search_input: String, // Current search text
     pub state: MultiSelectState,
 }
 
@@ -224,11 +234,19 @@ impl MultiSelectField {
 
     /// Handle multi-select event and return command (usually None)
     /// Pass in the available options for filtering
-    pub fn handle_event<Msg>(&mut self, event: MultiSelectEvent, options: &[String]) -> Command<Msg> {
+    pub fn handle_event<Msg>(
+        &mut self,
+        event: MultiSelectEvent,
+        options: &[String],
+    ) -> Command<Msg> {
         match event {
             MultiSelectEvent::Input(key) => {
                 // Handle input key and update search text
-                if let Some(new_value) = self.state.input_state_mut().handle_key(key, &self.search_input, None) {
+                if let Some(new_value) =
+                    self.state
+                        .input_state_mut()
+                        .handle_key(key, &self.search_input, None)
+                {
                     self.search_input = new_value.clone();
                     self.state.set_value(new_value.clone());
                     // Update filtered options

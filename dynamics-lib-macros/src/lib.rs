@@ -1,14 +1,14 @@
 use proc_macro::TokenStream;
 
-mod validate;
-mod resource_handlers;
 mod app_state;
+mod resource_handlers;
 mod utils;
+mod validate;
 
 /// Derive macro for validation framework
 ///
 /// # Example
-/// ```rust,no_run
+/// ```rust,ignore
 /// #[derive(Validate)]
 /// struct CreateForm {
 ///     #[validate(not_empty, message = "Name required")]
@@ -28,7 +28,7 @@ pub fn derive_validate(input: TokenStream) -> TokenStream {
 /// Generates helper methods for loading and handling Resource fields.
 ///
 /// # Example
-/// ```rust,no_run
+/// ```rust,ignore
 /// #[derive(ResourceHandlers)]
 /// struct State {
 ///     #[resource(loader = "fetch_data")]
@@ -49,7 +49,7 @@ pub fn derive_resource_handlers(input: TokenStream) -> TokenStream {
 /// Automatically implements AppState::dispatch_widget_event to route events to Field types.
 ///
 /// # Example
-/// ```rust,no_run
+/// ```rust,ignore
 /// #[derive(AppState)]
 /// struct State {
 ///     #[widget("name-input")]

@@ -19,8 +19,12 @@ pub fn overrideable_pluralize_entity_name(entity_name: &str, force_simple: bool)
 
     // Words ending in 's', 'ss', 'sh', 'ch', 'x' -> add 'es'
     // This rule applies even in simple mode
-    if lower.ends_with("s") || lower.ends_with("ss") || lower.ends_with("sh") ||
-       lower.ends_with("ch") || lower.ends_with("x") {
+    if lower.ends_with("s")
+        || lower.ends_with("ss")
+        || lower.ends_with("sh")
+        || lower.ends_with("ch")
+        || lower.ends_with("x")
+    {
         return format!("{}es", entity_name);
     }
 
@@ -61,7 +65,6 @@ pub fn overrideable_pluralize_entity_name(entity_name: &str, force_simple: bool)
     // Default: add 's'
     format!("{}s", entity_name)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -114,7 +117,6 @@ mod tests {
         assert_eq!(pluralize_entity_name("radio"), "radios");
     }
 
-
     #[test]
     fn test_custom_entities() {
         assert_eq!(pluralize_entity_name("new_entity"), "new_entities");
@@ -125,13 +127,28 @@ mod tests {
     #[test]
     fn test_force_simple_pluralization() {
         // Dutch entity names - Dynamics uses simple +s, not English grammar rules
-        assert_eq!(overrideable_pluralize_entity_name("nrq_betalingsschijf", true), "nrq_betalingsschijfs");
-        assert_eq!(overrideable_pluralize_entity_name("nrq_betalingsschijflijn", true), "nrq_betalingsschijflijns");
-        assert_eq!(overrideable_pluralize_entity_name("nrq_grootboekrekening", true), "nrq_grootboekrekenings");
+        assert_eq!(
+            overrideable_pluralize_entity_name("nrq_betalingsschijf", true),
+            "nrq_betalingsschijfs"
+        );
+        assert_eq!(
+            overrideable_pluralize_entity_name("nrq_betalingsschijflijn", true),
+            "nrq_betalingsschijflijns"
+        );
+        assert_eq!(
+            overrideable_pluralize_entity_name("nrq_grootboekrekening", true),
+            "nrq_grootboekrekenings"
+        );
         // Still applies 'es' for words ending in 's'
-        assert_eq!(overrideable_pluralize_entity_name("nrq_kostenplaats", true), "nrq_kostenplaatses");
+        assert_eq!(
+            overrideable_pluralize_entity_name("nrq_kostenplaats", true),
+            "nrq_kostenplaatses"
+        );
 
         // Compare with default (English rules)
-        assert_eq!(pluralize_entity_name("nrq_betalingsschijf"), "nrq_betalingsschijves"); // f -> ves
+        assert_eq!(
+            pluralize_entity_name("nrq_betalingsschijf"),
+            "nrq_betalingsschijves"
+        ); // f -> ves
     }
 }

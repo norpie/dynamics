@@ -1,16 +1,16 @@
 //! Excel export functionality for migration analysis
 
+pub mod csv_exporter;
 mod formatting;
 mod helpers;
 pub mod sheets;
-pub mod csv_exporter;
 
 use anyhow::{Context, Result};
 use rust_xlsxwriter::*;
 
 use super::app::State;
-use sheets::*;
 use helpers::try_open_file;
+use sheets::*;
 
 /// Excel export functionality for migration analysis
 pub struct MigrationExporter;

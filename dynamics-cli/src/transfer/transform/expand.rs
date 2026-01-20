@@ -9,7 +9,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::transfer::types::{FieldPath, Transform};
 
 /// Case-insensitive lookup in a HashMap - returns the VALUE (navigation property name)
-fn get_case_insensitive<'a>(map: &'a std::collections::HashMap<String, String>, key: &str) -> Option<&'a String> {
+fn get_case_insensitive<'a>(
+    map: &'a std::collections::HashMap<String, String>,
+    key: &str,
+) -> Option<&'a String> {
     let key_lower = key.to_lowercase();
     map.iter()
         .find(|(k, _)| k.to_lowercase() == key_lower)
@@ -137,7 +140,9 @@ impl ExpandTree {
         // A field needs _value format if:
         // 1. It's also being expanded (in children), OR
         // 2. It's in the lookup_fields set (known to be a lookup on a related entity)
-        let select_fields: Vec<String> = node.selects.iter()
+        let select_fields: Vec<String> = node
+            .selects
+            .iter()
             .map(|s| {
                 let is_expanded = btree_contains_key_case_insensitive(&node.children, s);
                 let is_known_lookup = lookup_fields
@@ -172,7 +177,13 @@ impl ExpandTree {
                         .and_then(|m| get_case_insensitive(m, child_field))
                         .map(|s| s.as_str())
                         .unwrap_or(child_field);
-                    Self::build_node_string(child_nav_prop, child_field, child_node, nav_prop_map, lookup_fields)
+                    Self::build_node_string(
+                        child_nav_prop,
+                        child_field,
+                        child_node,
+                        nav_prop_map,
+                        lookup_fields,
+                    )
                 })
                 .collect();
             parts.push(format!("$expand={}", nested.join(",")));
@@ -248,9 +259,7 @@ mod tests {
     #[test]
     fn test_three_level_nested() {
         let mut tree = ExpandTree::new();
-        tree.add_path(
-            &FieldPath::parse("userid.contactid.parentcustomerid_account.name").unwrap(),
-        );
+        tree.add_path(&FieldPath::parse("userid.contactid.parentcustomerid_account.name").unwrap());
 
         let clauses = tree.build_expand_clauses(None, None);
         assert_eq!(clauses.len(), 1);

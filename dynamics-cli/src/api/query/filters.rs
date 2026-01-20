@@ -31,7 +31,7 @@ pub enum Filter {
 #[derive(Debug, Clone)]
 pub enum FilterValue {
     String(String),
-    Guid(String),  // GUIDs don't use quotes in OData
+    Guid(String), // GUIDs don't use quotes in OData
     Number(f64),
     Integer(i64),
     Boolean(bool),
@@ -101,7 +101,8 @@ impl Filter {
     /// This is a common pattern when querying by multiple IDs.
     pub fn any_of(field: impl Into<String>, ids: &[String]) -> Self {
         let field_name = field.into();
-        let filters: Vec<Filter> = ids.iter()
+        let filters: Vec<Filter> = ids
+            .iter()
             .map(|id| Filter::eq(field_name.clone(), FilterValue::Guid(id.clone())))
             .collect();
         Self::Or(filters)
@@ -117,18 +118,26 @@ impl Filter {
             Filter::Lt(field, value) => format!("{} lt {}", field, value.to_odata_string()),
             Filter::Le(field, value) => format!("{} le {}", field, value.to_odata_string()),
 
-            Filter::Contains(field, value) => format!("contains({}, '{}')", field, value.replace('\'', "''")),
-            Filter::StartsWith(field, value) => format!("startswith({}, '{}')", field, value.replace('\'', "''")),
-            Filter::EndsWith(field, value) => format!("endswith({}, '{}')", field, value.replace('\'', "''")),
+            Filter::Contains(field, value) => {
+                format!("contains({}, '{}')", field, value.replace('\'', "''"))
+            }
+            Filter::StartsWith(field, value) => {
+                format!("startswith({}, '{}')", field, value.replace('\'', "''"))
+            }
+            Filter::EndsWith(field, value) => {
+                format!("endswith({}, '{}')", field, value.replace('\'', "''"))
+            }
 
             Filter::And(filters) => {
-                let filter_strings: Vec<String> = filters.iter().map(|f| f.to_odata_string()).collect();
+                let filter_strings: Vec<String> =
+                    filters.iter().map(|f| f.to_odata_string()).collect();
                 format!("({})", filter_strings.join(" and "))
-            },
+            }
             Filter::Or(filters) => {
-                let filter_strings: Vec<String> = filters.iter().map(|f| f.to_odata_string()).collect();
+                let filter_strings: Vec<String> =
+                    filters.iter().map(|f| f.to_odata_string()).collect();
                 format!("({})", filter_strings.join(" or "))
-            },
+            }
             Filter::Not(filter) => format!("not ({})", filter.to_odata_string()),
 
             Filter::Raw(raw) => raw.clone(),
@@ -140,7 +149,7 @@ impl FilterValue {
     pub fn to_odata_string(&self) -> String {
         match self {
             FilterValue::String(s) => format!("'{}'", s.replace('\'', "''")),
-            FilterValue::Guid(g) => g.clone(),  // GUIDs don't use quotes
+            FilterValue::Guid(g) => g.clone(), // GUIDs don't use quotes
             FilterValue::Number(n) => n.to_string(),
             FilterValue::Integer(i) => i.to_string(),
             FilterValue::Boolean(b) => b.to_string(),
@@ -192,30 +201,48 @@ mod tests {
 
     #[test]
     fn test_comparison_filters() {
-        assert_eq!(Filter::eq("statecode", 0).to_odata_string(), "statecode eq 0");
-        assert_eq!(Filter::ne("firstname", "John").to_odata_string(), "firstname ne 'John'");
-        assert_eq!(Filter::gt("createdon", "2023-01-01").to_odata_string(), "createdon gt '2023-01-01'");
+        assert_eq!(
+            Filter::eq("statecode", 0).to_odata_string(),
+            "statecode eq 0"
+        );
+        assert_eq!(
+            Filter::ne("firstname", "John").to_odata_string(),
+            "firstname ne 'John'"
+        );
+        assert_eq!(
+            Filter::gt("createdon", "2023-01-01").to_odata_string(),
+            "createdon gt '2023-01-01'"
+        );
     }
 
     #[test]
     fn test_string_functions() {
-        assert_eq!(Filter::contains("firstname", "John").to_odata_string(), "contains(firstname, 'John')");
-        assert_eq!(Filter::starts_with("lastname", "Sm").to_odata_string(), "startswith(lastname, 'Sm')");
+        assert_eq!(
+            Filter::contains("firstname", "John").to_odata_string(),
+            "contains(firstname, 'John')"
+        );
+        assert_eq!(
+            Filter::starts_with("lastname", "Sm").to_odata_string(),
+            "startswith(lastname, 'Sm')"
+        );
     }
 
     #[test]
     fn test_logical_operators() {
         let and_filter = Filter::and(vec![
             Filter::eq("statecode", 0),
-            Filter::contains("firstname", "John")
+            Filter::contains("firstname", "John"),
         ]);
-        assert_eq!(and_filter.to_odata_string(), "(statecode eq 0 and contains(firstname, 'John'))");
+        assert_eq!(
+            and_filter.to_odata_string(),
+            "(statecode eq 0 and contains(firstname, 'John'))"
+        );
 
-        let or_filter = Filter::or(vec![
-            Filter::eq("statecode", 0),
-            Filter::eq("statecode", 1)
-        ]);
-        assert_eq!(or_filter.to_odata_string(), "(statecode eq 0 or statecode eq 1)");
+        let or_filter = Filter::or(vec![Filter::eq("statecode", 0), Filter::eq("statecode", 1)]);
+        assert_eq!(
+            or_filter.to_odata_string(),
+            "(statecode eq 0 or statecode eq 1)"
+        );
     }
 
     #[test]
@@ -224,10 +251,11 @@ mod tests {
             Filter::eq("statecode", 0),
             Filter::or(vec![
                 Filter::contains("firstname", "John"),
-                Filter::contains("lastname", "Smith")
-            ])
+                Filter::contains("lastname", "Smith"),
+            ]),
         ]);
-        let expected = "(statecode eq 0 and (contains(firstname, 'John') or contains(lastname, 'Smith')))";
+        let expected =
+            "(statecode eq 0 and (contains(firstname, 'John') or contains(lastname, 'Smith')))";
         assert_eq!(complex_filter.to_odata_string(), expected);
     }
 

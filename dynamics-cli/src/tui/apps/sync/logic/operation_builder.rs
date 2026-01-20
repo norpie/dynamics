@@ -10,8 +10,10 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::super::types::{
+    EntitySyncPlan, FieldDiffEntry, NulledLookupInfo, SYSTEM_FIELDS, SyncPlan,
+};
 use crate::api::operations::Operation;
-use super::super::types::{EntitySyncPlan, FieldDiffEntry, NulledLookupInfo, SyncPlan, SYSTEM_FIELDS};
 
 /// Context for cleaning records before insertion
 pub struct InsertCleaningContext<'a> {
@@ -104,11 +106,19 @@ pub struct EntityOperationBatch {
 
 impl EntityOperationBatch {
     pub fn total_ops(&self) -> usize {
-        self.deletes.len() + self.deactivates.len() + self.schema_ops.len() + self.updates.len() + self.inserts.len()
+        self.deletes.len()
+            + self.deactivates.len()
+            + self.schema_ops.len()
+            + self.updates.len()
+            + self.inserts.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.deletes.is_empty() && self.deactivates.is_empty() && self.schema_ops.is_empty() && self.updates.is_empty() && self.inserts.is_empty()
+        self.deletes.is_empty()
+            && self.deactivates.is_empty()
+            && self.schema_ops.is_empty()
+            && self.updates.is_empty()
+            && self.inserts.is_empty()
     }
 }
 
@@ -167,7 +177,11 @@ impl OperationPlan {
     }
 
     pub fn total_operations(&self) -> usize {
-        self.total_deletes + self.total_deactivates + self.total_schema_ops + self.total_updates + self.total_inserts
+        self.total_deletes
+            + self.total_deactivates
+            + self.total_schema_ops
+            + self.total_updates
+            + self.total_inserts
     }
 }
 
@@ -231,11 +245,9 @@ fn build_entity_batch(entity_plan: &EntitySyncPlan) -> EntityOperationBatch {
             continue;
         }
 
-        batch.schema_ops.push(build_create_attribute_op(
-            entity_name,
-            field,
-            op_counter,
-        ));
+        batch
+            .schema_ops
+            .push(build_create_attribute_op(entity_name, field, op_counter));
         op_counter += 1;
     }
 
@@ -307,7 +319,11 @@ pub fn build_operation_summary(sync_plan: &SyncPlan) -> OperationSummary {
             .data_preview
             .origin_records
             .iter()
-            .filter_map(|r| r.get(&pk_field).and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .filter_map(|r| {
+                r.get(&pk_field)
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
             .collect();
 
         let target_guids: HashSet<String> = entity_plan
@@ -318,42 +334,60 @@ pub fn build_operation_summary(sync_plan: &SyncPlan) -> OperationSummary {
             .collect();
 
         // Count by operation type
-        let creates = origin_guids.iter().filter(|g| !target_guids.contains(*g)).count();
-        let updates = origin_guids.iter().filter(|g| target_guids.contains(*g)).count();
-        let target_only = target_guids.iter().filter(|g| !origin_guids.contains(*g)).count();
+        let creates = origin_guids
+            .iter()
+            .filter(|g| !target_guids.contains(*g))
+            .count();
+        let updates = origin_guids
+            .iter()
+            .filter(|g| target_guids.contains(*g))
+            .count();
+        let target_only = target_guids
+            .iter()
+            .filter(|g| !origin_guids.contains(*g))
+            .count();
 
         if is_junction {
             // Junction entities: target-only records are deleted
             if target_only > 0 {
-                summary.entities_with_deletes.push((entity_name.clone(), target_only));
+                summary
+                    .entities_with_deletes
+                    .push((entity_name.clone(), target_only));
             }
         } else {
             // Regular entities: target-only records are deactivated
             if target_only > 0 {
-                summary.entities_with_deactivates.push((entity_name.clone(), target_only));
+                summary
+                    .entities_with_deactivates
+                    .push((entity_name.clone(), target_only));
             }
         }
 
         // Updates (records in both)
         if updates > 0 {
-            summary.entities_with_updates.push((entity_name.clone(), updates));
+            summary
+                .entities_with_updates
+                .push((entity_name.clone(), updates));
         }
 
         // Creates (origin-only records)
         if creates > 0 {
-            summary.entities_with_creates.push((entity_name.clone(), creates));
+            summary
+                .entities_with_creates
+                .push((entity_name.clone(), creates));
         }
 
         // Schema changes
-        let schema_changes = entity_plan.schema_diff.fields_to_add
+        let schema_changes = entity_plan
+            .schema_diff
+            .fields_to_add
             .iter()
             .filter(|f| !f.is_system_field)
             .count();
         if schema_changes > 0 {
-            summary.entities_with_schema_changes.push((
-                entity_name.clone(),
-                schema_changes,
-            ));
+            summary
+                .entities_with_schema_changes
+                .push((entity_name.clone(), schema_changes));
         }
 
         // Fields needing review (type mismatches + target-only)
@@ -430,8 +464,12 @@ pub fn build_delete_operations(plan: &SyncPlan) -> Vec<Operation> {
         // (target_records only has id + name, but we need the FK GUIDs)
         for record in &entity_plan.data_preview.junction_target_raw {
             // Extract FK values using the relationship metadata
-            let parent_id = record.get(&nn_info.parent_fk_field).and_then(|v| v.as_str());
-            let target_id = record.get(&nn_info.target_fk_field).and_then(|v| v.as_str());
+            let parent_id = record
+                .get(&nn_info.parent_fk_field)
+                .and_then(|v| v.as_str());
+            let target_id = record
+                .get(&nn_info.target_fk_field)
+                .and_then(|v| v.as_str());
 
             match (parent_id, target_id) {
                 (Some(parent_id), Some(target_id)) => {
@@ -446,7 +484,9 @@ pub fn build_delete_operations(plan: &SyncPlan) -> Vec<Operation> {
                 _ => {
                     log::warn!(
                         "Junction record missing FK fields (parent={}, target={}): {:?}",
-                        nn_info.parent_fk_field, nn_info.target_fk_field, record
+                        nn_info.parent_fk_field,
+                        nn_info.target_fk_field,
+                        record
                     );
                 }
             }
@@ -477,7 +517,11 @@ pub fn build_deactivate_operations(plan: &SyncPlan) -> Vec<Operation> {
             .data_preview
             .origin_records
             .iter()
-            .filter_map(|r| r.get(&pk_field).and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .filter_map(|r| {
+                r.get(&pk_field)
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            })
             .collect();
 
         // Deactivate target records not in origin
@@ -514,7 +558,8 @@ pub fn build_schema_operations(plan: &SyncPlan, solution_name: Option<&str>) -> 
             let Some(ref attr_data) = field.origin_metadata else {
                 log::warn!(
                     "Skipping field {}.{} - no raw attribute metadata available",
-                    entity_name, field.logical_name
+                    entity_name,
+                    field.logical_name
                 );
                 continue;
             };
@@ -578,9 +623,12 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
             .iter()
             .filter(|l| l.is_internal)
             .filter_map(|l| {
-                entity_set_map
-                    .get(&l.target_entity)
-                    .map(|entity_set| (l.field_name.clone(), (l.schema_name.clone(), entity_set.clone())))
+                entity_set_map.get(&l.target_entity).map(|entity_set| {
+                    (
+                        l.field_name.clone(),
+                        (l.schema_name.clone(), entity_set.clone()),
+                    )
+                })
             })
             .collect();
 
@@ -604,7 +652,11 @@ pub fn build_insert_operations(plan: &SyncPlan) -> Vec<Operation> {
         // Only create records that don't exist in target
         for record in &entity_plan.data_preview.origin_records {
             let Some(guid) = record.get(&pk_field).and_then(|v| v.as_str()) else {
-                log::warn!("Origin record missing primary key field '{}': {:?}", pk_field, record);
+                log::warn!(
+                    "Origin record missing primary key field '{}': {:?}",
+                    pk_field,
+                    record
+                );
                 continue;
             };
 
@@ -661,13 +713,19 @@ pub fn build_post_insert_deactivate_operations(plan: &SyncPlan) -> Vec<Operation
             }
 
             // Check if origin record is inactive (statecode != 0)
-            let statecode = record.get("statecode").and_then(|v| v.as_i64()).unwrap_or(0);
+            let statecode = record
+                .get("statecode")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
             if statecode == 0 {
                 continue; // Active, no deactivation needed
             }
 
             // Get the statuscode from origin
-            let statuscode = record.get("statuscode").and_then(|v| v.as_i64()).unwrap_or(2);
+            let statuscode = record
+                .get("statuscode")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(2);
 
             // Create update to set the state
             let state_data = serde_json::json!({
@@ -730,9 +788,12 @@ pub fn build_update_operations(plan: &SyncPlan) -> Vec<Operation> {
             .iter()
             .filter(|l| l.is_internal)
             .filter_map(|l| {
-                entity_set_map
-                    .get(&l.target_entity)
-                    .map(|entity_set| (l.field_name.clone(), (l.schema_name.clone(), entity_set.clone())))
+                entity_set_map.get(&l.target_entity).map(|entity_set| {
+                    (
+                        l.field_name.clone(),
+                        (l.schema_name.clone(), entity_set.clone()),
+                    )
+                })
             })
             .collect();
 
@@ -861,18 +922,26 @@ pub fn build_junction_operations(plan: &SyncPlan) -> Vec<Operation> {
 
         for record in &entity_plan.data_preview.origin_records {
             // Extract parent and target IDs from junction record
-            let Some(parent_id) = record.get(&nn_info.parent_fk_field).and_then(|v| v.as_str()) else {
+            let Some(parent_id) = record
+                .get(&nn_info.parent_fk_field)
+                .and_then(|v| v.as_str())
+            else {
                 log::warn!(
                     "Junction record missing parent FK field '{}': {:?}",
-                    nn_info.parent_fk_field, record
+                    nn_info.parent_fk_field,
+                    record
                 );
                 continue;
             };
 
-            let Some(target_id) = record.get(&nn_info.target_fk_field).and_then(|v| v.as_str()) else {
+            let Some(target_id) = record
+                .get(&nn_info.target_fk_field)
+                .and_then(|v| v.as_str())
+            else {
                 log::warn!(
                     "Junction record missing target FK field '{}': {:?}",
-                    nn_info.target_fk_field, record
+                    nn_info.target_fk_field,
+                    record
                 );
                 continue;
             };
@@ -899,9 +968,7 @@ pub fn chunk_operations(ops: Vec<Operation>, chunk_size: usize) -> Vec<Vec<Opera
         return vec![];
     }
 
-    ops.chunks(chunk_size)
-        .map(|chunk| chunk.to_vec())
-        .collect()
+    ops.chunks(chunk_size).map(|chunk| chunk.to_vec()).collect()
 }
 
 #[cfg(test)]
@@ -948,8 +1015,18 @@ mod tests {
                         target_count: 2,
                         origin_records: vec![],
                         target_records: vec![
-                            TargetRecord { id: "parent-1".to_string(), name: Some("Parent 1".to_string()), junction_parent_id: None, junction_target_id: None },
-                            TargetRecord { id: "parent-2".to_string(), name: Some("Parent 2".to_string()), junction_parent_id: None, junction_target_id: None },
+                            TargetRecord {
+                                id: "parent-1".to_string(),
+                                name: Some("Parent 1".to_string()),
+                                junction_parent_id: None,
+                                junction_target_id: None,
+                            },
+                            TargetRecord {
+                                id: "parent-2".to_string(),
+                                name: Some("Parent 2".to_string()),
+                                junction_parent_id: None,
+                                junction_target_id: None,
+                            },
                         ],
                         junction_target_raw: vec![],
                     },
@@ -981,9 +1058,24 @@ mod tests {
                         target_count: 3,
                         origin_records: vec![],
                         target_records: vec![
-                            TargetRecord { id: "child-1".to_string(), name: Some("Child 1".to_string()), junction_parent_id: None, junction_target_id: None },
-                            TargetRecord { id: "child-2".to_string(), name: Some("Child 2".to_string()), junction_parent_id: None, junction_target_id: None },
-                            TargetRecord { id: "child-3".to_string(), name: Some("Child 3".to_string()), junction_parent_id: None, junction_target_id: None },
+                            TargetRecord {
+                                id: "child-1".to_string(),
+                                name: Some("Child 1".to_string()),
+                                junction_parent_id: None,
+                                junction_target_id: None,
+                            },
+                            TargetRecord {
+                                id: "child-2".to_string(),
+                                name: Some("Child 2".to_string()),
+                                junction_parent_id: None,
+                                junction_target_id: None,
+                            },
+                            TargetRecord {
+                                id: "child-3".to_string(),
+                                name: Some("Child 3".to_string()),
+                                junction_parent_id: None,
+                                junction_target_id: None,
+                            },
                         ],
                         junction_target_raw: vec![],
                     },
@@ -1026,10 +1118,14 @@ mod tests {
         let op_plan = build_operation_plan(&sync_plan);
 
         // Parent should come before child (insert order)
-        let parent_idx = op_plan.entity_batches.iter()
+        let parent_idx = op_plan
+            .entity_batches
+            .iter()
             .position(|b| b.entity_name == "parent")
             .unwrap();
-        let child_idx = op_plan.entity_batches.iter()
+        let child_idx = op_plan
+            .entity_batches
+            .iter()
             .position(|b| b.entity_name == "child")
             .unwrap();
 
@@ -1053,14 +1149,17 @@ mod tests {
     #[test]
     fn test_system_fields_excluded() {
         let mut sync_plan = make_test_plan();
-        sync_plan.entity_plans[0].schema_diff.fields_to_add.push(FieldDiffEntry {
-            logical_name: "createdon".to_string(),
-            display_name: Some("Created On".to_string()),
-            field_type: "DateTime".to_string(),
-            status: FieldSyncStatus::OriginOnly,
-            is_system_field: true,
-            origin_metadata: None,
-        });
+        sync_plan.entity_plans[0]
+            .schema_diff
+            .fields_to_add
+            .push(FieldDiffEntry {
+                logical_name: "createdon".to_string(),
+                display_name: Some("Created On".to_string()),
+                field_type: "DateTime".to_string(),
+                status: FieldSyncStatus::OriginOnly,
+                is_system_field: true,
+                origin_metadata: None,
+            });
 
         let op_plan = build_operation_plan(&sync_plan);
 
@@ -1128,38 +1227,47 @@ mod tests {
         let mut sync_plan = make_test_plan();
 
         // Add a field with origin_metadata
-        sync_plan.entity_plans[0].schema_diff.fields_to_add.push(FieldDiffEntry {
-            logical_name: "new_custom_field".to_string(),
-            display_name: Some("New Custom Field".to_string()),
-            field_type: "String".to_string(),
-            status: FieldSyncStatus::OriginOnly,
-            is_system_field: false,
-            origin_metadata: Some(serde_json::json!({
-                "@odata.type": "Microsoft.Dynamics.CRM.StringAttributeMetadata",
-                "LogicalName": "new_custom_field",
-                "SchemaName": "new_CustomField"
-            })),
-        });
+        sync_plan.entity_plans[0]
+            .schema_diff
+            .fields_to_add
+            .push(FieldDiffEntry {
+                logical_name: "new_custom_field".to_string(),
+                display_name: Some("New Custom Field".to_string()),
+                field_type: "String".to_string(),
+                status: FieldSyncStatus::OriginOnly,
+                is_system_field: false,
+                origin_metadata: Some(serde_json::json!({
+                    "@odata.type": "Microsoft.Dynamics.CRM.StringAttributeMetadata",
+                    "LogicalName": "new_custom_field",
+                    "SchemaName": "new_CustomField"
+                })),
+            });
 
         // Add a system field (should be excluded)
-        sync_plan.entity_plans[0].schema_diff.fields_to_add.push(FieldDiffEntry {
-            logical_name: "createdby".to_string(),
-            display_name: Some("Created By".to_string()),
-            field_type: "Lookup".to_string(),
-            status: FieldSyncStatus::OriginOnly,
-            is_system_field: true,
-            origin_metadata: Some(serde_json::json!({})),
-        });
+        sync_plan.entity_plans[0]
+            .schema_diff
+            .fields_to_add
+            .push(FieldDiffEntry {
+                logical_name: "createdby".to_string(),
+                display_name: Some("Created By".to_string()),
+                field_type: "Lookup".to_string(),
+                status: FieldSyncStatus::OriginOnly,
+                is_system_field: true,
+                origin_metadata: Some(serde_json::json!({})),
+            });
 
         // Add a field without origin_metadata (should be excluded)
-        sync_plan.entity_plans[0].schema_diff.fields_to_add.push(FieldDiffEntry {
-            logical_name: "missing_metadata".to_string(),
-            display_name: Some("Missing Metadata".to_string()),
-            field_type: "String".to_string(),
-            status: FieldSyncStatus::OriginOnly,
-            is_system_field: false,
-            origin_metadata: None,
-        });
+        sync_plan.entity_plans[0]
+            .schema_diff
+            .fields_to_add
+            .push(FieldDiffEntry {
+                logical_name: "missing_metadata".to_string(),
+                display_name: Some("Missing Metadata".to_string()),
+                field_type: "String".to_string(),
+                status: FieldSyncStatus::OriginOnly,
+                is_system_field: false,
+                origin_metadata: None,
+            });
 
         let schema_ops = build_schema_operations(&sync_plan, None);
 
@@ -1170,7 +1278,11 @@ mod tests {
 
         // First should be CreateAttribute
         match &schema_ops[0] {
-            Operation::CreateAttribute { entity, attribute_data, solution_name } => {
+            Operation::CreateAttribute {
+                entity,
+                attribute_data,
+                solution_name,
+            } => {
                 // Should use logical_name, not entity_set_name
                 assert_eq!(entity, "parent");
                 assert!(attribute_data["LogicalName"].as_str() == Some("new_custom_field"));
@@ -1490,7 +1602,12 @@ mod tests {
         // All should be AssociateRef
         for op in &junction_ops {
             match op {
-                Operation::AssociateRef { entity, entity_ref, navigation_property, target_ref } => {
+                Operation::AssociateRef {
+                    entity,
+                    entity_ref,
+                    navigation_property,
+                    target_ref,
+                } => {
                     assert_eq!(entity, "accounts");
                     assert_eq!(navigation_property, "contact_account_association");
                     assert!(entity_ref.starts_with("acc-"));
@@ -1508,7 +1625,11 @@ mod tests {
 
         // Check first operation specifically
         match &junction_ops[0] {
-            Operation::AssociateRef { entity_ref, target_ref, .. } => {
+            Operation::AssociateRef {
+                entity_ref,
+                target_ref,
+                ..
+            } => {
                 assert_eq!(entity_ref, "acc-1");
                 assert_eq!(target_ref, "/contacts(con-1)");
             }
@@ -1517,7 +1638,11 @@ mod tests {
 
         // Check second operation
         match &junction_ops[1] {
-            Operation::AssociateRef { entity_ref, target_ref, .. } => {
+            Operation::AssociateRef {
+                entity_ref,
+                target_ref,
+                ..
+            } => {
                 assert_eq!(entity_ref, "acc-1");
                 assert_eq!(target_ref, "/contacts(con-2)");
             }
@@ -1526,7 +1651,11 @@ mod tests {
 
         // Check third operation
         match &junction_ops[2] {
-            Operation::AssociateRef { entity_ref, target_ref, .. } => {
+            Operation::AssociateRef {
+                entity_ref,
+                target_ref,
+                ..
+            } => {
                 assert_eq!(entity_ref, "acc-2");
                 assert_eq!(target_ref, "/contacts(con-1)");
             }
@@ -1624,9 +1753,21 @@ mod tests {
 
         // Should remove OData annotations
         assert!(cleaned.get("@odata.etag").is_none());
-        assert!(cleaned.get("createdon@OData.Community.Display.V1.FormattedValue").is_none());
-        assert!(cleaned.get("statecode@OData.Community.Display.V1.FormattedValue").is_none());
-        assert!(cleaned.get("_createdby_value@Microsoft.Dynamics.CRM.lookuplogicalname").is_none());
+        assert!(
+            cleaned
+                .get("createdon@OData.Community.Display.V1.FormattedValue")
+                .is_none()
+        );
+        assert!(
+            cleaned
+                .get("statecode@OData.Community.Display.V1.FormattedValue")
+                .is_none()
+        );
+        assert!(
+            cleaned
+                .get("_createdby_value@Microsoft.Dynamics.CRM.lookuplogicalname")
+                .is_none()
+        );
     }
 
     #[test]
@@ -1701,7 +1842,10 @@ mod tests {
 
         let mut internal_lookups = HashMap::new();
         // Map field_name -> (schema_name, entity_set_name)
-        internal_lookups.insert("parentcustomerid".to_string(), ("ParentCustomerId".to_string(), "accounts".to_string()));
+        internal_lookups.insert(
+            "parentcustomerid".to_string(),
+            ("ParentCustomerId".to_string(), "accounts".to_string()),
+        );
 
         let ctx = InsertCleaningContext {
             internal_lookups,
@@ -1734,14 +1878,12 @@ mod tests {
             "_owninguser_value": "user-1"          // System lookup as nav property
         });
 
-        let nulled_lookups = vec![
-            NulledLookupInfo {
-                entity_name: "contact".to_string(),
-                field_name: "parentcustomerid".to_string(),
-                target_entity: "account".to_string(),
-                affected_count: 10,
-            },
-        ];
+        let nulled_lookups = vec![NulledLookupInfo {
+            entity_name: "contact".to_string(),
+            field_name: "parentcustomerid".to_string(),
+            target_entity: "account".to_string(),
+            affected_count: 10,
+        }];
 
         let ctx = InsertCleaningContext {
             internal_lookups: HashMap::new(),
@@ -1770,32 +1912,28 @@ mod tests {
         let mut sync_plan = make_test_plan_with_records();
 
         // Add system fields and external lookup to test data
-        sync_plan.entity_plans[0].data_preview.origin_records = vec![
-            serde_json::json!({
-                "parentid": "p1",
-                "name": "Parent 1",
-                "createdby": "user-1",
-                "modifiedon": "2024-01-01",
-                "ownerid": "owner-1"
-            }),
-        ];
+        sync_plan.entity_plans[0].data_preview.origin_records = vec![serde_json::json!({
+            "parentid": "p1",
+            "name": "Parent 1",
+            "createdby": "user-1",
+            "modifiedon": "2024-01-01",
+            "ownerid": "owner-1"
+        })];
 
         // Add a nulled lookup
-        sync_plan.entity_plans[0].nulled_lookups = vec![
-            NulledLookupInfo {
-                entity_name: "parent".to_string(),
-                field_name: "ownerid".to_string(),
-                target_entity: "systemuser".to_string(),
-                affected_count: 1,
-            },
-        ];
+        sync_plan.entity_plans[0].nulled_lookups = vec![NulledLookupInfo {
+            entity_name: "parent".to_string(),
+            field_name: "ownerid".to_string(),
+            target_entity: "systemuser".to_string(),
+            affected_count: 1,
+        }];
 
         let insert_ops = build_insert_operations(&sync_plan);
 
         // Find the parent operation
-        let parent_op = insert_ops.iter().find(|op| {
-            matches!(op, Operation::Create { entity, .. } if entity == "parents")
-        });
+        let parent_op = insert_ops
+            .iter()
+            .find(|op| matches!(op, Operation::Create { entity, .. } if entity == "parents"));
 
         assert!(parent_op.is_some());
 
@@ -1896,41 +2034,54 @@ mod tests {
         SyncPlan {
             origin_env: "dev".to_string(),
             target_env: "test".to_string(),
-            entity_plans: vec![
-                EntitySyncPlan {
-                    entity_info: SyncEntityInfo {
-                        logical_name: "parent".to_string(),
-                        display_name: Some("Parent".to_string()),
-                        entity_set_name: "parents".to_string(),
-                        primary_name_attribute: Some("name".to_string()),
-                        category: DependencyCategory::Standalone,
-                        lookups: vec![],
-                        incoming_references: vec![],
-                        dependents: vec![],
-                        insert_priority: 0,
-                        delete_priority: 1,
-                        nn_relationship: None,
-                    },
-                    schema_diff: EntitySchemaDiff::default(),
-                    data_preview: EntityDataPreview {
-                        entity_name: "parent".to_string(),
-                        origin_count: 3,
-                        target_count: 3,
-                        origin_records: vec![
-                            serde_json::json!({"parentid": "p1", "name": "Parent 1 Updated", "statecode": 0}),
-                            serde_json::json!({"parentid": "p2", "name": "Parent 2 Updated", "statecode": 0}),
-                            serde_json::json!({"parentid": "p3", "name": "Parent 3 New", "statecode": 0}),
-                        ],
-                        target_records: vec![
-                            TargetRecord { id: "p1".to_string(), name: Some("Parent 1".to_string()), junction_parent_id: None, junction_target_id: None },
-                            TargetRecord { id: "p2".to_string(), name: Some("Parent 2".to_string()), junction_parent_id: None, junction_target_id: None },
-                            TargetRecord { id: "p4".to_string(), name: Some("Parent 4 ToDeactivate".to_string()), junction_parent_id: None, junction_target_id: None },
-                        ],
-                        junction_target_raw: vec![],
-                    },
-                    nulled_lookups: vec![],
+            entity_plans: vec![EntitySyncPlan {
+                entity_info: SyncEntityInfo {
+                    logical_name: "parent".to_string(),
+                    display_name: Some("Parent".to_string()),
+                    entity_set_name: "parents".to_string(),
+                    primary_name_attribute: Some("name".to_string()),
+                    category: DependencyCategory::Standalone,
+                    lookups: vec![],
+                    incoming_references: vec![],
+                    dependents: vec![],
+                    insert_priority: 0,
+                    delete_priority: 1,
+                    nn_relationship: None,
                 },
-            ],
+                schema_diff: EntitySchemaDiff::default(),
+                data_preview: EntityDataPreview {
+                    entity_name: "parent".to_string(),
+                    origin_count: 3,
+                    target_count: 3,
+                    origin_records: vec![
+                        serde_json::json!({"parentid": "p1", "name": "Parent 1 Updated", "statecode": 0}),
+                        serde_json::json!({"parentid": "p2", "name": "Parent 2 Updated", "statecode": 0}),
+                        serde_json::json!({"parentid": "p3", "name": "Parent 3 New", "statecode": 0}),
+                    ],
+                    target_records: vec![
+                        TargetRecord {
+                            id: "p1".to_string(),
+                            name: Some("Parent 1".to_string()),
+                            junction_parent_id: None,
+                            junction_target_id: None,
+                        },
+                        TargetRecord {
+                            id: "p2".to_string(),
+                            name: Some("Parent 2".to_string()),
+                            junction_parent_id: None,
+                            junction_target_id: None,
+                        },
+                        TargetRecord {
+                            id: "p4".to_string(),
+                            name: Some("Parent 4 ToDeactivate".to_string()),
+                            junction_parent_id: None,
+                            junction_target_id: None,
+                        },
+                    ],
+                    junction_target_raw: vec![],
+                },
+                nulled_lookups: vec![],
+            }],
             detected_junctions: vec![],
             has_schema_changes: false,
             total_delete_count: 1,
@@ -2028,7 +2179,12 @@ mod tests {
 
         for op in &delete_ops {
             match op {
-                Operation::DisassociateRef { entity, entity_ref, navigation_property, target_id } => {
+                Operation::DisassociateRef {
+                    entity,
+                    entity_ref,
+                    navigation_property,
+                    target_id,
+                } => {
                     // entity should be parent entity set (accounts)
                     assert_eq!(entity, "accounts");
                     assert_eq!(navigation_property, "contact_account_association");

@@ -4,12 +4,12 @@
 //! with one sheet per entity comparison. Shows both source→target and target→source
 //! perspectives to properly display N-to-1 and 1-to-N relationships.
 
+use crate::config::repository::migrations::SavedComparison;
 use anyhow::{Context, Result};
 use rust_xlsxwriter::*;
+use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use sqlx::SqlitePool;
-use crate::config::repository::migrations::SavedComparison;
 
 /// Export all comparisons to a single Excel workbook
 pub async fn export_all_comparisons_to_excel(
@@ -17,8 +17,15 @@ pub async fn export_all_comparisons_to_excel(
     comparisons: &[SavedComparison],
     output_path: PathBuf,
 ) -> Result<()> {
-    log::info!("📊 Starting batch export of {} comparisons to {:?}", comparisons.len(), output_path);
-    log::debug!("📊 Comparisons: {:?}", comparisons.iter().map(|c| &c.name).collect::<Vec<_>>());
+    log::info!(
+        "📊 Starting batch export of {} comparisons to {:?}",
+        comparisons.len(),
+        output_path
+    );
+    log::debug!(
+        "📊 Comparisons: {:?}",
+        comparisons.iter().map(|c| &c.name).collect::<Vec<_>>()
+    );
 
     let mut workbook = Workbook::new();
     let mut sheets_created = 0;
@@ -34,20 +41,22 @@ pub async fn export_all_comparisons_to_excel(
         .set_font_size(12)
         .set_background_color(Color::RGB(0xE7E6E6));
 
-    let manual_format = Format::new()
-        .set_background_color(Color::RGB(0x87CEEB));  // Sky Blue
+    let manual_format = Format::new().set_background_color(Color::RGB(0x87CEEB)); // Sky Blue
 
-    let import_format = Format::new()
-        .set_background_color(Color::RGB(0xAFEEEE));  // Pale Turquoise/Cyan
+    let import_format = Format::new().set_background_color(Color::RGB(0xAFEEEE)); // Pale Turquoise/Cyan
 
     for comparison in comparisons {
         log::debug!("📊 Processing comparison '{}'", comparison.name);
 
         // Query field_mappings from database
-        let manual_mappings = fetch_field_mappings(pool, &comparison.source_entity, &comparison.target_entity).await?;
+        let manual_mappings =
+            fetch_field_mappings(pool, &comparison.source_entity, &comparison.target_entity)
+                .await?;
 
         // Query imported_mappings from database
-        let imported_mappings = fetch_imported_mappings(pool, &comparison.source_entity, &comparison.target_entity).await?;
+        let imported_mappings =
+            fetch_imported_mappings(pool, &comparison.source_entity, &comparison.target_entity)
+                .await?;
 
         // Merge mappings: start with manual, override with imported
         let mut combined_mappings: HashMap<String, Vec<String>> = manual_mappings.clone();
@@ -66,12 +75,20 @@ pub async fn export_all_comparisons_to_excel(
 
         // Skip if no mappings
         if combined_mappings.is_empty() {
-            log::debug!("📊   ⏭️  Skipping comparison '{}' (no mappings)", comparison.name);
+            log::debug!(
+                "📊   ⏭️  Skipping comparison '{}' (no mappings)",
+                comparison.name
+            );
             continue;
         }
 
-        log::info!("📊   ✅ Creating sheet for comparison '{}' ({} total, {} manual, {} imported)",
-            comparison.name, combined_mappings.len(), manual_mappings.len(), imported_mappings.len());
+        log::info!(
+            "📊   ✅ Creating sheet for comparison '{}' ({} total, {} manual, {} imported)",
+            comparison.name,
+            combined_mappings.len(),
+            manual_mappings.len(),
+            imported_mappings.len()
+        );
 
         // Create worksheet for this comparison
         let mut sheet = workbook.add_worksheet();
@@ -80,11 +97,14 @@ pub async fn export_all_comparisons_to_excel(
         let mut row: u32 = 0;
 
         // Title
-        sheet.write_string(row, 0, &format!(
-            "{} → {}",
-            comparison.source_entity,
-            comparison.target_entity
-        ))?;
+        sheet.write_string(
+            row,
+            0,
+            &format!(
+                "{} → {}",
+                comparison.source_entity, comparison.target_entity
+            ),
+        )?;
         row += 2;
 
         // === SOURCE PERSPECTIVE SECTION ===
@@ -163,7 +183,8 @@ pub async fn export_all_comparisons_to_excel(
                 "Mixed" // Different sources have different types
             };
 
-            let sources_str = source_types.iter()
+            let sources_str = source_types
+                .iter()
                 .map(|(s, _)| s.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -193,13 +214,22 @@ pub async fn export_all_comparisons_to_excel(
         anyhow::bail!("No comparisons with mappings to export");
     }
 
-    log::info!("📊 Saving workbook with {} sheets to {:?}", sheets_created, output_path);
+    log::info!(
+        "📊 Saving workbook with {} sheets to {:?}",
+        sheets_created,
+        output_path
+    );
 
     // Save workbook
-    workbook.save(&output_path)
+    workbook
+        .save(&output_path)
         .with_context(|| format!("Failed to save Excel file to {:?}", output_path))?;
 
-    log::info!("📊 ✅ Successfully exported {} comparison sheets to {:?}", sheets_created, output_path);
+    log::info!(
+        "📊 ✅ Successfully exported {} comparison sheets to {:?}",
+        sheets_created,
+        output_path
+    );
 
     // Try to open the file
     try_open_file(output_path.to_str().unwrap_or(""));
@@ -222,7 +252,7 @@ async fn fetch_field_mappings(
     let rows: Vec<MappingRow> = sqlx::query_as(
         "SELECT source_field, target_field FROM field_mappings
          WHERE source_entity = ? AND target_entity = ?
-         ORDER BY source_field, target_field"
+         ORDER BY source_field, target_field",
     )
     .bind(source_entity)
     .bind(target_entity)
@@ -233,7 +263,8 @@ async fn fetch_field_mappings(
     // Group by source_field to support N-to-1 mappings
     let mut mappings: HashMap<String, Vec<String>> = HashMap::new();
     for row in rows {
-        mappings.entry(row.source_field)
+        mappings
+            .entry(row.source_field)
             .or_insert_with(Vec::new)
             .push(row.target_field);
     }
@@ -256,7 +287,7 @@ async fn fetch_imported_mappings(
     let rows: Vec<MappingRow> = sqlx::query_as(
         "SELECT source_field, target_field FROM imported_mappings
          WHERE source_entity = ? AND target_entity = ?
-         ORDER BY source_field, target_field"
+         ORDER BY source_field, target_field",
     )
     .bind(source_entity)
     .bind(target_entity)
@@ -267,7 +298,8 @@ async fn fetch_imported_mappings(
     // Group by source_field
     let mut mappings: HashMap<String, Vec<String>> = HashMap::new();
     for row in rows {
-        mappings.entry(row.source_field)
+        mappings
+            .entry(row.source_field)
             .or_insert_with(Vec::new)
             .push(row.target_field);
     }
@@ -284,9 +316,7 @@ fn try_open_file(file_path: &str) {
             .args(["/c", "start", "", file_path])
             .spawn()
     } else if cfg!(target_os = "macos") {
-        Command::new("open")
-            .arg(file_path)
-            .spawn()
+        Command::new("open").arg(file_path).spawn()
     } else if cfg!(target_os = "linux") {
         Command::new("libreoffice")
             .args(["--calc", file_path])
@@ -303,6 +333,10 @@ fn try_open_file(file_path: &str) {
 
     match result {
         Ok(_) => log::info!("Opened Excel file: {}", file_path),
-        Err(e) => log::warn!("Could not auto-open file: {}. Please open manually: {}", e, file_path),
+        Err(e) => log::warn!(
+            "Could not auto-open file: {}. Please open manually: {}",
+            e,
+            file_path
+        ),
     }
 }

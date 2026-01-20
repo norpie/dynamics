@@ -5,5 +5,5 @@ pub mod operations;
 pub mod resolved;
 
 pub use mapping::{read_mapping_excel, write_mapping_excel};
-pub use operations::{read_operations_excel, OperationType, ParsedOperations, SheetOperations};
+pub use operations::{OperationType, ParsedOperations, SheetOperations, read_operations_excel};
 pub use resolved::{read_resolved_excel, write_resolved_excel};

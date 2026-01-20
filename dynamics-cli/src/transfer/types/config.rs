@@ -236,7 +236,11 @@ pub struct TransferConfig {
 
 impl TransferConfig {
     /// Create a new transfer config (declarative mode)
-    pub fn new(name: impl Into<String>, source_env: impl Into<String>, target_env: impl Into<String>) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        source_env: impl Into<String>,
+        target_env: impl Into<String>,
+    ) -> Self {
         TransferConfig {
             id: None,
             name: name.into(),
@@ -250,7 +254,11 @@ impl TransferConfig {
     }
 
     /// Create a new Lua mode transfer config
-    pub fn new_lua(name: impl Into<String>, source_env: impl Into<String>, target_env: impl Into<String>) -> Self {
+    pub fn new_lua(
+        name: impl Into<String>,
+        source_env: impl Into<String>,
+        target_env: impl Into<String>,
+    ) -> Self {
         TransferConfig {
             id: None,
             name: name.into(),
@@ -327,7 +335,10 @@ pub struct SourceFilter {
 impl SourceFilter {
     /// Create a new source filter
     pub fn new(field_path: FieldPath, condition: Condition) -> Self {
-        SourceFilter { field_path, condition }
+        SourceFilter {
+            field_path,
+            condition,
+        }
     }
 
     /// Evaluate filter against a record - returns true if record should be processed

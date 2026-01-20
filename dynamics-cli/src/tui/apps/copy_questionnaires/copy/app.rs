@@ -1,12 +1,12 @@
+use super::data_loading::{build_domain_model, load_full_snapshot};
 use super::models::*;
-use super::data_loading::{load_full_snapshot, build_domain_model};
 use super::view;
 use crate::tui::{
+    Resource,
     app::App,
     command::{AppId, Command},
-    subscription::Subscription,
     renderer::LayeredView,
-    Resource,
+    subscription::Subscription,
 };
 use crossterm::event::KeyCode;
 use ratatui::text::Line;
@@ -32,8 +32,13 @@ fn validate_copy_params(copy_name: &str, copy_code: &str) -> Result<(), String> 
     }
 
     // Check for invalid characters in copy code (alphanumeric, dash, underscore only)
-    if !trimmed_code.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-        return Err("Copy code can only contain letters, numbers, dashes, and underscores".to_string());
+    if !trimmed_code
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(
+            "Copy code can only contain letters, numbers, dashes, and underscores".to_string(),
+        );
     }
 
     Ok(())
@@ -66,17 +71,16 @@ impl App for CopyQuestionnaireApp {
         // Load complete questionnaire snapshot - single task that loads everything sequentially
         let questionnaire_id = params.questionnaire_id.clone();
         let cmd = Command::perform_parallel()
-            .add_task(
-                "Loading questionnaire structure",
-                async move {
-                    let snapshot = load_full_snapshot(&questionnaire_id).await?;
-                    build_domain_model(snapshot)
-                }
-            )
+            .add_task("Loading questionnaire structure", async move {
+                let snapshot = load_full_snapshot(&questionnaire_id).await?;
+                build_domain_model(snapshot)
+            })
             .with_title("Loading Questionnaire Data")
             .on_complete(AppId::CopyQuestionnaire)
             .build(|_task_idx, result| {
-                let data = result.downcast::<Result<super::domain::Questionnaire, String>>().unwrap();
+                let data = result
+                    .downcast::<Result<super::domain::Questionnaire, String>>()
+                    .unwrap();
                 Msg::QuestionnaireLoaded(*data)
             });
 
@@ -88,11 +92,17 @@ impl App for CopyQuestionnaireApp {
             Msg::QuestionnaireLoaded(result) => {
                 match result {
                     Ok(questionnaire) => {
-                        log::info!("Successfully loaded questionnaire with {} total entities", questionnaire.total_entities());
+                        log::info!(
+                            "Successfully loaded questionnaire with {} total entities",
+                            questionnaire.total_entities()
+                        );
 
                         // Extract copypostfix from raw questionnaire data and populate copy_code_input
-                        if let Some(copypostfix) = questionnaire.raw.get("nrq_copypostfix")
-                            .and_then(|v| v.as_str()) {
+                        if let Some(copypostfix) = questionnaire
+                            .raw
+                            .get("nrq_copypostfix")
+                            .and_then(|v| v.as_str())
+                        {
                             state.copy_code_input.set_value(copypostfix.to_string());
                             log::debug!("Set copy code to: {}", copypostfix);
                         } else {
@@ -147,8 +157,11 @@ impl App for CopyQuestionnaireApp {
                 }
 
                 // Navigate to push app with copy parameters
-                log::info!("Continuing to push app with copy name: {} and copy code: {}",
-                    copy_name, copy_code);
+                log::info!(
+                    "Continuing to push app with copy name: {} and copy code: {}",
+                    copy_name,
+                    copy_code
+                );
 
                 // Extract the questionnaire from state
                 let questionnaire = match &state.questionnaire {
@@ -169,15 +182,13 @@ impl App for CopyQuestionnaireApp {
                         copy_name: copy_name.to_string(),
                         copy_code: copy_code.to_string(),
                         questionnaire,
-                    }
+                    },
                 )
             }
-            Msg::Back => {
-                Command::batch(vec![
-                    Command::navigate_to(AppId::SelectQuestionnaire),
-                    Command::quit_self(),
-                ])
-            }
+            Msg::Back => Command::batch(vec![
+                Command::navigate_to(AppId::SelectQuestionnaire),
+                Command::quit_self(),
+            ]),
         }
     }
 

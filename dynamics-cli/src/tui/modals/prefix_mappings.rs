@@ -1,8 +1,8 @@
 //! Prefix mappings modal for managing source-to-target prefix transformations
 
-use crate::tui::{Element, Theme, FocusId};
-use crate::tui::element::{LayoutConstraint, RowBuilder, ColumnBuilder};
-use crate::tui::widgets::{ListState, ListItem, TextInputField};
+use crate::tui::element::{ColumnBuilder, LayoutConstraint, RowBuilder};
+use crate::tui::widgets::{ListItem, ListState, TextInputField};
+use crate::tui::{Element, FocusId, Theme};
 use crate::{button_row, col, spacer, use_constraints};
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
@@ -18,13 +18,19 @@ pub struct PrefixMappingItem<Msg> {
 impl<Msg: Clone> ListItem for PrefixMappingItem<Msg> {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
         let display = format!("{} → {}", self.source_prefix, self.target_prefix);
 
-        let mut builder = Element::styled_text(Line::from(vec![
-            Span::styled(display, Style::default().fg(theme.text_primary))
-        ]));
+        let mut builder = Element::styled_text(Line::from(vec![Span::styled(
+            display,
+            Style::default().fg(theme.text_primary),
+        )]));
 
         if is_selected {
             builder = builder.background(Style::default().bg(theme.bg_surface));
@@ -109,13 +115,19 @@ impl<Msg: Clone> PrefixMappingsModal<Msg> {
     }
 
     /// Set source input event handler
-    pub fn on_source_input_event(mut self, handler: fn(crate::tui::widgets::TextInputEvent) -> Msg) -> Self {
+    pub fn on_source_input_event(
+        mut self,
+        handler: fn(crate::tui::widgets::TextInputEvent) -> Msg,
+    ) -> Self {
         self.on_source_input_event = Some(handler);
         self
     }
 
     /// Set target input event handler
-    pub fn on_target_input_event(mut self, handler: fn(crate::tui::widgets::TextInputEvent) -> Msg) -> Self {
+    pub fn on_target_input_event(
+        mut self,
+        handler: fn(crate::tui::widgets::TextInputEvent) -> Msg,
+    ) -> Self {
         self.on_target_input_event = Some(handler);
         self
     }
@@ -168,7 +180,8 @@ impl<Msg: Clone> PrefixMappingsModal<Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         // Build text input elements from state
-        let source_handler = self.on_source_input_event
+        let source_handler = self
+            .on_source_input_event
             .expect("PrefixMappingsModal requires on_source_input_event");
         let source_input = Element::text_input(
             FocusId::new("prefix-source-input"),
@@ -179,7 +192,8 @@ impl<Msg: Clone> PrefixMappingsModal<Msg> {
         .on_event(source_handler)
         .build();
 
-        let target_handler = self.on_target_input_event
+        let target_handler = self
+            .on_target_input_event
             .expect("PrefixMappingsModal requires on_target_input_event");
         let target_input = Element::text_input(
             FocusId::new("prefix-target-input"),
@@ -191,9 +205,11 @@ impl<Msg: Clone> PrefixMappingsModal<Msg> {
         .build();
 
         // Build list
-        let list_handler = self.on_list_navigate
+        let list_handler = self
+            .on_list_navigate
             .expect("PrefixMappingsModal requires on_list_navigate");
-        let select_handler = self.on_list_select
+        let select_handler = self
+            .on_list_select
             .expect("PrefixMappingsModal requires on_list_select");
         let mappings_list = Element::list(
             FocusId::new("prefix-list"),
@@ -206,13 +222,9 @@ impl<Msg: Clone> PrefixMappingsModal<Msg> {
         .build();
 
         // Input panels
-        let source_panel = Element::panel(source_input)
-            .title("Source Prefix")
-            .build();
+        let source_panel = Element::panel(source_input).title("Source Prefix").build();
 
-        let target_panel = Element::panel(target_input)
-            .title("Target Prefix")
-            .build();
+        let target_panel = Element::panel(target_input).title("Target Prefix").build();
 
         let mappings_panel = Element::panel(mappings_list)
             .title("Saved Prefix Mappings")
@@ -220,9 +232,27 @@ impl<Msg: Clone> PrefixMappingsModal<Msg> {
 
         // Buttons
         let buttons = button_row![
-            ("prefix-add", "Add", self.on_add.clone().expect("PrefixMappingsModal requires on_add")),
-            ("prefix-delete", "Delete", self.on_delete.clone().expect("PrefixMappingsModal requires on_delete")),
-            ("prefix-close", "Close", self.on_close.clone().expect("PrefixMappingsModal requires on_close")),
+            (
+                "prefix-add",
+                "Add",
+                self.on_add
+                    .clone()
+                    .expect("PrefixMappingsModal requires on_add")
+            ),
+            (
+                "prefix-delete",
+                "Delete",
+                self.on_delete
+                    .clone()
+                    .expect("PrefixMappingsModal requires on_delete")
+            ),
+            (
+                "prefix-close",
+                "Close",
+                self.on_close
+                    .clone()
+                    .expect("PrefixMappingsModal requires on_close")
+            ),
         ];
 
         // Layout with explicit constraints
@@ -243,14 +273,10 @@ impl<Msg: Clone> PrefixMappingsModal<Msg> {
         ];
 
         // Wrap in outer panel with title, width, and height
-        Element::panel(
-            Element::container(modal_body)
-                .padding(2)
-                .build()
-        )
-        .width(self.width.unwrap_or(70))
-        .height(self.height.unwrap_or(25))
-        .build()
+        Element::panel(Element::container(modal_body).padding(2).build())
+            .width(self.width.unwrap_or(70))
+            .height(self.height.unwrap_or(25))
+            .build()
     }
 }
 

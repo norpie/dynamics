@@ -1,7 +1,10 @@
 use super::constants::{self, headers, methods};
-use super::operations::{Operation, OperationResult, BatchRequestBuilder, BatchResponseParser};
-use super::query::{Query, QueryResult, QueryResponse};
-use super::resilience::{RetryPolicy, RetryConfig, ResilienceConfig, RateLimiter, ConcurrencyLimiter, ApiLogger, OperationContext, OperationMetrics, MetricsCollector, BypassConfig};
+use super::operations::{BatchRequestBuilder, BatchResponseParser, Operation, OperationResult};
+use super::query::{Query, QueryResponse, QueryResult};
+use super::resilience::{
+    ApiLogger, BypassConfig, ConcurrencyLimiter, MetricsCollector, OperationContext,
+    OperationMetrics, RateLimiter, ResilienceConfig, RetryConfig, RetryPolicy,
+};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -51,7 +54,7 @@ pub struct DynamicsClient {
     retry_policy: RetryPolicy, // Default retry policy for backwards compatibility
     rate_limiter: RateLimiter, // Global rate limiter for this client instance
     concurrency_limiter: ConcurrencyLimiter, // Global concurrency limiter for this client instance
-    api_logger: ApiLogger, // Structured logger for operations
+    api_logger: ApiLogger,     // Structured logger for operations
     metrics_collector: MetricsCollector, // Performance metrics collector
 }
 
@@ -122,11 +125,11 @@ impl DynamicsClient {
     }
     pub fn new(base_url: String, access_token: String) -> Self {
         let http_client = reqwest::Client::builder()
-            .pool_max_idle_per_host(10)           // Max idle connections per host
-            .pool_idle_timeout(Duration::from_secs(90))  // Keep connections alive for 90s
-            .timeout(Duration::from_secs(600))    // Request timeout (10 minutes for batch operations)
-            .connect_timeout(Duration::from_secs(10))    // Connection timeout
-            .user_agent("dynamics-cli/1.0")       // Custom user agent
+            .pool_max_idle_per_host(10) // Max idle connections per host
+            .pool_idle_timeout(Duration::from_secs(90)) // Keep connections alive for 90s
+            .timeout(Duration::from_secs(600)) // Request timeout (10 minutes for batch operations)
+            .connect_timeout(Duration::from_secs(10)) // Connection timeout
+            .user_agent("dynamics-cli/1.0") // Custom user agent
             .build()
             .expect("Failed to build HTTP client");
 
@@ -144,7 +147,11 @@ impl DynamicsClient {
     }
 
     /// Create a new client with custom HTTP client configuration
-    pub fn with_custom_client(base_url: String, access_token: String, http_client: reqwest::Client) -> Self {
+    pub fn with_custom_client(
+        base_url: String,
+        access_token: String,
+        http_client: reqwest::Client,
+    ) -> Self {
         let default_config = ResilienceConfig::default();
         Self {
             base_url,
@@ -159,7 +166,11 @@ impl DynamicsClient {
     }
 
     /// Create a new client with custom retry policy
-    pub fn with_retry_policy(base_url: String, access_token: String, retry_config: RetryConfig) -> Self {
+    pub fn with_retry_policy(
+        base_url: String,
+        access_token: String,
+        retry_config: RetryConfig,
+    ) -> Self {
         let http_client = reqwest::Client::builder()
             .pool_max_idle_per_host(10)
             .pool_idle_timeout(Duration::from_secs(90))
@@ -183,44 +194,94 @@ impl DynamicsClient {
     }
 
     /// Execute a single operation
-    pub async fn execute(&self, operation: &Operation, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+    pub async fn execute(
+        &self,
+        operation: &Operation,
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         match operation {
-            Operation::Create { entity, data } => self.create_record(entity, data, resilience).await,
+            Operation::Create { entity, data } => {
+                self.create_record(entity, data, resilience).await
+            }
             Operation::CreateWithRefs { .. } => {
                 // CreateWithRefs should only be used in batch operations
                 Err(anyhow::anyhow!(
                     "CreateWithRefs operation can only be executed within a batch changeset. Use execute_batch() instead."
                 ))
             }
-            Operation::Update { entity, id, data } => self.update_record(entity, id, data, resilience).await,
+            Operation::Update { entity, id, data } => {
+                self.update_record(entity, id, data, resilience).await
+            }
             Operation::Delete { entity, id } => self.delete_record(entity, id, resilience).await,
-            Operation::Upsert { entity, key_field, key_value, data } => {
-                self.upsert_record(entity, key_field, key_value, data, resilience).await
+            Operation::Upsert {
+                entity,
+                key_field,
+                key_value,
+                data,
+            } => {
+                self.upsert_record(entity, key_field, key_value, data, resilience)
+                    .await
             }
-            Operation::AssociateRef { entity, entity_ref, navigation_property, target_ref } => {
-                self.associate_ref(entity, entity_ref, navigation_property, target_ref, resilience).await
+            Operation::AssociateRef {
+                entity,
+                entity_ref,
+                navigation_property,
+                target_ref,
+            } => {
+                self.associate_ref(
+                    entity,
+                    entity_ref,
+                    navigation_property,
+                    target_ref,
+                    resilience,
+                )
+                .await
             }
-            Operation::DisassociateRef { entity, entity_ref, navigation_property, target_id } => {
-                self.disassociate_ref(entity, entity_ref, navigation_property, target_id, resilience).await
+            Operation::DisassociateRef {
+                entity,
+                entity_ref,
+                navigation_property,
+                target_id,
+            } => {
+                self.disassociate_ref(
+                    entity,
+                    entity_ref,
+                    navigation_property,
+                    target_id,
+                    resilience,
+                )
+                .await
             }
             // Schema/Metadata operations
-            Operation::CreateAttribute { entity, attribute_data, solution_name } => {
-                self.create_attribute(entity, attribute_data, solution_name.as_deref(), resilience).await
+            Operation::CreateAttribute {
+                entity,
+                attribute_data,
+                solution_name,
+            } => {
+                self.create_attribute(entity, attribute_data, solution_name.as_deref(), resilience)
+                    .await
             }
-            Operation::UpdateAttribute { entity, attribute, attribute_data } => {
-                self.update_attribute(entity, attribute, attribute_data, resilience).await
+            Operation::UpdateAttribute {
+                entity,
+                attribute,
+                attribute_data,
+            } => {
+                self.update_attribute(entity, attribute, attribute_data, resilience)
+                    .await
             }
             Operation::DeleteAttribute { entity, attribute } => {
                 self.delete_attribute(entity, attribute, resilience).await
             }
-            Operation::PublishAllXml => {
-                self.publish_all_xml(resilience).await
-            }
+            Operation::PublishAllXml => self.publish_all_xml(resilience).await,
         }
     }
 
     /// Execute multiple operations as a batch
-    pub async fn execute_batch(&self, operations: &[Operation], resilience: &ResilienceConfig) -> anyhow::Result<Vec<OperationResult>> {
+    pub async fn execute_batch(
+        &self,
+        operations: &[Operation],
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<Vec<OperationResult>> {
         if operations.is_empty() {
             return Ok(Vec::new());
         }
@@ -247,26 +308,34 @@ impl DynamicsClient {
                 "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\",odata.maxpagesize={}",
                 page_size
             ),
-            None => "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"".to_string(),
+            None => "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\""
+                .to_string(),
         };
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header("Prefer", &prefer)
-                .query(&params)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header("Prefer", &prefer)
+                    .query(&params)
+                    .send()
+                    .await
+            })
+            .await?;
 
         self.parse_query_response(response).await
     }
 
     /// Execute FetchXML query directly (for FQL compatibility)
-    pub async fn execute_fetchxml(&self, entity_name: &str, fetchxml: &str) -> anyhow::Result<Value> {
+    pub async fn execute_fetchxml(
+        &self,
+        entity_name: &str,
+        fetchxml: &str,
+    ) -> anyhow::Result<Value> {
         let _permit = self.apply_rate_limiting().await?;
 
         let encoded_fetchxml = urlencoding::encode(fetchxml);
@@ -274,17 +343,26 @@ impl DynamicsClient {
         // Pluralize entity name for the endpoint
         let plural_entity = super::pluralization::pluralize_entity_name(entity_name);
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&format!("{}{}/{}?fetchXml={}", self.base_url, constants::api_path(), plural_entity, encoded_fetchxml))
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header("OData-MaxVersion", headers::ODATA_VERSION)
-                .header("Prefer", headers::PREFER_INCLUDE_ANNOTATIONS)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&format!(
+                        "{}{}/{}?fetchXml={}",
+                        self.base_url,
+                        constants::api_path(),
+                        plural_entity,
+                        encoded_fetchxml
+                    ))
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header("OData-MaxVersion", headers::ODATA_VERSION)
+                    .header("Prefer", headers::PREFER_INCLUDE_ANNOTATIONS)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let query_result = self.parse_query_response(response).await?;
         match query_result.data {
@@ -300,8 +378,8 @@ impl DynamicsClient {
                     result["@odata.nextLink"] = serde_json::Value::from(next_link);
                 }
                 Ok(result)
-            },
-            None => Ok(serde_json::json!({"value": []}))
+            }
+            None => Ok(serde_json::json!({"value": []})),
         }
     }
 
@@ -316,7 +394,8 @@ impl DynamicsClient {
     ) -> anyhow::Result<Value> {
         let _permit = self.apply_rate_limiting().await?;
 
-        let mut url = format!("{}{}/{}({})/{}",
+        let mut url = format!(
+            "{}{}/{}({})/{}",
             self.base_url,
             constants::api_path(),
             entity_collection,
@@ -328,50 +407,59 @@ impl DynamicsClient {
             url.push_str(&format!("?$select={}", fields.join(",")));
         }
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header("OData-MaxVersion", headers::ODATA_VERSION)
-                .header("Prefer", headers::PREFER_INCLUDE_ANNOTATIONS)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header("OData-MaxVersion", headers::ODATA_VERSION)
+                    .header("Prefer", headers::PREFER_INCLUDE_ANNOTATIONS)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let query_result = self.parse_query_response(response).await?;
         match query_result.data {
-            Some(query_response) => {
-                Ok(serde_json::json!({
-                    "value": query_response.value
-                }))
-            },
-            None => Ok(serde_json::json!({"value": []}))
+            Some(query_response) => Ok(serde_json::json!({
+                "value": query_response.value
+            })),
+            None => Ok(serde_json::json!({"value": []})),
         }
     }
 
     /// Execute the next page of results using @odata.nextLink
-    pub async fn execute_next_page(&self, next_link: &str, page_size: Option<u32>) -> anyhow::Result<QueryResult> {
+    pub async fn execute_next_page(
+        &self,
+        next_link: &str,
+        page_size: Option<u32>,
+    ) -> anyhow::Result<QueryResult> {
         // Build Prefer header with annotations and optional maxpagesize
         let prefer = match page_size {
             Some(size) => format!(
                 "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\",odata.maxpagesize={}",
                 size
             ),
-            None => "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"".to_string(),
+            None => "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\""
+                .to_string(),
         };
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(next_link)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header("Prefer", &prefer)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(next_link)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header("Prefer", &prefer)
+                    .send()
+                    .await
+            })
+            .await?;
 
         self.parse_query_response(response).await
     }
@@ -388,7 +476,12 @@ impl DynamicsClient {
     ///
     /// # Returns
     /// JSON response as `serde_json::Value`
-    pub async fn execute_raw(&self, method: &str, endpoint: &str, data: Option<&str>) -> anyhow::Result<Value> {
+    pub async fn execute_raw(
+        &self,
+        method: &str,
+        endpoint: &str,
+        data: Option<&str>,
+    ) -> anyhow::Result<Value> {
         let _permit = self.apply_rate_limiting().await?;
 
         // Build full URL
@@ -404,8 +497,10 @@ impl DynamicsClient {
 
         // Parse JSON data if provided
         let json_data: Option<Value> = if let Some(d) = data {
-            Some(serde_json::from_str(d)
-                .map_err(|e| anyhow::anyhow!("Failed to parse JSON data: {}", e))?)
+            Some(
+                serde_json::from_str(d)
+                    .map_err(|e| anyhow::anyhow!("Failed to parse JSON data: {}", e))?,
+            )
         } else {
             None
         };
@@ -417,30 +512,33 @@ impl DynamicsClient {
         }
 
         // Execute request with retry policy
-        let response = self.retry_policy.execute(|| async {
-            let mut request = match method_upper.as_str() {
-                "GET" => self.http_client.get(&url),
-                "POST" => self.http_client.post(&url),
-                "PATCH" => self.http_client.patch(&url),
-                "DELETE" => self.http_client.delete(&url),
-                _ => unreachable!(), // Already validated above
-            };
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                let mut request = match method_upper.as_str() {
+                    "GET" => self.http_client.get(&url),
+                    "POST" => self.http_client.post(&url),
+                    "PATCH" => self.http_client.patch(&url),
+                    "DELETE" => self.http_client.delete(&url),
+                    _ => unreachable!(), // Already validated above
+                };
 
-            request = request
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header("OData-MaxVersion", headers::ODATA_VERSION);
-
-            // Add body for POST/PATCH
-            if let Some(ref json) = json_data {
                 request = request
-                    .header("Content-Type", headers::CONTENT_TYPE_JSON)
-                    .json(json);
-            }
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header("OData-MaxVersion", headers::ODATA_VERSION);
 
-            request.send().await
-        }).await?;
+                // Add body for POST/PATCH
+                if let Some(ref json) = json_data {
+                    request = request
+                        .header("Content-Type", headers::CONTENT_TYPE_JSON)
+                        .json(json);
+                }
+
+                request.send().await
+            })
+            .await?;
 
         let status = response.status();
 
@@ -470,7 +568,12 @@ impl DynamicsClient {
     }
 
     /// Create a new record
-    async fn create_record(&self, entity: &str, data: &Value, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+    async fn create_record(
+        &self,
+        entity: &str,
+        data: &Value,
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         let url = constants::entity_endpoint(&self.base_url, entity);
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
@@ -483,9 +586,18 @@ impl DynamicsClient {
 
         // Log request details
         let mut request_headers = HashMap::new();
-        request_headers.insert("Content-Type".to_string(), headers::CONTENT_TYPE_JSON.to_string());
-        request_headers.insert("OData-Version".to_string(), headers::ODATA_VERSION.to_string());
-        request_headers.insert(headers::X_CORRELATION_ID.to_string(), correlation_id.clone());
+        request_headers.insert(
+            "Content-Type".to_string(),
+            headers::CONTENT_TYPE_JSON.to_string(),
+        );
+        request_headers.insert(
+            "OData-Version".to_string(),
+            headers::ODATA_VERSION.to_string(),
+        );
+        request_headers.insert(
+            headers::X_CORRELATION_ID.to_string(),
+            correlation_id.clone(),
+        );
         logger.log_request(&context, "POST", &url, &request_headers);
 
         // Log request body for debugging
@@ -495,22 +607,25 @@ impl DynamicsClient {
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let request_start = std::time::Instant::now();
         let bypass_headers = build_bypass_headers(&resilience.bypass);
-        let response = retry_policy.execute(|| async {
-            let mut request = self.http_client
-                .post(&url)
-                .bearer_auth(&self.access_token)
-                .header("Content-Type", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header("Prefer", headers::PREFER_RETURN_REPRESENTATION)
-                .header(headers::X_CORRELATION_ID, &correlation_id);
+        let response = retry_policy
+            .execute(|| async {
+                let mut request = self
+                    .http_client
+                    .post(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Content-Type", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header("Prefer", headers::PREFER_RETURN_REPRESENTATION)
+                    .header(headers::X_CORRELATION_ID, &correlation_id);
 
-            // Apply bypass headers if configured
-            for (name, value) in &bypass_headers {
-                request = request.header(*name, value);
-            }
+                // Apply bypass headers if configured
+                for (name, value) in &bypass_headers {
+                    request = request.header(*name, value);
+                }
 
-            request.json(data).send().await
-        }).await?;
+                request.json(data).send().await
+            })
+            .await?;
 
         // Log response details
         let request_duration = request_start.elapsed();
@@ -524,27 +639,39 @@ impl DynamicsClient {
         logger.log_response(&context, status_code, &response_headers, request_duration);
 
         // Parse response and complete operation logging
-        let result = self.parse_response(Operation::Create {
-            entity: entity.to_string(),
-            data: data.clone(),
-        }, response).await;
+        let result = self
+            .parse_response(
+                Operation::Create {
+                    entity: entity.to_string(),
+                    data: data.clone(),
+                },
+                response,
+            )
+            .await;
 
         // Log operation completion and collect metrics
         let metrics = context.create_metrics(
             result.is_ok(),
             Some(status_code),
-            result.as_ref().err().map(|e| e.to_string())
+            result.as_ref().err().map(|e| e.to_string()),
         );
         logger.complete_operation(&context, &metrics);
 
         // Collect performance metrics using the client's global collector
-        self.metrics_collector.record_operation("create", entity, &metrics);
+        self.metrics_collector
+            .record_operation("create", entity, &metrics);
 
         result
     }
 
     /// Update an existing record
-    async fn update_record(&self, entity: &str, id: &str, data: &Value, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+    async fn update_record(
+        &self,
+        entity: &str,
+        id: &str,
+        data: &Value,
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         let url = constants::entity_record_endpoint(&self.base_url, entity, id);
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
@@ -553,33 +680,45 @@ impl DynamicsClient {
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let bypass_headers = build_bypass_headers(&resilience.bypass);
-        let response = retry_policy.execute(|| async {
-            let mut request = self.http_client
-                .patch(&url)
-                .bearer_auth(&self.access_token)
-                .header("Content-Type", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header("If-Match", headers::IF_MATCH_ANY)
-                .header("Prefer", headers::PREFER_RETURN_REPRESENTATION)
-                .header(headers::X_CORRELATION_ID, &correlation_id);
+        let response = retry_policy
+            .execute(|| async {
+                let mut request = self
+                    .http_client
+                    .patch(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Content-Type", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header("If-Match", headers::IF_MATCH_ANY)
+                    .header("Prefer", headers::PREFER_RETURN_REPRESENTATION)
+                    .header(headers::X_CORRELATION_ID, &correlation_id);
 
-            // Apply bypass headers if configured
-            for (name, value) in &bypass_headers {
-                request = request.header(*name, value);
-            }
+                // Apply bypass headers if configured
+                for (name, value) in &bypass_headers {
+                    request = request.header(*name, value);
+                }
 
-            request.json(data).send().await
-        }).await?;
+                request.json(data).send().await
+            })
+            .await?;
 
-        self.parse_response(Operation::Update {
-            entity: entity.to_string(),
-            id: id.to_string(),
-            data: data.clone(),
-        }, response).await
+        self.parse_response(
+            Operation::Update {
+                entity: entity.to_string(),
+                id: id.to_string(),
+                data: data.clone(),
+            },
+            response,
+        )
+        .await
     }
 
     /// Delete a record
-    async fn delete_record(&self, entity: &str, id: &str, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+    async fn delete_record(
+        &self,
+        entity: &str,
+        id: &str,
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         let url = constants::entity_record_endpoint(&self.base_url, entity, id);
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
@@ -588,29 +727,43 @@ impl DynamicsClient {
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let bypass_headers = build_bypass_headers(&resilience.bypass);
-        let response = retry_policy.execute(|| async {
-            let mut request = self.http_client
-                .delete(&url)
-                .bearer_auth(&self.access_token)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id);
+        let response = retry_policy
+            .execute(|| async {
+                let mut request = self
+                    .http_client
+                    .delete(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header(headers::X_CORRELATION_ID, &correlation_id);
 
-            // Apply bypass headers if configured
-            for (name, value) in &bypass_headers {
-                request = request.header(*name, value);
-            }
+                // Apply bypass headers if configured
+                for (name, value) in &bypass_headers {
+                    request = request.header(*name, value);
+                }
 
-            request.send().await
-        }).await?;
+                request.send().await
+            })
+            .await?;
 
-        self.parse_response(Operation::Delete {
-            entity: entity.to_string(),
-            id: id.to_string(),
-        }, response).await
+        self.parse_response(
+            Operation::Delete {
+                entity: entity.to_string(),
+                id: id.to_string(),
+            },
+            response,
+        )
+        .await
     }
 
     /// Upsert a record using alternate key
-    async fn upsert_record(&self, entity: &str, key_field: &str, key_value: &str, data: &Value, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+    async fn upsert_record(
+        &self,
+        entity: &str,
+        key_field: &str,
+        key_value: &str,
+        data: &Value,
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         let url = constants::upsert_endpoint(&self.base_url, entity, key_field, key_value);
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
@@ -619,35 +772,52 @@ impl DynamicsClient {
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let bypass_headers = build_bypass_headers(&resilience.bypass);
-        let response = retry_policy.execute(|| async {
-            let mut request = self.http_client
-                .patch(&url)
-                .bearer_auth(&self.access_token)
-                .header("Content-Type", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header("Prefer", headers::PREFER_RETURN_REPRESENTATION)
-                .header(headers::X_CORRELATION_ID, &correlation_id);
+        let response = retry_policy
+            .execute(|| async {
+                let mut request = self
+                    .http_client
+                    .patch(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Content-Type", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header("Prefer", headers::PREFER_RETURN_REPRESENTATION)
+                    .header(headers::X_CORRELATION_ID, &correlation_id);
 
-            // Apply bypass headers if configured
-            for (name, value) in &bypass_headers {
-                request = request.header(*name, value);
-            }
+                // Apply bypass headers if configured
+                for (name, value) in &bypass_headers {
+                    request = request.header(*name, value);
+                }
 
-            request.json(data).send().await
-        }).await?;
+                request.json(data).send().await
+            })
+            .await?;
 
-        self.parse_response(Operation::Upsert {
-            entity: entity.to_string(),
-            key_field: key_field.to_string(),
-            key_value: key_value.to_string(),
-            data: data.clone(),
-        }, response).await
+        self.parse_response(
+            Operation::Upsert {
+                entity: entity.to_string(),
+                key_field: key_field.to_string(),
+                key_value: key_value.to_string(),
+                data: data.clone(),
+            },
+            response,
+        )
+        .await
     }
 
     /// Associate records via navigation property ($ref)
-    async fn associate_ref(&self, entity: &str, entity_ref: &str, navigation_property: &str, target_ref: &str, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+    async fn associate_ref(
+        &self,
+        entity: &str,
+        entity_ref: &str,
+        navigation_property: &str,
+        target_ref: &str,
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         // POST /entities(id)/navigation_property/$ref with body {"@odata.id": "target"}
-        let url = format!("{}/{}({})/{}/$ref", self.base_url, entity, entity_ref, navigation_property);
+        let url = format!(
+            "{}/{}({})/{}/$ref",
+            self.base_url, entity, entity_ref, navigation_property
+        );
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
@@ -659,34 +829,51 @@ impl DynamicsClient {
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let bypass_headers = build_bypass_headers(&resilience.bypass);
-        let response = retry_policy.execute(|| async {
-            let mut request = self.http_client
-                .post(&url)
-                .bearer_auth(&self.access_token)
-                .header("Content-Type", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id);
+        let response = retry_policy
+            .execute(|| async {
+                let mut request = self
+                    .http_client
+                    .post(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Content-Type", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header(headers::X_CORRELATION_ID, &correlation_id);
 
-            // Apply bypass headers if configured
-            for (name, value) in &bypass_headers {
-                request = request.header(*name, value);
-            }
+                // Apply bypass headers if configured
+                for (name, value) in &bypass_headers {
+                    request = request.header(*name, value);
+                }
 
-            request.json(&body).send().await
-        }).await?;
+                request.json(&body).send().await
+            })
+            .await?;
 
-        self.parse_response(Operation::AssociateRef {
-            entity: entity.to_string(),
-            entity_ref: entity_ref.to_string(),
-            navigation_property: navigation_property.to_string(),
-            target_ref: target_ref.to_string(),
-        }, response).await
+        self.parse_response(
+            Operation::AssociateRef {
+                entity: entity.to_string(),
+                entity_ref: entity_ref.to_string(),
+                navigation_property: navigation_property.to_string(),
+                target_ref: target_ref.to_string(),
+            },
+            response,
+        )
+        .await
     }
 
     /// Disassociate records via navigation property (remove N:N relationship)
-    async fn disassociate_ref(&self, entity: &str, entity_ref: &str, navigation_property: &str, target_id: &str, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+    async fn disassociate_ref(
+        &self,
+        entity: &str,
+        entity_ref: &str,
+        navigation_property: &str,
+        target_id: &str,
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         // DELETE /entities(id)/navigation_property(target_id)/$ref
-        let url = format!("{}/{}({})/{}({})/$ref", self.base_url, entity, entity_ref, navigation_property, target_id);
+        let url = format!(
+            "{}/{}({})/{}({})/$ref",
+            self.base_url, entity, entity_ref, navigation_property, target_id
+        );
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
         // Apply rate limiting before making the request
@@ -694,33 +881,46 @@ impl DynamicsClient {
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let bypass_headers = build_bypass_headers(&resilience.bypass);
-        let response = retry_policy.execute(|| async {
-            let mut request = self.http_client
-                .delete(&url)
-                .bearer_auth(&self.access_token)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id);
+        let response = retry_policy
+            .execute(|| async {
+                let mut request = self
+                    .http_client
+                    .delete(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header(headers::X_CORRELATION_ID, &correlation_id);
 
-            // Apply bypass headers if configured
-            for (name, value) in &bypass_headers {
-                request = request.header(*name, value);
-            }
+                // Apply bypass headers if configured
+                for (name, value) in &bypass_headers {
+                    request = request.header(*name, value);
+                }
 
-            request.send().await
-        }).await?;
+                request.send().await
+            })
+            .await?;
 
-        self.parse_response(Operation::DisassociateRef {
-            entity: entity.to_string(),
-            entity_ref: entity_ref.to_string(),
-            navigation_property: navigation_property.to_string(),
-            target_id: target_id.to_string(),
-        }, response).await
+        self.parse_response(
+            Operation::DisassociateRef {
+                entity: entity.to_string(),
+                entity_ref: entity_ref.to_string(),
+                navigation_property: navigation_property.to_string(),
+                target_id: target_id.to_string(),
+            },
+            response,
+        )
+        .await
     }
 
     // === Schema/Metadata Operations ===
 
     /// Create a new attribute/column on an entity
-    async fn create_attribute(&self, entity: &str, attribute_data: &Value, solution_name: Option<&str>, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+    async fn create_attribute(
+        &self,
+        entity: &str,
+        attribute_data: &Value,
+        solution_name: Option<&str>,
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         let url = constants::entity_attributes_endpoint(&self.base_url, entity);
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
@@ -728,31 +928,44 @@ impl DynamicsClient {
         let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
-        let response = retry_policy.execute(|| async {
-            let mut request = self.http_client
-                .post(&url)
-                .bearer_auth(&self.access_token)
-                .header("Content-Type", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id);
+        let response = retry_policy
+            .execute(|| async {
+                let mut request = self
+                    .http_client
+                    .post(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Content-Type", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header(headers::X_CORRELATION_ID, &correlation_id);
 
-            // Add solution header if provided
-            if let Some(solution) = solution_name {
-                request = request.header("MSCRM.SolutionUniqueName", solution);
-            }
+                // Add solution header if provided
+                if let Some(solution) = solution_name {
+                    request = request.header("MSCRM.SolutionUniqueName", solution);
+                }
 
-            request.json(attribute_data).send().await
-        }).await?;
+                request.json(attribute_data).send().await
+            })
+            .await?;
 
-        self.parse_response(Operation::CreateAttribute {
-            entity: entity.to_string(),
-            attribute_data: attribute_data.clone(),
-            solution_name: solution_name.map(|s| s.to_string()),
-        }, response).await
+        self.parse_response(
+            Operation::CreateAttribute {
+                entity: entity.to_string(),
+                attribute_data: attribute_data.clone(),
+                solution_name: solution_name.map(|s| s.to_string()),
+            },
+            response,
+        )
+        .await
     }
 
     /// Update an existing attribute/column
-    async fn update_attribute(&self, entity: &str, attribute: &str, attribute_data: &Value, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+    async fn update_attribute(
+        &self,
+        entity: &str,
+        attribute: &str,
+        attribute_data: &Value,
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         let url = constants::entity_attribute_endpoint(&self.base_url, entity, attribute);
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
@@ -760,27 +973,38 @@ impl DynamicsClient {
         let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
-        let response = retry_policy.execute(|| async {
-            self.http_client
-                .put(&url)  // Schema updates use PUT, not PATCH
-                .bearer_auth(&self.access_token)
-                .header("Content-Type", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id)
-                .json(attribute_data)
-                .send()
-                .await
-        }).await?;
+        let response = retry_policy
+            .execute(|| async {
+                self.http_client
+                    .put(&url) // Schema updates use PUT, not PATCH
+                    .bearer_auth(&self.access_token)
+                    .header("Content-Type", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header(headers::X_CORRELATION_ID, &correlation_id)
+                    .json(attribute_data)
+                    .send()
+                    .await
+            })
+            .await?;
 
-        self.parse_response(Operation::UpdateAttribute {
-            entity: entity.to_string(),
-            attribute: attribute.to_string(),
-            attribute_data: attribute_data.clone(),
-        }, response).await
+        self.parse_response(
+            Operation::UpdateAttribute {
+                entity: entity.to_string(),
+                attribute: attribute.to_string(),
+                attribute_data: attribute_data.clone(),
+            },
+            response,
+        )
+        .await
     }
 
     /// Delete an attribute/column from an entity
-    async fn delete_attribute(&self, entity: &str, attribute: &str, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+    async fn delete_attribute(
+        &self,
+        entity: &str,
+        attribute: &str,
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         let url = constants::entity_attribute_endpoint(&self.base_url, entity, attribute);
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
@@ -788,24 +1012,33 @@ impl DynamicsClient {
         let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
-        let response = retry_policy.execute(|| async {
-            self.http_client
-                .delete(&url)
-                .bearer_auth(&self.access_token)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id)
-                .send()
-                .await
-        }).await?;
+        let response = retry_policy
+            .execute(|| async {
+                self.http_client
+                    .delete(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header(headers::X_CORRELATION_ID, &correlation_id)
+                    .send()
+                    .await
+            })
+            .await?;
 
-        self.parse_response(Operation::DeleteAttribute {
-            entity: entity.to_string(),
-            attribute: attribute.to_string(),
-        }, response).await
+        self.parse_response(
+            Operation::DeleteAttribute {
+                entity: entity.to_string(),
+                attribute: attribute.to_string(),
+            },
+            response,
+        )
+        .await
     }
 
     /// Publish all customizations to make schema changes active
-    async fn publish_all_xml(&self, resilience: &ResilienceConfig) -> anyhow::Result<OperationResult> {
+    async fn publish_all_xml(
+        &self,
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         let url = constants::publish_all_xml_endpoint(&self.base_url);
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
@@ -813,22 +1046,29 @@ impl DynamicsClient {
         let _permit = self.apply_rate_limiting().await?;
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
-        let response = retry_policy.execute(|| async {
-            self.http_client
-                .post(&url)
-                .bearer_auth(&self.access_token)
-                .header("Content-Type", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id)
-                .send()
-                .await
-        }).await?;
+        let response = retry_policy
+            .execute(|| async {
+                self.http_client
+                    .post(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Content-Type", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header(headers::X_CORRELATION_ID, &correlation_id)
+                    .send()
+                    .await
+            })
+            .await?;
 
-        self.parse_response(Operation::PublishAllXml, response).await
+        self.parse_response(Operation::PublishAllXml, response)
+            .await
     }
 
     /// Execute operations using the $batch endpoint
-    async fn execute_batch_request(&self, operations: &[Operation], resilience: &ResilienceConfig) -> anyhow::Result<Vec<OperationResult>> {
+    async fn execute_batch_request(
+        &self,
+        operations: &[Operation],
+        resilience: &ResilienceConfig,
+    ) -> anyhow::Result<Vec<OperationResult>> {
         let url = constants::batch_endpoint(&self.base_url);
         let correlation_id = uuid::Uuid::new_v4().to_string();
 
@@ -847,46 +1087,68 @@ impl DynamicsClient {
         let content_type = batch_request.content_type().to_string();
         let body = batch_request.body().to_string();
 
-        log::debug!("Batch request: {} operations (correlation_id: {})", operations.len(), correlation_id);
+        log::debug!(
+            "Batch request: {} operations (correlation_id: {})",
+            operations.len(),
+            correlation_id
+        );
         if !bypass_headers.is_empty() {
-            log::debug!("Batch request includes bypass headers on each operation: {:?}", bypass_headers);
+            log::debug!(
+                "Batch request includes bypass headers on each operation: {:?}",
+                bypass_headers
+            );
         }
 
         let retry_policy = crate::api::resilience::RetryPolicy::new(resilience.retry.clone());
         let request_start = std::time::Instant::now();
-        let response = retry_policy.execute(|| async {
-            let mut request = self.http_client
-                .post(&url)
-                .bearer_auth(&self.access_token)
-                .header("Content-Type", content_type.clone())
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header(headers::X_CORRELATION_ID, &correlation_id);
+        let response = retry_policy
+            .execute(|| async {
+                let mut request = self
+                    .http_client
+                    .post(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Content-Type", content_type.clone())
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header(headers::X_CORRELATION_ID, &correlation_id);
 
-            // Apply bypass headers if configured
-            for (name, value) in &bypass_headers {
-                request = request.header(*name, value);
-            }
+                // Apply bypass headers if configured
+                for (name, value) in &bypass_headers {
+                    request = request.header(*name, value);
+                }
 
-            request.body(body.clone()).send().await
-        }).await?;
+                request.body(body.clone()).send().await
+            })
+            .await?;
 
         let request_duration = request_start.elapsed();
         let status_code = response.status().as_u16();
 
         // Warn if request took longer than expected
         if request_duration.as_secs() > 60 {
-            log::warn!("⚠️ Batch request took {:.1}s - unusually slow! ({} ops, status={})",
-                request_duration.as_secs_f32(), operations.len(), status_code);
+            log::warn!(
+                "⚠️ Batch request took {:.1}s - unusually slow! ({} ops, status={})",
+                request_duration.as_secs_f32(),
+                operations.len(),
+                status_code
+            );
         } else {
-            log::info!("Batch completed: {} ops in {:.1}s (status={})",
-                operations.len(), request_duration.as_secs_f32(), status_code);
+            log::info!(
+                "Batch completed: {} ops in {:.1}s (status={})",
+                operations.len(),
+                request_duration.as_secs_f32(),
+                status_code
+            );
         }
 
         let response_text = response.text().await?;
 
         // Log full response for debugging (first 2000 chars to avoid log spam)
         let truncated_response = if response_text.len() > 2000 {
-            format!("{}... (truncated, total {} chars)", &response_text[..2000], response_text.len())
+            format!(
+                "{}... (truncated, total {} chars)",
+                &response_text[..2000],
+                response_text.len()
+            )
         } else {
             response_text.clone()
         };
@@ -904,7 +1166,10 @@ impl DynamicsClient {
                         idx + 1,
                         result.operation.operation_type(),
                         result.operation.entity(),
-                        result.status_code.map(|s| s.to_string()).unwrap_or_else(|| "unknown".to_string())
+                        result
+                            .status_code
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| "unknown".to_string())
                     );
                     if let Some(ref err) = result.error {
                         log::error!("  Error details: {}", err);
@@ -914,14 +1179,25 @@ impl DynamicsClient {
 
             Ok(results)
         } else {
-            log::error!("Batch request FAILED (status {}): {}", status_code, response_text);
-            anyhow::bail!("Batch request failed (status {}): {}", status_code, response_text)
+            log::error!(
+                "Batch request FAILED (status {}): {}",
+                status_code,
+                response_text
+            );
+            anyhow::bail!(
+                "Batch request failed (status {}): {}",
+                status_code,
+                response_text
+            )
         }
     }
 
-
     /// Parse HTTP response into OperationResult
-    async fn parse_response(&self, operation: Operation, response: reqwest::Response) -> anyhow::Result<OperationResult> {
+    async fn parse_response(
+        &self,
+        operation: Operation,
+        response: reqwest::Response,
+    ) -> anyhow::Result<OperationResult> {
         let status_code = response.status().as_u16();
         let mut headers = HashMap::new();
 
@@ -958,7 +1234,10 @@ impl DynamicsClient {
                 headers,
             })
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
 
             // Log the error
             log::error!(
@@ -981,7 +1260,10 @@ impl DynamicsClient {
     }
 
     /// Parse HTTP response into QueryResult
-    async fn parse_query_response(&self, response: reqwest::Response) -> anyhow::Result<QueryResult> {
+    async fn parse_query_response(
+        &self,
+        response: reqwest::Response,
+    ) -> anyhow::Result<QueryResult> {
         let status_code = response.status().as_u16();
         let mut headers = HashMap::new();
 
@@ -1003,15 +1285,15 @@ impl DynamicsClient {
             }
 
             match serde_json::from_str::<Value>(&text) {
-                Ok(json) => {
-                    match QueryResponse::from_json(json) {
-                        Ok(query_response) => Ok(QueryResult::success(query_response, status_code, headers)),
-                        Err(e) => Ok(QueryResult::error(
-                            format!("Failed to parse OData response: {}", e),
-                            Some(status_code),
-                            headers,
-                        )),
+                Ok(json) => match QueryResponse::from_json(json) {
+                    Ok(query_response) => {
+                        Ok(QueryResult::success(query_response, status_code, headers))
                     }
+                    Err(e) => Ok(QueryResult::error(
+                        format!("Failed to parse OData response: {}", e),
+                        Some(status_code),
+                        headers,
+                    )),
                 },
                 Err(e) => Ok(QueryResult::error(
                     format!("Invalid JSON response: {}", e),
@@ -1020,7 +1302,10 @@ impl DynamicsClient {
                 )),
             }
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             Ok(QueryResult::error(error_text, Some(status_code), headers))
         }
     }
@@ -1032,28 +1317,41 @@ impl DynamicsClient {
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&metadata_url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", "application/xml")
-                .header("OData-Version", headers::ODATA_VERSION)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&metadata_url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", "application/xml")
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let status = response.status();
         if status.is_success() {
             let metadata_xml = response.text().await?;
             Ok(metadata_xml)
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("Metadata fetch failed with status {}: {}", status, error_text)
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!(
+                "Metadata fetch failed with status {}: {}",
+                status,
+                error_text
+            )
         }
     }
 
     /// Fetch entity field definitions from $metadata endpoint (includes navigation properties like _value fields)
-    pub async fn fetch_entity_fields(&self, entity_name: &str) -> anyhow::Result<Vec<super::metadata::FieldMetadata>> {
+    pub async fn fetch_entity_fields(
+        &self,
+        entity_name: &str,
+    ) -> anyhow::Result<Vec<super::metadata::FieldMetadata>> {
         use roxmltree::Document;
 
         let metadata_xml = self.fetch_metadata().await?;
@@ -1065,7 +1363,8 @@ impl DynamicsClient {
             .descendants()
             .find(|node| {
                 node.has_tag_name("EntityType")
-                    && node.attribute("Name")
+                    && node
+                        .attribute("Name")
                         .is_some_and(|name| name.eq_ignore_ascii_case(entity_name))
             })
             .ok_or_else(|| anyhow::anyhow!("Entity '{}' not found in metadata", entity_name))?;
@@ -1073,10 +1372,16 @@ impl DynamicsClient {
         let mut fields = Vec::new();
 
         // Parse Property elements (actual attributes)
-        for property in entity_type.children().filter(|n| n.has_tag_name("Property")) {
+        for property in entity_type
+            .children()
+            .filter(|n| n.has_tag_name("Property"))
+        {
             if let Some(field_name) = property.attribute("Name") {
                 let field_type_str = property.attribute("Type").unwrap_or("unknown");
-                let nullable = property.attribute("Nullable").map(|v| v == "true").unwrap_or(true);
+                let nullable = property
+                    .attribute("Nullable")
+                    .map(|v| v == "true")
+                    .unwrap_or(true);
                 let is_required = !nullable;
 
                 let field_type = Self::parse_field_type(field_type_str, None);
@@ -1091,13 +1396,16 @@ impl DynamicsClient {
                     max_length: None,
                     related_entity: None,
                     navigation_property_name: None, // Not available in XML metadata
-                    option_values: vec![], // Not available in XML metadata
+                    option_values: vec![],          // Not available in XML metadata
                 });
             }
         }
 
         // Parse NavigationProperty elements (relationships)
-        for nav_prop in entity_type.children().filter(|n| n.has_tag_name("NavigationProperty")) {
+        for nav_prop in entity_type
+            .children()
+            .filter(|n| n.has_tag_name("NavigationProperty"))
+        {
             if let Some(field_name) = nav_prop.attribute("Name") {
                 let field_type_str = nav_prop.attribute("Type").unwrap_or("unknown");
 
@@ -1117,16 +1425,19 @@ impl DynamicsClient {
                 // Store relationship cardinality in a pseudo-field type
                 // We'll extract this later when building relationships
                 let relationship_cardinality = if is_collection {
-                    "OneToMany"  // Collection relationship
+                    "OneToMany" // Collection relationship
                 } else {
-                    "ManyToOne"  // Lookup relationship
+                    "ManyToOne" // Lookup relationship
                 };
 
                 // Use Other type to store cardinality for collection relationships
                 let field_type = if is_collection {
-                    super::metadata::FieldType::Other(format!("Relationship:{}", relationship_cardinality))
+                    super::metadata::FieldType::Other(format!(
+                        "Relationship:{}",
+                        relationship_cardinality
+                    ))
                 } else {
-                    super::metadata::FieldType::Lookup  // ManyToOne stays as Lookup
+                    super::metadata::FieldType::Lookup // ManyToOne stays as Lookup
                 };
 
                 fields.push(super::metadata::FieldMetadata {
@@ -1147,7 +1458,10 @@ impl DynamicsClient {
         Ok(fields)
     }
 
-    fn parse_field_type(type_str: &str, targets: Option<&Vec<serde_json::Value>>) -> super::metadata::FieldType {
+    fn parse_field_type(
+        type_str: &str,
+        targets: Option<&Vec<serde_json::Value>>,
+    ) -> super::metadata::FieldType {
         match type_str {
             "Edm.String" => super::metadata::FieldType::String,
             "Edm.Int32" => super::metadata::FieldType::Integer,
@@ -1161,7 +1475,10 @@ impl DynamicsClient {
 
     /// Fetch option set values for all picklist-type attributes of an entity
     /// Returns a map of logical_name -> Vec<OptionSetValue>
-    async fn fetch_picklist_optionsets(&self, entity_name: &str) -> anyhow::Result<HashMap<String, Vec<super::metadata::OptionSetValue>>> {
+    async fn fetch_picklist_optionsets(
+        &self,
+        entity_name: &str,
+    ) -> anyhow::Result<HashMap<String, Vec<super::metadata::OptionSetValue>>> {
         let mut result = HashMap::new();
 
         // Fetch from PicklistAttributeMetadata (regular picklists)
@@ -1212,16 +1529,22 @@ impl DynamicsClient {
     }
 
     /// Helper to fetch option sets from a specific attribute type URL
-    async fn fetch_optionset_from_url(&self, url: &str) -> anyhow::Result<HashMap<String, Vec<super::metadata::OptionSetValue>>> {
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .send()
-                .await
-        }).await?;
+    async fn fetch_optionset_from_url(
+        &self,
+        url: &str,
+    ) -> anyhow::Result<HashMap<String, Vec<super::metadata::OptionSetValue>>> {
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let mut result = HashMap::new();
 
@@ -1252,7 +1575,10 @@ impl DynamicsClient {
     }
 
     /// Fetch entity field definitions from EntityDefinitions endpoint (includes navigation property names)
-    pub async fn fetch_entity_fields_alt(&self, entity_name: &str) -> anyhow::Result<Vec<super::metadata::FieldMetadata>> {
+    pub async fn fetch_entity_fields_alt(
+        &self,
+        entity_name: &str,
+    ) -> anyhow::Result<Vec<super::metadata::FieldMetadata>> {
         let url = format!(
             "{}/{}/EntityDefinitions(LogicalName='{}')/Attributes",
             self.base_url,
@@ -1261,37 +1587,50 @@ impl DynamicsClient {
         );
 
         // Fetch picklist option sets in parallel (requires type-specific endpoint)
-        let optionset_map = self.fetch_picklist_optionsets(entity_name).await.unwrap_or_default();
+        let optionset_map = self
+            .fetch_picklist_optionsets(entity_name)
+            .await
+            .unwrap_or_default();
 
         // Fetch navigation property names from ManyToOneRelationships
-        let nav_prop_map = self.fetch_navigation_property_names(entity_name).await.unwrap_or_default();
+        let nav_prop_map = self
+            .fetch_navigation_property_names(entity_name)
+            .await
+            .unwrap_or_default();
 
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let status = response.status();
         if status.is_success() {
             let json: Value = response.json().await?;
-            let attributes = json["value"].as_array()
+            let attributes = json["value"]
+                .as_array()
                 .ok_or_else(|| anyhow::anyhow!("Expected 'value' array in response"))?;
 
-            let fields = attributes.iter()
+            let fields = attributes
+                .iter()
                 .filter_map(|attr| {
                     let logical_name = attr["LogicalName"].as_str()?.to_string();
                     let schema_name = attr["SchemaName"].as_str().map(|s| s.to_string());
-                    let display_name = attr["DisplayName"]["UserLocalizedLabel"]["Label"].as_str()
+                    let display_name = attr["DisplayName"]["UserLocalizedLabel"]["Label"]
+                        .as_str()
                         .map(|s| s.to_string());
-                    let is_required = attr["RequiredLevel"]["Value"].as_str() == Some("ApplicationRequired")
+                    let is_required = attr["RequiredLevel"]["Value"].as_str()
+                        == Some("ApplicationRequired")
                         || attr["RequiredLevel"]["Value"].as_str() == Some("SystemRequired");
                     let is_primary_key = attr["IsPrimaryId"].as_bool().unwrap_or(false);
                     let max_length = attr["MaxLength"].as_i64().map(|l| l as i32);
@@ -1303,12 +1642,13 @@ impl DynamicsClient {
                         "Boolean" => super::metadata::FieldType::Boolean,
                         "DateTime" => super::metadata::FieldType::DateTime,
                         "Lookup" | "Customer" | "Owner" => {
-                            let related_entity = attr["Targets"].as_array()
+                            let related_entity = attr["Targets"]
+                                .as_array()
                                 .and_then(|targets| targets.first())
                                 .and_then(|t| t.as_str())
                                 .map(|s| s.to_string());
                             super::metadata::FieldType::Lookup
-                        },
+                        }
                         "Picklist" | "State" | "Status" => super::metadata::FieldType::OptionSet,
                         "Money" => super::metadata::FieldType::Money,
                         "Memo" => super::metadata::FieldType::Memo,
@@ -1316,18 +1656,22 @@ impl DynamicsClient {
                         "Virtual" => {
                             // Check AttributeTypeName.Value to distinguish MultiSelectPicklist
                             // from computed virtual fields (like *name, *yominame)
-                            let type_name = attr["AttributeTypeName"]["Value"].as_str().unwrap_or("Virtual");
+                            let type_name = attr["AttributeTypeName"]["Value"]
+                                .as_str()
+                                .unwrap_or("Virtual");
                             if type_name == "MultiSelectPicklistType" {
                                 super::metadata::FieldType::MultiSelectOptionSet
                             } else {
                                 super::metadata::FieldType::Other("Virtual".to_string())
                             }
-                        },
+                        }
                         other => super::metadata::FieldType::Other(other.to_string()),
                     };
 
-                    let related_entity = if matches!(field_type, super::metadata::FieldType::Lookup) {
-                        attr["Targets"].as_array()
+                    let related_entity = if matches!(field_type, super::metadata::FieldType::Lookup)
+                    {
+                        attr["Targets"]
+                            .as_array()
                             .and_then(|targets| targets.first())
                             .and_then(|t| t.as_str())
                             .map(|s| s.to_string())
@@ -1336,11 +1680,15 @@ impl DynamicsClient {
                     };
 
                     // Get option values from pre-fetched optionset_map for OptionSet/MultiSelectOptionSet fields
-                    let option_values = if matches!(field_type,
-                        super::metadata::FieldType::OptionSet |
-                        super::metadata::FieldType::MultiSelectOptionSet)
-                    {
-                        optionset_map.get(&logical_name).cloned().unwrap_or_default()
+                    let option_values = if matches!(
+                        field_type,
+                        super::metadata::FieldType::OptionSet
+                            | super::metadata::FieldType::MultiSelectOptionSet
+                    ) {
+                        optionset_map
+                            .get(&logical_name)
+                            .cloned()
+                            .unwrap_or_default()
                     } else {
                         vec![]
                     };
@@ -1369,14 +1717,24 @@ impl DynamicsClient {
 
             Ok(fields)
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("Field metadata fetch failed with status {}: {}", status, error_text)
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!(
+                "Field metadata fetch failed with status {}: {}",
+                status,
+                error_text
+            )
         }
     }
 
     /// Fetch navigation property names for lookup fields from ManyToOneRelationships
     /// Returns a HashMap mapping logical_name (ReferencingAttribute) to navigation property name
-    async fn fetch_navigation_property_names(&self, entity_name: &str) -> anyhow::Result<HashMap<String, String>> {
+    async fn fetch_navigation_property_names(
+        &self,
+        entity_name: &str,
+    ) -> anyhow::Result<HashMap<String, String>> {
         let url = format!(
             "{}/{}/EntityDefinitions(LogicalName='{}')/ManyToOneRelationships?$select=ReferencingAttribute,ReferencingEntityNavigationPropertyName",
             self.base_url,
@@ -1387,27 +1745,31 @@ impl DynamicsClient {
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let status = response.status();
         if status.is_success() {
             let json: Value = response.json().await?;
-            let relationships = json["value"].as_array()
+            let relationships = json["value"]
+                .as_array()
                 .ok_or_else(|| anyhow::anyhow!("Expected 'value' array in response"))?;
 
             let mut nav_prop_map = HashMap::new();
             for rel in relationships {
                 if let (Some(attr), Some(nav_prop)) = (
                     rel["ReferencingAttribute"].as_str(),
-                    rel["ReferencingEntityNavigationPropertyName"].as_str()
+                    rel["ReferencingEntityNavigationPropertyName"].as_str(),
                 ) {
                     nav_prop_map.insert(attr.to_string(), nav_prop.to_string());
                 }
@@ -1415,8 +1777,16 @@ impl DynamicsClient {
 
             Ok(nav_prop_map)
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            log::warn!("Navigation property fetch failed for {}: {} - {}", entity_name, status, error_text);
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            log::warn!(
+                "Navigation property fetch failed for {}: {} - {}",
+                entity_name,
+                status,
+                error_text
+            );
             Ok(HashMap::new()) // Return empty map on failure, don't fail the whole metadata fetch
         }
     }
@@ -1424,7 +1794,10 @@ impl DynamicsClient {
     /// Fetch raw attribute metadata for an entity
     /// Returns a HashMap keyed by logical_name containing the full attribute JSON
     /// Used for CreateAttribute operations during schema sync
-    pub async fn fetch_entity_attributes_raw(&self, entity_name: &str) -> anyhow::Result<HashMap<String, Value>> {
+    pub async fn fetch_entity_attributes_raw(
+        &self,
+        entity_name: &str,
+    ) -> anyhow::Result<HashMap<String, Value>> {
         let url = format!(
             "{}/{}/EntityDefinitions(LogicalName='{}')/Attributes",
             self.base_url,
@@ -1435,20 +1808,24 @@ impl DynamicsClient {
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let status = response.status();
         if status.is_success() {
             let json: Value = response.json().await?;
-            let attributes = json["value"].as_array()
+            let attributes = json["value"]
+                .as_array()
                 .ok_or_else(|| anyhow::anyhow!("Expected 'value' array in response"))?;
 
             let mut raw_map = HashMap::new();
@@ -1460,15 +1837,25 @@ impl DynamicsClient {
 
             Ok(raw_map)
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("Raw attribute metadata fetch failed with status {}: {}", status, error_text)
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!(
+                "Raw attribute metadata fetch failed with status {}: {}",
+                status,
+                error_text
+            )
         }
     }
 
     /// Fetch entity fields by combining both metadata sources
     /// - XML metadata: NavigationProperties (relationships)
     /// - EntityDefinitions API: Attributes with proper lookup targets
-    pub async fn fetch_entity_fields_combined(&self, entity_name: &str) -> anyhow::Result<Vec<super::metadata::FieldMetadata>> {
+    pub async fn fetch_entity_fields_combined(
+        &self,
+        entity_name: &str,
+    ) -> anyhow::Result<Vec<super::metadata::FieldMetadata>> {
         use std::collections::HashMap;
 
         // Fetch from both sources in parallel
@@ -1477,8 +1864,16 @@ impl DynamicsClient {
             self.fetch_entity_fields_alt(entity_name)
         )?;
 
-        log::debug!("XML returned {} fields for {}", xml_fields.len(), entity_name);
-        log::debug!("API returned {} fields for {}", api_fields.len(), entity_name);
+        log::debug!(
+            "XML returned {} fields for {}",
+            xml_fields.len(),
+            entity_name
+        );
+        log::debug!(
+            "API returned {} fields for {}",
+            api_fields.len(),
+            entity_name
+        );
 
         // Build lookup by lowercase logical_name from API fields (better metadata)
         // Use lowercase for case-insensitive deduplication (Dynamics sometimes returns different casing)
@@ -1498,25 +1893,42 @@ impl DynamicsClient {
                 // Check if both are NavigationProperties/relationships
                 let xml_is_nav = matches!(&xml_field.field_type, super::metadata::FieldType::Other(t) if t.starts_with("Relationship:"))
                     || matches!(&xml_field.field_type, super::metadata::FieldType::Lookup);
-                let api_is_lookup = matches!(&api_field.field_type, super::metadata::FieldType::Lookup);
+                let api_is_lookup =
+                    matches!(&api_field.field_type, super::metadata::FieldType::Lookup);
 
                 if xml_is_nav && api_is_lookup {
                     // Both represent the same relationship - prefer API version (has better metadata)
-                    log::trace!("Deduplicating relationship {}: XML({:?}) + API({:?}) -> API",
-                        xml_field.logical_name, xml_field.field_type, api_field.field_type);
+                    log::trace!(
+                        "Deduplicating relationship {}: XML({:?}) + API({:?}) -> API",
+                        xml_field.logical_name,
+                        xml_field.field_type,
+                        api_field.field_type
+                    );
                     combined.insert(lookup_key, api_field.clone());
                 } else if api_field.related_entity.is_some() || api_field.display_name.is_some() {
                     // Prefer API version if it has related_entity (lookup fields) or display name
-                    log::trace!("Upgrading field {}: XML({:?}) -> API({:?})",
-                        xml_field.logical_name, xml_field.field_type, api_field.field_type);
+                    log::trace!(
+                        "Upgrading field {}: XML({:?}) -> API({:?})",
+                        xml_field.logical_name,
+                        xml_field.field_type,
+                        api_field.field_type
+                    );
                     combined.insert(lookup_key, api_field.clone());
                 } else {
-                    log::trace!("Keeping XML field {}: {:?}", xml_field.logical_name, xml_field.field_type);
+                    log::trace!(
+                        "Keeping XML field {}: {:?}",
+                        xml_field.logical_name,
+                        xml_field.field_type
+                    );
                     combined.insert(lookup_key, xml_field);
                 }
             } else {
                 // Only in XML (NavigationProperty)
-                log::trace!("XML-only field {}: {:?}", xml_field.logical_name, xml_field.field_type);
+                log::trace!(
+                    "XML-only field {}: {:?}",
+                    xml_field.logical_name,
+                    xml_field.field_type
+                );
                 combined.insert(lookup_key, xml_field);
             }
         }
@@ -1530,10 +1942,15 @@ impl DynamicsClient {
         let mut result: Vec<_> = combined.into_values().collect();
         result.sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
 
-        log::debug!("Combined result has {} fields for {}", result.len(), entity_name);
+        log::debug!(
+            "Combined result has {} fields for {}",
+            result.len(),
+            entity_name
+        );
 
         // Log relationship fields specifically
-        let lookups: Vec<_> = result.iter()
+        let lookups: Vec<_> = result
+            .iter()
             .filter(|f| matches!(&f.field_type, super::metadata::FieldType::Lookup))
             .map(|f| &f.logical_name)
             .collect();
@@ -1541,7 +1958,11 @@ impl DynamicsClient {
             .filter(|f| matches!(&f.field_type, super::metadata::FieldType::Other(t) if t.starts_with("Relationship:")))
             .map(|f| &f.logical_name)
             .collect();
-        log::debug!("Lookups: {}, NavigationProperties: {}", lookups.len(), nav_props.len());
+        log::debug!(
+            "Lookups: {}, NavigationProperties: {}",
+            lookups.len(),
+            nav_props.len()
+        );
 
         Ok(result)
     }
@@ -1551,7 +1972,10 @@ impl DynamicsClient {
     /// - IsIntersect: true for junction/many-to-many relationship entities
     /// - PrimaryNameAttribute: field used for display name (e.g., "name", "fullname")
     /// - PrimaryIdAttribute: field used for primary key (e.g., "accountid", "businessprocessflowinstanceid")
-    pub async fn fetch_entity_metadata_info(&self, entity_name: &str) -> anyhow::Result<EntityMetadataInfo> {
+    pub async fn fetch_entity_metadata_info(
+        &self,
+        entity_name: &str,
+    ) -> anyhow::Result<EntityMetadataInfo> {
         let url = format!(
             "{}/{}/EntityDefinitions(LogicalName='{}')?$select=EntitySetName,IsIntersect,PrimaryNameAttribute,PrimaryIdAttribute",
             self.base_url,
@@ -1562,15 +1986,18 @@ impl DynamicsClient {
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let status = response.status();
         if status.is_success() {
@@ -1579,12 +2006,9 @@ impl DynamicsClient {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("EntitySetName not found in response"))?
                 .to_string();
-            let is_intersect = json["IsIntersect"]
-                .as_bool()
-                .unwrap_or(false);
-            let primary_name_attribute = json["PrimaryNameAttribute"]
-                .as_str()
-                .map(|s| s.to_string());
+            let is_intersect = json["IsIntersect"].as_bool().unwrap_or(false);
+            let primary_name_attribute =
+                json["PrimaryNameAttribute"].as_str().map(|s| s.to_string());
             let primary_id_attribute = json["PrimaryIdAttribute"]
                 .as_str()
                 .map(|s| s.to_string())
@@ -1596,14 +2020,24 @@ impl DynamicsClient {
                 primary_id_attribute,
             })
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("Entity metadata fetch failed with status {}: {}", status, error_text)
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!(
+                "Entity metadata fetch failed with status {}: {}",
+                status,
+                error_text
+            )
         }
     }
 
     /// Fetch incoming references (entities that have lookups pointing TO this entity)
     /// Uses OneToManyRelationships metadata
-    pub async fn fetch_incoming_references(&self, entity_name: &str) -> anyhow::Result<Vec<IncomingReference>> {
+    pub async fn fetch_incoming_references(
+        &self,
+        entity_name: &str,
+    ) -> anyhow::Result<Vec<IncomingReference>> {
         let url = format!(
             "{}/{}/EntityDefinitions(LogicalName='{}')/OneToManyRelationships?$select=ReferencingEntity,ReferencingAttribute",
             self.base_url,
@@ -1614,15 +2048,18 @@ impl DynamicsClient {
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let status = response.status();
         if status.is_success() {
@@ -1645,14 +2082,24 @@ impl DynamicsClient {
 
             Ok(refs)
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("Incoming references fetch failed with status {}: {}", status, error_text)
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!(
+                "Incoming references fetch failed with status {}: {}",
+                status,
+                error_text
+            )
         }
     }
 
     /// Fetch ManyToMany relationships for an entity
     /// Used to get navigation property names for AssociateRef operations on junction entities
-    pub async fn fetch_many_to_many_relationships(&self, entity_name: &str) -> anyhow::Result<Vec<ManyToManyRelationship>> {
+    pub async fn fetch_many_to_many_relationships(
+        &self,
+        entity_name: &str,
+    ) -> anyhow::Result<Vec<ManyToManyRelationship>> {
         let url = format!(
             "{}/{}/EntityDefinitions(LogicalName='{}')/ManyToManyRelationships",
             self.base_url,
@@ -1663,15 +2110,18 @@ impl DynamicsClient {
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let status = response.status();
         if status.is_success() {
@@ -1688,8 +2138,10 @@ impl DynamicsClient {
                     let entity2_logical_name = rel["Entity2LogicalName"].as_str()?;
                     let entity1_intersect_attribute = rel["Entity1IntersectAttribute"].as_str()?;
                     let entity2_intersect_attribute = rel["Entity2IntersectAttribute"].as_str()?;
-                    let entity1_navigation_property = rel["Entity1NavigationPropertyName"].as_str()?;
-                    let entity2_navigation_property = rel["Entity2NavigationPropertyName"].as_str()?;
+                    let entity1_navigation_property =
+                        rel["Entity1NavigationPropertyName"].as_str()?;
+                    let entity2_navigation_property =
+                        rel["Entity2NavigationPropertyName"].as_str()?;
 
                     Some(ManyToManyRelationship {
                         intersect_entity_name: intersect_entity_name.to_string(),
@@ -1705,13 +2157,23 @@ impl DynamicsClient {
 
             Ok(rels)
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("ManyToMany relationships fetch failed with status {}: {}", status, error_text)
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!(
+                "ManyToMany relationships fetch failed with status {}: {}",
+                status,
+                error_text
+            )
         }
     }
 
     /// Fetch entity forms from systemforms endpoint
-    pub async fn fetch_entity_forms(&self, entity_name: &str) -> anyhow::Result<Vec<super::metadata::FormMetadata>> {
+    pub async fn fetch_entity_forms(
+        &self,
+        entity_name: &str,
+    ) -> anyhow::Result<Vec<super::metadata::FormMetadata>> {
         let url = format!(
             "{}/{}/systemforms?$filter=objecttypecode eq '{}'&$select=formid,name,type,formxml",
             self.base_url,
@@ -1722,27 +2184,33 @@ impl DynamicsClient {
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let status = response.status();
         if status.is_success() {
             let json: Value = response.json().await?;
-            let forms_array = json["value"].as_array()
+            let forms_array = json["value"]
+                .as_array()
                 .ok_or_else(|| anyhow::anyhow!("Expected 'value' array in response"))?;
 
-            let forms = forms_array.iter()
+            let forms = forms_array
+                .iter()
                 .filter_map(|form| {
                     let id = form["formid"].as_str()?.to_string();
                     let name = form["name"].as_str()?.to_string();
-                    let form_type = form["type"].as_i64()
+                    let form_type = form["type"]
+                        .as_i64()
                         .map(|t| match t {
                             2 => "Main".to_string(),
                             5 => "Mobile".to_string(),
@@ -1774,13 +2242,23 @@ impl DynamicsClient {
 
             Ok(forms)
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("Form metadata fetch failed with status {}: {}", status, error_text)
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!(
+                "Form metadata fetch failed with status {}: {}",
+                status,
+                error_text
+            )
         }
     }
 
     /// Fetch entity views from savedqueries endpoint
-    pub async fn fetch_entity_views(&self, entity_name: &str) -> anyhow::Result<Vec<super::metadata::ViewMetadata>> {
+    pub async fn fetch_entity_views(
+        &self,
+        entity_name: &str,
+    ) -> anyhow::Result<Vec<super::metadata::ViewMetadata>> {
         let url = format!(
             "{}/{}/savedqueries?$filter=returnedtypecode eq '{}'&$select=savedqueryid,name,querytype,layoutxml",
             self.base_url,
@@ -1791,27 +2269,33 @@ impl DynamicsClient {
         // Apply rate limiting before making the request
         let _permit = self.apply_rate_limiting().await?;
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .send()
+                    .await
+            })
+            .await?;
 
         let status = response.status();
         if status.is_success() {
             let json: Value = response.json().await?;
-            let views_array = json["value"].as_array()
+            let views_array = json["value"]
+                .as_array()
                 .ok_or_else(|| anyhow::anyhow!("Expected 'value' array in response"))?;
 
-            let views = views_array.iter()
+            let views = views_array
+                .iter()
                 .filter_map(|view| {
                     let id = view["savedqueryid"].as_str()?.to_string();
                     let name = view["name"].as_str()?.to_string();
-                    let view_type = view["querytype"].as_i64()
+                    let view_type = view["querytype"]
+                        .as_i64()
                         .map(|t| match t {
                             0 => "Public".to_string(),
                             1 => "Advanced Find".to_string(),
@@ -1844,13 +2328,23 @@ impl DynamicsClient {
 
             Ok(views)
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("View metadata fetch failed with status {}: {}", status, error_text)
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            anyhow::bail!(
+                "View metadata fetch failed with status {}: {}",
+                status,
+                error_text
+            )
         }
     }
 
     /// Parse form XML into structured hierarchy
-    fn parse_form_xml(formxml: &str, entity_name: &str) -> anyhow::Result<super::metadata::FormStructure> {
+    fn parse_form_xml(
+        formxml: &str,
+        entity_name: &str,
+    ) -> anyhow::Result<super::metadata::FormStructure> {
         use roxmltree::Document;
 
         let doc = Document::parse(formxml)
@@ -1861,14 +2355,22 @@ impl DynamicsClient {
         // Find all tab elements
         for tab_node in doc.descendants().filter(|n| n.has_tag_name("tab")) {
             let tab_name = tab_node.attribute("name").unwrap_or("").to_string();
-            let tab_label = tab_node.descendants()
+            let tab_label = tab_node
+                .descendants()
                 .find(|n| n.has_tag_name("label"))
                 .and_then(|n| n.attribute("description"))
                 .unwrap_or(&tab_name)
                 .to_string();
-            let visible = tab_node.attribute("visible").map(|v| v == "true").unwrap_or(true);
-            let expanded = tab_node.attribute("expanded").map(|v| v == "true").unwrap_or(true);
-            let order = tab_node.attribute("verticallayout")
+            let visible = tab_node
+                .attribute("visible")
+                .map(|v| v == "true")
+                .unwrap_or(true);
+            let expanded = tab_node
+                .attribute("expanded")
+                .map(|v| v == "true")
+                .unwrap_or(true);
+            let order = tab_node
+                .attribute("verticallayout")
                 .and_then(|s| s.parse::<i32>().ok())
                 .unwrap_or(0);
 
@@ -1877,35 +2379,52 @@ impl DynamicsClient {
             // Find all sections within this tab
             for section_node in tab_node.descendants().filter(|n| n.has_tag_name("section")) {
                 let section_name = section_node.attribute("name").unwrap_or("").to_string();
-                let section_label = section_node.descendants()
+                let section_label = section_node
+                    .descendants()
                     .find(|n| n.has_tag_name("label"))
                     .and_then(|n| n.attribute("description"))
                     .unwrap_or(&section_name)
                     .to_string();
-                let section_visible = section_node.attribute("visible").map(|v| v == "true").unwrap_or(true);
-                let section_columns = section_node.attribute("columns")
+                let section_visible = section_node
+                    .attribute("visible")
+                    .map(|v| v == "true")
+                    .unwrap_or(true);
+                let section_columns = section_node
+                    .attribute("columns")
                     .and_then(|s| s.parse::<i32>().ok())
                     .unwrap_or(1);
 
                 let mut fields = Vec::new();
 
                 // Find all fields (control elements with datafieldname) within this section
-                for (idx, control_node) in section_node.descendants()
+                for (idx, control_node) in section_node
+                    .descendants()
                     .filter(|n| n.has_tag_name("control") && n.attribute("datafieldname").is_some())
                     .enumerate()
                 {
-                    let logical_name = control_node.attribute("datafieldname").unwrap_or("").to_string();
-                    let field_label = control_node.descendants()
+                    let logical_name = control_node
+                        .attribute("datafieldname")
+                        .unwrap_or("")
+                        .to_string();
+                    let field_label = control_node
+                        .descendants()
                         .find(|n| n.has_tag_name("label"))
                         .and_then(|n| n.attribute("description"))
                         .unwrap_or(&logical_name)
                         .to_string();
-                    let field_visible = control_node.attribute("visible").map(|v| v == "true").unwrap_or(true);
-                    let required_level = control_node.attribute("classid")
+                    let field_visible = control_node
+                        .attribute("visible")
+                        .map(|v| v == "true")
+                        .unwrap_or(true);
+                    let required_level = control_node
+                        .attribute("classid")
                         .and_then(|_| control_node.attribute("requirementlevel"))
                         .unwrap_or("None")
                         .to_string();
-                    let readonly = control_node.attribute("disabled").map(|v| v == "true").unwrap_or(false);
+                    let readonly = control_node
+                        .attribute("disabled")
+                        .map(|v| v == "true")
+                        .unwrap_or(false);
 
                     fields.push(super::metadata::FormField {
                         logical_name,
@@ -1913,8 +2432,8 @@ impl DynamicsClient {
                         visible: field_visible,
                         required_level,
                         readonly,
-                        row: idx as i32,  // Approximation
-                        column: 0,  // Would need more complex layout parsing
+                        row: idx as i32, // Approximation
+                        column: 0,       // Would need more complex layout parsing
                     });
                 }
 
@@ -1923,7 +2442,7 @@ impl DynamicsClient {
                     label: section_label,
                     visible: section_visible,
                     columns: section_columns,
-                    order: 0,  // Would need to extract from XML
+                    order: 0, // Would need to extract from XML
                     fields,
                 });
             }
@@ -1957,16 +2476,19 @@ impl DynamicsClient {
         let mut columns = Vec::new();
 
         // Find all cell elements (columns in the view)
-        for (idx, cell_node) in doc.descendants()
+        for (idx, cell_node) in doc
+            .descendants()
             .filter(|n| n.has_tag_name("cell"))
             .enumerate()
         {
             if let Some(name) = cell_node.attribute("name") {
-                let width = cell_node.attribute("width")
+                let width = cell_node
+                    .attribute("width")
                     .and_then(|w| w.parse::<u32>().ok());
-                let is_primary = cell_node.attribute("isprimary")
+                let is_primary = cell_node
+                    .attribute("isprimary")
                     .map(|v| v == "true" || v == "1")
-                    .unwrap_or(idx == 0);  // First column is typically primary
+                    .unwrap_or(idx == 0); // First column is typically primary
 
                 columns.push(super::metadata::ViewColumn {
                     name: name.to_string(),
@@ -1993,32 +2515,50 @@ impl DynamicsClient {
 
         // Build URL with $select=* to get all fields
         // Also add Prefer header to include formatted values and lookup properties
-        let url = format!("{}{}/{}({})?$select=*",
+        let url = format!(
+            "{}{}/{}({})?$select=*",
             self.base_url,
             constants::api_path(),
             plural_entity,
             record_id
         );
 
-        let response = self.retry_policy.execute(|| async {
-            self.http_client
-                .get(&url)
-                .bearer_auth(&self.access_token)
-                .header("Accept", headers::CONTENT_TYPE_JSON)
-                .header("OData-Version", headers::ODATA_VERSION)
-                .header("Prefer", "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"")
-                .send()
-                .await
-        }).await?;
+        let response = self
+            .retry_policy
+            .execute(|| async {
+                self.http_client
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .header("Accept", headers::CONTENT_TYPE_JSON)
+                    .header("OData-Version", headers::ODATA_VERSION)
+                    .header(
+                        "Prefer",
+                        "odata.include-annotations=\"OData.Community.Display.V1.FormattedValue\"",
+                    )
+                    .send()
+                    .await
+            })
+            .await?;
 
         if !response.status().is_success() {
-            anyhow::bail!("Failed to fetch record: {} - {}", response.status(), response.text().await?);
+            anyhow::bail!(
+                "Failed to fetch record: {} - {}",
+                response.status(),
+                response.text().await?
+            );
         }
 
         let record: serde_json::Value = response.json().await?;
 
-        log::debug!("Fetched record for entity '{}' with ID '{}'", entity_name, record_id);
-        log::debug!("Record has {} top-level fields", record.as_object().map(|o| o.len()).unwrap_or(0));
+        log::debug!(
+            "Fetched record for entity '{}' with ID '{}'",
+            entity_name,
+            record_id
+        );
+        log::debug!(
+            "Record has {} top-level fields",
+            record.as_object().map(|o| o.len()).unwrap_or(0)
+        );
         if let Some(obj) = record.as_object() {
             log::debug!("Record field names: {:?}", obj.keys().collect::<Vec<_>>());
         }

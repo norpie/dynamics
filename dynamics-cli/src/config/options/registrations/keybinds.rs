@@ -12,7 +12,8 @@ pub fn list_apps(registry: &OptionsRegistry) -> Vec<String> {
 
     for opt_def in keybind_opts {
         let parts: Vec<&str> = opt_def.key.split('.').collect();
-        if parts.len() >= 3 {  // Only include keys with 3+ parts (keybind.APP.action)
+        if parts.len() >= 3 {
+            // Only include keys with 3+ parts (keybind.APP.action)
             apps.insert(parts[1].to_string());
         }
     }
@@ -26,7 +27,8 @@ pub fn list_apps(registry: &OptionsRegistry) -> Vec<String> {
 pub fn list_actions_for_app(registry: &OptionsRegistry, app: &str) -> Vec<String> {
     let keybind_opts = registry.list_namespace("keybind");
 
-    keybind_opts.into_iter()
+    keybind_opts
+        .into_iter()
         .filter_map(|opt_def| {
             let parts: Vec<&str> = opt_def.key.split('.').collect();
             if parts.len() >= 3 && parts[1] == app {
@@ -41,7 +43,8 @@ pub fn list_actions_for_app(registry: &OptionsRegistry, app: &str) -> Vec<String
 /// Get human-readable description for each action by reading from registry
 pub fn get_action_description(registry: &OptionsRegistry, app: &str, action: &str) -> String {
     let key = format!("keybind.{}.{}", app, action);
-    registry.get(&key)
+    registry
+        .get(&key)
         .map(|def| def.description.clone())
         .unwrap_or_else(|| "Keybind action".to_string())
 }
@@ -49,7 +52,8 @@ pub fn get_action_description(registry: &OptionsRegistry, app: &str, action: &st
 /// Get display name for each action by reading from registry
 pub fn get_action_display_name(registry: &OptionsRegistry, app: &str, action: &str) -> String {
     let key = format!("keybind.{}.{}", app, action);
-    registry.get(&key)
+    registry
+        .get(&key)
         .map(|def| def.display_name.clone())
         .unwrap_or_else(|| "Unknown Action".to_string())
 }
@@ -79,7 +83,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Help Menu")
             .description("Toggle help menu showing all keyboard shortcuts")
             .keybind_type(KeyCode::F(1))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -87,7 +91,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("App Launcher")
             .description("Open the app launcher to switch between apps")
             .keybind_type(KeyBinding::ctrl(KeyCode::Char('a')))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -95,7 +99,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("App Overview")
             .description("Show overview of all running apps and their states")
             .keybind_type(KeyBinding::ctrl(KeyCode::Char('o')))
-            .build()?
+            .build()?,
     )?;
 
     // Migration Environment app keybinds
@@ -104,7 +108,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Create Migration")
             .description("Create a new migration environment")
             .keybind_type(KeyCode::Char('n'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -112,7 +116,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Delete Migration")
             .description("Delete the selected migration environment")
             .keybind_type(KeyCode::Char('d'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -120,7 +124,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Rename Migration")
             .description("Rename the selected migration environment")
             .keybind_type(KeyCode::Char('r'))
-            .build()?
+            .build()?,
     )?;
 
     // Migration Comparison Select app keybinds
@@ -129,7 +133,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Create Comparison")
             .description("Create a new entity comparison")
             .keybind_type(KeyCode::Char('n'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -137,7 +141,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Delete Comparison")
             .description("Delete the selected comparison")
             .keybind_type(KeyCode::Char('d'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -145,7 +149,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Rename Comparison")
             .description("Rename the selected comparison")
             .keybind_type(KeyCode::Char('r'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -153,7 +157,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Back to Migrations")
             .description("Return to migration environment list")
             .keybind_type(KeyCode::Char('b'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -161,7 +165,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Preload All")
             .description("Preload metadata for all comparisons")
             .keybind_type(KeyCode::Char('P'))
-            .build()?
+            .build()?,
     )?;
 
     // Entity Comparison app keybinds
@@ -170,7 +174,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Back to Comparisons")
             .description("Return to comparison list")
             .keybind_type(KeyCode::Char('b'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -178,7 +182,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Switch to Fields Tab")
             .description("Switch to the Fields comparison tab")
             .keybind_type(KeyCode::Char('1'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -186,7 +190,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Switch to Relationships Tab")
             .description("Switch to the Relationships comparison tab")
             .keybind_type(KeyCode::Char('2'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -194,7 +198,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Switch to Views Tab")
             .description("Switch to the Views comparison tab")
             .keybind_type(KeyCode::Char('3'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -202,7 +206,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Switch to Forms Tab")
             .description("Switch to the Forms comparison tab")
             .keybind_type(KeyCode::Char('4'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -210,7 +214,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Switch to Entities Tab")
             .description("Switch to the Entities comparison tab")
             .keybind_type(KeyCode::Char('5'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -218,7 +222,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Refresh Metadata")
             .description("Reload metadata from API")
             .keybind_type(KeyCode::F(5))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -226,7 +230,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Create Manual Mapping")
             .description("Create a manual field mapping")
             .keybind_type(KeyCode::Char('m'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -234,7 +238,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Delete Manual Mapping")
             .description("Delete a manual field mapping")
             .keybind_type(KeyCode::Char('d'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -242,7 +246,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Toggle Hide Matched")
             .description("Show/hide already matched fields")
             .keybind_type(KeyCode::Char('h'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -250,7 +254,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Toggle Sort Mode")
             .description("Cycle through sort modes")
             .keybind_type(KeyCode::Char('s'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -258,7 +262,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Toggle Technical Names")
             .description("Switch between technical and display names")
             .keybind_type(KeyCode::Char('n'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -266,7 +270,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Toggle Mirror Mode")
             .description("Cycle through mirror modes (Off/Source/Target)")
             .keybind_type(KeyCode::Char('r'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -274,7 +278,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Cycle Source Type Filter")
             .description("Cycle through source field types (All -> String -> Integer -> ...)")
             .keybind_type(KeyCode::Char('t'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -282,7 +286,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Cycle Target Type Filter")
             .description("Cycle through target field types (All -> String -> Integer -> ...)")
             .keybind_type(KeyCode::Char('T'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -290,7 +294,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Toggle Type Filter Mode")
             .description("Toggle between Unified and Independent type filter modes")
             .keybind_type(KeyCode::Char('Y'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -298,7 +302,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Cycle Example Pairs")
             .description("Cycle through configured example data pairs")
             .keybind_type(KeyCode::Char('e'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -306,7 +310,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Manage Examples")
             .description("Open examples management modal")
             .keybind_type(KeyCode::Char('x'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -314,7 +318,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Manage Prefix Mappings")
             .description("Open prefix mappings modal")
             .keybind_type(KeyCode::Char('p'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -322,7 +326,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("View Manual Mappings")
             .description("Open manual mappings modal")
             .keybind_type(KeyCode::Char('M'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -330,7 +334,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Import C# Mappings")
             .description("Import field mappings from C# file")
             .keybind_type(KeyCode::Char('c'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -338,7 +342,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Ignore Item")
             .description("Ignore currently selected item")
             .keybind_type(KeyCode::Char('i'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -346,7 +350,7 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Ignore Manager")
             .description("Open ignore manager modal")
             .keybind_type(KeyCode::Char('I'))
-            .build()?
+            .build()?,
     )?;
 
     registry.register(
@@ -354,9 +358,12 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Export to Excel")
             .description("Export comparison data to Excel file")
             .keybind_type(KeyCode::F(10))
-            .build()?
+            .build()?,
     )?;
 
-    log::info!("Registered keybind options for {} apps", list_apps(registry).len());
+    log::info!(
+        "Registered keybind options for {} apps",
+        list_apps(registry).len()
+    );
     Ok(())
 }

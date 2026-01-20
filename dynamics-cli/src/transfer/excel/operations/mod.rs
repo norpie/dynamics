@@ -10,4 +10,4 @@
 
 mod reader;
 
-pub use reader::{read_operations_excel, OperationType, ParsedOperations, SheetOperations};
+pub use reader::{OperationType, ParsedOperations, SheetOperations, read_operations_excel};

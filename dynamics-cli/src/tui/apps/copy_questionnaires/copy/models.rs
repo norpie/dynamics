@@ -1,6 +1,9 @@
-use serde_json::Value;
-use crate::tui::{Resource, widgets::{TreeState, fields::TextInputField}};
 use super::domain::Questionnaire;
+use crate::tui::{
+    Resource,
+    widgets::{TreeState, fields::TextInputField},
+};
+use serde_json::Value;
 
 #[derive(Clone)]
 pub struct State {

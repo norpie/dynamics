@@ -1,10 +1,13 @@
 //! Build tree items from entity metadata
 
-use crate::api::EntityMetadata;
-use crate::api::metadata::FieldType;
-use super::tree_items::{ComparisonTreeItem, FieldNode, RelationshipNode, ViewNode, FormNode, ContainerNode, ContainerMatchType, EntityNode};
 use super::ActiveTab;
 use super::MatchInfo;
+use super::tree_items::{
+    ComparisonTreeItem, ContainerMatchType, ContainerNode, EntityNode, FieldNode, FormNode,
+    RelationshipNode, ViewNode,
+};
+use crate::api::EntityMetadata;
+use crate::api::metadata::FieldType;
 use std::collections::HashMap;
 
 /// Build tree items for the active tab from metadata with match information
@@ -23,7 +26,22 @@ pub fn build_tree_items(
     sort_direction: super::models::SortDirection,
     ignored_items: &std::collections::HashSet<String>,
 ) -> Vec<ComparisonTreeItem> {
-    build_tree_items_internal(metadata, active_tab, field_matches, relationship_matches, entity_matches, entities, examples, is_source, entity_name, show_technical_names, sort_mode, sort_direction, ignored_items, None)
+    build_tree_items_internal(
+        metadata,
+        active_tab,
+        field_matches,
+        relationship_matches,
+        entity_matches,
+        entities,
+        examples,
+        is_source,
+        entity_name,
+        show_technical_names,
+        sort_mode,
+        sort_direction,
+        ignored_items,
+        None,
+    )
 }
 
 /// Internal version that accepts optional entity name for multi-entity qualified ignore IDs
@@ -53,11 +71,64 @@ fn build_tree_items_internal(
     let side_prefix = if is_source { "source" } else { "target" };
 
     match active_tab {
-        ActiveTab::Fields => build_fields_tree(&metadata.fields, field_matches, examples, is_source, entity_name, show_technical_names, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix, qualify_entity_name),
-        ActiveTab::Relationships => build_relationships_tree(&metadata.relationships, relationship_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix, qualify_entity_name),
-        ActiveTab::Views => build_views_tree(&metadata.views, field_matches, &metadata.fields, examples, is_source, entity_name, show_technical_names, ignored_items, tab_prefix, side_prefix),
-        ActiveTab::Forms => build_forms_tree(&metadata.forms, field_matches, &metadata.fields, examples, is_source, entity_name, show_technical_names, ignored_items, tab_prefix, side_prefix),
-        ActiveTab::Entities => build_entities_tree(entities, entity_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix, qualify_entity_name),
+        ActiveTab::Fields => build_fields_tree(
+            &metadata.fields,
+            field_matches,
+            examples,
+            is_source,
+            entity_name,
+            show_technical_names,
+            sort_mode,
+            sort_direction,
+            ignored_items,
+            tab_prefix,
+            side_prefix,
+            qualify_entity_name,
+        ),
+        ActiveTab::Relationships => build_relationships_tree(
+            &metadata.relationships,
+            relationship_matches,
+            sort_mode,
+            sort_direction,
+            ignored_items,
+            tab_prefix,
+            side_prefix,
+            qualify_entity_name,
+        ),
+        ActiveTab::Views => build_views_tree(
+            &metadata.views,
+            field_matches,
+            &metadata.fields,
+            examples,
+            is_source,
+            entity_name,
+            show_technical_names,
+            ignored_items,
+            tab_prefix,
+            side_prefix,
+        ),
+        ActiveTab::Forms => build_forms_tree(
+            &metadata.forms,
+            field_matches,
+            &metadata.fields,
+            examples,
+            is_source,
+            entity_name,
+            show_technical_names,
+            ignored_items,
+            tab_prefix,
+            side_prefix,
+        ),
+        ActiveTab::Entities => build_entities_tree(
+            entities,
+            entity_matches,
+            sort_mode,
+            sort_direction,
+            ignored_items,
+            tab_prefix,
+            side_prefix,
+            qualify_entity_name,
+        ),
     }
 }
 
@@ -84,7 +155,16 @@ pub fn build_multi_entity_tree_items(
     if active_tab == ActiveTab::Entities {
         let tab_prefix = "entities";
         let side_prefix = if is_source { "source" } else { "target" };
-        return build_entities_tree(entities, entity_matches, sort_mode, sort_direction, ignored_items, tab_prefix, side_prefix, None);
+        return build_entities_tree(
+            entities,
+            entity_matches,
+            sort_mode,
+            sort_direction,
+            ignored_items,
+            tab_prefix,
+            side_prefix,
+            None,
+        );
     }
 
     // For each selected entity, build items and qualify them
@@ -92,24 +172,31 @@ pub fn build_multi_entity_tree_items(
         let metadata = match metadata_map.get(entity_name) {
             Some(meta) => meta,
             None => {
-                log::warn!("Skipping entity '{}' - metadata not available in map (available: {:?})",
-                    entity_name, metadata_map.keys().collect::<Vec<_>>());
+                log::warn!(
+                    "Skipping entity '{}' - metadata not available in map (available: {:?})",
+                    entity_name,
+                    metadata_map.keys().collect::<Vec<_>>()
+                );
                 continue;
             }
         };
 
         // Filter field_matches to this entity only
         let entity_prefix = format!("{}.", entity_name);
-        let filtered_field_matches: HashMap<String, MatchInfo> = field_matches.iter()
+        let filtered_field_matches: HashMap<String, MatchInfo> = field_matches
+            .iter()
             .filter_map(|(k, v)| {
-                k.strip_prefix(&entity_prefix).map(|field| (field.to_string(), v.clone()))
+                k.strip_prefix(&entity_prefix)
+                    .map(|field| (field.to_string(), v.clone()))
             })
             .collect();
 
         // Filter relationship_matches to this entity only
-        let filtered_relationship_matches: HashMap<String, MatchInfo> = relationship_matches.iter()
+        let filtered_relationship_matches: HashMap<String, MatchInfo> = relationship_matches
+            .iter()
             .filter_map(|(k, v)| {
-                k.strip_prefix(&entity_prefix).map(|rel| (rel.to_string(), v.clone()))
+                k.strip_prefix(&entity_prefix)
+                    .map(|rel| (rel.to_string(), v.clone()))
             })
             .collect();
 
@@ -137,12 +224,22 @@ pub fn build_multi_entity_tree_items(
         for item in entity_items {
             all_items.push(qualify_tree_item(item, entity_name));
         }
-        log::debug!("Added {} items for entity '{}' (tab: {:?}, side: {})",
-            item_count, entity_name, active_tab, if is_source { "source" } else { "target" });
+        log::debug!(
+            "Added {} items for entity '{}' (tab: {:?}, side: {})",
+            item_count,
+            entity_name,
+            active_tab,
+            if is_source { "source" } else { "target" }
+        );
     }
 
-    log::info!("Built multi-entity tree with {} total items across {} entities (tab: {:?}, side: {})",
-        all_items.len(), selected_entities.len(), active_tab, if is_source { "source" } else { "target" });
+    log::info!(
+        "Built multi-entity tree with {} total items across {} entities (tab: {:?}, side: {})",
+        all_items.len(),
+        selected_entities.len(),
+        active_tab,
+        if is_source { "source" } else { "target" }
+    );
 
     // Sort the merged items
     sort_items(&mut all_items, sort_mode, sort_direction);
@@ -175,7 +272,9 @@ fn qualify_tree_item(item: ComparisonTreeItem, entity_name: &str) -> ComparisonT
             node.id = format!("{}.{}", entity_name, node.id);
 
             // Qualify children recursively
-            node.children = node.children.into_iter()
+            node.children = node
+                .children
+                .into_iter()
                 .map(|child| qualify_tree_item(child, entity_name))
                 .collect();
 
@@ -209,13 +308,18 @@ fn build_fields_tree(
             let display_name = if show_technical_names {
                 f.logical_name.clone()
             } else {
-                f.display_name.clone().unwrap_or_else(|| f.logical_name.clone())
+                f.display_name
+                    .clone()
+                    .unwrap_or_else(|| f.logical_name.clone())
             };
 
             // Check ignore status - in multi-entity mode, check both simple and qualified IDs
             let is_ignored = if let Some(qual_entity) = qualify_entity_name {
                 // Multi-entity mode: check qualified ID (e.g., "fields:source:cgk_film.version")
-                let qualified_id = format!("{}:{}:{}.{}", tab_prefix, side_prefix, qual_entity, f.logical_name);
+                let qualified_id = format!(
+                    "{}:{}:{}.{}",
+                    tab_prefix, side_prefix, qual_entity, f.logical_name
+                );
                 ignored_items.contains(&qualified_id)
             } else {
                 // Single-entity mode: check simple ID (e.g., "fields:source:version")
@@ -255,7 +359,10 @@ fn build_relationships_tree(
             // Check ignore status - in multi-entity mode, check qualified ID
             let is_ignored = if let Some(qual_entity) = qualify_entity_name {
                 // Multi-entity mode: check qualified ID (e.g., "relationships:source:rel_cgk_film.new_account")
-                let qualified_id = format!("{}:{}:rel_{}.{}", tab_prefix, side_prefix, qual_entity, r.name);
+                let qualified_id = format!(
+                    "{}:{}:rel_{}.{}",
+                    tab_prefix, side_prefix, qual_entity, r.name
+                );
                 ignored_items.contains(&qualified_id)
             } else {
                 // Single-entity mode: check simple ID (e.g., "relationships:source:rel_new_account")
@@ -293,7 +400,10 @@ fn build_views_tree(
     // Group views by type
     let mut grouped: HashMap<String, Vec<&crate::api::metadata::ViewMetadata>> = HashMap::new();
     for view in views {
-        grouped.entry(view.view_type.clone()).or_default().push(view);
+        grouped
+            .entry(view.view_type.clone())
+            .or_default()
+            .push(view);
     }
 
     let mut result = Vec::new();
@@ -329,14 +439,18 @@ fn build_views_tree(
             *count += 1;
 
             // Create field nodes for each column
-            let column_fields: Vec<ComparisonTreeItem> = view.columns.iter()
+            let column_fields: Vec<ComparisonTreeItem> = view
+                .columns
+                .iter()
                 .map(|col| {
                     // Build paths: matching uses name-based path for cross-environment matching
                     let matching_column_path = format!("{}/{}", matching_path, col.name);
                     let column_path = format!("{}/{}", view_path, col.name);
 
                     // Look up actual field metadata from entity's fields
-                    let field_metadata = if let Some(real_field) = lookup_field_metadata(all_fields, &col.name) {
+                    let field_metadata = if let Some(real_field) =
+                        lookup_field_metadata(all_fields, &col.name)
+                    {
                         // Use real field metadata with path-based ID
                         crate::api::metadata::FieldMetadata {
                             logical_name: column_path.clone(), // Use full path as ID for matching
@@ -369,17 +483,29 @@ fn build_views_tree(
                     // Compute display name for the field
                     let display_name = if show_technical_names {
                         // For views: extract just the field name from the path
-                        column_path.split('/').last().unwrap_or(&column_path).to_string()
+                        column_path
+                            .split('/')
+                            .last()
+                            .unwrap_or(&column_path)
+                            .to_string()
                     } else {
                         field_metadata.display_name.clone().unwrap_or_else(|| {
-                            column_path.split('/').last().unwrap_or(&column_path).to_string()
+                            column_path
+                                .split('/')
+                                .last()
+                                .unwrap_or(&column_path)
+                                .to_string()
                         })
                     };
 
                     ComparisonTreeItem::Field(FieldNode {
                         metadata: field_metadata,
                         match_info: field_matches.get(&matching_column_path).cloned(),
-                        example_value: examples.get_field_value(&matching_column_path, is_source, entity_name),
+                        example_value: examples.get_field_value(
+                            &matching_column_path,
+                            is_source,
+                            entity_name,
+                        ),
                         display_name,
                         is_ignored: false, // Views/forms columns not individually ignorable for now
                     })
@@ -387,7 +513,8 @@ fn build_views_tree(
                 .collect();
 
             // Create container for this view (use matching_path for lookup, view_path for node ID)
-            let (container_match_type, match_info) = compute_container_match_type(&matching_path, &column_fields, field_matches);
+            let (container_match_type, match_info) =
+                compute_container_match_type(&matching_path, &column_fields, field_matches);
             view_containers.push(ComparisonTreeItem::Container(ContainerNode {
                 id: view_path.clone(),
                 label: format!("{} ({} columns)", view.name, view.columns.len()),
@@ -398,7 +525,8 @@ fn build_views_tree(
         }
 
         // Create container for this view type
-        let (container_match_type, match_info) = compute_container_match_type(&viewtype_path, &view_containers, field_matches);
+        let (container_match_type, match_info) =
+            compute_container_match_type(&viewtype_path, &view_containers, field_matches);
         result.push(ComparisonTreeItem::Container(ContainerNode {
             id: viewtype_path.clone(),
             label: format!("{} ({} views)", view_type, view_containers.len()),
@@ -429,7 +557,10 @@ fn build_forms_tree(
     // Group forms by type
     let mut grouped: HashMap<String, Vec<&crate::api::metadata::FormMetadata>> = HashMap::new();
     for form in forms {
-        grouped.entry(form.form_type.clone()).or_default().push(form);
+        grouped
+            .entry(form.form_type.clone())
+            .or_default()
+            .push(form);
     }
 
     let mut result = Vec::new();
@@ -483,21 +614,26 @@ fn build_forms_tree(
 
                     for section in &sections {
                         // Build paths: matching uses name, node ID uses unique tab_path
-                        let matching_section_path = format!("{}/section/{}", matching_tab_path, section.name);
+                        let matching_section_path =
+                            format!("{}/section/{}", matching_tab_path, section.name);
                         let section_path = format!("{}/section/{}", tab_path, section.name);
 
                         // Sort fields by row order
                         let mut fields = section.fields.clone();
                         fields.sort_by_key(|f| (f.row, f.column));
 
-                        let field_nodes: Vec<ComparisonTreeItem> = fields.iter()
+                        let field_nodes: Vec<ComparisonTreeItem> = fields
+                            .iter()
                             .map(|field| {
                                 // Build paths: matching uses name-based path, node ID uses unique section_path
-                                let matching_field_path = format!("{}/{}", matching_section_path, field.logical_name);
+                                let matching_field_path =
+                                    format!("{}/{}", matching_section_path, field.logical_name);
                                 let field_path = format!("{}/{}", section_path, field.logical_name);
 
                                 // Look up actual field metadata from entity's fields
-                                let field_metadata = if let Some(real_field) = lookup_field_metadata(all_fields, &field.logical_name) {
+                                let field_metadata = if let Some(real_field) =
+                                    lookup_field_metadata(all_fields, &field.logical_name)
+                                {
                                     // Use real field metadata with path-based ID
                                     crate::api::metadata::FieldMetadata {
                                         logical_name: field_path.clone(), // Use full path as ID for matching
@@ -508,7 +644,9 @@ fn build_forms_tree(
                                         is_primary_key: real_field.is_primary_key,
                                         max_length: real_field.max_length,
                                         related_entity: real_field.related_entity.clone(),
-                                        navigation_property_name: real_field.navigation_property_name.clone(),
+                                        navigation_property_name: real_field
+                                            .navigation_property_name
+                                            .clone(),
                                         option_values: real_field.option_values.clone(),
                                     }
                                 } else {
@@ -530,17 +668,29 @@ fn build_forms_tree(
                                 // Compute display name for the field
                                 let display_name = if show_technical_names {
                                     // For forms: extract just the field name from the path
-                                    field_path.split('/').last().unwrap_or(&field_path).to_string()
+                                    field_path
+                                        .split('/')
+                                        .last()
+                                        .unwrap_or(&field_path)
+                                        .to_string()
                                 } else {
                                     field_metadata.display_name.clone().unwrap_or_else(|| {
-                                        field_path.split('/').last().unwrap_or(&field_path).to_string()
+                                        field_path
+                                            .split('/')
+                                            .last()
+                                            .unwrap_or(&field_path)
+                                            .to_string()
                                     })
                                 };
 
                                 ComparisonTreeItem::Field(FieldNode {
                                     metadata: field_metadata,
                                     match_info: field_matches.get(&matching_field_path).cloned(),
-                                    example_value: examples.get_field_value(&matching_field_path, is_source, entity_name),
+                                    example_value: examples.get_field_value(
+                                        &matching_field_path,
+                                        is_source,
+                                        entity_name,
+                                    ),
                                     display_name,
                                     is_ignored: false, // Forms/views fields not individually ignorable for now
                                 })
@@ -548,7 +698,11 @@ fn build_forms_tree(
                             .collect();
 
                         // Create container for section (use matching path for lookup)
-                        let (container_match_type, match_info) = compute_container_match_type(&matching_section_path, &field_nodes, field_matches);
+                        let (container_match_type, match_info) = compute_container_match_type(
+                            &matching_section_path,
+                            &field_nodes,
+                            field_matches,
+                        );
                         section_containers.push(ComparisonTreeItem::Container(ContainerNode {
                             id: section_path.clone(),
                             label: format!("{} ({} fields)", section.label, section.fields.len()),
@@ -559,7 +713,11 @@ fn build_forms_tree(
                     }
 
                     // Create container for tab (use matching path for lookup)
-                    let (container_match_type, match_info) = compute_container_match_type(&matching_tab_path, &section_containers, field_matches);
+                    let (container_match_type, match_info) = compute_container_match_type(
+                        &matching_tab_path,
+                        &section_containers,
+                        field_matches,
+                    );
                     tab_containers.push(ComparisonTreeItem::Container(ContainerNode {
                         id: tab_path.clone(),
                         label: format!("{} ({} sections)", tab.label, tab.sections.len()),
@@ -576,7 +734,8 @@ fn build_forms_tree(
             };
 
             // Create container for this form (use matching path for lookup)
-            let (container_match_type, match_info) = compute_container_match_type(&matching_form_path, &form_children, field_matches);
+            let (container_match_type, match_info) =
+                compute_container_match_type(&matching_form_path, &form_children, field_matches);
             form_containers.push(ComparisonTreeItem::Container(ContainerNode {
                 id: form_path.clone(),
                 label: if form_children.is_empty() {
@@ -591,7 +750,8 @@ fn build_forms_tree(
         }
 
         // Create container for this form type
-        let (container_match_type, match_info) = compute_container_match_type(&formtype_path, &form_containers, field_matches);
+        let (container_match_type, match_info) =
+            compute_container_match_type(&formtype_path, &form_containers, field_matches);
         result.push(ComparisonTreeItem::Container(ContainerNode {
             id: formtype_path.clone(),
             label: format!("{} ({} forms)", form_type, form_containers.len()),
@@ -673,7 +833,7 @@ fn compute_container_match_type(
     if has_matched && !has_unmatched {
         (ContainerMatchType::FullMatch, match_info)
     } else {
-        (ContainerMatchType::Mixed, match_info)  // Container matched but some/all children didn't
+        (ContainerMatchType::Mixed, match_info) // Container matched but some/all children didn't
     }
 }
 
@@ -739,11 +899,11 @@ fn sort_items(
 
                 // Determine sort tier (lower number = higher priority in ascending)
                 let a_tier = if a_is_ignored {
-                    2  // Ignored items last
+                    2 // Ignored items last
                 } else if a_has_match {
-                    0  // Matched items first
+                    0 // Matched items first
                 } else {
-                    1  // Unmatched items in the middle
+                    1 // Unmatched items in the middle
                 };
 
                 let b_tier = if b_is_ignored {

@@ -1,15 +1,12 @@
-use crate::tui::command::Command;
-use crate::tui::widgets::TreeEvent;
-use super::super::{Msg, ActiveTab};
 use super::super::app::State;
 use super::super::tree_sync::{
-    update_mirrored_selection,
-    update_mirrored_navigation,
-    mirror_container_toggle,
+    mirror_container_toggle, mirror_container_toggle_reverse, update_mirrored_navigation,
+    update_mirrored_selection, update_reverse_mirrored_navigation,
     update_reverse_mirrored_selection,
-    update_reverse_mirrored_navigation,
-    mirror_container_toggle_reverse,
 };
+use super::super::{ActiveTab, Msg};
+use crate::tui::command::Command;
+use crate::tui::widgets::TreeEvent;
 
 pub fn handle_source_tree_event(state: &mut State, event: TreeEvent) -> Command<Msg> {
     // Handle source tree navigation/interaction

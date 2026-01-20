@@ -1,11 +1,10 @@
-use super::super::entity_sets;
-use super::super::field_specs;
 /// Step 4: Create question groups
-
 use super::super::super::super::copy::domain::Questionnaire;
 use super::super::super::models::{CopyError, CopyPhase};
-use super::super::execution::{execute_creation_step, process_creation_results, EntityInfo};
-use super::super::helpers::{get_shared_entities, build_payload};
+use super::super::entity_sets;
+use super::super::execution::{EntityInfo, execute_creation_step, process_creation_results};
+use super::super::field_specs;
+use super::super::helpers::{build_payload, get_shared_entities};
 use crate::api::operations::Operations;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -37,8 +36,13 @@ pub async fn step4_create_groups(
 
             for page in &q.pages {
                 for group in &page.groups {
-                    let data = build_payload(&group.raw, field_specs::GROUP_FIELDS, &id_map, &shared_entities)
-                        .map_err(|e| format!("Failed to build group payload: {}", e))?;
+                    let data = build_payload(
+                        &group.raw,
+                        field_specs::GROUP_FIELDS,
+                        &id_map,
+                        &shared_entities,
+                    )
+                    .map_err(|e| format!("Failed to build group payload: {}", e))?;
 
                     operations = operations.create(entity_sets::GROUPS, data);
                     entity_info.push(EntityInfo {
@@ -49,10 +53,18 @@ pub async fn step4_create_groups(
             }
 
             Ok((operations, entity_info))
-        }
-    ).await?;
+        },
+    )
+    .await?;
 
-    process_creation_results(&results, entity_info, &mut new_id_map, &mut created_ids, CopyPhase::CreatingGroups, 4)?;
+    process_creation_results(
+        &results,
+        entity_info,
+        &mut new_id_map,
+        &mut created_ids,
+        CopyPhase::CreatingGroups,
+        4,
+    )?;
 
     Ok((new_id_map, created_ids))
 }

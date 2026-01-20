@@ -1,6 +1,6 @@
-use ratatui::style::Style;
 use crate::tui::Element;
 use crate::tui::element::FocusId;
+use ratatui::style::Style;
 
 /// Builder for button elements
 pub struct ButtonBuilder<Msg> {

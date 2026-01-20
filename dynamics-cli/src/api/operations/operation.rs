@@ -78,7 +78,6 @@ pub enum Operation {
     },
 
     // === Schema/Metadata Operations ===
-
     /// Create a new attribute/column on an entity
     /// POST /EntityDefinitions(LogicalName='{entity}')/Attributes
     CreateAttribute {
@@ -200,10 +199,7 @@ impl Operation {
     }
 
     /// Create a new DeleteAttribute operation (schema)
-    pub fn delete_attribute(
-        entity: impl Into<String>,
-        attribute: impl Into<String>,
-    ) -> Self {
+    pub fn delete_attribute(entity: impl Into<String>, attribute: impl Into<String>) -> Self {
         Self::DeleteAttribute {
             entity: entity.into(),
             attribute: attribute.into(),
@@ -267,7 +263,11 @@ impl Operation {
     }
 
     /// Execute this operation individually against a Dynamics client
-    pub async fn execute(&self, client: &crate::api::DynamicsClient, resilience: &crate::api::ResilienceConfig) -> anyhow::Result<OperationResult> {
+    pub async fn execute(
+        &self,
+        client: &crate::api::DynamicsClient,
+        resilience: &crate::api::ResilienceConfig,
+    ) -> anyhow::Result<OperationResult> {
         client.execute(self, resilience).await
     }
 }

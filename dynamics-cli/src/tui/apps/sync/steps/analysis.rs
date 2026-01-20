@@ -7,11 +7,11 @@ use ratatui::text::{Line, Span};
 
 use crate::tui::element::Element;
 use crate::tui::state::theme::Theme;
-use crate::{col, row, spacer, use_constraints, button_row};
+use crate::{button_row, col, row, spacer, use_constraints};
 
-use super::super::state::{State, AnalysisPhase};
 use super::super::msg::Msg;
-use super::super::{get_analysis_progress, FetchStatus};
+use super::super::state::{AnalysisPhase, State};
+use super::super::{FetchStatus, get_analysis_progress};
 
 /// Render the analysis step (loading screen)
 pub fn render_analysis(state: &mut State, theme: &Theme) -> Element<Msg> {
@@ -56,7 +56,9 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
     let spinner_idx = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_millis() / 100) as usize % spinner_chars.len();
+        .as_millis()
+        / 100) as usize
+        % spinner_chars.len();
     let spinner = if analysis.phase != AnalysisPhase::Complete {
         spinner_chars[spinner_idx]
     } else {
@@ -72,19 +74,24 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
 
     let phase_line = Element::styled_text(Line::from(Span::styled(
         format!("{} {}", spinner, phase_text),
-        Style::default().fg(theme.accent_primary).bold()
-    ))).build();
+        Style::default().fg(theme.accent_primary).bold(),
+    )))
+    .build();
 
     // Build entity progress lines
     let mut entity_lines: Vec<Element<Msg>> = Vec::new();
 
     // Header row
-    entity_lines.push(Element::styled_text(Line::from(vec![
-        Span::styled(
-            format!("{:<30} {:^10} {:^15} {:^12} {:^8}", "Entity", "Schema", "Records", "Refs", "N:N"),
-            Style::default().fg(theme.text_secondary).bold()
-        ),
-    ])).build());
+    entity_lines.push(
+        Element::styled_text(Line::from(vec![Span::styled(
+            format!(
+                "{:<30} {:^10} {:^15} {:^12} {:^8}",
+                "Entity", "Schema", "Records", "Refs", "N:N"
+            ),
+            Style::default().fg(theme.text_secondary).bold(),
+        )]))
+        .build(),
+    );
 
     // Entity rows
     for entity_name in &progress.entity_order {
@@ -102,12 +109,16 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
             let nn_style = status_style(&ep.nn_status, theme);
 
             let records_text = match (&ep.records_status, ep.record_count) {
-                (FetchStatus::Done, Some(count)) => format!("{} ({})", ep.records_status.symbol(), count),
+                (FetchStatus::Done, Some(count)) => {
+                    format!("{} ({})", ep.records_status.symbol(), count)
+                }
                 _ => ep.records_status.symbol().to_string(),
             };
 
             let refs_text = match (&ep.refs_status, ep.refs_count) {
-                (FetchStatus::Done, Some(count)) => format!("{} ({})", ep.refs_status.symbol(), count),
+                (FetchStatus::Done, Some(count)) => {
+                    format!("{} ({})", ep.refs_status.symbol(), count)
+                }
                 _ => ep.refs_status.symbol().to_string(),
             };
 
@@ -117,32 +128,48 @@ fn render_progress(state: &State, theme: &Theme) -> Element<Msg> {
                 status => status.symbol().to_string(),
             };
 
-            entity_lines.push(Element::styled_text(Line::from(vec![
-                Span::styled(format!("{:<30} ", display_truncated), Style::default().fg(theme.text_primary)),
-                Span::styled(format!("{:^10} ", ep.schema_status.symbol()), schema_style),
-                Span::styled(format!("{:^15} ", records_text), records_style),
-                Span::styled(format!("{:^12} ", refs_text), refs_style),
-                Span::styled(format!("{:^8}", nn_text), nn_style),
-            ])).build());
+            entity_lines.push(
+                Element::styled_text(Line::from(vec![
+                    Span::styled(
+                        format!("{:<30} ", display_truncated),
+                        Style::default().fg(theme.text_primary),
+                    ),
+                    Span::styled(format!("{:^10} ", ep.schema_status.symbol()), schema_style),
+                    Span::styled(format!("{:^15} ", records_text), records_style),
+                    Span::styled(format!("{:^12} ", refs_text), refs_style),
+                    Span::styled(format!("{:^8}", nn_text), nn_style),
+                ]))
+                .build(),
+            );
         }
     }
 
     // Calculate counts
     let total = progress.entities.len();
-    let schemas_done = progress.entities.values()
+    let schemas_done = progress
+        .entities
+        .values()
         .filter(|e| matches!(e.schema_status, FetchStatus::Done))
         .count();
-    let records_done = progress.entities.values()
+    let records_done = progress
+        .entities
+        .values()
         .filter(|e| matches!(e.records_status, FetchStatus::Done))
         .count();
-    let refs_done = progress.entities.values()
+    let refs_done = progress
+        .entities
+        .values()
         .filter(|e| matches!(e.refs_status, FetchStatus::Done))
         .count();
 
     let summary_line = Element::styled_text(Line::from(Span::styled(
-        format!("Schemas: {}/{} | Records: {}/{} | Refs: {}/{}", schemas_done, total, records_done, total, refs_done, total),
-        Style::default().fg(theme.text_secondary)
-    ))).build();
+        format!(
+            "Schemas: {}/{} | Records: {}/{} | Refs: {}/{}",
+            schemas_done, total, records_done, total, refs_done, total
+        ),
+        Style::default().fg(theme.text_secondary),
+    )))
+    .build();
 
     // Wrap entity lines in a scrollable column
     let entity_list = Element::column(entity_lines).build();
@@ -167,7 +194,11 @@ fn status_style(status: &FetchStatus, theme: &Theme) -> Style {
 }
 
 /// Get status icon and style for a phase
-fn get_phase_status(phase: AnalysisPhase, current_phase: AnalysisPhase, theme: &Theme) -> (&'static str, Style) {
+fn get_phase_status(
+    phase: AnalysisPhase,
+    current_phase: AnalysisPhase,
+    theme: &Theme,
+) -> (&'static str, Style) {
     let phase_order = |p: AnalysisPhase| -> u8 {
         match p {
             AnalysisPhase::FetchingOriginSchema => 0,
@@ -208,9 +239,7 @@ fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
             ("analysis-next-btn", "Review Diff", Msg::Next),
         ]
     } else {
-        button_row![
-            ("analysis-cancel-btn", "Cancel", Msg::CancelAnalysis),
-        ]
+        button_row![("analysis-cancel-btn", "Cancel", Msg::CancelAnalysis),]
     };
 
     col![

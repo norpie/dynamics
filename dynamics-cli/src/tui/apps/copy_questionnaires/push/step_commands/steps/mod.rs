@@ -1,6 +1,7 @@
 /// Individual step implementations for questionnaire copy process
-
 mod step1;
+mod step10;
+mod step11;
 mod step2;
 mod step3;
 mod step4;
@@ -9,8 +10,6 @@ mod step6;
 mod step7;
 mod step8;
 mod step9;
-mod step10;
-mod step11;
 
 pub use step1::step1_create_questionnaire;
 pub use step2::step2_create_pages;

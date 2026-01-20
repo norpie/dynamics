@@ -3,4 +3,4 @@ mod state;
 mod view;
 
 pub use app::TransferConfigListApp;
-pub use state::{State, Msg};
+pub use state::{Msg, State};

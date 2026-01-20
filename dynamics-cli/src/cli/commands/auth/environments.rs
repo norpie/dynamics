@@ -1,11 +1,11 @@
 //! Environment management operations
 
-use anyhow::Result;
-use dialoguer::{Input, Select, Confirm};
+use super::EnvironmentCommands;
 use crate::api::models::Environment;
 use crate::config::Config;
-use super::EnvironmentCommands;
+use anyhow::Result;
 use colored::*;
+use dialoguer::{Confirm, Input, Select};
 
 /// Handle non-interactive environment commands
 pub async fn handle_environment_command(cmd: EnvironmentCommands) -> Result<()> {
@@ -17,9 +17,7 @@ pub async fn handle_environment_command(cmd: EnvironmentCommands) -> Result<()> 
             host,
             credentials,
             set_current,
-        } => {
-            add_environment_noninteractive(name, host, credentials, set_current).await
-        }
+        } => add_environment_noninteractive(name, host, credentials, set_current).await,
         EnvironmentCommands::List => list_environments_interactive().await,
         EnvironmentCommands::SetCredentials { name, credentials } => {
             set_credentials_by_name(&name, &credentials).await
@@ -49,8 +47,15 @@ async fn add_environment_noninteractive(
 ) -> Result<()> {
     let client_manager = crate::client_manager();
     // Validate that credentials exist
-    if client_manager.get_credentials(&credentials).await?.is_none() {
-        anyhow::bail!("Credentials '{}' not found. Create them first with 'dynamics-cli auth creds add'", credentials);
+    if client_manager
+        .get_credentials(&credentials)
+        .await?
+        .is_none()
+    {
+        anyhow::bail!(
+            "Credentials '{}' not found. Create them first with 'dynamics-cli auth creds add'",
+            credentials
+        );
     }
 
     let environment = Environment {
@@ -59,12 +64,24 @@ async fn add_environment_noninteractive(
         credentials_ref: credentials,
     };
 
-    client_manager.add_environment_to_config(name.clone(), environment).await?;
-    println!("{} Environment '{}' added successfully", "✓".bright_green().bold(), name.bright_green().bold());
+    client_manager
+        .add_environment_to_config(name.clone(), environment)
+        .await?;
+    println!(
+        "{} Environment '{}' added successfully",
+        "✓".bright_green().bold(),
+        name.bright_green().bold()
+    );
 
     if set_current {
-        client_manager.set_current_environment_in_config(name.clone()).await?;
-        println!("{} Set '{}' as current environment", "✓".bright_green().bold(), name.bright_green().bold());
+        client_manager
+            .set_current_environment_in_config(name.clone())
+            .await?;
+        println!(
+            "{} Set '{}' as current environment",
+            "✓".bright_green().bold(),
+            name.bright_green().bold()
+        );
     }
 
     Ok(())
@@ -77,7 +94,10 @@ pub async fn list_environments_interactive() -> Result<()> {
     let current_env = client_manager.get_current_environment_name().await?;
 
     if environments.is_empty() {
-        println!("  {}", "⚠️  No environments configured".bright_yellow().bold());
+        println!(
+            "  {}",
+            "⚠️  No environments configured".bright_yellow().bold()
+        );
         println!("  {}", "Add an environment to get started.".dimmed());
         return Ok(());
     }
@@ -86,17 +106,24 @@ pub async fn list_environments_interactive() -> Result<()> {
     println!("  {}", "Configured environments:".bright_white().bold());
     for env_name in &environments {
         if let Some(environment) = client_manager.get_environment(env_name).await? {
-            let (marker, env_color, current_text) = if current_env.as_ref() == Some(&env_name.to_string()) {
-                ("●", env_name.bright_green().bold(), " (current)".bright_green())
-            } else {
-                ("○", env_name.white(), "".white())
-            };
-            println!("  {} {} → {} ({}){}",
-                     marker.bright_green(),
-                     env_color,
-                     environment.host.cyan(),
-                     environment.credentials_ref.bright_yellow(),
-                     current_text);
+            let (marker, env_color, current_text) =
+                if current_env.as_ref() == Some(&env_name.to_string()) {
+                    (
+                        "●",
+                        env_name.bright_green().bold(),
+                        " (current)".bright_green(),
+                    )
+                } else {
+                    ("○", env_name.white(), "".white())
+                };
+            println!(
+                "  {} {} → {} ({}){}",
+                marker.bright_green(),
+                env_color,
+                environment.host.cyan(),
+                environment.credentials_ref.bright_yellow(),
+                current_text
+            );
         }
     }
     println!();
@@ -137,7 +164,10 @@ pub async fn add_environment_interactive() -> Result<()> {
     // Select credentials
     let credentials_list = client_manager.list_credentials().await?;
     if credentials_list.is_empty() {
-        println!("  {} No credentials configured. Please add credentials first.", "⚠️".bright_yellow().bold());
+        println!(
+            "  {} No credentials configured. Please add credentials first.",
+            "⚠️".bright_yellow().bold()
+        );
         return Ok(());
     }
 
@@ -150,7 +180,11 @@ pub async fn add_environment_interactive() -> Result<()> {
     let credentials_ref = credentials_list[cred_selection].clone();
 
     // Ask if this should be the current environment
-    let set_current = if client_manager.get_current_environment_name().await?.is_none() {
+    let set_current = if client_manager
+        .get_current_environment_name()
+        .await?
+        .is_none()
+    {
         // No current environment, default to yes
         Confirm::new()
             .with_prompt("Set as current environment?")
@@ -170,12 +204,24 @@ pub async fn add_environment_interactive() -> Result<()> {
         credentials_ref,
     };
 
-    client_manager.add_environment_to_config(name.clone(), environment).await?;
-    println!("{} Environment '{}' saved successfully", "✓".bright_green().bold(), name.bright_green().bold());
+    client_manager
+        .add_environment_to_config(name.clone(), environment)
+        .await?;
+    println!(
+        "{} Environment '{}' saved successfully",
+        "✓".bright_green().bold(),
+        name.bright_green().bold()
+    );
 
     if set_current {
-        client_manager.set_current_environment_in_config(name.clone()).await?;
-        println!("{} Set '{}' as current environment", "✓".bright_green().bold(), name.bright_green().bold());
+        client_manager
+            .set_current_environment_in_config(name.clone())
+            .await?;
+        println!(
+            "{} Set '{}' as current environment",
+            "✓".bright_green().bold(),
+            name.bright_green().bold()
+        );
     }
 
     Ok(())
@@ -188,7 +234,10 @@ pub async fn select_environment_interactive() -> Result<()> {
     let current_env = client_manager.get_current_environment_name().await?;
 
     if environments.is_empty() {
-        println!("  {} No environments configured to select.", "⚠️".bright_yellow().bold());
+        println!(
+            "  {} No environments configured to select.",
+            "⚠️".bright_yellow().bold()
+        );
         return Ok(());
     }
 
@@ -223,8 +272,14 @@ async fn select_environment_by_name(name: &str) -> Result<()> {
         anyhow::bail!("Environment '{}' not found", name);
     }
 
-    client_manager.set_current_environment_in_config(name.to_string()).await?;
-    println!("{} Selected environment: {}", "✓".bright_cyan().bold(), name.bright_green().bold());
+    client_manager
+        .set_current_environment_in_config(name.to_string())
+        .await?;
+    println!(
+        "{} Selected environment: {}",
+        "✓".bright_cyan().bold(),
+        name.bright_green().bold()
+    );
     Ok(())
 }
 
@@ -234,7 +289,10 @@ pub async fn rename_environment_interactive() -> Result<()> {
     let environments = client_manager.list_environments().await;
 
     if environments.is_empty() {
-        println!("  {} No environments configured to rename.", "⚠️".bright_yellow().bold());
+        println!(
+            "  {} No environments configured to rename.",
+            "⚠️".bright_yellow().bold()
+        );
         return Ok(());
     }
 
@@ -257,8 +315,15 @@ pub async fn rename_environment_interactive() -> Result<()> {
 /// Rename environment non-interactively
 async fn rename_environment_noninteractive(old_name: &str, new_name: String) -> Result<()> {
     let client_manager = crate::client_manager();
-    client_manager.rename_environment_in_config(old_name, new_name.clone()).await?;
-    println!("{} Environment renamed from '{}' to '{}'", "✓".bright_green().bold(), old_name.bright_green(), new_name.bright_green().bold());
+    client_manager
+        .rename_environment_in_config(old_name, new_name.clone())
+        .await?;
+    println!(
+        "{} Environment renamed from '{}' to '{}'",
+        "✓".bright_green().bold(),
+        old_name.bright_green(),
+        new_name.bright_green().bold()
+    );
     Ok(())
 }
 
@@ -269,7 +334,10 @@ pub async fn remove_environment_interactive() -> Result<()> {
     let current_env = client_manager.get_current_environment_name().await?;
 
     if environments.is_empty() {
-        println!("  {} No environments configured to remove.", "⚠️".bright_yellow().bold());
+        println!(
+            "  {} No environments configured to remove.",
+            "⚠️".bright_yellow().bold()
+        );
         return Ok(());
     }
 
@@ -284,7 +352,11 @@ pub async fn remove_environment_interactive() -> Result<()> {
 
     // Warn if removing current environment
     if current_env.as_deref() == Some(&env_name) {
-        println!("  {} Warning: '{}' is the current environment", "⚠️".bright_yellow().bold(), env_name.bright_green().bold());
+        println!(
+            "  {} Warning: '{}' is the current environment",
+            "⚠️".bright_yellow().bold(),
+            env_name.bright_green().bold()
+        );
     }
 
     let confirm = Confirm::new()
@@ -308,7 +380,11 @@ async fn remove_environment_by_name(name: &str, force: bool) -> Result<()> {
     if !force {
         // Warn if removing current environment
         if current_env.as_deref() == Some(name) {
-            println!("  {} Warning: '{}' is the current environment", "⚠️".bright_yellow().bold(), name.bright_green().bold());
+            println!(
+                "  {} Warning: '{}' is the current environment",
+                "⚠️".bright_yellow().bold(),
+                name.bright_green().bold()
+            );
         }
 
         let confirm = Confirm::new()
@@ -323,17 +399,25 @@ async fn remove_environment_by_name(name: &str, force: bool) -> Result<()> {
     }
 
     client_manager.remove_environment_from_config(name).await?;
-    println!("{} Environment '{}' removed successfully", "✓".bright_green().bold(), name.bright_green().bold());
+    println!(
+        "{} Environment '{}' removed successfully",
+        "✓".bright_green().bold(),
+        name.bright_green().bold()
+    );
 
     // Show current status after removal
     if let Some(current) = client_manager.get_current_environment_name().await? {
         if current != name {
             println!("Current environment: {}", current);
         } else {
-            println!("No current environment selected. Use 'dynamics-cli auth env select' to choose one.");
+            println!(
+                "No current environment selected. Use 'dynamics-cli auth env select' to choose one."
+            );
         }
     } else {
-        println!("No current environment selected. Use 'dynamics-cli auth env select' to choose one.");
+        println!(
+            "No current environment selected. Use 'dynamics-cli auth env select' to choose one."
+        );
     }
 
     Ok(())
@@ -345,7 +429,10 @@ pub async fn set_credentials_interactive() -> Result<()> {
     let environments = client_manager.list_environments().await;
 
     if environments.is_empty() {
-        println!("  {} No environments configured to update.", "⚠️".bright_yellow().bold());
+        println!(
+            "  {} No environments configured to update.",
+            "⚠️".bright_yellow().bold()
+        );
         return Ok(());
     }
 
@@ -371,7 +458,10 @@ pub async fn set_credentials_interactive() -> Result<()> {
     // Select new credentials
     let credentials_list = client_manager.list_credentials().await?;
     if credentials_list.is_empty() {
-        println!("  {} No credentials configured. Please add credentials first.", "⚠️".bright_yellow().bold());
+        println!(
+            "  {} No credentials configured. Please add credentials first.",
+            "⚠️".bright_yellow().bold()
+        );
         return Ok(());
     }
 
@@ -390,7 +480,9 @@ pub async fn set_credentials_interactive() -> Result<()> {
 async fn set_credentials_by_name(env_name: &str, credentials: &str) -> Result<()> {
     let client_manager = crate::client_manager();
     // Validate environment exists
-    let mut environment = client_manager.get_environment(env_name).await?
+    let mut environment = client_manager
+        .get_environment(env_name)
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Environment '{}' not found", env_name))?;
 
     // Validate credentials exist
@@ -400,8 +492,15 @@ async fn set_credentials_by_name(env_name: &str, credentials: &str) -> Result<()
 
     // Update the environment
     environment.credentials_ref = credentials.to_string();
-    client_manager.add_environment_to_config(env_name.to_string(), environment).await?;
+    client_manager
+        .add_environment_to_config(env_name.to_string(), environment)
+        .await?;
 
-    println!("{} Environment '{}' now uses credentials '{}'", "✓".bright_green().bold(), env_name.bright_green().bold(), credentials.bright_yellow().bold());
+    println!(
+        "{} Environment '{}' now uses credentials '{}'",
+        "✓".bright_green().bold(),
+        env_name.bright_green().bold(),
+        credentials.bright_yellow().bold()
+    );
     Ok(())
 }

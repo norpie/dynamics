@@ -1,19 +1,19 @@
-pub mod navigation;
-pub mod tree_events;
-pub mod mappings;
-pub mod examples;
-pub mod prefix_mappings;
-pub mod negative_matches;
-pub mod manual_mappings;
 pub mod data_loading;
-pub mod import;
+pub mod examples;
 pub mod ignore;
+pub mod import;
+pub mod manual_mappings;
+pub mod mappings;
+pub mod navigation;
+pub mod negative_matches;
+pub mod prefix_mappings;
 pub mod search;
+pub mod tree_events;
 pub mod type_filter;
 
-use crate::tui::command::Command;
 use super::Msg;
 use super::app::State;
+use crate::tui::command::Command;
 
 pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
     // Rebuild tree cache if dependencies changed
@@ -34,14 +34,22 @@ pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         Msg::TargetTreeEvent(event) => tree_events::handle_target_tree_event(state, event),
         Msg::SourceViewportHeight(h) => tree_events::handle_source_viewport_height(state, h),
         Msg::TargetViewportHeight(h) => tree_events::handle_target_viewport_height(state, h),
-        Msg::SourceTreeNodeClicked(node_id) => tree_events::handle_source_node_clicked(state, node_id),
-        Msg::TargetTreeNodeClicked(node_id) => tree_events::handle_target_node_clicked(state, node_id),
+        Msg::SourceTreeNodeClicked(node_id) => {
+            tree_events::handle_source_node_clicked(state, node_id)
+        }
+        Msg::TargetTreeNodeClicked(node_id) => {
+            tree_events::handle_target_node_clicked(state, node_id)
+        }
         Msg::SourceTreeFocused => tree_events::handle_source_tree_focused(state),
         Msg::TargetTreeFocused => tree_events::handle_target_tree_focused(state),
 
         // Data loading
-        Msg::ParallelDataLoaded(idx, result) => data_loading::handle_parallel_data_loaded(state, idx, result),
-        Msg::MappingsLoaded(fm, pm, im, isf, ep, ig, nm) => data_loading::handle_mappings_loaded(state, fm, pm, im, isf, ep, ig, nm),
+        Msg::ParallelDataLoaded(idx, result) => {
+            data_loading::handle_parallel_data_loaded(state, idx, result)
+        }
+        Msg::MappingsLoaded(fm, pm, im, isf, ep, ig, nm) => {
+            data_loading::handle_mappings_loaded(state, fm, pm, im, isf, ep, ig, nm)
+        }
         Msg::Refresh => data_loading::handle_refresh(state),
 
         // Mappings
@@ -64,7 +72,9 @@ pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         Msg::LabelInputEvent(event) => examples::handle_label_input_event(state, event),
         Msg::AddExamplePair => examples::handle_add_example_pair(state),
         Msg::DeleteExamplePair => examples::handle_delete_example_pair(state),
-        Msg::ExampleDataFetched(id, result) => examples::handle_example_data_fetched(state, id, result),
+        Msg::ExampleDataFetched(id, result) => {
+            examples::handle_example_data_fetched(state, id, result)
+        }
         Msg::CycleExamplePair => examples::handle_cycle_example_pair(state),
         Msg::ToggleExamples => examples::handle_toggle_examples(state),
 
@@ -73,8 +83,12 @@ pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         Msg::ClosePrefixMappingsModal => prefix_mappings::handle_close_modal(state),
         Msg::PrefixMappingsListNavigate(key) => prefix_mappings::handle_list_navigate(state, key),
         Msg::PrefixMappingsListSelect(idx) => prefix_mappings::handle_list_select(state, idx),
-        Msg::PrefixSourceInputEvent(event) => prefix_mappings::handle_source_input_event(state, event),
-        Msg::PrefixTargetInputEvent(event) => prefix_mappings::handle_target_input_event(state, event),
+        Msg::PrefixSourceInputEvent(event) => {
+            prefix_mappings::handle_source_input_event(state, event)
+        }
+        Msg::PrefixTargetInputEvent(event) => {
+            prefix_mappings::handle_target_input_event(state, event)
+        }
         Msg::AddPrefixMapping => prefix_mappings::handle_add_prefix_mapping(state),
         Msg::DeletePrefixMapping => prefix_mappings::handle_delete_prefix_mapping(state),
 
@@ -84,7 +98,9 @@ pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         Msg::NegativeMatchesListNavigate(key) => negative_matches::handle_list_navigate(state, key),
         Msg::NegativeMatchesListSelect(idx) => negative_matches::handle_list_select(state, idx),
         Msg::DeleteNegativeMatch => negative_matches::handle_delete_negative_match(state),
-        Msg::AddNegativeMatchFromTree => negative_matches::handle_add_negative_match_from_tree(state),
+        Msg::AddNegativeMatchFromTree => {
+            negative_matches::handle_add_negative_match_from_tree(state)
+        }
 
         // Manual mappings
         Msg::OpenManualMappingsModal => manual_mappings::handle_open_modal(state),
@@ -119,7 +135,9 @@ pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         Msg::OpenImportModal => import::handle_open_modal(state),
         Msg::CloseImportModal => import::handle_close_modal(state),
         Msg::ImportFileSelected(path) => import::handle_file_selected(state, path),
-        Msg::ImportMappingsLoaded(mappings, file) => import::handle_mappings_loaded(state, mappings, file),
+        Msg::ImportMappingsLoaded(mappings, file) => {
+            import::handle_mappings_loaded(state, mappings, file)
+        }
         Msg::ImportCsvLoaded(csv_data, file) => import::handle_csv_loaded(state, csv_data, file),
         Msg::ClearImportedMappings => import::handle_clear_imported(state),
         Msg::ImportNavigate(key) => import::handle_navigate(state, key),
@@ -127,7 +145,9 @@ pub fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         Msg::CloseImportResultsModal => import::handle_close_results_modal(state),
         Msg::ImportResultsNavigate(key) => import::handle_results_navigate(state, key),
         Msg::ImportResultsSelect(idx) => import::handle_results_select(state, idx),
-        Msg::ImportResultsSetViewportHeight(h) => import::handle_results_set_viewport_height(state, h),
+        Msg::ImportResultsSetViewportHeight(h) => {
+            import::handle_results_set_viewport_height(state, h)
+        }
 
         // Ignore functionality
         Msg::IgnoreItem => ignore::handle_ignore_item(state),

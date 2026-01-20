@@ -20,7 +20,6 @@ Mappings
 .env.dynamics
 .token_cache
 config.db
-mapping
 CURRENT_PLAN.md
 PROGRESS.md
 SCRATCHPAD.md

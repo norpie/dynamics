@@ -23,13 +23,12 @@ pub async fn add_entity_mapping(pool: &SqlitePool, singular: String, plural: Str
 
 /// Get entity mapping
 pub async fn get_entity_mapping(pool: &SqlitePool, singular: &str) -> Result<Option<String>> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT plural_name FROM entity_mappings WHERE singular_name = ?",
-    )
-    .bind(singular)
-    .fetch_optional(pool)
-    .await
-    .with_context(|| format!("Failed to get entity mapping for '{}'", singular))?;
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT plural_name FROM entity_mappings WHERE singular_name = ?")
+            .bind(singular)
+            .fetch_optional(pool)
+            .await
+            .with_context(|| format!("Failed to get entity mapping for '{}'", singular))?;
 
     Ok(row.map(|(plural,)| plural))
 }
@@ -66,13 +65,11 @@ pub async fn delete_entity_mapping(pool: &SqlitePool, singular: &str) -> Result<
 
 /// Get setting value
 pub async fn get_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT value FROM settings WHERE key = ?",
-    )
-    .bind(key)
-    .fetch_optional(pool)
-    .await
-    .with_context(|| format!("Failed to get setting '{}'", key))?;
+    let row: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE key = ?")
+        .bind(key)
+        .fetch_optional(pool)
+        .await
+        .with_context(|| format!("Failed to get setting '{}'", key))?;
 
     Ok(row.map(|(value,)| value))
 }
@@ -90,15 +87,13 @@ pub async fn set_setting(pool: &SqlitePool, key: String, value: String) -> Resul
         "string"
     };
 
-    sqlx::query(
-        "INSERT OR REPLACE INTO settings (key, value, type) VALUES (?, ?, ?)",
-    )
-    .bind(&key)
-    .bind(&value)
-    .bind(value_type)
-    .execute(pool)
-    .await
-    .with_context(|| format!("Failed to set setting '{}' = '{}'", key, value))?;
+    sqlx::query("INSERT OR REPLACE INTO settings (key, value, type) VALUES (?, ?, ?)")
+        .bind(&key)
+        .bind(&value)
+        .bind(value_type)
+        .execute(pool)
+        .await
+        .with_context(|| format!("Failed to set setting '{}' = '{}'", key, value))?;
 
     log::debug!("Set setting: {} = {}", key, value);
     Ok(())
@@ -106,12 +101,11 @@ pub async fn set_setting(pool: &SqlitePool, key: String, value: String) -> Resul
 
 /// List all settings
 pub async fn list_settings(pool: &SqlitePool) -> Result<HashMap<String, String>> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT key, value FROM settings ORDER BY key",
-    )
-    .fetch_all(pool)
-    .await
-    .context("Failed to list settings")?;
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT key, value FROM settings ORDER BY key")
+            .fetch_all(pool)
+            .await
+            .context("Failed to list settings")?;
 
     Ok(rows.into_iter().collect())
 }
@@ -164,7 +158,10 @@ pub async fn add_field_mapping(
 
     log::info!(
         "Added field mapping: {}:{} -> {}:{}",
-        source_entity, source_field, target_entity, target_field
+        source_entity,
+        source_field,
+        target_entity,
+        target_field
     );
     Ok(())
 }
@@ -225,7 +222,9 @@ pub async fn delete_field_mapping(
 
     log::info!(
         "Deleted field mapping: {}:{} -> {}",
-        source_entity, source_field, target_entity
+        source_entity,
+        source_field,
+        target_entity
     );
     Ok(())
 }
@@ -262,7 +261,10 @@ pub async fn add_prefix_mapping(
 
     log::info!(
         "Added prefix mapping: {}:{} -> {}:{}",
-        source_entity, source_prefix, target_entity, target_prefix
+        source_entity,
+        source_prefix,
+        target_entity,
+        target_prefix
     );
     Ok(())
 }
@@ -323,7 +325,9 @@ pub async fn delete_prefix_mapping(
 
     log::info!(
         "Deleted prefix mapping: {}:{} -> {}",
-        source_entity, source_prefix, target_entity
+        source_entity,
+        source_prefix,
+        target_entity
     );
     Ok(())
 }

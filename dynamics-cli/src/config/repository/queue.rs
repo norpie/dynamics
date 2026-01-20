@@ -1,9 +1,8 @@
+use crate::tui::apps::queue::models::{OperationStatus, QueueFilter, QueueItem, SortMode};
 ///! Repository for queue operations
-
 use anyhow::{Context, Result};
-use sqlx::{SqlitePool, Row};
 use chrono::{DateTime, Utc};
-use crate::tui::apps::queue::models::{QueueItem, OperationStatus, QueueFilter, SortMode};
+use sqlx::{Row, SqlitePool};
 
 /// Queue settings (singleton)
 #[derive(Debug, Clone)]
@@ -27,11 +26,13 @@ impl Default for QueueSettings {
 
 /// Save or update a queue item
 pub async fn save_queue_item(pool: &SqlitePool, item: &QueueItem) -> Result<()> {
-    let operations_json = serde_json::to_string(&item.operations)
-        .context("Failed to serialize operations")?;
-    let metadata_json = serde_json::to_string(&item.metadata)
-        .context("Failed to serialize metadata")?;
-    let result_json = item.result.as_ref()
+    let operations_json =
+        serde_json::to_string(&item.operations).context("Failed to serialize operations")?;
+    let metadata_json =
+        serde_json::to_string(&item.metadata).context("Failed to serialize metadata")?;
+    let result_json = item
+        .result
+        .as_ref()
         .map(|r| serde_json::to_string(r).ok())
         .flatten();
     let succeeded_indices_json = serde_json::to_string(&item.succeeded_indices)
@@ -53,7 +54,7 @@ pub async fn save_queue_item(pool: &SqlitePool, item: &QueueItem) -> Result<()> 
             interrupted_at = excluded.interrupted_at,
             succeeded_indices_json = excluded.succeeded_indices_json,
             updated_at = CURRENT_TIMESTAMP
-        "#
+        "#,
     )
     .bind(&item.id)
     .bind(&item.metadata.environment_name)
@@ -81,7 +82,7 @@ pub async fn get_queue_item(pool: &SqlitePool, id: &str) -> Result<Option<QueueI
                succeeded_indices_json
         FROM queue_items
         WHERE id = ?
-        "#
+        "#,
     )
     .bind(id)
     .fetch_optional(pool)
@@ -104,7 +105,7 @@ pub async fn list_queue_items(pool: &SqlitePool) -> Result<Vec<QueueItem>> {
                succeeded_indices_json
         FROM queue_items
         ORDER BY priority ASC, created_at ASC
-        "#
+        "#,
     )
     .fetch_all(pool)
     .await
@@ -119,9 +120,13 @@ pub async fn list_queue_items(pool: &SqlitePool) -> Result<Vec<QueueItem>> {
 }
 
 /// Update queue item status
-pub async fn update_queue_item_status(pool: &SqlitePool, id: &str, status: OperationStatus) -> Result<()> {
+pub async fn update_queue_item_status(
+    pool: &SqlitePool,
+    id: &str,
+    status: OperationStatus,
+) -> Result<()> {
     let result = sqlx::query(
-        "UPDATE queue_items SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        "UPDATE queue_items SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     )
     .bind(status_to_string(&status))
     .bind(id)
@@ -139,7 +144,7 @@ pub async fn update_queue_item_status(pool: &SqlitePool, id: &str, status: Opera
 /// Update queue item priority
 pub async fn update_queue_item_priority(pool: &SqlitePool, id: &str, priority: u8) -> Result<()> {
     let result = sqlx::query(
-        "UPDATE queue_items SET priority = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        "UPDATE queue_items SET priority = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     )
     .bind(priority as i64)
     .bind(id)
@@ -158,13 +163,12 @@ pub async fn update_queue_item_priority(pool: &SqlitePool, id: &str, priority: u
 pub async fn update_queue_item_result(
     pool: &SqlitePool,
     id: &str,
-    result: &crate::tui::apps::queue::models::QueueResult
+    result: &crate::tui::apps::queue::models::QueueResult,
 ) -> Result<()> {
-    let result_json = serde_json::to_string(result)
-        .context("Failed to serialize queue result")?;
+    let result_json = serde_json::to_string(result).context("Failed to serialize queue result")?;
 
     let query_result = sqlx::query(
-        "UPDATE queue_items SET result_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        "UPDATE queue_items SET result_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     )
     .bind(&result_json)
     .bind(id)
@@ -183,7 +187,7 @@ pub async fn update_queue_item_result(
 pub async fn update_queue_item_succeeded_indices(
     pool: &SqlitePool,
     id: &str,
-    succeeded_indices: &[usize]
+    succeeded_indices: &[usize],
 ) -> Result<()> {
     let indices_json = serde_json::to_string(succeeded_indices)
         .context("Failed to serialize succeeded_indices")?;
@@ -205,7 +209,11 @@ pub async fn update_queue_item_succeeded_indices(
 }
 
 /// Mark a queue item as interrupted
-pub async fn mark_queue_item_interrupted(pool: &SqlitePool, id: &str, interrupted_at: DateTime<Utc>) -> Result<()> {
+pub async fn mark_queue_item_interrupted(
+    pool: &SqlitePool,
+    id: &str,
+    interrupted_at: DateTime<Utc>,
+) -> Result<()> {
     let result = sqlx::query(
         r#"
         UPDATE queue_items
@@ -213,7 +221,7 @@ pub async fn mark_queue_item_interrupted(pool: &SqlitePool, id: &str, interrupte
             interrupted_at = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-        "#
+        "#,
     )
     .bind(interrupted_at)
     .bind(id)
@@ -237,7 +245,7 @@ pub async fn clear_interruption_flag(pool: &SqlitePool, id: &str) -> Result<()> 
             interrupted_at = NULL,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-        "#
+        "#,
     )
     .bind(id)
     .execute(pool)
@@ -280,7 +288,7 @@ pub async fn clear_queue(pool: &SqlitePool) -> Result<()> {
 /// Get queue settings
 pub async fn get_queue_settings(pool: &SqlitePool) -> Result<QueueSettings> {
     let row = sqlx::query(
-        "SELECT auto_play, max_concurrent, filter, sort_mode FROM queue_settings WHERE id = 1"
+        "SELECT auto_play, max_concurrent, filter, sort_mode FROM queue_settings WHERE id = 1",
     )
     .fetch_optional(pool)
     .await
@@ -316,7 +324,7 @@ pub async fn save_queue_settings(pool: &SqlitePool, settings: &QueueSettings) ->
             filter = excluded.filter,
             sort_mode = excluded.sort_mode,
             updated_at = CURRENT_TIMESTAMP
-        "#
+        "#,
     )
     .bind(settings.auto_play)
     .bind(settings.max_concurrent as i64)

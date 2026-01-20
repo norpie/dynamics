@@ -1,11 +1,18 @@
-use ratatui::{Frame, style::Style, widgets::{Block, Borders, Paragraph}, layout::Rect};
-use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::element::FocusId;
 use crate::tui::command::DispatchTarget;
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, FocusableInfo};
+use crate::tui::element::FocusId;
+use crate::tui::renderer::{FocusRegistry, FocusableInfo, InteractionRegistry};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::Style,
+    widgets::{Block, Borders, Paragraph},
+};
 
 /// Create on_key handler for checkboxes (Enter or Space toggles)
-pub fn checkbox_on_key<Msg: Clone + Send + 'static>(on_toggle: Option<Msg>) -> Box<dyn Fn(KeyEvent) -> DispatchTarget<Msg> + Send> {
+pub fn checkbox_on_key<Msg: Clone + Send + 'static>(
+    on_toggle: Option<Msg>,
+) -> Box<dyn Fn(KeyEvent) -> DispatchTarget<Msg> + Send> {
     Box::new(move |key_event| match key_event.code {
         KeyCode::Enter | KeyCode::Char(' ') => {
             if let Some(msg) = on_toggle.clone() {
@@ -14,7 +21,7 @@ pub fn checkbox_on_key<Msg: Clone + Send + 'static>(on_toggle: Option<Msg>) -> B
                 DispatchTarget::PassThrough
             }
         }
-        _ => DispatchTarget::PassThrough
+        _ => DispatchTarget::PassThrough,
     })
 }
 
@@ -74,9 +81,7 @@ pub fn render_checkbox<Msg: Clone + Send + 'static>(
         .borders(Borders::ALL)
         .border_style(border_style);
 
-    let widget = Paragraph::new(display_text)
-        .block(block)
-        .style(text_style);
+    let widget = Paragraph::new(display_text).block(block).style(text_style);
 
     frame.render_widget(widget, area);
 }

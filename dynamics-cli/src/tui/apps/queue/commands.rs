@@ -1,8 +1,8 @@
 //! Command helpers for queue execution
 
-use crate::tui::command::Command;
-use super::app::{State, Msg};
+use super::app::{Msg, State};
 use super::models::{OperationStatus, QueueResult};
+use crate::tui::command::Command;
 
 /// Helper function to save queue settings to database
 /// Note: auto_play is NOT persisted (always starts paused)
@@ -16,7 +16,9 @@ pub fn save_settings_command(state: &State) -> Command<Msg> {
 
     Command::perform(
         async move {
-            crate::global_config().save_queue_settings(&settings).await
+            crate::global_config()
+                .save_queue_settings(&settings)
+                .await
                 .map_err(|e| format!("Failed to save queue settings: {}", e))
         },
         |result| {
@@ -25,7 +27,7 @@ pub fn save_settings_command(state: &State) -> Command<Msg> {
             } else {
                 Msg::PersistenceError("".to_string())
             }
-        }
+        },
     )
 }
 
@@ -33,7 +35,9 @@ pub fn save_settings_command(state: &State) -> Command<Msg> {
 /// We must complete all items at a priority level before starting items at higher priorities
 /// because higher priority numbers may have dependencies on lower ones.
 fn current_priority_tier(state: &State) -> Option<u8> {
-    state.queue_items.iter()
+    state
+        .queue_items
+        .iter()
         .filter(|i| i.status == OperationStatus::Pending || i.status == OperationStatus::Running)
         .map(|i| i.priority)
         .min()
@@ -96,9 +100,15 @@ pub fn execute_next_if_available(state: &mut State) -> Command<Msg> {
         let item_id_for_persist = id.clone();
         let persist_cmd = Command::perform(
             async move {
-                let result = crate::global_config().update_queue_item_status(&item_id_for_persist, OperationStatus::Running).await;
+                let result = crate::global_config()
+                    .update_queue_item_status(&item_id_for_persist, OperationStatus::Running)
+                    .await;
                 if let Err(e) = &result {
-                    log::error!("Failed to persist Running status for {}: {}", item_id_for_persist, e);
+                    log::error!(
+                        "Failed to persist Running status for {}: {}",
+                        item_id_for_persist,
+                        e
+                    );
                 }
                 result.map_err(|e| format!("Failed to persist Running status: {}", e))
             },
@@ -108,7 +118,7 @@ pub fn execute_next_if_available(state: &mut State) -> Command<Msg> {
                 } else {
                     Msg::PersistenceError("".to_string())
                 }
-            }
+            },
         );
 
         // Get item for execution
@@ -122,30 +132,43 @@ pub fn execute_next_if_available(state: &mut State) -> Command<Msg> {
                     let op_count = item.operations.len();
 
                     // Get client for this environment from global client manager
-                    let client = match crate::client_manager().get_client(&item.metadata.environment_name).await {
+                    let client = match crate::client_manager()
+                        .get_client(&item.metadata.environment_name)
+                        .await
+                    {
                         Ok(client) => client,
                         Err(e) => {
                             log::error!("Queue item {} - failed to get client: {}", item.id, e);
                             let duration_ms = start.elapsed().as_millis() as u64;
-                            return (item.id.clone(), QueueResult {
-                                success: false,
-                                operation_results: vec![],
-                                error: Some(format!("Failed to get client: {}", e)),
-                                duration_ms,
-                            });
+                            return (
+                                item.id.clone(),
+                                QueueResult {
+                                    success: false,
+                                    operation_results: vec![],
+                                    error: Some(format!("Failed to get client: {}", e)),
+                                    duration_ms,
+                                },
+                            );
                         }
                     };
 
                     let resilience = match ResilienceConfig::load_from_options().await {
                         Ok(config) => config,
                         Err(e) => {
-                            log::warn!("Failed to load resilience config from options: {}, using defaults", e);
+                            log::warn!(
+                                "Failed to load resilience config from options: {}, using defaults",
+                                e
+                            );
                             ResilienceConfig::default()
                         }
                     };
                     log::info!("Queue item {} - executing {} operations", item.id, op_count);
                     let result = item.operations.execute(&client, &resilience).await;
-                    log::info!("Queue item {} - completed in {:?}", item.id, start.elapsed());
+                    log::info!(
+                        "Queue item {} - completed in {:?}",
+                        item.id,
+                        start.elapsed()
+                    );
                     let duration_ms = start.elapsed().as_millis() as u64;
 
                     let queue_result = match result {

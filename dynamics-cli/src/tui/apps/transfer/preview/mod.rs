@@ -1,7 +1,7 @@
 mod app;
+mod modals;
 mod state;
 mod view;
-mod modals;
 
 pub use app::TransferPreviewApp;
-pub use state::{State, Msg, PreviewParams};
+pub use state::{Msg, PreviewParams, State};

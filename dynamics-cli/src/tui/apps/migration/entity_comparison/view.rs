@@ -1,19 +1,15 @@
-use crate::tui::{
-    element::Element,
-    state::theme::Theme,
-    Resource,
-    widgets::TreeState,
-    modals::ConfirmationModal,
-    Alignment as LayerAlignment,
-};
-use crate::api::EntityMetadata;
-use crate::{col, row, use_constraints};
-use super::{Msg, ActiveTab};
 use super::app::State;
 use super::tree_builder::build_tree_items;
 use super::tree_items::ComparisonTreeItem;
-use std::collections::HashMap;
+use super::{ActiveTab, Msg};
 use super::{MatchInfo, MatchType};
+use crate::api::EntityMetadata;
+use crate::tui::{
+    Alignment as LayerAlignment, Resource, element::Element, modals::ConfirmationModal,
+    state::theme::Theme, widgets::TreeState,
+};
+use crate::{col, row, use_constraints};
+use std::collections::HashMap;
 
 /// Render the main side-by-side layout with source and target trees
 pub fn render_main_layout(state: &mut State) -> Element<Msg> {
@@ -38,7 +34,9 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
         super::models::HideMode::Off => source_items,
         super::models::HideMode::HideMatched => filter_matched_items(source_items),
         super::models::HideMode::HideIgnored => filter_ignored_items(source_items),
-        super::models::HideMode::HideMatchedAndIgnored => filter_matched_and_ignored_items(source_items),
+        super::models::HideMode::HideMatchedAndIgnored => {
+            filter_matched_and_ignored_items(source_items)
+        }
         super::models::HideMode::HideExamples => filter_example_matches(source_items),
         super::models::HideMode::HideAll => filter_all_items(source_items),
     };
@@ -49,7 +47,11 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
     let target_search_active = target_search_query.is_some();
 
     if let Some(query) = source_search_query {
-        let source_entity = state.source_entities.first().map(|s| s.as_str()).unwrap_or("");
+        let source_entity = state
+            .source_entities
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("");
         source_items = filter_tree_items_by_search(
             source_items,
             query,
@@ -73,14 +75,20 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
         super::models::HideMode::Off => target_items,
         super::models::HideMode::HideMatched => filter_matched_items(target_items),
         super::models::HideMode::HideIgnored => filter_ignored_items(target_items),
-        super::models::HideMode::HideMatchedAndIgnored => filter_matched_and_ignored_items(target_items),
+        super::models::HideMode::HideMatchedAndIgnored => {
+            filter_matched_and_ignored_items(target_items)
+        }
         super::models::HideMode::HideExamples => filter_example_matches(target_items),
         super::models::HideMode::HideAll => filter_all_items(target_items),
     };
 
     // Apply search filter if there's a search query
     if let Some(query) = target_search_query {
-        let target_entity = state.target_entities.first().map(|s| s.as_str()).unwrap_or("");
+        let target_entity = state
+            .target_entities
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("");
         target_items = filter_tree_items_by_search(
             target_items,
             query,
@@ -114,7 +122,8 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
 
     // Apply SourceMatches sorting to target side if enabled
     if sort_mode == super::models::SortMode::SourceMatches {
-        target_items = sort_target_by_source_order(&source_items, target_items, state.sort_direction);
+        target_items =
+            sort_target_by_source_order(&source_items, target_items, state.sort_direction);
     }
 
     // Calculate detailed completion statistics
@@ -127,10 +136,16 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
     // Get the appropriate tree state for the active tab based on which side
     let (source_tree_state, target_tree_state) = match active_tab {
         ActiveTab::Fields => (&mut state.source_fields_tree, &mut state.target_fields_tree),
-        ActiveTab::Relationships => (&mut state.source_relationships_tree, &mut state.target_relationships_tree),
+        ActiveTab::Relationships => (
+            &mut state.source_relationships_tree,
+            &mut state.target_relationships_tree,
+        ),
         ActiveTab::Views => (&mut state.source_views_tree, &mut state.target_views_tree),
         ActiveTab::Forms => (&mut state.source_forms_tree, &mut state.target_forms_tree),
-        ActiveTab::Entities => (&mut state.source_entities_tree, &mut state.target_entities_tree),
+        ActiveTab::Entities => (
+            &mut state.source_entities_tree,
+            &mut state.target_entities_tree,
+        ),
     };
 
     // Auto-expand containers with matching children when searching or type filtering
@@ -147,10 +162,16 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
 
     // Invalidate tree cache when search, type filter, or hide mode filtering is active
     // This ensures visible_order reflects the actual filtered items
-    if source_search_active || source_type_filter_active || hide_mode != super::models::HideMode::Off {
+    if source_search_active
+        || source_type_filter_active
+        || hide_mode != super::models::HideMode::Off
+    {
         source_tree_state.invalidate_cache();
     }
-    if target_search_active || target_type_filter_active || hide_mode != super::models::HideMode::Off {
+    if target_search_active
+        || target_type_filter_active
+        || hide_mode != super::models::HideMode::Off
+    {
         target_tree_state.invalidate_cache();
     }
 
@@ -159,7 +180,10 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
         let multi_select_count = source_tree_state.total_selection_count();
         let stats_str = source_stats.format_compact();
         if multi_select_count > 1 {
-            format!("Source: {} ({}) - {} selected", source_entity_name, stats_str, multi_select_count)
+            format!(
+                "Source: {} ({}) - {} selected",
+                source_entity_name, stats_str, multi_select_count
+            )
         } else {
             format!("Source: {} ({})", source_entity_name, stats_str)
         }
@@ -171,7 +195,7 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
             .on_select(Msg::SourceTreeNodeClicked)
             .on_render(Msg::SourceViewportHeight)
             .on_focus(Msg::SourceTreeFocused)
-            .build()
+            .build(),
     )
     .title(source_panel_title)
     .build();
@@ -183,9 +207,13 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
             .on_select(Msg::TargetTreeNodeClicked)
             .on_render(Msg::TargetViewportHeight)
             .on_focus(Msg::TargetTreeFocused)
-            .build()
+            .build(),
     )
-    .title(format!("Target: {} ({})", target_entity_name, target_stats.format_compact()))
+    .title(format!(
+        "Target: {} ({})",
+        target_entity_name,
+        target_stats.format_compact()
+    ))
     .build();
 
     // Count filtered results
@@ -208,14 +236,15 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
             .build();
 
             let title = if source_search_active {
-                format!("Search (Unified) - {} matches in source, {} matches in target", source_count, target_count)
+                format!(
+                    "Search (Unified) - {} matches in source, {} matches in target",
+                    source_count, target_count
+                )
             } else {
                 "Search (Unified)".to_string()
             };
 
-            Element::panel(search_input)
-                .title(title)
-                .build()
+            Element::panel(search_input).title(title).build()
         }
         SearchMode::Independent => {
             // Two search boxes side by side, each in its own panel
@@ -282,13 +311,15 @@ pub fn render_main_layout(state: &mut State) -> Element<Msg> {
             let source_filter_text = format_type_filter(&state.source_type_filter);
             let target_filter_text = format_type_filter(&state.target_type_filter);
 
-            let source_panel = Element::panel(Element::text(&format!("Type: {}", source_filter_text)))
-                .title("Source Type")
-                .build();
+            let source_panel =
+                Element::panel(Element::text(&format!("Type: {}", source_filter_text)))
+                    .title("Source Type")
+                    .build();
 
-            let target_panel = Element::panel(Element::text(&format!("Type: {}", target_filter_text)))
-                .title("Target Type")
-                .build();
+            let target_panel =
+                Element::panel(Element::text(&format!("Type: {}", target_filter_text)))
+                    .title("Target Type")
+                    .build();
 
             row![
                 source_panel => Fill(1),
@@ -326,18 +357,21 @@ pub fn render_back_confirmation_modal() -> Element<Msg> {
 
 pub fn render_examples_modal(state: &State) -> Element<Msg> {
     let theme = &crate::global_runtime_config().theme;
-    use crate::tui::modals::{ExamplesModal, ExamplePairItem};
+    use crate::tui::modals::{ExamplePairItem, ExamplesModal};
 
     // Convert example pairs to list items
-    let pair_items: Vec<ExamplePairItem<Msg>> = state.examples.pairs.iter().map(|pair| {
-        ExamplePairItem {
+    let pair_items: Vec<ExamplePairItem<Msg>> = state
+        .examples
+        .pairs
+        .iter()
+        .map(|pair| ExamplePairItem {
             id: pair.id.clone(),
             source_id: pair.source_record_id.clone(),
             target_id: pair.target_record_id.clone(),
             label: pair.label.clone(),
             on_delete: Msg::DeleteExamplePair,
-        }
-    }).collect();
+        })
+        .collect();
 
     ExamplesModal::new()
         .pairs(pair_items)
@@ -358,16 +392,18 @@ pub fn render_examples_modal(state: &State) -> Element<Msg> {
 
 pub fn render_prefix_mappings_modal(state: &State) -> Element<Msg> {
     let theme = &crate::global_runtime_config().theme;
-    use crate::tui::modals::{PrefixMappingsModal, PrefixMappingItem};
+    use crate::tui::modals::{PrefixMappingItem, PrefixMappingsModal};
 
     // Convert prefix mappings to list items (join multiple targets with comma)
-    let mapping_items: Vec<PrefixMappingItem<Msg>> = state.prefix_mappings.iter().map(|(source, targets)| {
-        PrefixMappingItem {
+    let mapping_items: Vec<PrefixMappingItem<Msg>> = state
+        .prefix_mappings
+        .iter()
+        .map(|(source, targets)| PrefixMappingItem {
             source_prefix: source.clone(),
             target_prefix: targets.join(", "),
             on_delete: Msg::DeletePrefixMapping,
-        }
-    }).collect();
+        })
+        .collect();
 
     PrefixMappingsModal::new()
         .mappings(mapping_items)
@@ -386,15 +422,17 @@ pub fn render_prefix_mappings_modal(state: &State) -> Element<Msg> {
 
 pub fn render_negative_matches_modal(state: &State) -> Element<Msg> {
     let theme = &crate::global_runtime_config().theme;
-    use crate::tui::modals::{NegativeMatchesModal, NegativeMatchItem};
+    use crate::tui::modals::{NegativeMatchItem, NegativeMatchesModal};
 
     // Convert negative matches to sorted list items
-    let mut negative_items: Vec<NegativeMatchItem<Msg>> = state.negative_matches.iter().map(|source_field| {
-        NegativeMatchItem {
+    let mut negative_items: Vec<NegativeMatchItem<Msg>> = state
+        .negative_matches
+        .iter()
+        .map(|source_field| NegativeMatchItem {
             source_field: source_field.clone(),
             on_delete: Msg::DeleteNegativeMatch,
-        }
-    }).collect();
+        })
+        .collect();
 
     // Sort alphabetically for consistent display
     negative_items.sort_by(|a, b| a.source_field.cmp(&b.source_field));
@@ -411,334 +449,407 @@ pub fn render_negative_matches_modal(state: &State) -> Element<Msg> {
 
 /// Filter out matched items from tree (hide unmatched, show matched)
 /// Exception: ExampleValue matches are treated as unmatched (shown)
-pub fn filter_matched_items(items: Vec<super::tree_items::ComparisonTreeItem>) -> Vec<super::tree_items::ComparisonTreeItem> {
-    use super::tree_items::ComparisonTreeItem;
+pub fn filter_matched_items(
+    items: Vec<super::tree_items::ComparisonTreeItem>,
+) -> Vec<super::tree_items::ComparisonTreeItem> {
     use super::MatchType;
+    use super::tree_items::ComparisonTreeItem;
 
-    items.into_iter().filter_map(|item| {
-        match item {
-            ComparisonTreeItem::Field(ref node) => {
-                // Keep if no match OR if any target has ExampleValue match type
-                if node.match_info.is_none()
-                    || node.match_info.as_ref().map(|m| m.match_types.values().any(|t| t == &MatchType::ExampleValue)).unwrap_or(false) {
-                    Some(item)
-                } else {
-                    None
+    items
+        .into_iter()
+        .filter_map(|item| {
+            match item {
+                ComparisonTreeItem::Field(ref node) => {
+                    // Keep if no match OR if any target has ExampleValue match type
+                    if node.match_info.is_none()
+                        || node
+                            .match_info
+                            .as_ref()
+                            .map(|m| {
+                                m.match_types
+                                    .values()
+                                    .any(|t| t == &MatchType::ExampleValue)
+                            })
+                            .unwrap_or(false)
+                    {
+                        Some(item)
+                    } else {
+                        None
+                    }
                 }
-            }
-            ComparisonTreeItem::Relationship(ref node) => {
-                // Keep if no match OR if any target has ExampleValue match type
-                if node.match_info.is_none()
-                    || node.match_info.as_ref().map(|m| m.match_types.values().any(|t| t == &MatchType::ExampleValue)).unwrap_or(false) {
-                    Some(item)
-                } else {
-                    None
+                ComparisonTreeItem::Relationship(ref node) => {
+                    // Keep if no match OR if any target has ExampleValue match type
+                    if node.match_info.is_none()
+                        || node
+                            .match_info
+                            .as_ref()
+                            .map(|m| {
+                                m.match_types
+                                    .values()
+                                    .any(|t| t == &MatchType::ExampleValue)
+                            })
+                            .unwrap_or(false)
+                    {
+                        Some(item)
+                    } else {
+                        None
+                    }
                 }
-            }
-            ComparisonTreeItem::Entity(ref node) => {
-                // Keep if no match OR if any target has ExampleValue match type
-                if node.match_info.is_none()
-                    || node.match_info.as_ref().map(|m| m.match_types.values().any(|t| t == &MatchType::ExampleValue)).unwrap_or(false) {
-                    Some(item)
-                } else {
-                    None
+                ComparisonTreeItem::Entity(ref node) => {
+                    // Keep if no match OR if any target has ExampleValue match type
+                    if node.match_info.is_none()
+                        || node
+                            .match_info
+                            .as_ref()
+                            .map(|m| {
+                                m.match_types
+                                    .values()
+                                    .any(|t| t == &MatchType::ExampleValue)
+                            })
+                            .unwrap_or(false)
+                    {
+                        Some(item)
+                    } else {
+                        None
+                    }
                 }
-            }
-            ComparisonTreeItem::Container(node) => {
-                // Recursively filter container children
-                let filtered_children = filter_matched_items(node.children.clone());
+                ComparisonTreeItem::Container(node) => {
+                    // Recursively filter container children
+                    let filtered_children = filter_matched_items(node.children.clone());
 
-                // Keep container if it has any unmatched/example children OR if container itself is unmatched/example
-                let keep_container = node.match_info.is_none()
-                    || node.match_info.as_ref().map(|m| m.match_types.values().any(|t| t == &MatchType::ExampleValue)).unwrap_or(false);
+                    // Keep container if it has any unmatched/example children OR if container itself is unmatched/example
+                    let keep_container = node.match_info.is_none()
+                        || node
+                            .match_info
+                            .as_ref()
+                            .map(|m| {
+                                m.match_types
+                                    .values()
+                                    .any(|t| t == &MatchType::ExampleValue)
+                            })
+                            .unwrap_or(false);
 
-                if !filtered_children.is_empty() || keep_container {
-                    Some(ComparisonTreeItem::Container(super::tree_items::ContainerNode {
-                        id: node.id,
-                        label: node.label,
-                        children: filtered_children,
-                        container_match_type: node.container_match_type,
-                        match_info: node.match_info,
-                    }))
-                } else {
-                    None
+                    if !filtered_children.is_empty() || keep_container {
+                        Some(ComparisonTreeItem::Container(
+                            super::tree_items::ContainerNode {
+                                id: node.id,
+                                label: node.label,
+                                children: filtered_children,
+                                container_match_type: node.container_match_type,
+                                match_info: node.match_info,
+                            },
+                        ))
+                    } else {
+                        None
+                    }
                 }
+                // Keep View and Form nodes (they don't have match info)
+                ComparisonTreeItem::View(_) | ComparisonTreeItem::Form(_) => Some(item),
             }
-            // Keep View and Form nodes (they don't have match info)
-            ComparisonTreeItem::View(_) | ComparisonTreeItem::Form(_) => Some(item),
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 /// Filter out ignored items
-pub fn filter_ignored_items(items: Vec<super::tree_items::ComparisonTreeItem>) -> Vec<super::tree_items::ComparisonTreeItem> {
+pub fn filter_ignored_items(
+    items: Vec<super::tree_items::ComparisonTreeItem>,
+) -> Vec<super::tree_items::ComparisonTreeItem> {
     use super::tree_items::ComparisonTreeItem;
 
-    items.into_iter().filter_map(|item| {
-        match item {
-            ComparisonTreeItem::Field(ref node) => {
-                // Keep if not ignored
-                if !node.is_ignored {
-                    Some(item)
-                } else {
-                    None
+    items
+        .into_iter()
+        .filter_map(|item| {
+            match item {
+                ComparisonTreeItem::Field(ref node) => {
+                    // Keep if not ignored
+                    if !node.is_ignored { Some(item) } else { None }
                 }
-            }
-            ComparisonTreeItem::Relationship(ref node) => {
-                // Keep if not ignored
-                if !node.is_ignored {
-                    Some(item)
-                } else {
-                    None
+                ComparisonTreeItem::Relationship(ref node) => {
+                    // Keep if not ignored
+                    if !node.is_ignored { Some(item) } else { None }
                 }
-            }
-            ComparisonTreeItem::Entity(ref node) => {
-                // Keep if not ignored
-                if !node.is_ignored {
-                    Some(item)
-                } else {
-                    None
+                ComparisonTreeItem::Entity(ref node) => {
+                    // Keep if not ignored
+                    if !node.is_ignored { Some(item) } else { None }
                 }
-            }
-            ComparisonTreeItem::Container(node) => {
-                // Recursively filter container children
-                let filtered_children = filter_ignored_items(node.children.clone());
+                ComparisonTreeItem::Container(node) => {
+                    // Recursively filter container children
+                    let filtered_children = filter_ignored_items(node.children.clone());
 
-                // Keep container if it has any non-ignored children
-                if !filtered_children.is_empty() {
-                    Some(ComparisonTreeItem::Container(super::tree_items::ContainerNode {
-                        id: node.id,
-                        label: node.label,
-                        children: filtered_children,
-                        container_match_type: node.container_match_type,
-                        match_info: node.match_info,
-                    }))
-                } else {
-                    None
+                    // Keep container if it has any non-ignored children
+                    if !filtered_children.is_empty() {
+                        Some(ComparisonTreeItem::Container(
+                            super::tree_items::ContainerNode {
+                                id: node.id,
+                                label: node.label,
+                                children: filtered_children,
+                                container_match_type: node.container_match_type,
+                                match_info: node.match_info,
+                            },
+                        ))
+                    } else {
+                        None
+                    }
+                }
+                ComparisonTreeItem::View(ref node) => {
+                    // Keep if not ignored
+                    if !node.is_ignored { Some(item) } else { None }
+                }
+                ComparisonTreeItem::Form(ref node) => {
+                    // Keep if not ignored
+                    if !node.is_ignored { Some(item) } else { None }
                 }
             }
-            ComparisonTreeItem::View(ref node) => {
-                // Keep if not ignored
-                if !node.is_ignored {
-                    Some(item)
-                } else {
-                    None
-                }
-            }
-            ComparisonTreeItem::Form(ref node) => {
-                // Keep if not ignored
-                if !node.is_ignored {
-                    Some(item)
-                } else {
-                    None
-                }
-            }
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 /// Filter out both matched (except examples) AND ignored items
-pub fn filter_matched_and_ignored_items(items: Vec<super::tree_items::ComparisonTreeItem>) -> Vec<super::tree_items::ComparisonTreeItem> {
-    use super::tree_items::ComparisonTreeItem;
+pub fn filter_matched_and_ignored_items(
+    items: Vec<super::tree_items::ComparisonTreeItem>,
+) -> Vec<super::tree_items::ComparisonTreeItem> {
     use super::MatchType;
+    use super::tree_items::ComparisonTreeItem;
 
-    items.into_iter().filter_map(|item| {
-        match item {
-            ComparisonTreeItem::Field(ref node) => {
-                // Keep if not ignored AND (no match OR any target has ExampleValue match type)
-                let is_unmatched_or_example = node.match_info.is_none()
-                    || node.match_info.as_ref().map(|m| m.match_types.values().any(|t| t == &MatchType::ExampleValue)).unwrap_or(false);
-                if !node.is_ignored && is_unmatched_or_example {
-                    Some(item)
-                } else {
-                    None
+    items
+        .into_iter()
+        .filter_map(|item| {
+            match item {
+                ComparisonTreeItem::Field(ref node) => {
+                    // Keep if not ignored AND (no match OR any target has ExampleValue match type)
+                    let is_unmatched_or_example = node.match_info.is_none()
+                        || node
+                            .match_info
+                            .as_ref()
+                            .map(|m| {
+                                m.match_types
+                                    .values()
+                                    .any(|t| t == &MatchType::ExampleValue)
+                            })
+                            .unwrap_or(false);
+                    if !node.is_ignored && is_unmatched_or_example {
+                        Some(item)
+                    } else {
+                        None
+                    }
                 }
-            }
-            ComparisonTreeItem::Relationship(ref node) => {
-                // Keep if not ignored AND (no match OR any target has ExampleValue match type)
-                let is_unmatched_or_example = node.match_info.is_none()
-                    || node.match_info.as_ref().map(|m| m.match_types.values().any(|t| t == &MatchType::ExampleValue)).unwrap_or(false);
-                if !node.is_ignored && is_unmatched_or_example {
-                    Some(item)
-                } else {
-                    None
+                ComparisonTreeItem::Relationship(ref node) => {
+                    // Keep if not ignored AND (no match OR any target has ExampleValue match type)
+                    let is_unmatched_or_example = node.match_info.is_none()
+                        || node
+                            .match_info
+                            .as_ref()
+                            .map(|m| {
+                                m.match_types
+                                    .values()
+                                    .any(|t| t == &MatchType::ExampleValue)
+                            })
+                            .unwrap_or(false);
+                    if !node.is_ignored && is_unmatched_or_example {
+                        Some(item)
+                    } else {
+                        None
+                    }
                 }
-            }
-            ComparisonTreeItem::Entity(ref node) => {
-                // Keep if not ignored AND (no match OR any target has ExampleValue match type)
-                let is_unmatched_or_example = node.match_info.is_none()
-                    || node.match_info.as_ref().map(|m| m.match_types.values().any(|t| t == &MatchType::ExampleValue)).unwrap_or(false);
-                if !node.is_ignored && is_unmatched_or_example {
-                    Some(item)
-                } else {
-                    None
+                ComparisonTreeItem::Entity(ref node) => {
+                    // Keep if not ignored AND (no match OR any target has ExampleValue match type)
+                    let is_unmatched_or_example = node.match_info.is_none()
+                        || node
+                            .match_info
+                            .as_ref()
+                            .map(|m| {
+                                m.match_types
+                                    .values()
+                                    .any(|t| t == &MatchType::ExampleValue)
+                            })
+                            .unwrap_or(false);
+                    if !node.is_ignored && is_unmatched_or_example {
+                        Some(item)
+                    } else {
+                        None
+                    }
                 }
-            }
-            ComparisonTreeItem::Container(node) => {
-                // Recursively filter container children
-                let filtered_children = filter_matched_and_ignored_items(node.children.clone());
+                ComparisonTreeItem::Container(node) => {
+                    // Recursively filter container children
+                    let filtered_children = filter_matched_and_ignored_items(node.children.clone());
 
-                // Keep container if it has any children that are not ignored and (not matched or example)
-                if !filtered_children.is_empty() {
-                    Some(ComparisonTreeItem::Container(super::tree_items::ContainerNode {
-                        id: node.id,
-                        label: node.label,
-                        children: filtered_children,
-                        container_match_type: node.container_match_type,
-                        match_info: node.match_info,
-                    }))
-                } else {
-                    None
+                    // Keep container if it has any children that are not ignored and (not matched or example)
+                    if !filtered_children.is_empty() {
+                        Some(ComparisonTreeItem::Container(
+                            super::tree_items::ContainerNode {
+                                id: node.id,
+                                label: node.label,
+                                children: filtered_children,
+                                container_match_type: node.container_match_type,
+                                match_info: node.match_info,
+                            },
+                        ))
+                    } else {
+                        None
+                    }
+                }
+                ComparisonTreeItem::View(ref node) => {
+                    // Keep if not ignored (Views don't have match info)
+                    if !node.is_ignored { Some(item) } else { None }
+                }
+                ComparisonTreeItem::Form(ref node) => {
+                    // Keep if not ignored (Forms don't have match info)
+                    if !node.is_ignored { Some(item) } else { None }
                 }
             }
-            ComparisonTreeItem::View(ref node) => {
-                // Keep if not ignored (Views don't have match info)
-                if !node.is_ignored {
-                    Some(item)
-                } else {
-                    None
-                }
-            }
-            ComparisonTreeItem::Form(ref node) => {
-                // Keep if not ignored (Forms don't have match info)
-                if !node.is_ignored {
-                    Some(item)
-                } else {
-                    None
-                }
-            }
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 /// Filter out all matched AND ignored items (including examples)
-pub fn filter_all_items(items: Vec<super::tree_items::ComparisonTreeItem>) -> Vec<super::tree_items::ComparisonTreeItem> {
+pub fn filter_all_items(
+    items: Vec<super::tree_items::ComparisonTreeItem>,
+) -> Vec<super::tree_items::ComparisonTreeItem> {
     use super::tree_items::ComparisonTreeItem;
 
-    items.into_iter().filter_map(|item| {
-        match item {
-            ComparisonTreeItem::Field(ref node) => {
-                // Keep if not ignored AND no match
-                if !node.is_ignored && node.match_info.is_none() {
-                    Some(item)
-                } else {
-                    None
+    items
+        .into_iter()
+        .filter_map(|item| {
+            match item {
+                ComparisonTreeItem::Field(ref node) => {
+                    // Keep if not ignored AND no match
+                    if !node.is_ignored && node.match_info.is_none() {
+                        Some(item)
+                    } else {
+                        None
+                    }
                 }
-            }
-            ComparisonTreeItem::Relationship(ref node) => {
-                // Keep if not ignored AND no match
-                if !node.is_ignored && node.match_info.is_none() {
-                    Some(item)
-                } else {
-                    None
+                ComparisonTreeItem::Relationship(ref node) => {
+                    // Keep if not ignored AND no match
+                    if !node.is_ignored && node.match_info.is_none() {
+                        Some(item)
+                    } else {
+                        None
+                    }
                 }
-            }
-            ComparisonTreeItem::Entity(ref node) => {
-                // Keep if not ignored AND no match
-                if !node.is_ignored && node.match_info.is_none() {
-                    Some(item)
-                } else {
-                    None
+                ComparisonTreeItem::Entity(ref node) => {
+                    // Keep if not ignored AND no match
+                    if !node.is_ignored && node.match_info.is_none() {
+                        Some(item)
+                    } else {
+                        None
+                    }
                 }
-            }
-            ComparisonTreeItem::Container(node) => {
-                // Recursively filter container children
-                let filtered_children = filter_all_items(node.children.clone());
+                ComparisonTreeItem::Container(node) => {
+                    // Recursively filter container children
+                    let filtered_children = filter_all_items(node.children.clone());
 
-                // Keep container if it has any children that are not ignored and not matched
-                if !filtered_children.is_empty() {
-                    Some(ComparisonTreeItem::Container(super::tree_items::ContainerNode {
-                        id: node.id,
-                        label: node.label,
-                        children: filtered_children,
-                        container_match_type: node.container_match_type,
-                        match_info: node.match_info,
-                    }))
-                } else {
-                    None
+                    // Keep container if it has any children that are not ignored and not matched
+                    if !filtered_children.is_empty() {
+                        Some(ComparisonTreeItem::Container(
+                            super::tree_items::ContainerNode {
+                                id: node.id,
+                                label: node.label,
+                                children: filtered_children,
+                                container_match_type: node.container_match_type,
+                                match_info: node.match_info,
+                            },
+                        ))
+                    } else {
+                        None
+                    }
+                }
+                ComparisonTreeItem::View(ref node) => {
+                    // Keep if not ignored (Views don't have match info)
+                    if !node.is_ignored { Some(item) } else { None }
+                }
+                ComparisonTreeItem::Form(ref node) => {
+                    // Keep if not ignored (Forms don't have match info)
+                    if !node.is_ignored { Some(item) } else { None }
                 }
             }
-            ComparisonTreeItem::View(ref node) => {
-                // Keep if not ignored (Views don't have match info)
-                if !node.is_ignored {
-                    Some(item)
-                } else {
-                    None
-                }
-            }
-            ComparisonTreeItem::Form(ref node) => {
-                // Keep if not ignored (Forms don't have match info)
-                if !node.is_ignored {
-                    Some(item)
-                } else {
-                    None
-                }
-            }
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 /// Filter out example matches (hide example matches, show everything else)
-pub fn filter_example_matches(items: Vec<super::tree_items::ComparisonTreeItem>) -> Vec<super::tree_items::ComparisonTreeItem> {
-    use super::tree_items::ComparisonTreeItem;
+pub fn filter_example_matches(
+    items: Vec<super::tree_items::ComparisonTreeItem>,
+) -> Vec<super::tree_items::ComparisonTreeItem> {
     use super::MatchType;
+    use super::tree_items::ComparisonTreeItem;
 
-    items.into_iter().filter_map(|item| {
-        match item {
-            ComparisonTreeItem::Field(ref node) => {
-                // Hide if any target has ExampleValue match type
-                if let Some(ref match_info) = node.match_info {
-                    if match_info.match_types.values().any(|t| t == &MatchType::ExampleValue) {
-                        return None;
+    items
+        .into_iter()
+        .filter_map(|item| {
+            match item {
+                ComparisonTreeItem::Field(ref node) => {
+                    // Hide if any target has ExampleValue match type
+                    if let Some(ref match_info) = node.match_info {
+                        if match_info
+                            .match_types
+                            .values()
+                            .any(|t| t == &MatchType::ExampleValue)
+                        {
+                            return None;
+                        }
+                    }
+                    Some(item)
+                }
+                ComparisonTreeItem::Relationship(ref node) => {
+                    // Hide if any target has ExampleValue match type
+                    if let Some(ref match_info) = node.match_info {
+                        if match_info
+                            .match_types
+                            .values()
+                            .any(|t| t == &MatchType::ExampleValue)
+                        {
+                            return None;
+                        }
+                    }
+                    Some(item)
+                }
+                ComparisonTreeItem::Entity(ref node) => {
+                    // Hide if any target has ExampleValue match type
+                    if let Some(ref match_info) = node.match_info {
+                        if match_info
+                            .match_types
+                            .values()
+                            .any(|t| t == &MatchType::ExampleValue)
+                        {
+                            return None;
+                        }
+                    }
+                    Some(item)
+                }
+                ComparisonTreeItem::Container(node) => {
+                    // Recursively filter container children
+                    let filtered_children = filter_example_matches(node.children.clone());
+
+                    // Hide container if any target has ExampleValue match type (but keep if has non-example children)
+                    let hide_container = if let Some(ref match_info) = node.match_info {
+                        match_info
+                            .match_types
+                            .values()
+                            .any(|t| t == &MatchType::ExampleValue)
+                    } else {
+                        false
+                    };
+
+                    if !filtered_children.is_empty() || !hide_container {
+                        Some(ComparisonTreeItem::Container(
+                            super::tree_items::ContainerNode {
+                                id: node.id,
+                                label: node.label,
+                                children: filtered_children,
+                                container_match_type: node.container_match_type,
+                                match_info: node.match_info,
+                            },
+                        ))
+                    } else {
+                        None
                     }
                 }
-                Some(item)
+                // Keep View and Form nodes (they don't have match info)
+                ComparisonTreeItem::View(_) | ComparisonTreeItem::Form(_) => Some(item),
             }
-            ComparisonTreeItem::Relationship(ref node) => {
-                // Hide if any target has ExampleValue match type
-                if let Some(ref match_info) = node.match_info {
-                    if match_info.match_types.values().any(|t| t == &MatchType::ExampleValue) {
-                        return None;
-                    }
-                }
-                Some(item)
-            }
-            ComparisonTreeItem::Entity(ref node) => {
-                // Hide if any target has ExampleValue match type
-                if let Some(ref match_info) = node.match_info {
-                    if match_info.match_types.values().any(|t| t == &MatchType::ExampleValue) {
-                        return None;
-                    }
-                }
-                Some(item)
-            }
-            ComparisonTreeItem::Container(node) => {
-                // Recursively filter container children
-                let filtered_children = filter_example_matches(node.children.clone());
-
-                // Hide container if any target has ExampleValue match type (but keep if has non-example children)
-                let hide_container = if let Some(ref match_info) = node.match_info {
-                    match_info.match_types.values().any(|t| t == &MatchType::ExampleValue)
-                } else {
-                    false
-                };
-
-                if !filtered_children.is_empty() || !hide_container {
-                    Some(ComparisonTreeItem::Container(super::tree_items::ContainerNode {
-                        id: node.id,
-                        label: node.label,
-                        children: filtered_children,
-                        container_match_type: node.container_match_type,
-                        match_info: node.match_info,
-                    }))
-                } else {
-                    None
-                }
-            }
-            // Keep View and Form nodes (they don't have match info)
-            ComparisonTreeItem::View(_) | ComparisonTreeItem::Form(_) => Some(item),
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 /// Sort target items to align with source order in SourceMatches mode
@@ -777,10 +888,11 @@ fn sort_target_by_source_order(
     }
 
     // Second pass: Separate remaining items into unmatched and ignored
-    let (mut ignored, mut unmatched): (Vec<ComparisonTreeItem>, Vec<ComparisonTreeItem>) = target_items
-        .into_iter()
-        .filter(|item| !used_targets.contains(get_item_name(item)))
-        .partition(|item| get_item_is_ignored(item));
+    let (mut ignored, mut unmatched): (Vec<ComparisonTreeItem>, Vec<ComparisonTreeItem>) =
+        target_items
+            .into_iter()
+            .filter(|item| !used_targets.contains(get_item_name(item)))
+            .partition(|item| get_item_is_ignored(item));
 
     // Sort both groups alphabetically, respecting direction
     unmatched.sort_by(|a, b| {
@@ -823,10 +935,26 @@ fn get_item_name(item: &ComparisonTreeItem) -> &str {
 /// Get the primary target field name from an item's match info
 fn get_item_match_target(item: &ComparisonTreeItem) -> Option<&str> {
     match item {
-        ComparisonTreeItem::Field(node) => node.match_info.as_ref().and_then(|m| m.primary_target()).map(|s| s.as_str()),
-        ComparisonTreeItem::Relationship(node) => node.match_info.as_ref().and_then(|m| m.primary_target()).map(|s| s.as_str()),
-        ComparisonTreeItem::Entity(node) => node.match_info.as_ref().and_then(|m| m.primary_target()).map(|s| s.as_str()),
-        ComparisonTreeItem::Container(node) => node.match_info.as_ref().and_then(|m| m.primary_target()).map(|s| s.as_str()),
+        ComparisonTreeItem::Field(node) => node
+            .match_info
+            .as_ref()
+            .and_then(|m| m.primary_target())
+            .map(|s| s.as_str()),
+        ComparisonTreeItem::Relationship(node) => node
+            .match_info
+            .as_ref()
+            .and_then(|m| m.primary_target())
+            .map(|s| s.as_str()),
+        ComparisonTreeItem::Entity(node) => node
+            .match_info
+            .as_ref()
+            .and_then(|m| m.primary_target())
+            .map(|s| s.as_str()),
+        ComparisonTreeItem::Container(node) => node
+            .match_info
+            .as_ref()
+            .and_then(|m| m.primary_target())
+            .map(|s| s.as_str()),
         _ => None,
     }
 }
@@ -843,16 +971,18 @@ fn get_item_is_ignored(item: &ComparisonTreeItem) -> bool {
 
 pub fn render_manual_mappings_modal(state: &State) -> Element<Msg> {
     let theme = &crate::global_runtime_config().theme;
-    use crate::tui::modals::{ManualMappingsModal, ManualMappingItem};
+    use crate::tui::modals::{ManualMappingItem, ManualMappingsModal};
 
     // Convert manual field mappings to list items (join multiple targets with comma)
-    let mapping_items: Vec<ManualMappingItem<Msg>> = state.field_mappings.iter().map(|(source, targets)| {
-        ManualMappingItem {
+    let mapping_items: Vec<ManualMappingItem<Msg>> = state
+        .field_mappings
+        .iter()
+        .map(|(source, targets)| ManualMappingItem {
             source_field: source.clone(),
             target_field: targets.join(", "),
             on_delete: Msg::DeleteManualMappingFromModal,
-        }
-    }).collect();
+        })
+        .collect();
 
     ManualMappingsModal::new()
         .mappings(mapping_items)
@@ -868,10 +998,10 @@ pub fn render_manual_mappings_modal(state: &State) -> Element<Msg> {
 pub fn render_import_results_modal(state: &mut State) -> Element<Msg> {
     let theme = &crate::global_runtime_config().theme;
     use crate::tui::element::LayoutConstraint::*;
-    use crate::{col, spacer, button_row};
-    use ratatui::text::{Line, Span};
-    use ratatui::style::{Style, Stylize};
     use crate::tui::widgets::ListItem;
+    use crate::{button_row, col, spacer};
+    use ratatui::style::{Style, Stylize};
+    use ratatui::text::{Line, Span};
 
     let results = state.import_results.as_ref().unwrap();
 
@@ -885,7 +1015,12 @@ pub fn render_import_results_modal(state: &mut State) -> Element<Msg> {
     impl ListItem for ImportResultLine {
         type Msg = Msg;
 
-        fn to_element(&self, _is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+        fn to_element(
+            &self,
+            _is_selected: bool,
+            _is_multi_selected: bool,
+            _is_hovered: bool,
+        ) -> Element<Self::Msg> {
             Element::styled_text(Line::from(Span::styled(self.text.clone(), self.style))).build()
         }
     }
@@ -976,7 +1111,11 @@ pub fn render_import_results_modal(state: &mut State) -> Element<Msg> {
     }
 
     // If no changes at all, show a message
-    if results.added.is_empty() && results.updated.is_empty() && results.removed.is_empty() && results.unparsed.is_empty() {
+    if results.added.is_empty()
+        && results.updated.is_empty()
+        && results.removed.is_empty()
+        && results.unparsed.is_empty()
+    {
         list_items.push(ImportResultLine {
             text: "No changes detected".to_string(),
             style: Style::default().fg(theme.text_tertiary).italic(),
@@ -985,20 +1124,31 @@ pub fn render_import_results_modal(state: &mut State) -> Element<Msg> {
 
     // List
     log::debug!("Import results modal: {} list items", list_items.len());
-    let list = Element::list("import-results-list", &list_items, &state.import_results_list, theme)
-        .on_select(Msg::ImportResultsSelect)
-        .on_navigate(Msg::ImportResultsNavigate)
-        .on_render(Msg::ImportResultsSetViewportHeight)
-        .build();
+    let list = Element::list(
+        "import-results-list",
+        &list_items,
+        &state.import_results_list,
+        theme,
+    )
+    .on_select(Msg::ImportResultsSelect)
+    .on_navigate(Msg::ImportResultsNavigate)
+    .on_render(Msg::ImportResultsSetViewportHeight)
+    .build();
 
-    let list_panel = Element::panel(list)
-        .title("Results")
-        .build();
+    let list_panel = Element::panel(list).title("Results").build();
 
     // Buttons
     let buttons = button_row![
-        ("import-results-clear", "Clear Imports (c)", Msg::ClearImportedMappings),
-        ("import-results-close", "Close (Esc)", Msg::CloseImportResultsModal),
+        (
+            "import-results-clear",
+            "Clear Imports (c)",
+            Msg::ClearImportedMappings
+        ),
+        (
+            "import-results-close",
+            "Close (Esc)",
+            Msg::CloseImportResultsModal
+        ),
     ];
 
     // Layout
@@ -1019,9 +1169,9 @@ pub fn render_import_results_modal(state: &mut State) -> Element<Msg> {
 pub fn render_import_modal(state: &mut State) -> Element<Msg> {
     let theme = &crate::global_runtime_config().theme;
     use crate::tui::element::LayoutConstraint::*;
-    use crate::{spacer, button_row};
-    use ratatui::text::{Line, Span};
+    use crate::{button_row, spacer};
     use ratatui::style::{Style, Stylize};
+    use ratatui::text::{Line, Span};
 
     // File browser
     let browser = Element::file_browser("import-file-browser", &state.import_file_browser, theme)
@@ -1031,36 +1181,53 @@ pub fn render_import_modal(state: &mut State) -> Element<Msg> {
         .build();
 
     let browser_panel = Element::panel(browser)
-        .title(format!("Select C# Mapping File - {}", state.import_file_browser.current_path().display()))
+        .title(format!(
+            "Select C# Mapping File - {}",
+            state.import_file_browser.current_path().display()
+        ))
         .build();
 
     // Help text
     let help_text = Element::styled_text(Line::from(vec![
-        Span::styled("Select a .cs file to import field mappings. ", Style::default().fg(theme.text_tertiary)),
+        Span::styled(
+            "Select a .cs file to import field mappings. ",
+            Style::default().fg(theme.text_tertiary),
+        ),
         Span::styled("Navigate with ", Style::default().fg(theme.text_tertiary)),
         Span::styled("↑/↓", Style::default().fg(theme.accent_primary).bold()),
         Span::styled(", press ", Style::default().fg(theme.text_tertiary)),
         Span::styled("Enter", Style::default().fg(theme.accent_primary).bold()),
         Span::styled(" to select.", Style::default().fg(theme.text_tertiary)),
-    ])).build();
+    ]))
+    .build();
 
     // Info about current import
     let import_info = if let Some(ref file) = state.import_source_file {
         Element::styled_text(Line::from(vec![
-            Span::styled("Currently imported: ", Style::default().fg(theme.text_secondary)),
-            Span::styled(file.clone(), Style::default().fg(theme.accent_success).bold()),
-            Span::styled(format!(" ({} mappings)", state.imported_mappings.len()), Style::default().fg(theme.text_tertiary)),
-        ])).build()
+            Span::styled(
+                "Currently imported: ",
+                Style::default().fg(theme.text_secondary),
+            ),
+            Span::styled(
+                file.clone(),
+                Style::default().fg(theme.accent_success).bold(),
+            ),
+            Span::styled(
+                format!(" ({} mappings)", state.imported_mappings.len()),
+                Style::default().fg(theme.text_tertiary),
+            ),
+        ]))
+        .build()
     } else {
-        Element::styled_text(Line::from(vec![
-            Span::styled("No mappings currently imported", Style::default().fg(theme.text_tertiary).italic()),
-        ])).build()
+        Element::styled_text(Line::from(vec![Span::styled(
+            "No mappings currently imported",
+            Style::default().fg(theme.text_tertiary).italic(),
+        )]))
+        .build()
     };
 
     // Buttons
-    let buttons = button_row![
-        ("import-close", "Close (Esc)", Msg::CloseImportModal),
-    ];
+    let buttons = button_row![("import-close", "Close (Esc)", Msg::CloseImportModal),];
 
     // Layout
     let content = col![
@@ -1084,10 +1251,10 @@ pub fn render_import_modal(state: &mut State) -> Element<Msg> {
 pub fn render_ignore_modal(state: &mut State) -> Element<Msg> {
     let theme = &crate::global_runtime_config().theme;
     use crate::tui::element::LayoutConstraint::*;
-    use crate::{col, spacer, button_row};
-    use ratatui::text::{Line, Span};
-    use ratatui::style::{Style, Stylize};
     use crate::tui::widgets::ListItem;
+    use crate::{button_row, col, spacer};
+    use ratatui::style::{Style, Stylize};
+    use ratatui::text::{Line, Span};
 
     // Convert HashSet to Vec for consistent ordering
     let ignored_items: Vec<String> = state.ignored_items.iter().cloned().collect();
@@ -1102,9 +1269,15 @@ pub fn render_ignore_modal(state: &mut State) -> Element<Msg> {
     impl ListItem for IgnoredItemLine {
         type Msg = Msg;
 
-        fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+        fn to_element(
+            &self,
+            is_selected: bool,
+            _is_multi_selected: bool,
+            _is_hovered: bool,
+        ) -> Element<Self::Msg> {
             let style = if is_selected {
-                self.style.bg(crate::global_runtime_config().theme.bg_surface)
+                self.style
+                    .bg(crate::global_runtime_config().theme.bg_surface)
             } else {
                 self.style
             };
@@ -1112,7 +1285,8 @@ pub fn render_ignore_modal(state: &mut State) -> Element<Msg> {
         }
     }
 
-    let list_items: Vec<IgnoredItemLine> = ignored_items.iter()
+    let list_items: Vec<IgnoredItemLine> = ignored_items
+        .iter()
         .map(|item| {
             // Parse item ID: "tab:side:node_id"
             let parts: Vec<&str> = item.split(':').collect();
@@ -1132,11 +1306,15 @@ pub fn render_ignore_modal(state: &mut State) -> Element<Msg> {
     // Help text
     let help_text = if ignored_items.is_empty() {
         Element::styled_text(Line::from(vec![
-            Span::styled("No ignored items. ", Style::default().fg(theme.text_secondary)),
+            Span::styled(
+                "No ignored items. ",
+                Style::default().fg(theme.text_secondary),
+            ),
             Span::styled("Press ", Style::default().fg(theme.text_secondary)),
             Span::styled("Esc", Style::default().fg(theme.accent_primary).bold()),
             Span::styled(" to close.", Style::default().fg(theme.text_secondary)),
-        ])).build()
+        ]))
+        .build()
     } else {
         Element::styled_text(Line::from(vec![
             Span::styled("↑↓", Style::default().fg(theme.accent_primary).bold()),
@@ -1147,18 +1325,14 @@ pub fn render_ignore_modal(state: &mut State) -> Element<Msg> {
             Span::styled(" Clear All  ", Style::default().fg(theme.text_secondary)),
             Span::styled("Esc", Style::default().fg(theme.accent_primary).bold()),
             Span::styled(" Close", Style::default().fg(theme.text_secondary)),
-        ])).build()
+        ]))
+        .build()
     };
 
     // List panel
-    let list_panel = Element::list(
-        "ignore-list",
-        &list_items,
-        &state.ignore_list_state,
-        theme,
-    )
-    .on_render(|height| Msg::IgnoreSetViewportHeight(height))
-    .build();
+    let list_panel = Element::list("ignore-list", &list_items, &state.ignore_list_state, theme)
+        .on_render(|height| Msg::IgnoreSetViewportHeight(height))
+        .build();
 
     // Buttons
     let buttons = button_row![
@@ -1169,9 +1343,16 @@ pub fn render_ignore_modal(state: &mut State) -> Element<Msg> {
 
     // Count info
     let count_info = Element::styled_text(Line::from(vec![
-        Span::styled("Total ignored items: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(ignored_items.len().to_string(), Style::default().fg(theme.accent_primary).bold()),
-    ])).build();
+        Span::styled(
+            "Total ignored items: ",
+            Style::default().fg(theme.text_secondary),
+        ),
+        Span::styled(
+            ignored_items.len().to_string(),
+            Style::default().fg(theme.accent_primary).bold(),
+        ),
+    ]))
+    .build();
 
     // Layout
     let content = col![
@@ -1224,9 +1405,9 @@ fn filter_tree_items_by_search(
     is_source: bool,
     entity_name: &str,
 ) -> Vec<super::tree_items::ComparisonTreeItem> {
-    use fuzzy_matcher::skim::SkimMatcherV2;
-    use fuzzy_matcher::FuzzyMatcher;
     use super::tree_items::ComparisonTreeItem;
+    use fuzzy_matcher::FuzzyMatcher;
+    use fuzzy_matcher::skim::SkimMatcherV2;
 
     if query.is_empty() {
         return items;
@@ -1243,106 +1424,114 @@ fn filter_tree_items_by_search(
     // Helper function to check if text matches query based on mode
     let text_matches = |text: &str| -> bool {
         match match_mode {
-            super::models::MatchMode::Fuzzy => {
-                fuzzy_matcher.as_ref().unwrap().fuzzy_match(text, query).is_some()
-            }
-            super::models::MatchMode::Substring => {
-                text.to_lowercase().contains(&query_lower)
-            }
+            super::models::MatchMode::Fuzzy => fuzzy_matcher
+                .as_ref()
+                .unwrap()
+                .fuzzy_match(text, query)
+                .is_some(),
+            super::models::MatchMode::Substring => text.to_lowercase().contains(&query_lower),
         }
     };
 
-    items.into_iter().filter_map(|item| {
-        match &item {
-            ComparisonTreeItem::Field(node) => {
-                // Search technical name (logical_name)
-                let logical_match = text_matches(&node.metadata.logical_name);
+    items
+        .into_iter()
+        .filter_map(|item| {
+            match &item {
+                ComparisonTreeItem::Field(node) => {
+                    // Search technical name (logical_name)
+                    let logical_match = text_matches(&node.metadata.logical_name);
 
-                // Search friendly name (display_name from metadata) if it exists
-                // This ensures we search both names regardless of current display mode
-                let display_match = node.metadata.display_name
-                    .as_ref()
-                    .map(|name| text_matches(name))
-                    .unwrap_or(false);
+                    // Search friendly name (display_name from metadata) if it exists
+                    // This ensures we search both names regardless of current display mode
+                    let display_match = node
+                        .metadata
+                        .display_name
+                        .as_ref()
+                        .map(|name| text_matches(name))
+                        .unwrap_or(false);
 
-                // Search example value if examples are enabled
-                let example_match = if examples.enabled {
-                    examples.get_field_value(&node.metadata.logical_name, is_source, entity_name)
-                        .map(|value| text_matches(&value))
-                        .unwrap_or(false)
-                } else {
-                    false
-                };
+                    // Search example value if examples are enabled
+                    let example_match = if examples.enabled {
+                        examples
+                            .get_field_value(&node.metadata.logical_name, is_source, entity_name)
+                            .map(|value| text_matches(&value))
+                            .unwrap_or(false)
+                    } else {
+                        false
+                    };
 
-                if logical_match || display_match || example_match {
-                    Some(item)
-                } else {
-                    None
+                    if logical_match || display_match || example_match {
+                        Some(item)
+                    } else {
+                        None
+                    }
+                }
+                ComparisonTreeItem::Relationship(node) => {
+                    // Search relationship name and related entity
+                    let name_match = text_matches(&node.metadata.name);
+                    let entity_match = text_matches(&node.metadata.related_entity);
+
+                    if name_match || entity_match {
+                        Some(item)
+                    } else {
+                        None
+                    }
+                }
+                ComparisonTreeItem::Entity(node) => {
+                    // Search entity name
+                    if text_matches(&node.name) {
+                        Some(item)
+                    } else {
+                        None
+                    }
+                }
+                ComparisonTreeItem::Container(node) => {
+                    // Recursively filter container children
+                    let filtered_children = filter_tree_items_by_search(
+                        node.children.clone(),
+                        query,
+                        match_mode,
+                        examples,
+                        is_source,
+                        entity_name,
+                    );
+
+                    // Keep container if it has matching children OR if container label matches
+                    let label_match = text_matches(&node.label);
+
+                    if !filtered_children.is_empty() || label_match {
+                        Some(ComparisonTreeItem::Container(
+                            super::tree_items::ContainerNode {
+                                id: node.id.clone(),
+                                label: node.label.clone(),
+                                children: filtered_children,
+                                container_match_type: node.container_match_type.clone(),
+                                match_info: node.match_info.clone(),
+                            },
+                        ))
+                    } else {
+                        None
+                    }
+                }
+                ComparisonTreeItem::View(node) => {
+                    // Search view name
+                    if text_matches(&node.metadata.name) {
+                        Some(item)
+                    } else {
+                        None
+                    }
+                }
+                ComparisonTreeItem::Form(node) => {
+                    // Search form name
+                    if text_matches(&node.metadata.name) {
+                        Some(item)
+                    } else {
+                        None
+                    }
                 }
             }
-            ComparisonTreeItem::Relationship(node) => {
-                // Search relationship name and related entity
-                let name_match = text_matches(&node.metadata.name);
-                let entity_match = text_matches(&node.metadata.related_entity);
-
-                if name_match || entity_match {
-                    Some(item)
-                } else {
-                    None
-                }
-            }
-            ComparisonTreeItem::Entity(node) => {
-                // Search entity name
-                if text_matches(&node.name) {
-                    Some(item)
-                } else {
-                    None
-                }
-            }
-            ComparisonTreeItem::Container(node) => {
-                // Recursively filter container children
-                let filtered_children = filter_tree_items_by_search(
-                    node.children.clone(),
-                    query,
-                    match_mode,
-                    examples,
-                    is_source,
-                    entity_name,
-                );
-
-                // Keep container if it has matching children OR if container label matches
-                let label_match = text_matches(&node.label);
-
-                if !filtered_children.is_empty() || label_match {
-                    Some(ComparisonTreeItem::Container(super::tree_items::ContainerNode {
-                        id: node.id.clone(),
-                        label: node.label.clone(),
-                        children: filtered_children,
-                        container_match_type: node.container_match_type.clone(),
-                        match_info: node.match_info.clone(),
-                    }))
-                } else {
-                    None
-                }
-            }
-            ComparisonTreeItem::View(node) => {
-                // Search view name
-                if text_matches(&node.metadata.name) {
-                    Some(item)
-                } else {
-                    None
-                }
-            }
-            ComparisonTreeItem::Form(node) => {
-                // Search form name
-                if text_matches(&node.metadata.name) {
-                    Some(item)
-                } else {
-                    None
-                }
-            }
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 /// Filter tree items by field type
@@ -1353,44 +1542,47 @@ fn filter_tree_items_by_type(
 ) -> Vec<super::tree_items::ComparisonTreeItem> {
     use super::tree_items::ComparisonTreeItem;
 
-    items.into_iter().filter_map(|item| {
-        match &item {
-            ComparisonTreeItem::Field(node) => {
-                // Only keep fields matching the filter type
-                if &node.metadata.field_type == filter_type {
-                    Some(item)
-                } else {
-                    None
+    items
+        .into_iter()
+        .filter_map(|item| {
+            match &item {
+                ComparisonTreeItem::Field(node) => {
+                    // Only keep fields matching the filter type
+                    if &node.metadata.field_type == filter_type {
+                        Some(item)
+                    } else {
+                        None
+                    }
                 }
-            }
-            ComparisonTreeItem::Container(node) => {
-                // Recursively filter container children
-                let filtered_children = filter_tree_items_by_type(
-                    node.children.clone(),
-                    filter_type,
-                );
+                ComparisonTreeItem::Container(node) => {
+                    // Recursively filter container children
+                    let filtered_children =
+                        filter_tree_items_by_type(node.children.clone(), filter_type);
 
-                // Keep container if it has matching children
-                if !filtered_children.is_empty() {
-                    Some(ComparisonTreeItem::Container(super::tree_items::ContainerNode {
-                        id: node.id.clone(),
-                        label: node.label.clone(),
-                        children: filtered_children,
-                        container_match_type: node.container_match_type.clone(),
-                        match_info: node.match_info.clone(),
-                    }))
-                } else {
-                    None
+                    // Keep container if it has matching children
+                    if !filtered_children.is_empty() {
+                        Some(ComparisonTreeItem::Container(
+                            super::tree_items::ContainerNode {
+                                id: node.id.clone(),
+                                label: node.label.clone(),
+                                children: filtered_children,
+                                container_match_type: node.container_match_type.clone(),
+                                match_info: node.match_info.clone(),
+                            },
+                        ))
+                    } else {
+                        None
+                    }
                 }
+                // Keep all non-field items as-is (Views, Forms, Relationships, Entities)
+                // Type filtering only applies to Field items
+                ComparisonTreeItem::View(_)
+                | ComparisonTreeItem::Form(_)
+                | ComparisonTreeItem::Relationship(_)
+                | ComparisonTreeItem::Entity(_) => Some(item),
             }
-            // Keep all non-field items as-is (Views, Forms, Relationships, Entities)
-            // Type filtering only applies to Field items
-            ComparisonTreeItem::View(_) |
-            ComparisonTreeItem::Form(_) |
-            ComparisonTreeItem::Relationship(_) |
-            ComparisonTreeItem::Entity(_) => Some(item),
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 /// Detailed completion statistics for a single side (source or target)
@@ -1442,30 +1634,40 @@ impl CompletionStats {
         format!(
             "{}% | M:{}% ({}) I:{}% ({}) U:{}% ({})",
             self.mapped_percentage + self.ignored_percentage, // Total handled percentage
-            self.mapped_percentage, self.mapped_count,
-            self.ignored_percentage, self.ignored_count,
-            self.unhandled_percentage, self.unhandled_count
+            self.mapped_percentage,
+            self.mapped_count,
+            self.ignored_percentage,
+            self.ignored_count,
+            self.unhandled_percentage,
+            self.unhandled_count
         )
     }
 }
 
 /// Calculate detailed completion statistics for source and target sides
 /// Returns (source_stats, target_stats)
-fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> (CompletionStats, CompletionStats) {
+fn calculate_detailed_completion_stats(
+    state: &State,
+    active_tab: ActiveTab,
+) -> (CompletionStats, CompletionStats) {
     // Determine if we're in multi-entity mode (qualified names like "entity.field")
     let is_multi_entity = state.source_entities.len() > 1 || state.target_entities.len() > 1;
 
     match active_tab {
         ActiveTab::Fields => {
             // Get total counts from metadata - sum across all entities
-            let source_total: usize = state.source_metadata.values()
+            let source_total: usize = state
+                .source_metadata
+                .values()
                 .filter_map(|r| match r {
                     Resource::Success(metadata) => Some(metadata.fields.len()),
                     _ => None,
                 })
                 .sum();
 
-            let target_total: usize = state.target_metadata.values()
+            let target_total: usize = state
+                .target_metadata
+                .values()
                 .filter_map(|r| match r {
                     Resource::Success(metadata) => Some(metadata.fields.len()),
                     _ => None,
@@ -1473,17 +1675,25 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
                 .sum();
 
             // Count source mapped fields - collect all field names from all entities
-            let all_source_field_names: std::collections::HashSet<String> = state.source_metadata.values()
+            let all_source_field_names: std::collections::HashSet<String> = state
+                .source_metadata
+                .values()
                 .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.fields.iter()
-                        .map(|f| f.logical_name.clone())
-                        .collect::<Vec<_>>()),
+                    Resource::Success(metadata) => Some(
+                        metadata
+                            .fields
+                            .iter()
+                            .map(|f| f.logical_name.clone())
+                            .collect::<Vec<_>>(),
+                    ),
                     _ => None,
                 })
                 .flatten()
                 .collect();
 
-            let source_mapped = state.field_matches.keys()
+            let source_mapped = state
+                .field_matches
+                .keys()
                 .filter(|field| {
                     // In multi-entity mode, strip entity prefix before comparing
                     let field_name = if is_multi_entity {
@@ -1496,7 +1706,9 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
                 .count();
 
             // Count source ignored fields
-            let source_ignored = state.ignored_items.iter()
+            let source_ignored = state
+                .ignored_items
+                .iter()
                 .filter(|id| {
                     if let Some(field_name) = id.strip_prefix("fields:source:") {
                         // In multi-entity mode, strip entity prefix before comparing
@@ -1513,17 +1725,25 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
                 .count();
 
             // Count target mapped fields - collect all field names from all entities
-            let all_target_field_names: std::collections::HashSet<String> = state.target_metadata.values()
+            let all_target_field_names: std::collections::HashSet<String> = state
+                .target_metadata
+                .values()
                 .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.fields.iter()
-                        .map(|f| f.logical_name.clone())
-                        .collect::<Vec<_>>()),
+                    Resource::Success(metadata) => Some(
+                        metadata
+                            .fields
+                            .iter()
+                            .map(|f| f.logical_name.clone())
+                            .collect::<Vec<_>>(),
+                    ),
                     _ => None,
                 })
                 .flatten()
                 .collect();
 
-            let target_mapped = state.field_matches.values()
+            let target_mapped = state
+                .field_matches
+                .values()
                 .flat_map(|m| m.target_fields.iter())
                 .filter(|field| {
                     // In multi-entity mode, strip entity prefix before comparing
@@ -1538,7 +1758,9 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
                 .len();
 
             // Count target ignored fields
-            let target_ignored = state.ignored_items.iter()
+            let target_ignored = state
+                .ignored_items
+                .iter()
                 .filter(|id| {
                     if let Some(field_name) = id.strip_prefix("fields:target:") {
                         // In multi-entity mode, strip entity prefix before comparing
@@ -1561,14 +1783,18 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
         }
         ActiveTab::Relationships => {
             // Get total counts from metadata - sum across all entities
-            let source_total: usize = state.source_metadata.values()
+            let source_total: usize = state
+                .source_metadata
+                .values()
                 .filter_map(|r| match r {
                     Resource::Success(metadata) => Some(metadata.relationships.len()),
                     _ => None,
                 })
                 .sum();
 
-            let target_total: usize = state.target_metadata.values()
+            let target_total: usize = state
+                .target_metadata
+                .values()
                 .filter_map(|r| match r {
                     Resource::Success(metadata) => Some(metadata.relationships.len()),
                     _ => None,
@@ -1576,17 +1802,25 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
                 .sum();
 
             // Count source mapped relationships - collect all relationship names from all entities
-            let all_source_rel_names: std::collections::HashSet<String> = state.source_metadata.values()
+            let all_source_rel_names: std::collections::HashSet<String> = state
+                .source_metadata
+                .values()
                 .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.relationships.iter()
-                        .map(|r| r.name.clone())
-                        .collect::<Vec<_>>()),
+                    Resource::Success(metadata) => Some(
+                        metadata
+                            .relationships
+                            .iter()
+                            .map(|r| r.name.clone())
+                            .collect::<Vec<_>>(),
+                    ),
                     _ => None,
                 })
                 .flatten()
                 .collect();
 
-            let source_mapped = state.relationship_matches.keys()
+            let source_mapped = state
+                .relationship_matches
+                .keys()
                 .filter(|rel| {
                     // In multi-entity mode, strip entity prefix before comparing
                     let rel_name = if is_multi_entity {
@@ -1599,7 +1833,9 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
                 .count();
 
             // Count source ignored relationships
-            let source_ignored = state.ignored_items.iter()
+            let source_ignored = state
+                .ignored_items
+                .iter()
                 .filter(|id| {
                     if let Some(rel_name) = id.strip_prefix("relationships:source:") {
                         // In multi-entity mode, strip entity prefix before comparing
@@ -1616,17 +1852,25 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
                 .count();
 
             // Count target mapped relationships - collect all relationship names from all entities
-            let all_target_rel_names: std::collections::HashSet<String> = state.target_metadata.values()
+            let all_target_rel_names: std::collections::HashSet<String> = state
+                .target_metadata
+                .values()
                 .filter_map(|r| match r {
-                    Resource::Success(metadata) => Some(metadata.relationships.iter()
-                        .map(|r| r.name.clone())
-                        .collect::<Vec<_>>()),
+                    Resource::Success(metadata) => Some(
+                        metadata
+                            .relationships
+                            .iter()
+                            .map(|r| r.name.clone())
+                            .collect::<Vec<_>>(),
+                    ),
                     _ => None,
                 })
                 .flatten()
                 .collect();
 
-            let target_mapped = state.relationship_matches.values()
+            let target_mapped = state
+                .relationship_matches
+                .values()
                 .flat_map(|m| m.target_fields.iter())
                 .filter(|rel| {
                     // In multi-entity mode, strip entity prefix before comparing
@@ -1641,7 +1885,9 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
                 .len();
 
             // Count target ignored relationships
-            let target_ignored = state.ignored_items.iter()
+            let target_ignored = state
+                .ignored_items
+                .iter()
                 .filter(|id| {
                     if let Some(rel_name) = id.strip_prefix("relationships:target:") {
                         // In multi-entity mode, strip entity prefix before comparing
@@ -1669,20 +1915,28 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
             let target_total = state.target_related_entities.len();
 
             // Build entity name sets for validation
-            let source_entity_names: std::collections::HashSet<_> = state.source_related_entities.iter()
+            let source_entity_names: std::collections::HashSet<_> = state
+                .source_related_entities
+                .iter()
                 .map(|(name, _)| name.as_str())
                 .collect();
-            let target_entity_names: std::collections::HashSet<_> = state.target_related_entities.iter()
+            let target_entity_names: std::collections::HashSet<_> = state
+                .target_related_entities
+                .iter()
                 .map(|(name, _)| name.as_str())
                 .collect();
 
             // Count source mapped entities - only count if entity exists in list
-            let source_mapped = state.entity_matches.keys()
+            let source_mapped = state
+                .entity_matches
+                .keys()
                 .filter(|entity| source_entity_names.contains(entity.as_str()))
                 .count();
 
             // Count source ignored entities - only count if entity exists in list
-            let source_ignored = state.ignored_items.iter()
+            let source_ignored = state
+                .ignored_items
+                .iter()
                 .filter(|id| {
                     if let Some(entity_name) = id.strip_prefix("entities:source:") {
                         source_entity_names.contains(entity_name)
@@ -1693,14 +1947,18 @@ fn calculate_detailed_completion_stats(state: &State, active_tab: ActiveTab) -> 
                 .count();
 
             // Count target mapped entities - only count if entity exists in list (flatten 1-to-N mappings)
-            let target_mapped = state.entity_matches.values()
+            let target_mapped = state
+                .entity_matches
+                .values()
                 .flat_map(|m| m.target_fields.iter())
                 .filter(|entity| target_entity_names.contains(entity.as_str()))
                 .collect::<std::collections::HashSet<_>>()
                 .len();
 
             // Count target ignored entities - only count if entity exists in list
-            let target_ignored = state.ignored_items.iter()
+            let target_ignored = state
+                .ignored_items
+                .iter()
                 .filter(|id| {
                     if let Some(entity_name) = id.strip_prefix("entities:target:") {
                         target_entity_names.contains(entity_name)

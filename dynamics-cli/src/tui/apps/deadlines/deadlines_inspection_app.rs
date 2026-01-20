@@ -1,20 +1,20 @@
-use crossterm::event::KeyCode;
-use std::collections::HashMap;
-use crate::tui::{App, AppId, Command, Element, Subscription, Theme, LayeredView, FocusId};
 use crate::tui::element::LayoutConstraint::*;
 use crate::tui::widgets::list::{ListItem, ListState};
+use crate::tui::{App, AppId, Command, Element, FocusId, LayeredView, Subscription, Theme};
 use crate::{col, row, spacer, use_constraints};
-use ratatui::text::{Line, Span};
+use crossterm::event::KeyCode;
 use ratatui::style::{Style, Stylize};
+use ratatui::text::{Line, Span};
+use std::collections::HashMap;
 
-use super::models::{InspectionParams, TransformedDeadline, DeadlineMode};
 use super::diff::diff_associations;
+use super::models::{DeadlineMode, InspectionParams, TransformedDeadline};
 use super::operation_builder::{
-    build_disassociate_operations, build_associate_operations,
-    build_delete_junction_operations, build_create_junction_operations,
+    build_associate_operations, build_create_junction_operations, build_delete_junction_operations,
+    build_disassociate_operations,
 };
-use crate::tui::apps::queue::{QueueItem, QueueMetadata};
 use crate::api::operations::Operations;
+use crate::tui::apps::queue::{QueueItem, QueueMetadata};
 
 pub struct DeadlinesInspectionApp;
 
@@ -28,17 +28,32 @@ struct RecordListItem {
 impl ListItem for RecordListItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Msg> {
         let theme = &crate::global_runtime_config().theme;
         let (fg_color, bg_style) = if is_selected {
-            (theme.accent_primary, Some(Style::default().bg(theme.bg_surface)))
+            (
+                theme.accent_primary,
+                Some(Style::default().bg(theme.bg_surface)),
+            )
         } else {
             (theme.text_primary, None)
         };
 
         // Extract name from direct fields
-        let name_field = if self.entity_type == "cgk_deadline" { "cgk_deadlinename" } else { "nrq_deadlinename" };
-        let name = self.record.direct_fields.get(name_field)
+        let name_field = if self.entity_type == "cgk_deadline" {
+            "cgk_deadlinename"
+        } else {
+            "nrq_deadlinename"
+        };
+        let name = self
+            .record
+            .direct_fields
+            .get(name_field)
             .map(|s| s.as_str())
             .unwrap_or("<No Name>");
 
@@ -65,9 +80,15 @@ impl ListItem for RecordListItem {
         };
 
         let mut builder = Element::styled_text(Line::from(vec![
-            Span::styled(format!("[{}] ", mode_label), Style::default().fg(mode_color)),
+            Span::styled(
+                format!("[{}] ", mode_label),
+                Style::default().fg(mode_color),
+            ),
             warning_indicator,
-            Span::styled(format!("Row {}: ", self.record.source_row), Style::default().fg(theme.text_tertiary)),
+            Span::styled(
+                format!("Row {}: ", self.record.source_row),
+                Style::default().fg(theme.text_tertiary),
+            ),
             Span::styled(display_name, Style::default().fg(fg_color)),
         ]));
 
@@ -176,7 +197,8 @@ impl State {
 
     /// Rebuild filtered indices based on current filter
     fn apply_filter(&mut self) {
-        self.filtered_indices = self.transformed_records
+        self.filtered_indices = self
+            .transformed_records
             .iter()
             .enumerate()
             .filter(|(_, r)| self.mode_filter.matches(r))
@@ -189,7 +211,8 @@ impl State {
             self.list_state.select_and_scroll(None, 0);
         } else {
             self.selected_record_idx = 0;
-            self.list_state.select_and_scroll(Some(0), self.filtered_indices.len());
+            self.list_state
+                .select_and_scroll(Some(0), self.filtered_indices.len());
         }
     }
 
@@ -220,7 +243,11 @@ pub enum Msg {
     AddToQueueAndView,
     CycleFilter,
     EnvironmentLoaded(Result<String, String>),
-    QueueItemCompleted(String, crate::tui::apps::queue::models::QueueResult, crate::tui::apps::queue::models::QueueMetadata),
+    QueueItemCompleted(
+        String,
+        crate::tui::apps::queue::models::QueueResult,
+        crate::tui::apps::queue::models::QueueMetadata,
+    ),
 }
 
 impl crate::tui::AppState for State {}
@@ -231,10 +258,7 @@ impl App for DeadlinesInspectionApp {
     type InitParams = InspectionParams;
 
     fn init(params: Self::InitParams) -> (State, Command<Msg>) {
-        let state = State::new(
-            params.entity_type,
-            params.transformed_records,
-        );
+        let state = State::new(params.entity_type, params.transformed_records);
 
         (state, Command::set_focus(FocusId::new("queue-button")))
     }
@@ -244,17 +268,23 @@ impl App for DeadlinesInspectionApp {
             Msg::SelectRecord(idx) => {
                 if idx < state.filtered_indices.len() {
                     state.selected_record_idx = idx;
-                    state.list_state.select_and_scroll(Some(idx), state.filtered_indices.len());
+                    state
+                        .list_state
+                        .select_and_scroll(Some(idx), state.filtered_indices.len());
                 }
                 Command::None
             }
             Msg::ListNavigate(key) => {
                 // ListState will use its stored viewport_height from on_render, fallback to 20
-                state.list_state.handle_key(key, state.filtered_indices.len(), 20);
+                state
+                    .list_state
+                    .handle_key(key, state.filtered_indices.len(), 20);
 
                 // Sync selected_record_idx with list_state
                 if let Some(selected) = state.list_state.selected() {
-                    if selected != state.selected_record_idx && selected < state.filtered_indices.len() {
+                    if selected != state.selected_record_idx
+                        && selected < state.filtered_indices.len()
+                    {
                         state.selected_record_idx = selected;
                     }
                 }
@@ -278,20 +308,26 @@ impl App for DeadlinesInspectionApp {
                 Command::perform(
                     async {
                         let manager = crate::client_manager();
-                        manager.get_current_environment_name().await
+                        manager
+                            .get_current_environment_name()
+                            .await
                             .map_err(|e| e.to_string())?
                             .ok_or_else(|| "No environment selected".to_string())
                     },
-                    Msg::EnvironmentLoaded
+                    Msg::EnvironmentLoaded,
                 )
             }
             Msg::EnvironmentLoaded(Ok(environment_name)) => {
                 // Collect valid records by mode (skip Unchanged, Error, and records with warnings)
-                let create_records: Vec<&TransformedDeadline> = state.transformed_records.iter()
+                let create_records: Vec<&TransformedDeadline> = state
+                    .transformed_records
+                    .iter()
                     .filter(|r| r.is_create() && !r.has_warnings())
                     .collect();
 
-                let update_records: Vec<&TransformedDeadline> = state.transformed_records.iter()
+                let update_records: Vec<&TransformedDeadline> = state
+                    .transformed_records
+                    .iter()
                     .filter(|r| r.is_update() && !r.has_warnings())
                     .collect();
 
@@ -320,7 +356,7 @@ impl App for DeadlinesInspectionApp {
                         &state.entity_type,
                         &environment_name,
                         &mut state.queued_items,
-                        10
+                        10,
                     );
                     all_queue_items.extend(create_items);
                 }
@@ -332,7 +368,7 @@ impl App for DeadlinesInspectionApp {
                         &update_records,
                         &state.entity_type,
                         &environment_name,
-                        10
+                        10,
                     );
                     all_queue_items.extend(update_items);
                 }
@@ -373,7 +409,11 @@ impl App for DeadlinesInspectionApp {
                     let num_records = records.len();
 
                     if num_results != num_records {
-                        log::error!("Mismatch: {} operation results but {} records in batch", num_results, num_records);
+                        log::error!(
+                            "Mismatch: {} operation results but {} records in batch",
+                            num_results,
+                            num_records
+                        );
                         return Command::None;
                     }
 
@@ -386,7 +426,10 @@ impl App for DeadlinesInspectionApp {
                         let created_guid = match extract_entity_guid_from_result(op_result) {
                             Some(guid) => guid,
                             None => {
-                                log::error!("Failed to extract entity GUID from operation result {}", idx);
+                                log::error!(
+                                    "Failed to extract entity GUID from operation result {}",
+                                    idx
+                                );
                                 continue;
                             }
                         };
@@ -397,7 +440,7 @@ impl App for DeadlinesInspectionApp {
                         let mut all_ops = build_association_operations(
                             &created_guid,
                             &state.entity_type,
-                            &record.checkbox_relationships
+                            &record.checkbox_relationships,
                         );
 
                         // Generate Create operations for custom junction entities (e.g., nrq_deadlinesupport)
@@ -410,20 +453,25 @@ impl App for DeadlinesInspectionApp {
 
                         if !all_ops.is_empty() {
                             // Accumulate associations for later batching
-                            state.pending_associations.insert(created_guid.clone(), all_ops);
+                            state
+                                .pending_associations
+                                .insert(created_guid.clone(), all_ops);
                         }
                     }
 
                     // Check if all deadlines have been processed
                     if state.pending_associations.len() >= state.total_deadlines_queued {
-                        log::info!("All {} deadlines created, batching associations", state.total_deadlines_queued);
+                        log::info!(
+                            "All {} deadlines created, batching associations",
+                            state.total_deadlines_queued
+                        );
 
                         // Batch associations in groups of 10 max, never splitting a deadline's associations
                         let batched_queue_items = batch_associations(
                             &state.pending_associations,
                             &state.entity_type,
                             &metadata.environment_name,
-                            10
+                            10,
                         );
 
                         if batched_queue_items.is_empty() {
@@ -432,7 +480,10 @@ impl App for DeadlinesInspectionApp {
                             return Command::None;
                         }
 
-                        log::info!("Created {} association queue items", batched_queue_items.len());
+                        log::info!(
+                            "Created {} association queue items",
+                            batched_queue_items.len()
+                        );
 
                         // Serialize and queue all batches
                         let queue_items_json = match serde_json::to_value(&batched_queue_items) {
@@ -465,7 +516,9 @@ impl App for DeadlinesInspectionApp {
         let theme = &crate::global_runtime_config().theme;
 
         // Convert filtered records to list items
-        let list_items: Vec<RecordListItem> = state.filtered_indices.iter()
+        let list_items: Vec<RecordListItem> = state
+            .filtered_indices
+            .iter()
             .filter_map(|&idx| state.transformed_records.get(idx))
             .map(|r| RecordListItem {
                 record: r.clone(),
@@ -474,43 +527,45 @@ impl App for DeadlinesInspectionApp {
             .collect();
 
         // Left panel: record list
-        let record_list = Element::list(
-            "record-list",
-            &list_items,
-            &state.list_state,
-            theme
-        )
-        .on_select(Msg::SelectRecord)
-        .on_activate(Msg::SelectRecord)
-        .on_navigate(Msg::ListNavigate)
-        .on_render(Msg::SetViewportHeight)
-        .build();
+        let record_list = Element::list("record-list", &list_items, &state.list_state, theme)
+            .on_select(Msg::SelectRecord)
+            .on_activate(Msg::SelectRecord)
+            .on_navigate(Msg::ListNavigate)
+            .on_render(Msg::SetViewportHeight)
+            .build();
 
         // Build list title with filter info
         let filter_label = state.mode_filter.label();
-        let list_title = format!("Records [{filter_label}] ({}/{})",
+        let list_title = format!(
+            "Records [{filter_label}] ({}/{})",
             state.filtered_indices.len(),
             state.transformed_records.len()
         );
 
-        let left_panel = Element::panel(record_list)
-            .title(&list_title)
-            .build();
+        let left_panel = Element::panel(record_list).title(&list_title).build();
 
         // Right panel: details for selected record
         let detail_content = if let Some(record) = state.selected_record() {
             build_detail_panel(record, &state.entity_type)
         } else {
             col![
-                Element::styled_text(Line::from(vec![
-                    Span::styled("No record selected", Style::default().fg(theme.text_tertiary))
-                ])).build()
+                Element::styled_text(Line::from(vec![Span::styled(
+                    "No record selected",
+                    Style::default().fg(theme.text_tertiary)
+                )]))
+                .build()
             ]
         };
 
         let detail_title = if let Some(record) = state.selected_record() {
-            let name_field = if state.entity_type == "cgk_deadline" { "cgk_deadlinename" } else { "nrq_deadlinename" };
-            let name = record.direct_fields.get(name_field)
+            let name_field = if state.entity_type == "cgk_deadline" {
+                "cgk_deadlinename"
+            } else {
+                "nrq_deadlinename"
+            };
+            let name = record
+                .direct_fields
+                .get(name_field)
                 .map(|s| s.as_str())
                 .unwrap_or("<No Name>");
             format!("Row {} - {}", record.source_row, name)
@@ -518,9 +573,7 @@ impl App for DeadlinesInspectionApp {
             "Record Details".to_string()
         };
 
-        let right_panel = Element::panel(detail_content)
-            .title(&detail_title)
-            .build();
+        let right_panel = Element::panel(detail_content).title(&detail_title).build();
 
         // Main layout - two panels side by side with buttons at bottom
         let main_content = col![
@@ -555,8 +608,10 @@ impl App for DeadlinesInspectionApp {
             Subscription::subscribe("queue:item_completed", |value| {
                 // Extract id, result, metadata from the completion event
                 let id = value.get("id")?.as_str()?.to_string();
-                let result: crate::tui::apps::queue::models::QueueResult = serde_json::from_value(value.get("result")?.clone()).ok()?;
-                let metadata: crate::tui::apps::queue::models::QueueMetadata = serde_json::from_value(value.get("metadata")?.clone()).ok()?;
+                let result: crate::tui::apps::queue::models::QueueResult =
+                    serde_json::from_value(value.get("result")?.clone()).ok()?;
+                let metadata: crate::tui::apps::queue::models::QueueMetadata =
+                    serde_json::from_value(value.get("metadata")?.clone()).ok()?;
                 Some(Msg::QueueItemCompleted(id, result, metadata))
             }),
             // Keyboard shortcut for filter cycling
@@ -572,30 +627,65 @@ impl App for DeadlinesInspectionApp {
         let theme = &crate::global_runtime_config().theme;
 
         // Count records by mode
-        let create_count = state.transformed_records.iter().filter(|r| r.is_create()).count();
-        let update_count = state.transformed_records.iter().filter(|r| r.is_update()).count();
-        let unchanged_count = state.transformed_records.iter().filter(|r| r.is_unchanged()).count();
-        let error_count = state.transformed_records.iter().filter(|r| r.is_error()).count();
-        let records_with_warnings = state.transformed_records.iter()
+        let create_count = state
+            .transformed_records
+            .iter()
+            .filter(|r| r.is_create())
+            .count();
+        let update_count = state
+            .transformed_records
+            .iter()
+            .filter(|r| r.is_update())
+            .count();
+        let unchanged_count = state
+            .transformed_records
+            .iter()
+            .filter(|r| r.is_unchanged())
+            .count();
+        let error_count = state
+            .transformed_records
+            .iter()
+            .filter(|r| r.is_error())
+            .count();
+        let records_with_warnings = state
+            .transformed_records
+            .iter()
             .filter(|r| r.has_warnings())
             .count();
 
         Some(Line::from(vec![
             Span::styled("New: ", Style::default().fg(theme.text_tertiary)),
-            Span::styled(create_count.to_string(), Style::default().fg(theme.accent_success)),
+            Span::styled(
+                create_count.to_string(),
+                Style::default().fg(theme.accent_success),
+            ),
             Span::styled(" | Update: ", Style::default().fg(theme.text_tertiary)),
-            Span::styled(update_count.to_string(), Style::default().fg(theme.accent_secondary)),
+            Span::styled(
+                update_count.to_string(),
+                Style::default().fg(theme.accent_secondary),
+            ),
             Span::styled(" | Unchanged: ", Style::default().fg(theme.text_tertiary)),
-            Span::styled(unchanged_count.to_string(), Style::default().fg(theme.text_tertiary)),
+            Span::styled(
+                unchanged_count.to_string(),
+                Style::default().fg(theme.text_tertiary),
+            ),
             Span::styled(" | Errors: ", Style::default().fg(theme.text_tertiary)),
             Span::styled(
                 error_count.to_string(),
-                Style::default().fg(if error_count > 0 { theme.accent_error } else { theme.text_tertiary }),
+                Style::default().fg(if error_count > 0 {
+                    theme.accent_error
+                } else {
+                    theme.text_tertiary
+                }),
             ),
             Span::styled(" | Warnings: ", Style::default().fg(theme.text_tertiary)),
             Span::styled(
                 records_with_warnings.to_string(),
-                Style::default().fg(if records_with_warnings > 0 { theme.accent_warning } else { theme.accent_success }),
+                Style::default().fg(if records_with_warnings > 0 {
+                    theme.accent_warning
+                } else {
+                    theme.accent_success
+                }),
             ),
         ]))
     }
@@ -616,25 +706,40 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
         DeadlineMode::Error(msg) => ("ERROR", theme.accent_error, "!"),
     };
 
-    builder = builder.add(Element::styled_text(Line::from(vec![
-        Span::styled(format!("{} ", mode_icon), Style::default().fg(mode_color).bold()),
-        Span::styled(mode_label, Style::default().fg(mode_color).bold())
-    ])).build(), Length(1));
+    builder = builder.add(
+        Element::styled_text(Line::from(vec![
+            Span::styled(
+                format!("{} ", mode_icon),
+                Style::default().fg(mode_color).bold(),
+            ),
+            Span::styled(mode_label, Style::default().fg(mode_color).bold()),
+        ]))
+        .build(),
+        Length(1),
+    );
 
     // Show error message if in Error mode
     if let DeadlineMode::Error(msg) = &record.mode {
-        builder = builder.add(Element::styled_text(Line::from(vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(msg.clone(), Style::default().fg(theme.accent_error))
-        ])).build(), Length(1));
+        builder = builder.add(
+            Element::styled_text(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(msg.clone(), Style::default().fg(theme.accent_error)),
+            ]))
+            .build(),
+            Length(1),
+        );
     }
 
     // Show existing GUID for Update records
     if let Some(ref guid) = record.existing_guid {
-        builder = builder.add(Element::styled_text(Line::from(vec![
-            Span::styled("  Existing ID: ", Style::default().fg(theme.text_tertiary)),
-            Span::styled(guid.clone(), Style::default().fg(theme.accent_muted))
-        ])).build(), Length(1));
+        builder = builder.add(
+            Element::styled_text(Line::from(vec![
+                Span::styled("  Existing ID: ", Style::default().fg(theme.text_tertiary)),
+                Span::styled(guid.clone(), Style::default().fg(theme.accent_muted)),
+            ]))
+            .build(),
+            Length(1),
+        );
     }
 
     builder = builder.add(spacer!(), Length(1));
@@ -668,7 +773,9 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
                 if old_value != Some(*new_value) {
                     field_changes.push((
                         field_name.clone(),
-                        old_value.map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
+                        old_value
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| "null".to_string()),
                         new_value.to_string(),
                     ));
                 }
@@ -681,27 +788,55 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
                 if old_value != Some(*new_value) {
                     field_changes.push((
                         field_name.clone(),
-                        old_value.map(|v| v.to_string()).unwrap_or_else(|| "null".to_string()),
+                        old_value
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| "null".to_string()),
                         new_value.to_string(),
                     ));
                 }
             }
 
             if !field_changes.is_empty() {
-                builder = builder.add(Element::styled_text(Line::from(vec![
-                    Span::styled("📝 Field Changes", Style::default().fg(theme.accent_info).bold())
-                ])).build(), Length(1));
+                builder = builder.add(
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        "📝 Field Changes",
+                        Style::default().fg(theme.accent_info).bold(),
+                    )]))
+                    .build(),
+                    Length(1),
+                );
 
                 for (field_name, old_val, new_val) in &field_changes {
-                    let old_display = if old_val.is_empty() { "(empty)" } else { old_val.as_str() };
-                    let new_display = if new_val.is_empty() { "(empty)" } else { new_val.as_str() };
+                    let old_display = if old_val.is_empty() {
+                        "(empty)"
+                    } else {
+                        old_val.as_str()
+                    };
+                    let new_display = if new_val.is_empty() {
+                        "(empty)"
+                    } else {
+                        new_val.as_str()
+                    };
 
-                    builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled(format!("  {}: ", field_name), Style::default().fg(theme.text_tertiary)),
-                        Span::styled(old_display.to_string(), Style::default().fg(theme.accent_error)),
-                        Span::styled(" → ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(new_display.to_string(), Style::default().fg(theme.accent_success)),
-                    ])).build(), Length(1));
+                    builder = builder.add(
+                        Element::styled_text(Line::from(vec![
+                            Span::styled(
+                                format!("  {}: ", field_name),
+                                Style::default().fg(theme.text_tertiary),
+                            ),
+                            Span::styled(
+                                old_display.to_string(),
+                                Style::default().fg(theme.accent_error),
+                            ),
+                            Span::styled(" → ", Style::default().fg(theme.text_tertiary)),
+                            Span::styled(
+                                new_display.to_string(),
+                                Style::default().fg(theme.accent_success),
+                            ),
+                        ]))
+                        .build(),
+                        Length(1),
+                    );
                 }
                 builder = builder.add(spacer!(), Length(1));
             }
@@ -711,29 +846,53 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
             let association_diff = diff_associations(record, existing_assoc, entity_type);
 
             if association_diff.has_changes() {
-                builder = builder.add(Element::styled_text(Line::from(vec![
-                    Span::styled("📋 Association Changes", Style::default().fg(theme.accent_warning).bold())
-                ])).build(), Length(1));
+                builder = builder.add(
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        "📋 Association Changes",
+                        Style::default().fg(theme.accent_warning).bold(),
+                    )]))
+                    .build(),
+                    Length(1),
+                );
 
                 // Helper to format names for display (sorted for deterministic order)
-                let format_names = |ids: &std::collections::HashSet<String>, name_map: &std::collections::HashMap<String, String>| -> String {
-                    let mut names: Vec<_> = ids.iter()
-                        .map(|id| name_map.get(id).cloned().unwrap_or_else(|| id[..8.min(id.len())].to_string()))
+                let format_names = |ids: &std::collections::HashSet<String>,
+                                    name_map: &std::collections::HashMap<String, String>|
+                 -> String {
+                    let mut names: Vec<_> = ids
+                        .iter()
+                        .map(|id| {
+                            name_map
+                                .get(id)
+                                .cloned()
+                                .unwrap_or_else(|| id[..8.min(id.len())].to_string())
+                        })
                         .collect();
                     names.sort();
                     names.join(", ")
                 };
 
                 // Support changes
-                if !association_diff.support_to_add.is_empty() || !association_diff.support_to_remove.is_empty() {
-                    builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled("  Support:", Style::default().fg(theme.text_secondary).bold()),
-                    ])).build(), Length(1));
+                if !association_diff.support_to_add.is_empty()
+                    || !association_diff.support_to_remove.is_empty()
+                {
+                    builder = builder.add(
+                        Element::styled_text(Line::from(vec![Span::styled(
+                            "  Support:",
+                            Style::default().fg(theme.text_secondary).bold(),
+                        )]))
+                        .build(),
+                        Length(1),
+                    );
                     if !association_diff.support_to_add.is_empty() {
                         // For NRQ, get names from custom_junction_records (sorted)
-                        let mut add_names_vec: Vec<_> = association_diff.support_to_add.iter()
+                        let mut add_names_vec: Vec<_> = association_diff
+                            .support_to_add
+                            .iter()
                             .map(|id| {
-                                record.custom_junction_records.iter()
+                                record
+                                    .custom_junction_records
+                                    .iter()
                                     .find(|r| &r.related_id == id)
                                     .map(|r| r.related_name.clone())
                                     .unwrap_or_else(|| id[..8.min(id.len())].to_string())
@@ -741,109 +900,200 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
                             .collect();
                         add_names_vec.sort();
                         let add_names = add_names_vec.join(", ");
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled("    + ", Style::default().fg(theme.accent_success)),
-                            Span::styled(add_names, Style::default().fg(theme.accent_success)),
-                        ])).build(), Length(1));
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![
+                                Span::styled("    + ", Style::default().fg(theme.accent_success)),
+                                Span::styled(add_names, Style::default().fg(theme.accent_success)),
+                            ]))
+                            .build(),
+                            Length(1),
+                        );
                     }
                     if !association_diff.support_to_remove.is_empty() {
-                        let remove_names = format_names(&association_diff.support_to_remove, &existing_assoc.support_names);
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled("    - ", Style::default().fg(theme.accent_error)),
-                            Span::styled(remove_names, Style::default().fg(theme.accent_error)),
-                        ])).build(), Length(1));
+                        let remove_names = format_names(
+                            &association_diff.support_to_remove,
+                            &existing_assoc.support_names,
+                        );
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![
+                                Span::styled("    - ", Style::default().fg(theme.accent_error)),
+                                Span::styled(remove_names, Style::default().fg(theme.accent_error)),
+                            ]))
+                            .build(),
+                            Length(1),
+                        );
                     }
                 }
 
                 // Category changes
-                if !association_diff.category_to_add.is_empty() || !association_diff.category_to_remove.is_empty() {
-                    builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled("  Category:", Style::default().fg(theme.text_secondary).bold()),
-                    ])).build(), Length(1));
+                if !association_diff.category_to_add.is_empty()
+                    || !association_diff.category_to_remove.is_empty()
+                {
+                    builder = builder.add(
+                        Element::styled_text(Line::from(vec![Span::styled(
+                            "  Category:",
+                            Style::default().fg(theme.text_secondary).bold(),
+                        )]))
+                        .build(),
+                        Length(1),
+                    );
                     if !association_diff.category_to_add.is_empty() {
-                        let add_names = format!("{} item(s)", association_diff.category_to_add.len());
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled("    + ", Style::default().fg(theme.accent_success)),
-                            Span::styled(add_names, Style::default().fg(theme.accent_success)),
-                        ])).build(), Length(1));
+                        let add_names =
+                            format!("{} item(s)", association_diff.category_to_add.len());
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![
+                                Span::styled("    + ", Style::default().fg(theme.accent_success)),
+                                Span::styled(add_names, Style::default().fg(theme.accent_success)),
+                            ]))
+                            .build(),
+                            Length(1),
+                        );
                     }
                     if !association_diff.category_to_remove.is_empty() {
-                        let remove_names = format_names(&association_diff.category_to_remove, &existing_assoc.category_names);
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled("    - ", Style::default().fg(theme.accent_error)),
-                            Span::styled(remove_names, Style::default().fg(theme.accent_error)),
-                        ])).build(), Length(1));
+                        let remove_names = format_names(
+                            &association_diff.category_to_remove,
+                            &existing_assoc.category_names,
+                        );
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![
+                                Span::styled("    - ", Style::default().fg(theme.accent_error)),
+                                Span::styled(remove_names, Style::default().fg(theme.accent_error)),
+                            ]))
+                            .build(),
+                            Length(1),
+                        );
                     }
                 }
 
                 // Length changes (CGK only)
-                if !association_diff.length_to_add.is_empty() || !association_diff.length_to_remove.is_empty() {
-                    builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled("  Length:", Style::default().fg(theme.text_secondary).bold()),
-                    ])).build(), Length(1));
+                if !association_diff.length_to_add.is_empty()
+                    || !association_diff.length_to_remove.is_empty()
+                {
+                    builder = builder.add(
+                        Element::styled_text(Line::from(vec![Span::styled(
+                            "  Length:",
+                            Style::default().fg(theme.text_secondary).bold(),
+                        )]))
+                        .build(),
+                        Length(1),
+                    );
                     if !association_diff.length_to_add.is_empty() {
                         let add_names = format!("{} item(s)", association_diff.length_to_add.len());
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled("    + ", Style::default().fg(theme.accent_success)),
-                            Span::styled(add_names, Style::default().fg(theme.accent_success)),
-                        ])).build(), Length(1));
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![
+                                Span::styled("    + ", Style::default().fg(theme.accent_success)),
+                                Span::styled(add_names, Style::default().fg(theme.accent_success)),
+                            ]))
+                            .build(),
+                            Length(1),
+                        );
                     }
                     if !association_diff.length_to_remove.is_empty() {
-                        let remove_names = format_names(&association_diff.length_to_remove, &existing_assoc.length_names);
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled("    - ", Style::default().fg(theme.accent_error)),
-                            Span::styled(remove_names, Style::default().fg(theme.accent_error)),
-                        ])).build(), Length(1));
+                        let remove_names = format_names(
+                            &association_diff.length_to_remove,
+                            &existing_assoc.length_names,
+                        );
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![
+                                Span::styled("    - ", Style::default().fg(theme.accent_error)),
+                                Span::styled(remove_names, Style::default().fg(theme.accent_error)),
+                            ]))
+                            .build(),
+                            Length(1),
+                        );
                     }
                 }
 
                 // Flemishshare changes
-                if !association_diff.flemishshare_to_add.is_empty() || !association_diff.flemishshare_to_remove.is_empty() {
-                    builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled("  Flemish Share:", Style::default().fg(theme.text_secondary).bold()),
-                    ])).build(), Length(1));
+                if !association_diff.flemishshare_to_add.is_empty()
+                    || !association_diff.flemishshare_to_remove.is_empty()
+                {
+                    builder = builder.add(
+                        Element::styled_text(Line::from(vec![Span::styled(
+                            "  Flemish Share:",
+                            Style::default().fg(theme.text_secondary).bold(),
+                        )]))
+                        .build(),
+                        Length(1),
+                    );
                     if !association_diff.flemishshare_to_add.is_empty() {
-                        let add_names = format!("{} item(s)", association_diff.flemishshare_to_add.len());
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled("    + ", Style::default().fg(theme.accent_success)),
-                            Span::styled(add_names, Style::default().fg(theme.accent_success)),
-                        ])).build(), Length(1));
+                        let add_names =
+                            format!("{} item(s)", association_diff.flemishshare_to_add.len());
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![
+                                Span::styled("    + ", Style::default().fg(theme.accent_success)),
+                                Span::styled(add_names, Style::default().fg(theme.accent_success)),
+                            ]))
+                            .build(),
+                            Length(1),
+                        );
                     }
                     if !association_diff.flemishshare_to_remove.is_empty() {
-                        let remove_names = format_names(&association_diff.flemishshare_to_remove, &existing_assoc.flemishshare_names);
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled("    - ", Style::default().fg(theme.accent_error)),
-                            Span::styled(remove_names, Style::default().fg(theme.accent_error)),
-                        ])).build(), Length(1));
+                        let remove_names = format_names(
+                            &association_diff.flemishshare_to_remove,
+                            &existing_assoc.flemishshare_names,
+                        );
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![
+                                Span::styled("    - ", Style::default().fg(theme.accent_error)),
+                                Span::styled(remove_names, Style::default().fg(theme.accent_error)),
+                            ]))
+                            .build(),
+                            Length(1),
+                        );
                     }
                 }
 
                 // Subcategory changes (NRQ only)
-                if !association_diff.subcategory_to_add.is_empty() || !association_diff.subcategory_to_remove.is_empty() {
-                    builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled("  Subcategory:", Style::default().fg(theme.text_secondary).bold()),
-                    ])).build(), Length(1));
+                if !association_diff.subcategory_to_add.is_empty()
+                    || !association_diff.subcategory_to_remove.is_empty()
+                {
+                    builder = builder.add(
+                        Element::styled_text(Line::from(vec![Span::styled(
+                            "  Subcategory:",
+                            Style::default().fg(theme.text_secondary).bold(),
+                        )]))
+                        .build(),
+                        Length(1),
+                    );
                     if !association_diff.subcategory_to_add.is_empty() {
-                        let add_names = format!("{} item(s)", association_diff.subcategory_to_add.len());
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled("    + ", Style::default().fg(theme.accent_success)),
-                            Span::styled(add_names, Style::default().fg(theme.accent_success)),
-                        ])).build(), Length(1));
+                        let add_names =
+                            format!("{} item(s)", association_diff.subcategory_to_add.len());
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![
+                                Span::styled("    + ", Style::default().fg(theme.accent_success)),
+                                Span::styled(add_names, Style::default().fg(theme.accent_success)),
+                            ]))
+                            .build(),
+                            Length(1),
+                        );
                     }
                     if !association_diff.subcategory_to_remove.is_empty() {
-                        let remove_names = format_names(&association_diff.subcategory_to_remove, &existing_assoc.subcategory_names);
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled("    - ", Style::default().fg(theme.accent_error)),
-                            Span::styled(remove_names, Style::default().fg(theme.accent_error)),
-                        ])).build(), Length(1));
+                        let remove_names = format_names(
+                            &association_diff.subcategory_to_remove,
+                            &existing_assoc.subcategory_names,
+                        );
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![
+                                Span::styled("    - ", Style::default().fg(theme.accent_error)),
+                                Span::styled(remove_names, Style::default().fg(theme.accent_error)),
+                            ]))
+                            .build(),
+                            Length(1),
+                        );
                     }
                 }
 
                 builder = builder.add(spacer!(), Length(1));
             } else {
-                builder = builder.add(Element::styled_text(Line::from(vec![
-                    Span::styled("📋 No association changes", Style::default().fg(theme.text_tertiary))
-                ])).build(), Length(1));
+                builder = builder.add(
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        "📋 No association changes",
+                        Style::default().fg(theme.text_tertiary),
+                    )]))
+                    .build(),
+                    Length(1),
+                );
                 builder = builder.add(spacer!(), Length(1));
             }
         }
@@ -851,24 +1101,41 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
 
     // Direct fields section
     if !record.direct_fields.is_empty() {
-        builder = builder.add(Element::styled_text(Line::from(vec![
-            Span::styled("📝 Direct Fields", Style::default().fg(theme.accent_secondary).bold())
-        ])).build(), Length(1));
+        builder = builder.add(
+            Element::styled_text(Line::from(vec![Span::styled(
+                "📝 Direct Fields",
+                Style::default().fg(theme.accent_secondary).bold(),
+            )]))
+            .build(),
+            Length(1),
+        );
 
         for (key, value) in &record.direct_fields {
-            builder = builder.add(Element::styled_text(Line::from(vec![
-                Span::styled(format!("  {}: ", key), Style::default().fg(theme.text_tertiary)),
-                Span::styled(value.clone(), Style::default().fg(theme.text_primary)),
-            ])).build(), Length(1));
+            builder = builder.add(
+                Element::styled_text(Line::from(vec![
+                    Span::styled(
+                        format!("  {}: ", key),
+                        Style::default().fg(theme.text_tertiary),
+                    ),
+                    Span::styled(value.clone(), Style::default().fg(theme.text_primary)),
+                ]))
+                .build(),
+                Length(1),
+            );
         }
         builder = builder.add(spacer!(), Length(1));
     }
 
     // Picklist fields section
     if !record.picklist_fields.is_empty() {
-        builder = builder.add(Element::styled_text(Line::from(vec![
-            Span::styled("🔢 Picklist Fields", Style::default().fg(theme.accent_secondary).bold())
-        ])).build(), Length(1));
+        builder = builder.add(
+            Element::styled_text(Line::from(vec![Span::styled(
+                "🔢 Picklist Fields",
+                Style::default().fg(theme.accent_secondary).bold(),
+            )]))
+            .build(),
+            Length(1),
+        );
 
         for (key, value) in &record.picklist_fields {
             // Map value back to label for display
@@ -882,37 +1149,65 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
                 _ => "Unknown",
             };
 
-            builder = builder.add(Element::styled_text(Line::from(vec![
-                Span::styled(format!("  {}: ", key), Style::default().fg(theme.text_tertiary)),
-                Span::styled(display_value, Style::default().fg(theme.accent_primary)),
-            ])).build(), Length(1));
+            builder = builder.add(
+                Element::styled_text(Line::from(vec![
+                    Span::styled(
+                        format!("  {}: ", key),
+                        Style::default().fg(theme.text_tertiary),
+                    ),
+                    Span::styled(display_value, Style::default().fg(theme.accent_primary)),
+                ]))
+                .build(),
+                Length(1),
+            );
         }
         builder = builder.add(spacer!(), Length(1));
     }
 
     // Boolean fields section
     if !record.boolean_fields.is_empty() {
-        builder = builder.add(Element::styled_text(Line::from(vec![
-            Span::styled("✓ Boolean Fields", Style::default().fg(theme.accent_secondary).bold())
-        ])).build(), Length(1));
+        builder = builder.add(
+            Element::styled_text(Line::from(vec![Span::styled(
+                "✓ Boolean Fields",
+                Style::default().fg(theme.accent_secondary).bold(),
+            )]))
+            .build(),
+            Length(1),
+        );
 
         for (key, value) in &record.boolean_fields {
             let display_value = if *value { "true" } else { "false" };
-            let color = if *value { theme.accent_success } else { theme.text_tertiary };
+            let color = if *value {
+                theme.accent_success
+            } else {
+                theme.text_tertiary
+            };
 
-            builder = builder.add(Element::styled_text(Line::from(vec![
-                Span::styled(format!("  {}: ", key), Style::default().fg(theme.text_tertiary)),
-                Span::styled(display_value, Style::default().fg(color)),
-            ])).build(), Length(1));
+            builder = builder.add(
+                Element::styled_text(Line::from(vec![
+                    Span::styled(
+                        format!("  {}: ", key),
+                        Style::default().fg(theme.text_tertiary),
+                    ),
+                    Span::styled(display_value, Style::default().fg(color)),
+                ]))
+                .build(),
+                Length(1),
+            );
         }
         builder = builder.add(spacer!(), Length(1));
     }
 
     // Lookup fields section
     if !record.lookup_fields.is_empty() {
-        builder = builder.add(Element::styled_text(Line::from(vec![
-            Span::styled("🔗 Lookup Fields (Resolved IDs)", Style::default().fg(theme.accent_secondary).bold())
-        ])).build(), Length(1));
+        builder = builder.add(
+            Element::styled_text(Line::from(vec![Span::styled(
+                "🔗 Lookup Fields (Resolved IDs)",
+                Style::default().fg(theme.accent_secondary).bold(),
+            )]))
+            .build(),
+            Length(1),
+        );
 
         for (key, (id, target_entity)) in &record.lookup_fields {
             let truncated = if id.len() > 20 {
@@ -921,55 +1216,107 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
                 id.clone()
             };
 
-            builder = builder.add(Element::styled_text(Line::from(vec![
-                Span::styled(format!("  {}: ", key), Style::default().fg(theme.text_tertiary)),
-                Span::styled(truncated, Style::default().fg(theme.accent_success)),
-                Span::styled(format!(" ({})", target_entity), Style::default().fg(theme.border_primary)),
-            ])).build(), Length(1));
+            builder = builder.add(
+                Element::styled_text(Line::from(vec![
+                    Span::styled(
+                        format!("  {}: ", key),
+                        Style::default().fg(theme.text_tertiary),
+                    ),
+                    Span::styled(truncated, Style::default().fg(theme.accent_success)),
+                    Span::styled(
+                        format!(" ({})", target_entity),
+                        Style::default().fg(theme.border_primary),
+                    ),
+                ]))
+                .build(),
+                Length(1),
+            );
         }
         builder = builder.add(spacer!(), Length(1));
     }
 
     // Dates section
     if record.deadline_date.is_some() || record.commission_date.is_some() {
-        builder = builder.add(Element::styled_text(Line::from(vec![
-            Span::styled("📅 Dates", Style::default().fg(theme.accent_secondary).bold())
-        ])).build(), Length(1));
+        builder = builder.add(
+            Element::styled_text(Line::from(vec![Span::styled(
+                "📅 Dates",
+                Style::default().fg(theme.accent_secondary).bold(),
+            )]))
+            .build(),
+            Length(1),
+        );
 
         if let Some(date) = record.deadline_date {
             let mut line = vec![
-                Span::styled("  Deadline Date: ", Style::default().fg(theme.text_tertiary)),
-                Span::styled(date.format("%Y-%m-%d").to_string(), Style::default().fg(theme.text_primary)),
+                Span::styled(
+                    "  Deadline Date: ",
+                    Style::default().fg(theme.text_tertiary),
+                ),
+                Span::styled(
+                    date.format("%Y-%m-%d").to_string(),
+                    Style::default().fg(theme.text_primary),
+                ),
             ];
 
             if let Some(time) = record.deadline_time {
-                line.push(Span::styled(" at ", Style::default().fg(theme.text_tertiary)));
-                line.push(Span::styled(time.format("%H:%M:%S").to_string(), Style::default().fg(theme.text_primary)));
+                line.push(Span::styled(
+                    " at ",
+                    Style::default().fg(theme.text_tertiary),
+                ));
+                line.push(Span::styled(
+                    time.format("%H:%M:%S").to_string(),
+                    Style::default().fg(theme.text_primary),
+                ));
             }
 
             builder = builder.add(Element::styled_text(Line::from(line)).build(), Length(1));
         }
 
         if let Some(date) = record.commission_date {
-            builder = builder.add(Element::styled_text(Line::from(vec![
-                Span::styled("  Commission Date: ", Style::default().fg(theme.text_tertiary)),
-                Span::styled(date.format("%Y-%m-%d").to_string(), Style::default().fg(theme.text_primary)),
-            ])).build(), Length(1));
+            builder = builder.add(
+                Element::styled_text(Line::from(vec![
+                    Span::styled(
+                        "  Commission Date: ",
+                        Style::default().fg(theme.text_tertiary),
+                    ),
+                    Span::styled(
+                        date.format("%Y-%m-%d").to_string(),
+                        Style::default().fg(theme.text_primary),
+                    ),
+                ]))
+                .build(),
+                Length(1),
+            );
         }
         builder = builder.add(spacer!(), Length(1));
     }
 
     // Checkbox relationships section
     if !record.checkbox_relationships.is_empty() {
-        builder = builder.add(Element::styled_text(Line::from(vec![
-            Span::styled("☑️  Checkbox Relationships (N:N)", Style::default().fg(theme.accent_secondary).bold())
-        ])).build(), Length(1));
+        builder = builder.add(
+            Element::styled_text(Line::from(vec![Span::styled(
+                "☑️  Checkbox Relationships (N:N)",
+                Style::default().fg(theme.accent_secondary).bold(),
+            )]))
+            .build(),
+            Length(1),
+        );
 
         for (relationship, ids) in &record.checkbox_relationships {
-            builder = builder.add(Element::styled_text(Line::from(vec![
-                Span::styled(format!("  {}: ", relationship), Style::default().fg(theme.text_tertiary)),
-                Span::styled(format!("{} items", ids.len()), Style::default().fg(theme.accent_muted)),
-            ])).build(), Length(1));
+            builder = builder.add(
+                Element::styled_text(Line::from(vec![
+                    Span::styled(
+                        format!("  {}: ", relationship),
+                        Style::default().fg(theme.text_tertiary),
+                    ),
+                    Span::styled(
+                        format!("{} items", ids.len()),
+                        Style::default().fg(theme.accent_muted),
+                    ),
+                ]))
+                .build(),
+                Length(1),
+            );
 
             // Show first few IDs
             for (idx, id) in ids.iter().take(3).enumerate() {
@@ -979,16 +1326,28 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
                     id.clone()
                 };
 
-                builder = builder.add(Element::styled_text(Line::from(vec![
-                    Span::styled(format!("    {}: ", idx + 1), Style::default().fg(theme.border_secondary)),
-                    Span::styled(truncated, Style::default().fg(theme.accent_success)),
-                ])).build(), Length(1));
+                builder = builder.add(
+                    Element::styled_text(Line::from(vec![
+                        Span::styled(
+                            format!("    {}: ", idx + 1),
+                            Style::default().fg(theme.border_secondary),
+                        ),
+                        Span::styled(truncated, Style::default().fg(theme.accent_success)),
+                    ]))
+                    .build(),
+                    Length(1),
+                );
             }
 
             if ids.len() > 3 {
-                builder = builder.add(Element::styled_text(Line::from(vec![
-                    Span::styled(format!("    ... and {} more", ids.len() - 3), Style::default().fg(theme.border_secondary).italic()),
-                ])).build(), Length(1));
+                builder = builder.add(
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        format!("    ... and {} more", ids.len() - 3),
+                        Style::default().fg(theme.border_secondary).italic(),
+                    )]))
+                    .build(),
+                    Length(1),
+                );
             }
         }
         builder = builder.add(spacer!(), Length(1));
@@ -996,21 +1355,39 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
 
     // Custom junction records section (e.g., nrq_deadlinesupport)
     if !record.custom_junction_records.is_empty() {
-        builder = builder.add(Element::styled_text(Line::from(vec![
-            Span::styled("🔗 Custom Junction Records", Style::default().fg(theme.accent_secondary).bold())
-        ])).build(), Length(1));
+        builder = builder.add(
+            Element::styled_text(Line::from(vec![Span::styled(
+                "🔗 Custom Junction Records",
+                Style::default().fg(theme.accent_secondary).bold(),
+            )]))
+            .build(),
+            Length(1),
+        );
 
         // Group by junction entity
-        let mut by_entity: std::collections::HashMap<&str, Vec<&super::models::CustomJunctionRecord>> = std::collections::HashMap::new();
+        let mut by_entity: std::collections::HashMap<
+            &str,
+            Vec<&super::models::CustomJunctionRecord>,
+        > = std::collections::HashMap::new();
         for rec in &record.custom_junction_records {
             by_entity.entry(&rec.junction_entity).or_default().push(rec);
         }
 
         for (junction_entity, records) in &by_entity {
-            builder = builder.add(Element::styled_text(Line::from(vec![
-                Span::styled(format!("  {}: ", junction_entity), Style::default().fg(theme.text_tertiary)),
-                Span::styled(format!("{} items", records.len()), Style::default().fg(theme.accent_muted)),
-            ])).build(), Length(1));
+            builder = builder.add(
+                Element::styled_text(Line::from(vec![
+                    Span::styled(
+                        format!("  {}: ", junction_entity),
+                        Style::default().fg(theme.text_tertiary),
+                    ),
+                    Span::styled(
+                        format!("{} items", records.len()),
+                        Style::default().fg(theme.accent_muted),
+                    ),
+                ]))
+                .build(),
+                Length(1),
+            );
 
             // Show first few related IDs
             for (idx, rec) in records.iter().take(3).enumerate() {
@@ -1020,48 +1397,86 @@ fn build_detail_panel(record: &TransformedDeadline, entity_type: &str) -> Elemen
                     rec.related_id.clone()
                 };
 
-                builder = builder.add(Element::styled_text(Line::from(vec![
-                    Span::styled(format!("    {}: ", idx + 1), Style::default().fg(theme.border_secondary)),
-                    Span::styled(format!("{} → ", rec.related_entity), Style::default().fg(theme.text_tertiary)),
-                    Span::styled(truncated, Style::default().fg(theme.accent_success)),
-                ])).build(), Length(1));
+                builder = builder.add(
+                    Element::styled_text(Line::from(vec![
+                        Span::styled(
+                            format!("    {}: ", idx + 1),
+                            Style::default().fg(theme.border_secondary),
+                        ),
+                        Span::styled(
+                            format!("{} → ", rec.related_entity),
+                            Style::default().fg(theme.text_tertiary),
+                        ),
+                        Span::styled(truncated, Style::default().fg(theme.accent_success)),
+                    ]))
+                    .build(),
+                    Length(1),
+                );
             }
 
             if records.len() > 3 {
-                builder = builder.add(Element::styled_text(Line::from(vec![
-                    Span::styled(format!("    ... and {} more", records.len() - 3), Style::default().fg(theme.border_secondary).italic()),
-                ])).build(), Length(1));
+                builder = builder.add(
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        format!("    ... and {} more", records.len() - 3),
+                        Style::default().fg(theme.border_secondary).italic(),
+                    )]))
+                    .build(),
+                    Length(1),
+                );
             }
         }
         builder = builder.add(spacer!(), Length(1));
     }
 
     // Warnings section
-    builder = builder.add(Element::styled_text(Line::from(vec![
-        Span::styled(
-            if record.has_warnings() { "⚠️  Warnings" } else { "✅ Status" },
-            Style::default().fg(if record.has_warnings() { theme.accent_warning } else { theme.accent_success }).bold()
-        )
-    ])).build(), Length(1));
+    builder = builder.add(
+        Element::styled_text(Line::from(vec![Span::styled(
+            if record.has_warnings() {
+                "⚠️  Warnings"
+            } else {
+                "✅ Status"
+            },
+            Style::default()
+                .fg(if record.has_warnings() {
+                    theme.accent_warning
+                } else {
+                    theme.accent_success
+                })
+                .bold(),
+        )]))
+        .build(),
+        Length(1),
+    );
 
     if !record.warnings.is_empty() {
         for warning in &record.warnings {
-            builder = builder.add(Element::styled_text(Line::from(vec![
-                Span::styled("  • ", Style::default().fg(theme.accent_warning)),
-                Span::styled(warning.clone(), Style::default().fg(theme.accent_error)),
-            ])).build(), Length(1));
+            builder = builder.add(
+                Element::styled_text(Line::from(vec![
+                    Span::styled("  • ", Style::default().fg(theme.accent_warning)),
+                    Span::styled(warning.clone(), Style::default().fg(theme.accent_error)),
+                ]))
+                .build(),
+                Length(1),
+            );
         }
     } else {
-        builder = builder.add(Element::styled_text(Line::from(vec![
-            Span::styled("  No warnings - record is ready for upload", Style::default().fg(theme.accent_success))
-        ])).build(), Length(1));
+        builder = builder.add(
+            Element::styled_text(Line::from(vec![Span::styled(
+                "  No warnings - record is ready for upload",
+                Style::default().fg(theme.accent_success),
+            )]))
+            .build(),
+            Length(1),
+        );
     }
 
     builder.build()
 }
 
 /// Extract entity GUID from OperationResult headers or body
-fn extract_entity_guid_from_result(result: &crate::api::operations::OperationResult) -> Option<String> {
+fn extract_entity_guid_from_result(
+    result: &crate::api::operations::OperationResult,
+) -> Option<String> {
     // Try headers first (OData-EntityId or Location)
     for (key, value) in &result.headers {
         if key.eq_ignore_ascii_case("odata-entityid") || key.eq_ignore_ascii_case("location") {
@@ -1080,7 +1495,8 @@ fn extract_entity_guid_from_result(result: &crate::api::operations::OperationRes
     // Try response body (when Prefer: return=representation is used)
     if let Some(ref data) = result.data {
         // Look for common ID field names
-        if let Some(id_value) = data.get("cgk_deadlineid")
+        if let Some(id_value) = data
+            .get("cgk_deadlineid")
             .or_else(|| data.get("nrq_deadlineid"))
             .or_else(|| data.get("id"))
         {
@@ -1120,7 +1536,11 @@ fn batch_deadline_creates(
             let metadata = QueueMetadata {
                 source: "Deadlines Excel".to_string(),
                 entity_type: entity_type.to_string(),
-                description: format!("Deadline batch {} ({} deadlines)", batch_num, current_batch_ops.len()),
+                description: format!(
+                    "Deadline batch {} ({} deadlines)",
+                    batch_num,
+                    current_batch_ops.len()
+                ),
                 row_number: None,
                 environment_name: environment_name.to_string(),
             };
@@ -1145,7 +1565,11 @@ fn batch_deadline_creates(
         let metadata = QueueMetadata {
             source: "Deadlines Excel".to_string(),
             entity_type: entity_type.to_string(),
-            description: format!("Deadline batch {} ({} deadlines)", batch_num, current_batch_ops.len()),
+            description: format!(
+                "Deadline batch {} ({} deadlines)",
+                batch_num,
+                current_batch_ops.len()
+            ),
             row_number: None,
             environment_name: environment_name.to_string(),
         };
@@ -1167,9 +1591,11 @@ fn build_association_operations(
     entity_type: &str,
     checkbox_relationships: &HashMap<String, Vec<String>>,
 ) -> Vec<crate::api::operations::Operation> {
+    use super::operation_builder::{
+        extract_related_entity_from_relationship, get_junction_entity_name,
+    };
     use crate::api::operations::Operation;
     use crate::api::pluralization::pluralize_entity_name;
-    use super::operation_builder::{get_junction_entity_name, extract_related_entity_from_relationship};
 
     let mut operations = Vec::new();
     let entity_set = pluralize_entity_name(entity_type);
@@ -1224,14 +1650,14 @@ fn build_custom_junction_operations(
         let main_bind_field = format!("{}@odata.bind", record.main_entity_field);
         payload.insert(
             main_bind_field,
-            json!(format!("/{}({})", main_entity_set, entity_guid))
+            json!(format!("/{}({})", main_entity_set, entity_guid)),
         );
 
         // Related entity lookup (e.g., nrq_supportid@odata.bind)
         let related_bind_field = format!("{}@odata.bind", record.related_entity_field);
         payload.insert(
             related_bind_field,
-            json!(format!("/{}({})", related_entity_set, record.related_id))
+            json!(format!("/{}({})", related_entity_set, record.related_id)),
         );
 
         // Add entity-specific fields for nrq_deadlinesupport
@@ -1277,7 +1703,10 @@ fn batch_associations(
             let metadata = QueueMetadata {
                 source: "Deadlines Excel (Associations)".to_string(),
                 entity_type: entity_type.to_string(),
-                description: format!("Association batch {} ({} operations)", batch_num, current_batch_count),
+                description: format!(
+                    "Association batch {} ({} operations)",
+                    batch_num, current_batch_count
+                ),
                 row_number: None,
                 environment_name: environment_name.to_string(),
             };
@@ -1301,7 +1730,10 @@ fn batch_associations(
         let metadata = QueueMetadata {
             source: "Deadlines Excel (Associations)".to_string(),
             entity_type: entity_type.to_string(),
-            description: format!("Association batch {} ({} operations)", batch_num, current_batch_count),
+            description: format!(
+                "Association batch {} ({} operations)",
+                batch_num, current_batch_count
+            ),
             row_number: None,
             environment_name: environment_name.to_string(),
         };
@@ -1362,7 +1794,11 @@ fn batch_deadline_updates(
             let metadata = QueueMetadata {
                 source: "Deadlines Excel (Updates)".to_string(),
                 entity_type: entity_type.to_string(),
-                description: format!("Field update batch {} ({} operations)", update_batch_num, update_ops_batch.len()),
+                description: format!(
+                    "Field update batch {} ({} operations)",
+                    update_batch_num,
+                    update_ops_batch.len()
+                ),
                 row_number: None,
                 environment_name: environment_name.to_string(),
             };
@@ -1375,7 +1811,9 @@ fn batch_deadline_updates(
         let existing_associations = match &record.existing_associations {
             Some(assoc) => assoc,
             None => {
-                log::warn!("Update record missing existing_associations - skipping association sync");
+                log::warn!(
+                    "Update record missing existing_associations - skipping association sync"
+                );
                 continue;
             }
         };
@@ -1384,11 +1822,13 @@ fn batch_deadline_updates(
         let association_diff = diff_associations(record, existing_associations, entity_type);
 
         // 3. Disassociate operations for removed N:N (delete batch)
-        let disassociate_ops = build_disassociate_operations(&entity_guid, entity_type, &association_diff);
+        let disassociate_ops =
+            build_disassociate_operations(&entity_guid, entity_type, &association_diff);
         delete_ops_batch.extend(disassociate_ops);
 
         // 4. Associate operations for added N:N (create batch)
-        let associate_ops = build_associate_operations(&entity_guid, entity_type, &association_diff);
+        let associate_ops =
+            build_associate_operations(&entity_guid, entity_type, &association_diff);
         create_ops_batch.extend(associate_ops);
 
         // 5. For NRQ: Handle custom junction (nrq_deadlinesupport)
@@ -1415,7 +1855,11 @@ fn batch_deadline_updates(
             let metadata = QueueMetadata {
                 source: "Deadlines Excel (Removals)".to_string(),
                 entity_type: entity_type.to_string(),
-                description: format!("Delete/Disassociate batch {} ({} operations)", delete_batch_num, delete_ops_batch.len()),
+                description: format!(
+                    "Delete/Disassociate batch {} ({} operations)",
+                    delete_batch_num,
+                    delete_ops_batch.len()
+                ),
                 row_number: None,
                 environment_name: environment_name.to_string(),
             };
@@ -1430,7 +1874,11 @@ fn batch_deadline_updates(
             let metadata = QueueMetadata {
                 source: "Deadlines Excel (Additions)".to_string(),
                 entity_type: entity_type.to_string(),
-                description: format!("Create/Associate batch {} ({} operations)", create_batch_num, create_ops_batch.len()),
+                description: format!(
+                    "Create/Associate batch {} ({} operations)",
+                    create_batch_num,
+                    create_ops_batch.len()
+                ),
                 row_number: None,
                 environment_name: environment_name.to_string(),
             };
@@ -1446,7 +1894,11 @@ fn batch_deadline_updates(
         let metadata = QueueMetadata {
             source: "Deadlines Excel (Updates)".to_string(),
             entity_type: entity_type.to_string(),
-            description: format!("Field update batch {} ({} operations)", update_batch_num, update_ops_batch.len()),
+            description: format!(
+                "Field update batch {} ({} operations)",
+                update_batch_num,
+                update_ops_batch.len()
+            ),
             row_number: None,
             environment_name: environment_name.to_string(),
         };
@@ -1459,7 +1911,11 @@ fn batch_deadline_updates(
         let metadata = QueueMetadata {
             source: "Deadlines Excel (Removals)".to_string(),
             entity_type: entity_type.to_string(),
-            description: format!("Delete/Disassociate batch {} ({} operations)", delete_batch_num, delete_ops_batch.len()),
+            description: format!(
+                "Delete/Disassociate batch {} ({} operations)",
+                delete_batch_num,
+                delete_ops_batch.len()
+            ),
             row_number: None,
             environment_name: environment_name.to_string(),
         };
@@ -1472,7 +1928,11 @@ fn batch_deadline_updates(
         let metadata = QueueMetadata {
             source: "Deadlines Excel (Additions)".to_string(),
             entity_type: entity_type.to_string(),
-            description: format!("Create/Associate batch {} ({} operations)", create_batch_num, create_ops_batch.len()),
+            description: format!(
+                "Create/Associate batch {} ({} operations)",
+                create_batch_num,
+                create_ops_batch.len()
+            ),
             row_number: None,
             environment_name: environment_name.to_string(),
         };

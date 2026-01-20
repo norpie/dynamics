@@ -1,13 +1,13 @@
 //! Migration manager for running up/down migrations
 
 use anyhow::{Context, Result};
+use log::{debug, info, warn};
 use sqlx::SqlitePool;
-use log::{info, warn, debug};
 
 use super::{
-    Migration, Direction, AppliedMigration,
-    init_migration_table, get_applied_migrations, get_pending_migrations,
-    get_current_version, validate_migrations, calculate_checksum, load_migrations,
+    AppliedMigration, Direction, Migration, calculate_checksum, get_applied_migrations,
+    get_current_version, get_pending_migrations, init_migration_table, load_migrations,
+    validate_migrations,
 };
 
 /// Migration manager handles running migrations up and down
@@ -83,7 +83,11 @@ impl<'a> MigrationManager<'a> {
             return Ok(());
         }
 
-        info!("Rolling back {} migrations to version {}", to_rollback.len(), target);
+        info!(
+            "Rolling back {} migrations to version {}",
+            to_rollback.len(),
+            target
+        );
         for migration in to_rollback {
             self.apply_migration(&migration, Direction::Down).await?;
         }
@@ -124,24 +128,25 @@ impl<'a> MigrationManager<'a> {
         debug!("Executing SQL:\n{}", sql);
 
         // Start transaction
-        let mut tx = self.pool.begin().await.context("Failed to start migration transaction")?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("Failed to start migration transaction")?;
 
         // Execute the migration SQL as a single statement
         // SQLite can handle multiple statements separated by semicolons
         if !sql.trim().is_empty() {
-            sqlx::query(sql)
-                .execute(&mut *tx)
-                .await
-                .with_context(|| {
-                    format!(
-                        "Failed to execute migration {} {} SQL",
-                        migration.version,
-                        match direction {
-                            Direction::Up => "up",
-                            Direction::Down => "down",
-                        }
-                    )
-                })?;
+            sqlx::query(sql).execute(&mut *tx).await.with_context(|| {
+                format!(
+                    "Failed to execute migration {} {} SQL",
+                    migration.version,
+                    match direction {
+                        Direction::Up => "up",
+                        Direction::Down => "down",
+                    }
+                )
+            })?;
         }
 
         // Update migration tracking
@@ -168,7 +173,9 @@ impl<'a> MigrationManager<'a> {
         }
 
         // Commit transaction
-        tx.commit().await.context("Failed to commit migration transaction")?;
+        tx.commit()
+            .await
+            .context("Failed to commit migration transaction")?;
 
         info!(
             "Migration {} {} completed",
@@ -237,7 +244,12 @@ impl MigrationStatus {
         if !self.applied_migrations.is_empty() {
             println!("\nApplied migrations:");
             for migration in &self.applied_migrations {
-                println!("  ✓ {} {} ({})", migration.version, migration.name, migration.applied_at.format("%Y-%m-%d %H:%M:%S"));
+                println!(
+                    "  ✓ {} {} ({})",
+                    migration.version,
+                    migration.name,
+                    migration.applied_at.format("%Y-%m-%d %H:%M:%S")
+                );
             }
         }
 

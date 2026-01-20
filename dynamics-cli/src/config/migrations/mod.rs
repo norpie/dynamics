@@ -36,7 +36,7 @@ pub enum Direction {
 /// Load all available migrations from the embedded files
 /// Migrations are auto-discovered from files/ directory using include_dir!
 pub fn load_migrations() -> Result<BTreeMap<i64, Migration>> {
-    use include_dir::{include_dir, Dir};
+    use include_dir::{Dir, include_dir};
 
     // Embed the entire files directory at compile time
     static MIGRATIONS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/config/migrations/files");
@@ -45,21 +45,29 @@ pub fn load_migrations() -> Result<BTreeMap<i64, Migration>> {
 
     // Iterate through each migration directory (e.g., "001_initial", "002_indexes")
     for entry in MIGRATIONS_DIR.dirs() {
-        let dir_name = entry.path().to_str()
+        let dir_name = entry
+            .path()
+            .to_str()
             .context("Invalid migration directory name")?;
 
         // Get just the directory name (last component)
-        let name_only = entry.path().file_name()
+        let name_only = entry
+            .path()
+            .file_name()
             .and_then(|n| n.to_str())
             .context("Invalid migration directory name")?;
 
         // Parse version and name from directory name (format: NNN_name)
         let parts: Vec<&str> = name_only.splitn(2, '_').collect();
         if parts.len() != 2 {
-            anyhow::bail!("Invalid migration directory format: {}. Expected format: NNN_name", name_only);
+            anyhow::bail!(
+                "Invalid migration directory format: {}. Expected format: NNN_name",
+                name_only
+            );
         }
 
-        let version: i64 = parts[0].parse()
+        let version: i64 = parts[0]
+            .parse()
             .with_context(|| format!("Invalid migration version in directory: {}", name_only))?;
         let name = parts[1].to_string();
 
@@ -68,24 +76,29 @@ pub fn load_migrations() -> Result<BTreeMap<i64, Migration>> {
         let up_path = format!("{}/up.sql", name_only);
         let down_path = format!("{}/down.sql", name_only);
 
-        let up_sql = MIGRATIONS_DIR.get_file(&up_path)
+        let up_sql = MIGRATIONS_DIR
+            .get_file(&up_path)
             .with_context(|| format!("Missing up.sql in migration {}", dir_name))?
             .contents_utf8()
             .with_context(|| format!("up.sql is not valid UTF-8 in migration {}", dir_name))?
             .to_string();
 
-        let down_sql = MIGRATIONS_DIR.get_file(&down_path)
+        let down_sql = MIGRATIONS_DIR
+            .get_file(&down_path)
             .with_context(|| format!("Missing down.sql in migration {}", dir_name))?
             .contents_utf8()
             .with_context(|| format!("down.sql is not valid UTF-8 in migration {}", dir_name))?
             .to_string();
 
-        migrations.insert(version, Migration {
+        migrations.insert(
             version,
-            name,
-            up_sql,
-            down_sql,
-        });
+            Migration {
+                version,
+                name,
+                up_sql,
+                down_sql,
+            },
+        );
     }
 
     if migrations.is_empty() {
@@ -208,12 +221,10 @@ pub async fn get_pending_migrations(pool: &SqlitePool) -> Result<Vec<Migration>>
 
 /// Get the current schema version (highest applied migration)
 pub async fn get_current_version(pool: &SqlitePool) -> Result<Option<i64>> {
-    let version: Option<(i64,)> = sqlx::query_as(
-        "SELECT MAX(version) FROM schema_migrations",
-    )
-    .fetch_optional(pool)
-    .await
-    .context("Failed to get current schema version")?;
+    let version: Option<(i64,)> = sqlx::query_as("SELECT MAX(version) FROM schema_migrations")
+        .fetch_optional(pool)
+        .await
+        .context("Failed to get current schema version")?;
 
     Ok(version.and_then(|(v,)| if v == 0 { None } else { Some(v) }))
 }
@@ -228,15 +239,36 @@ mod tests {
         assert!(!migrations.is_empty(), "Should have at least one migration");
 
         // Should have migrations 1, 2, and 3 auto-discovered
-        assert!(migrations.contains_key(&1), "Should have migration 001_initial");
-        assert!(migrations.contains_key(&2), "Should have migration 002_indexes");
-        assert!(migrations.contains_key(&3), "Should have migration 003_entity_cache");
+        assert!(
+            migrations.contains_key(&1),
+            "Should have migration 001_initial"
+        );
+        assert!(
+            migrations.contains_key(&2),
+            "Should have migration 002_indexes"
+        );
+        assert!(
+            migrations.contains_key(&3),
+            "Should have migration 003_entity_cache"
+        );
 
         // Verify each migration has up and down SQL
         for (version, migration) in &migrations {
-            assert!(!migration.up_sql.is_empty(), "Migration {} should have up.sql", version);
-            assert!(!migration.down_sql.is_empty(), "Migration {} should have down.sql", version);
-            assert!(!migration.name.is_empty(), "Migration {} should have a name", version);
+            assert!(
+                !migration.up_sql.is_empty(),
+                "Migration {} should have up.sql",
+                version
+            );
+            assert!(
+                !migration.down_sql.is_empty(),
+                "Migration {} should have down.sql",
+                version
+            );
+            assert!(
+                !migration.name.is_empty(),
+                "Migration {} should have a name",
+                version
+            );
         }
     }
 

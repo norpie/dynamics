@@ -1,15 +1,22 @@
+use super::matching_adapter::recompute_all_matches;
+use super::tree_items::ComparisonTreeItem;
+use super::tree_sync::{mirror_container_toggle, update_mirrored_selection};
+use super::view::{render_back_confirmation_modal, render_examples_modal, render_main_layout};
+use super::{
+    ActiveTab, ExamplePair, ExamplesState, FetchType, MatchInfo, Msg, Side, extract_entities,
+    extract_relationships, fetch_with_cache,
+};
+use crate::api::EntityMetadata;
 use crate::tui::{
+    Alignment as LayerAlignment, Resource,
     app::App,
     command::{AppId, Command},
     element::{Element, LayoutConstraint},
-    subscription::Subscription,
-    state::theme::Theme,
     renderer::LayeredView,
-    Resource,
+    state::theme::Theme,
+    subscription::Subscription,
     widgets::TreeState,
-    Alignment as LayerAlignment,
 };
-use crate::api::EntityMetadata;
 use crossterm::event::KeyCode;
 use ratatui::{
     prelude::Stylize,
@@ -17,11 +24,6 @@ use ratatui::{
     text::{Line, Span},
 };
 use std::collections::{HashMap, HashSet};
-use super::{Msg, Side, ExamplesState, ExamplePair, ActiveTab, FetchType, fetch_with_cache, extract_relationships, extract_entities, MatchInfo};
-use super::matching_adapter::recompute_all_matches;
-use super::tree_sync::{update_mirrored_selection, mirror_container_toggle};
-use super::view::{render_main_layout, render_back_confirmation_modal, render_examples_modal};
-use super::tree_items::ComparisonTreeItem;
 
 /// Deduplicate example pairs based on (source_record_id, target_record_id)
 /// Logs warnings for any duplicates found and keeps only the first occurrence
@@ -77,13 +79,17 @@ fn filter_example_pairs_by_entities(
 
             // Only include if both entities match the current comparison
             if source_entities.contains(&pair_source_entity.to_string())
-                && target_entities.contains(&pair_target_entity.to_string()) {
+                && target_entities.contains(&pair_target_entity.to_string())
+            {
                 filtered.push(pair);
             } else {
                 filtered_out += 1;
                 log::debug!(
                     "Filtering out example pair {}:{} -> {}:{} (not in current comparison)",
-                    pair_source_entity, parts[1], pair_target_entity, parts[3]
+                    pair_source_entity,
+                    parts[1],
+                    pair_target_entity,
+                    parts[3]
                 );
             }
         } else {
@@ -94,8 +100,11 @@ fn filter_example_pairs_by_entities(
     }
 
     if filtered_out > 0 {
-        log::info!("Filtered {} example pairs (kept {} matching current entities)",
-            filtered_out, filtered.len());
+        log::info!(
+            "Filtered {} example pairs (kept {} matching current entities)",
+            filtered_out,
+            filtered.len()
+        );
     }
 
     filtered
@@ -170,10 +179,10 @@ pub(super) struct TreeCache {
 #[derive(Clone, Debug)]
 pub struct ImportResults {
     pub filename: String,
-    pub added: Vec<(String, String)>,      // (source_field, target_field)
-    pub updated: Vec<(String, String)>,    // (source_field, target_field)
-    pub removed: Vec<(String, String)>,    // (source_field, target_field)
-    pub unparsed: Vec<String>,             // Lines that couldn't be parsed
+    pub added: Vec<(String, String)>, // (source_field, target_field)
+    pub updated: Vec<(String, String)>, // (source_field, target_field)
+    pub removed: Vec<(String, String)>, // (source_field, target_field)
+    pub unparsed: Vec<String>,        // Lines that couldn't be parsed
 }
 
 #[derive(Clone)]
@@ -184,21 +193,21 @@ pub struct State {
     pub(super) target_env: String,
 
     // Entities being compared (N:M support)
-    pub(super) source_entities: Vec<String>,  // Changed from source_entity: String
-    pub(super) target_entities: Vec<String>,  // Changed from target_entity: String
+    pub(super) source_entities: Vec<String>, // Changed from source_entity: String
+    pub(super) target_entities: Vec<String>, // Changed from target_entity: String
 
     // Active tab
     pub(super) active_tab: ActiveTab,
 
     // Metadata (from API) - now per entity
-    pub(super) source_metadata: HashMap<String, Resource<EntityMetadata>>,  // entity_name -> metadata
-    pub(super) target_metadata: HashMap<String, Resource<EntityMetadata>>,  // entity_name -> metadata
+    pub(super) source_metadata: HashMap<String, Resource<EntityMetadata>>, // entity_name -> metadata
+    pub(super) target_metadata: HashMap<String, Resource<EntityMetadata>>, // entity_name -> metadata
 
     // Mapping state (now uses qualified names: entity.field)
-    pub(super) field_mappings: HashMap<String, Vec<String>>,  // source -> targets (manual, 1-to-N support)
+    pub(super) field_mappings: HashMap<String, Vec<String>>, // source -> targets (manual, 1-to-N support)
     pub(super) prefix_mappings: HashMap<String, Vec<String>>, // source_prefix -> target_prefixes (1-to-N support)
     pub(super) imported_mappings: HashMap<String, Vec<String>>, // source -> targets (from C# file, 1-to-N support)
-    pub(super) import_source_file: Option<String>,       // filename of imported C# file
+    pub(super) import_source_file: Option<String>,              // filename of imported C# file
     pub(super) hide_mode: super::models::HideMode,
     pub(super) sort_mode: super::models::SortMode,
     pub(super) sort_direction: super::models::SortDirection,
@@ -206,13 +215,13 @@ pub struct State {
     pub(super) show_technical_names: bool, // true = logical names, false = display names
 
     // Computed matches (cached) - uses qualified names in multi-entity mode
-    pub(super) field_matches: HashMap<String, MatchInfo>,        // source_field -> match_info
+    pub(super) field_matches: HashMap<String, MatchInfo>, // source_field -> match_info
     pub(super) relationship_matches: HashMap<String, MatchInfo>, // source_relationship -> match_info
     pub(super) entity_matches: HashMap<String, MatchInfo>,       // source_entity -> match_info
 
     // Entity lists (extracted from relationships for Entities tab)
-    pub(super) source_related_entities: Vec<(String, usize)>,  // (entity_name, usage_count) - renamed from source_entities
-    pub(super) target_related_entities: Vec<(String, usize)>,  // renamed from target_entities
+    pub(super) source_related_entities: Vec<(String, usize)>, // (entity_name, usage_count) - renamed from source_entities
+    pub(super) target_related_entities: Vec<(String, usize)>, // renamed from target_entities
 
     // Tree UI state - one tree state per tab per side
     pub(super) source_fields_tree: TreeState,
@@ -291,8 +300,8 @@ pub struct EntityComparisonParams {
     pub migration_name: String,
     pub source_env: String,
     pub target_env: String,
-    pub source_entities: Vec<String>,  // Changed from source_entity: String
-    pub target_entities: Vec<String>,  // Changed from target_entity: String
+    pub source_entities: Vec<String>, // Changed from source_entity: String
+    pub target_entities: Vec<String>, // Changed from target_entity: String
 }
 
 impl Default for EntityComparisonParams {
@@ -315,11 +324,11 @@ impl Default for State {
             migration_name: String::new(),
             source_env: String::new(),
             target_env: String::new(),
-            source_entities: Vec::new(),  // Changed from source_entity
-            target_entities: Vec::new(),  // Changed from target_entity
+            source_entities: Vec::new(), // Changed from source_entity
+            target_entities: Vec::new(), // Changed from target_entity
             active_tab: ActiveTab::default(),
-            source_metadata: HashMap::new(),  // Changed from Resource::NotAsked
-            target_metadata: HashMap::new(),  // Changed from Resource::NotAsked
+            source_metadata: HashMap::new(), // Changed from Resource::NotAsked
+            target_metadata: HashMap::new(), // Changed from Resource::NotAsked
             field_mappings: HashMap::new(),
             prefix_mappings: HashMap::new(),
             imported_mappings: HashMap::new(),
@@ -332,8 +341,8 @@ impl Default for State {
             field_matches: HashMap::new(),
             relationship_matches: HashMap::new(),
             entity_matches: HashMap::new(),
-            source_related_entities: Vec::new(),  // Changed from source_entities
-            target_related_entities: Vec::new(),  // Changed from target_entities
+            source_related_entities: Vec::new(), // Changed from source_entities
+            target_related_entities: Vec::new(), // Changed from target_entities
             source_fields_tree: TreeState::with_selection(),
             source_relationships_tree: TreeState::with_selection(),
             source_views_tree: TreeState::with_selection(),
@@ -362,7 +371,7 @@ impl Default for State {
             manual_mappings_list_state: crate::tui::widgets::ListState::new(),
             show_import_modal: false,
             import_file_browser: crate::tui::widgets::FileBrowserState::new(
-                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
             ),
             show_import_results_modal: false,
             import_results: None,
@@ -405,34 +414,36 @@ impl State {
 
     /// Get metadata for a specific source entity
     pub(super) fn get_source_metadata(&self, entity_name: &str) -> Option<&EntityMetadata> {
-        self.source_metadata.get(entity_name)
-            .and_then(|r| match r {
-                Resource::Success(metadata) => Some(metadata),
-                _ => None,
-            })
+        self.source_metadata.get(entity_name).and_then(|r| match r {
+            Resource::Success(metadata) => Some(metadata),
+            _ => None,
+        })
     }
 
     /// Get metadata for a specific target entity
     pub(super) fn get_target_metadata(&self, entity_name: &str) -> Option<&EntityMetadata> {
-        self.target_metadata.get(entity_name)
-            .and_then(|r| match r {
-                Resource::Success(metadata) => Some(metadata),
-                _ => None,
-            })
+        self.target_metadata.get(entity_name).and_then(|r| match r {
+            Resource::Success(metadata) => Some(metadata),
+            _ => None,
+        })
     }
 
     /// Check if all source metadata has loaded successfully
     pub(super) fn all_source_metadata_loaded(&self) -> bool {
-        !self.source_entities.is_empty() && self.source_entities.iter().all(|e| {
-            matches!(self.source_metadata.get(e), Some(Resource::Success(_)))
-        })
+        !self.source_entities.is_empty()
+            && self
+                .source_entities
+                .iter()
+                .all(|e| matches!(self.source_metadata.get(e), Some(Resource::Success(_))))
     }
 
     /// Check if all target metadata has loaded successfully
     pub(super) fn all_target_metadata_loaded(&self) -> bool {
-        !self.target_entities.is_empty() && self.target_entities.iter().all(|e| {
-            matches!(self.target_metadata.get(e), Some(Resource::Success(_)))
-        })
+        !self.target_entities.is_empty()
+            && self
+                .target_entities
+                .iter()
+                .all(|e| matches!(self.target_metadata.get(e), Some(Resource::Success(_))))
     }
 
     /// Check if all metadata (both source and target) has loaded successfully
@@ -510,7 +521,9 @@ impl State {
         let source_items = if is_multi_entity {
             // Multi-entity mode: use qualified field names
             // Extract successful metadata for tree building
-            let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = self.source_metadata.iter()
+            let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = self
+                .source_metadata
+                .iter()
                 .filter_map(|(name, resource)| {
                     if let Resource::Success(metadata) = resource {
                         Some((name.clone(), metadata.clone()))
@@ -567,9 +580,16 @@ impl State {
             // Group all sources by their target
             for (source_field, match_info) in &self.field_matches {
                 for target_field in &match_info.target_fields {
-                    let match_type = match_info.match_types.get(target_field).cloned()
+                    let match_type = match_info
+                        .match_types
+                        .get(target_field)
+                        .cloned()
                         .unwrap_or(super::MatchType::Manual);
-                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
+                    let confidence = match_info
+                        .confidences
+                        .get(target_field)
+                        .copied()
+                        .unwrap_or(1.0);
 
                     temp.entry(target_field.clone())
                         .or_insert_with(Vec::new)
@@ -600,9 +620,16 @@ impl State {
             // Group all sources by their target
             for (source_rel, match_info) in &self.relationship_matches {
                 for target_field in &match_info.target_fields {
-                    let match_type = match_info.match_types.get(target_field).cloned()
+                    let match_type = match_info
+                        .match_types
+                        .get(target_field)
+                        .cloned()
                         .unwrap_or(super::MatchType::Manual);
-                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
+                    let confidence = match_info
+                        .confidences
+                        .get(target_field)
+                        .copied()
+                        .unwrap_or(1.0);
 
                     temp.entry(target_field.clone())
                         .or_insert_with(Vec::new)
@@ -633,9 +660,16 @@ impl State {
             // Group all sources by their target
             for (source_entity, match_info) in &self.entity_matches {
                 for target_field in &match_info.target_fields {
-                    let match_type = match_info.match_types.get(target_field).cloned()
+                    let match_type = match_info
+                        .match_types
+                        .get(target_field)
+                        .cloned()
                         .unwrap_or(super::MatchType::Manual);
-                    let confidence = match_info.confidences.get(target_field).copied().unwrap_or(1.0);
+                    let confidence = match_info
+                        .confidences
+                        .get(target_field)
+                        .copied()
+                        .unwrap_or(1.0);
 
                     temp.entry(target_field.clone())
                         .or_insert_with(Vec::new)
@@ -664,7 +698,9 @@ impl State {
         let target_items = if is_multi_entity {
             // Multi-entity mode: use qualified field names
             // Extract successful metadata for tree building
-            let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = self.target_metadata.iter()
+            let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = self
+                .target_metadata
+                .iter()
                 .filter_map(|(name, resource)| {
                     if let Resource::Success(metadata) = resource {
                         Some((name.clone(), metadata.clone()))
@@ -796,7 +832,7 @@ impl App for EntityComparisonApp {
             manual_mappings_list_state: crate::tui::widgets::ListState::new(),
             show_import_modal: false,
             import_file_browser: crate::tui::widgets::FileBrowserState::new(
-                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"))
+                std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/")),
             ),
             show_import_results_modal: false,
             import_results: None,
@@ -821,169 +857,262 @@ impl App for EntityComparisonApp {
         };
 
         // First, load mappings to know which example pairs to fetch
-        let init_cmd = Command::perform({
-            let source_entities = params.source_entities.clone();
-            let target_entities = params.target_entities.clone();
-            async move {
-                let config = crate::global_config();
+        let init_cmd = Command::perform(
+            {
+                let source_entities = params.source_entities.clone();
+                let target_entities = params.target_entities.clone();
+                async move {
+                    let config = crate::global_config();
 
-                // Use multi-entity API (handles backwards compat automatically)
-                let field_mappings = config.get_field_mappings_multi(&source_entities, &target_entities).await
-                    .unwrap_or_else(|e| {
-                        log::error!("Failed to load field mappings: {}", e);
-                        HashMap::new()
-                    });
-
-                // Multi-entity support for prefix/imported/example mappings
-                let is_multi_entity = source_entities.len() > 1 || target_entities.len() > 1;
-
-                let (prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches) = if is_multi_entity {
-                    // Multi-entity mode: load and merge all entity pairs
-
-                    // Prefix mappings are global (saved to all pairs), so load from first
-                    let first_source = source_entities.first().cloned().unwrap_or_default();
-                    let first_target = target_entities.first().cloned().unwrap_or_default();
-                    let prefix_mappings = config.get_prefix_mappings(&first_source, &first_target).await
+                    // Use multi-entity API (handles backwards compat automatically)
+                    let field_mappings = config
+                        .get_field_mappings_multi(&source_entities, &target_entities)
+                        .await
                         .unwrap_or_else(|e| {
-                            log::error!("Failed to load prefix mappings: {}", e);
+                            log::error!("Failed to load field mappings: {}", e);
                             HashMap::new()
                         });
 
-                    // Load imported mappings for all entity pairs and merge with qualified names
-                    let mut all_imported_mappings = HashMap::new();
-                    let mut combined_import_source_file = None;
-                    for source_entity in &source_entities {
-                        for target_entity in &target_entities {
-                            let (entity_imported, entity_import_file) = config.get_imported_mappings(source_entity, target_entity).await
-                                .unwrap_or_else(|e| {
-                                    log::error!("Failed to load imported mappings for {}/{}: {}", source_entity, target_entity, e);
-                                    (HashMap::new(), None)
-                                });
+                    // Multi-entity support for prefix/imported/example mappings
+                    let is_multi_entity = source_entities.len() > 1 || target_entities.len() > 1;
 
-                            // Qualify and merge
-                            for (source_field, target_fields) in entity_imported {
-                                let qualified_source = format!("{}.{}", source_entity, source_field);
-                                let qualified_targets: Vec<String> = target_fields.iter()
-                                    .map(|t| format!("{}.{}", target_entity, t))
-                                    .collect();
-                                all_imported_mappings.insert(qualified_source, qualified_targets);
-                            }
+                    let (
+                        prefix_mappings,
+                        imported_mappings,
+                        import_source_file,
+                        example_pairs,
+                        ignored_items,
+                        negative_matches,
+                    ) = if is_multi_entity {
+                        // Multi-entity mode: load and merge all entity pairs
 
-                            if entity_import_file.is_some() {
-                                combined_import_source_file = entity_import_file;
-                            }
-                        }
-                    }
+                        // Prefix mappings are global (saved to all pairs), so load from first
+                        let first_source = source_entities.first().cloned().unwrap_or_default();
+                        let first_target = target_entities.first().cloned().unwrap_or_default();
+                        let prefix_mappings = config
+                            .get_prefix_mappings(&first_source, &first_target)
+                            .await
+                            .unwrap_or_else(|e| {
+                                log::error!("Failed to load prefix mappings: {}", e);
+                                HashMap::new()
+                            });
 
-                    // Load example pairs for all entity pairs and merge
-                    let mut all_example_pairs = Vec::new();
-                    for source_entity in &source_entities {
-                        for target_entity in &target_entities {
-                            let entity_pairs = config.get_example_pairs(source_entity, target_entity).await
-                                .unwrap_or_else(|e| {
-                                    log::error!("Failed to load example pairs for {}/{}: {}", source_entity, target_entity, e);
-                                    Vec::new()
-                                });
-                            all_example_pairs.extend(entity_pairs);
-                        }
-                    }
-                    let example_pairs = filter_example_pairs_by_entities(
-                        deduplicate_example_pairs(all_example_pairs),
-                        &source_entities,
-                        &target_entities,
-                    );
+                        // Load imported mappings for all entity pairs and merge with qualified names
+                        let mut all_imported_mappings = HashMap::new();
+                        let mut combined_import_source_file = None;
+                        for source_entity in &source_entities {
+                            for target_entity in &target_entities {
+                                let (entity_imported, entity_import_file) = config
+                                    .get_imported_mappings(source_entity, target_entity)
+                                    .await
+                                    .unwrap_or_else(|e| {
+                                        log::error!(
+                                            "Failed to load imported mappings for {}/{}: {}",
+                                            source_entity,
+                                            target_entity,
+                                            e
+                                        );
+                                        (HashMap::new(), None)
+                                    });
 
-                    // Load ignored items for all entity pairs and merge with qualified names
-                    let mut all_ignored_items = std::collections::HashSet::new();
-                    for source_entity in &source_entities {
-                        for target_entity in &target_entities {
-                            let entity_ignored = config.get_ignored_items(source_entity, target_entity).await
-                                .unwrap_or_else(|e| {
-                                    log::error!("Failed to load ignored items for {}/{}: {}", source_entity, target_entity, e);
-                                    std::collections::HashSet::new()
-                                });
+                                // Qualify and merge
+                                for (source_field, target_fields) in entity_imported {
+                                    let qualified_source =
+                                        format!("{}.{}", source_entity, source_field);
+                                    let qualified_targets: Vec<String> = target_fields
+                                        .iter()
+                                        .map(|t| format!("{}.{}", target_entity, t))
+                                        .collect();
+                                    all_imported_mappings
+                                        .insert(qualified_source, qualified_targets);
+                                }
 
-                            // Qualify and merge
-                            for item in entity_ignored {
-                                let qualified_item = if item.contains('.') {
-                                    item // Already qualified
-                                } else {
-                                    format!("{}.{}", source_entity, item)
-                                };
-                                all_ignored_items.insert(qualified_item);
+                                if entity_import_file.is_some() {
+                                    combined_import_source_file = entity_import_file;
+                                }
                             }
                         }
-                    }
 
-                    // Load negative matches for all entity pairs and merge with qualified names
-                    let mut all_negative_matches = std::collections::HashSet::new();
-                    for source_entity in &source_entities {
-                        for target_entity in &target_entities {
-                            let entity_negative = config.get_negative_matches(source_entity, target_entity).await
-                                .unwrap_or_else(|e| {
-                                    log::error!("Failed to load negative matches for {}/{}: {}", source_entity, target_entity, e);
-                                    std::collections::HashSet::new()
-                                });
-
-                            // Qualify and merge
-                            for field in entity_negative {
-                                let qualified_field = if field.contains('.') {
-                                    field // Already qualified
-                                } else {
-                                    format!("{}.{}", source_entity, field)
-                                };
-                                all_negative_matches.insert(qualified_field);
+                        // Load example pairs for all entity pairs and merge
+                        let mut all_example_pairs = Vec::new();
+                        for source_entity in &source_entities {
+                            for target_entity in &target_entities {
+                                let entity_pairs = config
+                                    .get_example_pairs(source_entity, target_entity)
+                                    .await
+                                    .unwrap_or_else(|e| {
+                                        log::error!(
+                                            "Failed to load example pairs for {}/{}: {}",
+                                            source_entity,
+                                            target_entity,
+                                            e
+                                        );
+                                        Vec::new()
+                                    });
+                                all_example_pairs.extend(entity_pairs);
                             }
                         }
-                    }
+                        let example_pairs = filter_example_pairs_by_entities(
+                            deduplicate_example_pairs(all_example_pairs),
+                            &source_entities,
+                            &target_entities,
+                        );
 
-                    (prefix_mappings, all_imported_mappings, combined_import_source_file, example_pairs, all_ignored_items, all_negative_matches)
-                } else {
-                    // Single-entity mode: backwards compatible
-                    let (first_source, first_target) = (
-                        source_entities.first().cloned().unwrap_or_default(),
-                        target_entities.first().cloned().unwrap_or_default()
-                    );
+                        // Load ignored items for all entity pairs and merge with qualified names
+                        let mut all_ignored_items = std::collections::HashSet::new();
+                        for source_entity in &source_entities {
+                            for target_entity in &target_entities {
+                                let entity_ignored = config
+                                    .get_ignored_items(source_entity, target_entity)
+                                    .await
+                                    .unwrap_or_else(|e| {
+                                        log::error!(
+                                            "Failed to load ignored items for {}/{}: {}",
+                                            source_entity,
+                                            target_entity,
+                                            e
+                                        );
+                                        std::collections::HashSet::new()
+                                    });
 
-                    let prefix_mappings = config.get_prefix_mappings(&first_source, &first_target).await
-                        .unwrap_or_else(|e| {
-                            log::error!("Failed to load prefix mappings: {}", e);
-                            HashMap::new()
-                        });
-                    let (imported_mappings, import_source_file) = config.get_imported_mappings(&first_source, &first_target).await
-                        .unwrap_or_else(|e| {
-                            log::error!("Failed to load imported mappings: {}", e);
-                            (HashMap::new(), None)
-                        });
-                    let example_pairs_raw = config.get_example_pairs(&first_source, &first_target).await
-                        .unwrap_or_else(|e| {
-                            log::error!("Failed to load example pairs: {}", e);
-                            Vec::new()
-                        });
-                    let example_pairs = filter_example_pairs_by_entities(
-                        deduplicate_example_pairs(example_pairs_raw),
-                        &source_entities,
-                        &target_entities,
-                    );
+                                // Qualify and merge
+                                for item in entity_ignored {
+                                    let qualified_item = if item.contains('.') {
+                                        item // Already qualified
+                                    } else {
+                                        format!("{}.{}", source_entity, item)
+                                    };
+                                    all_ignored_items.insert(qualified_item);
+                                }
+                            }
+                        }
 
-                    let ignored_items = config.get_ignored_items(&first_source, &first_target).await
-                        .unwrap_or_else(|e| {
-                            log::error!("Failed to load ignored items: {}", e);
-                            std::collections::HashSet::new()
-                        });
-                    let negative_matches = config.get_negative_matches(&first_source, &first_target).await
-                        .unwrap_or_else(|e| {
-                            log::error!("Failed to load negative matches: {}", e);
-                            std::collections::HashSet::new()
-                        });
+                        // Load negative matches for all entity pairs and merge with qualified names
+                        let mut all_negative_matches = std::collections::HashSet::new();
+                        for source_entity in &source_entities {
+                            for target_entity in &target_entities {
+                                let entity_negative = config
+                                    .get_negative_matches(source_entity, target_entity)
+                                    .await
+                                    .unwrap_or_else(|e| {
+                                        log::error!(
+                                            "Failed to load negative matches for {}/{}: {}",
+                                            source_entity,
+                                            target_entity,
+                                            e
+                                        );
+                                        std::collections::HashSet::new()
+                                    });
 
-                    (prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches)
-                };
-                (field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches)
-            }
-        }, |(field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches)| {
-            Msg::MappingsLoaded(field_mappings, prefix_mappings, imported_mappings, import_source_file, example_pairs, ignored_items, negative_matches)
-        });
+                                // Qualify and merge
+                                for field in entity_negative {
+                                    let qualified_field = if field.contains('.') {
+                                        field // Already qualified
+                                    } else {
+                                        format!("{}.{}", source_entity, field)
+                                    };
+                                    all_negative_matches.insert(qualified_field);
+                                }
+                            }
+                        }
+
+                        (
+                            prefix_mappings,
+                            all_imported_mappings,
+                            combined_import_source_file,
+                            example_pairs,
+                            all_ignored_items,
+                            all_negative_matches,
+                        )
+                    } else {
+                        // Single-entity mode: backwards compatible
+                        let (first_source, first_target) = (
+                            source_entities.first().cloned().unwrap_or_default(),
+                            target_entities.first().cloned().unwrap_or_default(),
+                        );
+
+                        let prefix_mappings = config
+                            .get_prefix_mappings(&first_source, &first_target)
+                            .await
+                            .unwrap_or_else(|e| {
+                                log::error!("Failed to load prefix mappings: {}", e);
+                                HashMap::new()
+                            });
+                        let (imported_mappings, import_source_file) = config
+                            .get_imported_mappings(&first_source, &first_target)
+                            .await
+                            .unwrap_or_else(|e| {
+                                log::error!("Failed to load imported mappings: {}", e);
+                                (HashMap::new(), None)
+                            });
+                        let example_pairs_raw = config
+                            .get_example_pairs(&first_source, &first_target)
+                            .await
+                            .unwrap_or_else(|e| {
+                                log::error!("Failed to load example pairs: {}", e);
+                                Vec::new()
+                            });
+                        let example_pairs = filter_example_pairs_by_entities(
+                            deduplicate_example_pairs(example_pairs_raw),
+                            &source_entities,
+                            &target_entities,
+                        );
+
+                        let ignored_items = config
+                            .get_ignored_items(&first_source, &first_target)
+                            .await
+                            .unwrap_or_else(|e| {
+                                log::error!("Failed to load ignored items: {}", e);
+                                std::collections::HashSet::new()
+                            });
+                        let negative_matches = config
+                            .get_negative_matches(&first_source, &first_target)
+                            .await
+                            .unwrap_or_else(|e| {
+                                log::error!("Failed to load negative matches: {}", e);
+                                std::collections::HashSet::new()
+                            });
+
+                        (
+                            prefix_mappings,
+                            imported_mappings,
+                            import_source_file,
+                            example_pairs,
+                            ignored_items,
+                            negative_matches,
+                        )
+                    };
+                    (
+                        field_mappings,
+                        prefix_mappings,
+                        imported_mappings,
+                        import_source_file,
+                        example_pairs,
+                        ignored_items,
+                        negative_matches,
+                    )
+                }
+            },
+            |(
+                field_mappings,
+                prefix_mappings,
+                imported_mappings,
+                import_source_file,
+                example_pairs,
+                ignored_items,
+                negative_matches,
+            )| {
+                Msg::MappingsLoaded(
+                    field_mappings,
+                    prefix_mappings,
+                    imported_mappings,
+                    import_source_file,
+                    example_pairs,
+                    ignored_items,
+                    negative_matches,
+                )
+            },
+        );
 
         (state, init_cmd)
     }
@@ -1005,27 +1134,45 @@ impl App for EntityComparisonApp {
         }
 
         if state.show_prefix_mappings_modal {
-            view = view.with_app_modal(super::view::render_prefix_mappings_modal(state), LayerAlignment::Center);
+            view = view.with_app_modal(
+                super::view::render_prefix_mappings_modal(state),
+                LayerAlignment::Center,
+            );
         }
 
         if state.show_negative_matches_modal {
-            view = view.with_app_modal(super::view::render_negative_matches_modal(state), LayerAlignment::Center);
+            view = view.with_app_modal(
+                super::view::render_negative_matches_modal(state),
+                LayerAlignment::Center,
+            );
         }
 
         if state.show_manual_mappings_modal {
-            view = view.with_app_modal(super::view::render_manual_mappings_modal(state), LayerAlignment::Center);
+            view = view.with_app_modal(
+                super::view::render_manual_mappings_modal(state),
+                LayerAlignment::Center,
+            );
         }
 
         if state.show_import_modal {
-            view = view.with_app_modal(super::view::render_import_modal(state), LayerAlignment::Center);
+            view = view.with_app_modal(
+                super::view::render_import_modal(state),
+                LayerAlignment::Center,
+            );
         }
 
         if state.show_import_results_modal {
-            view = view.with_app_modal(super::view::render_import_results_modal(state), LayerAlignment::Center);
+            view = view.with_app_modal(
+                super::view::render_import_results_modal(state),
+                LayerAlignment::Center,
+            );
         }
 
         if state.show_ignore_modal {
-            view = view.with_app_modal(super::view::render_ignore_modal(state), LayerAlignment::Center);
+            view = view.with_app_modal(
+                super::view::render_ignore_modal(state),
+                LayerAlignment::Center,
+            );
         }
 
         view
@@ -1036,64 +1183,147 @@ impl App for EntityComparisonApp {
 
         let mut subs = vec![
             Subscription::keyboard(KeyCode::Esc, "Back to comparison list", Msg::Back),
-            Subscription::keyboard(config.get_keybind("entity_comparison.back"), "Back to comparison list", Msg::Back),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.back"),
+                "Back to comparison list",
+                Msg::Back,
+            ),
             // Tab switching
-            Subscription::keyboard(config.get_keybind("entity_comparison.tab_fields"), "Switch to Fields", Msg::SwitchTab(1)),
-            Subscription::keyboard(config.get_keybind("entity_comparison.tab_relationships"), "Switch to Relationships", Msg::SwitchTab(2)),
-            Subscription::keyboard(config.get_keybind("entity_comparison.tab_views"), "Switch to Views", Msg::SwitchTab(3)),
-            Subscription::keyboard(config.get_keybind("entity_comparison.tab_forms"), "Switch to Forms", Msg::SwitchTab(4)),
-            Subscription::keyboard(config.get_keybind("entity_comparison.tab_entities"), "Switch to Entities", Msg::SwitchTab(5)),
-
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.tab_fields"),
+                "Switch to Fields",
+                Msg::SwitchTab(1),
+            ),
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.tab_relationships"),
+                "Switch to Relationships",
+                Msg::SwitchTab(2),
+            ),
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.tab_views"),
+                "Switch to Views",
+                Msg::SwitchTab(3),
+            ),
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.tab_forms"),
+                "Switch to Forms",
+                Msg::SwitchTab(4),
+            ),
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.tab_entities"),
+                "Switch to Entities",
+                Msg::SwitchTab(5),
+            ),
             // Refresh metadata
-            Subscription::keyboard(config.get_keybind("entity_comparison.refresh"), "Refresh metadata", Msg::Refresh),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.refresh"),
+                "Refresh metadata",
+                Msg::Refresh,
+            ),
             // Manual mapping actions (supports 1-to-N and N-to-1 via multi-select)
-            Subscription::keyboard(config.get_keybind("entity_comparison.create_mapping"), "Create manual mapping (multi-select supported)", Msg::CreateManualMapping),
-            Subscription::keyboard(config.get_keybind("entity_comparison.delete_mapping"), "Delete manual mapping", Msg::DeleteManualMapping),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.create_mapping"),
+                "Create manual mapping (multi-select supported)",
+                Msg::CreateManualMapping,
+            ),
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.delete_mapping"),
+                "Delete manual mapping",
+                Msg::DeleteManualMapping,
+            ),
             // Cycle hide mode
-            Subscription::keyboard(config.get_keybind("entity_comparison.toggle_hide_matched"), "Cycle hide mode", Msg::CycleHideMode),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.toggle_hide_matched"),
+                "Cycle hide mode",
+                Msg::CycleHideMode,
+            ),
             // Sort mode toggle
-            Subscription::keyboard(config.get_keybind("entity_comparison.toggle_sort"), "Toggle sort mode", Msg::ToggleSortMode),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.toggle_sort"),
+                "Toggle sort mode",
+                Msg::ToggleSortMode,
+            ),
             // Sort direction toggle
-            Subscription::keyboard(KeyCode::Char('S'), "Toggle sort direction", Msg::ToggleSortDirection),
-
+            Subscription::keyboard(
+                KeyCode::Char('S'),
+                "Toggle sort direction",
+                Msg::ToggleSortDirection,
+            ),
             // Technical/display name toggle
-            Subscription::keyboard(config.get_keybind("entity_comparison.toggle_technical_names"), "Toggle technical names", Msg::ToggleTechnicalNames),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.toggle_technical_names"),
+                "Toggle technical names",
+                Msg::ToggleTechnicalNames,
+            ),
             // Mirror mode toggle
-            Subscription::keyboard(config.get_keybind("entity_comparison.toggle_mirror"), "Toggle mirror mode", Msg::ToggleMirrorMode),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.toggle_mirror"),
+                "Toggle mirror mode",
+                Msg::ToggleMirrorMode,
+            ),
             // Type filtering (conditional based on mode)
-            Subscription::keyboard(config.get_keybind("entity_comparison.toggle_type_filter_mode"), "Toggle type filter mode", Msg::ToggleTypeFilterMode),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.toggle_type_filter_mode"),
+                "Toggle type filter mode",
+                Msg::ToggleTypeFilterMode,
+            ),
             // Examples management
-            Subscription::keyboard(config.get_keybind("entity_comparison.cycle_example"), "Cycle example pairs", Msg::CycleExamplePair),
-            Subscription::keyboard(config.get_keybind("entity_comparison.open_examples"), "Open examples modal", Msg::OpenExamplesModal),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.cycle_example"),
+                "Cycle example pairs",
+                Msg::CycleExamplePair,
+            ),
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.open_examples"),
+                "Open examples modal",
+                Msg::OpenExamplesModal,
+            ),
             // Prefix mappings
-            Subscription::keyboard(config.get_keybind("entity_comparison.open_prefix_mappings"), "Open prefix mappings modal", Msg::OpenPrefixMappingsModal),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.open_prefix_mappings"),
+                "Open prefix mappings modal",
+                Msg::OpenPrefixMappingsModal,
+            ),
             // Negative matches
-            Subscription::keyboard(KeyCode::Char('D'), "Open negative matches modal", Msg::OpenNegativeMatchesModal),
-
+            Subscription::keyboard(
+                KeyCode::Char('D'),
+                "Open negative matches modal",
+                Msg::OpenNegativeMatchesModal,
+            ),
             // Manual mappings
-            Subscription::keyboard(config.get_keybind("entity_comparison.open_manual_mappings"), "View manual mappings modal", Msg::OpenManualMappingsModal),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.open_manual_mappings"),
+                "View manual mappings modal",
+                Msg::OpenManualMappingsModal,
+            ),
             // Import from C# file
-            Subscription::keyboard(config.get_keybind("entity_comparison.import_cs"), "Import from C# file", Msg::OpenImportModal),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.import_cs"),
+                "Import from C# file",
+                Msg::OpenImportModal,
+            ),
             // Ignore functionality
-            Subscription::keyboard(config.get_keybind("entity_comparison.ignore_item"), "Ignore item", Msg::IgnoreItem),
-            Subscription::keyboard(config.get_keybind("entity_comparison.ignore_manager"), "Ignore manager", Msg::OpenIgnoreModal),
-
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.ignore_item"),
+                "Ignore item",
+                Msg::IgnoreItem,
+            ),
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.ignore_manager"),
+                "Ignore manager",
+                Msg::OpenIgnoreModal,
+            ),
             // Export
-            Subscription::keyboard(config.get_keybind("entity_comparison.export"), "Export to Excel", Msg::ExportToExcel),
-            Subscription::ctrl_key(KeyCode::Char('e'), "Export unmapped fields to CSV", Msg::ExportUnmappedToCsv),
+            Subscription::keyboard(
+                config.get_keybind("entity_comparison.export"),
+                "Export to Excel",
+                Msg::ExportToExcel,
+            ),
+            Subscription::ctrl_key(
+                KeyCode::Char('e'),
+                "Export unmapped fields to CSV",
+                Msg::ExportUnmappedToCsv,
+            ),
         ];
 
         // Conditional 'd' key: Delete imported mapping if selected field has an imported match
@@ -1108,12 +1338,14 @@ impl App for EntityComparisonApp {
         if let Some(source_id) = source_tree.selected() {
             let source_key = match state.active_tab {
                 ActiveTab::Fields => source_id.to_string(),
-                ActiveTab::Relationships => {
-                    source_id.strip_prefix("rel_").unwrap_or(source_id).to_string()
-                }
-                ActiveTab::Entities => {
-                    source_id.strip_prefix("entity_").unwrap_or(source_id).to_string()
-                }
+                ActiveTab::Relationships => source_id
+                    .strip_prefix("rel_")
+                    .unwrap_or(source_id)
+                    .to_string(),
+                ActiveTab::Entities => source_id
+                    .strip_prefix("entity_")
+                    .unwrap_or(source_id)
+                    .to_string(),
                 ActiveTab::Forms | ActiveTab::Views => source_id.to_string(),
             };
 
@@ -1122,7 +1354,7 @@ impl App for EntityComparisonApp {
                 subs.push(Subscription::keyboard(
                     KeyCode::Char('d'),
                     "Delete imported mapping",
-                    Msg::DeleteImportedMapping
+                    Msg::DeleteImportedMapping,
                 ));
             }
         }
@@ -1131,13 +1363,29 @@ impl App for EntityComparisonApp {
         match state.type_filter_mode {
             super::models::TypeFilterMode::Unified => {
                 // In unified mode, both t and T cycle the unified filter
-                subs.push(Subscription::keyboard(config.get_keybind("entity_comparison.cycle_source_type_filter"), "Cycle type filter", Msg::CycleSourceTypeFilter));
-                subs.push(Subscription::keyboard(config.get_keybind("entity_comparison.cycle_target_type_filter"), "Cycle type filter", Msg::CycleTargetTypeFilter));
+                subs.push(Subscription::keyboard(
+                    config.get_keybind("entity_comparison.cycle_source_type_filter"),
+                    "Cycle type filter",
+                    Msg::CycleSourceTypeFilter,
+                ));
+                subs.push(Subscription::keyboard(
+                    config.get_keybind("entity_comparison.cycle_target_type_filter"),
+                    "Cycle type filter",
+                    Msg::CycleTargetTypeFilter,
+                ));
             }
             super::models::TypeFilterMode::Independent => {
                 // In independent mode, t controls source, T controls target
-                subs.push(Subscription::keyboard(config.get_keybind("entity_comparison.cycle_source_type_filter"), "Cycle source type filter", Msg::CycleSourceTypeFilter));
-                subs.push(Subscription::keyboard(config.get_keybind("entity_comparison.cycle_target_type_filter"), "Cycle target type filter", Msg::CycleTargetTypeFilter));
+                subs.push(Subscription::keyboard(
+                    config.get_keybind("entity_comparison.cycle_source_type_filter"),
+                    "Cycle source type filter",
+                    Msg::CycleSourceTypeFilter,
+                ));
+                subs.push(Subscription::keyboard(
+                    config.get_keybind("entity_comparison.cycle_target_type_filter"),
+                    "Cycle target type filter",
+                    Msg::CycleTargetTypeFilter,
+                ));
             }
         }
 
@@ -1158,11 +1406,16 @@ impl App for EntityComparisonApp {
 
             let search_value = match state.search_mode {
                 super::models::SearchMode::Unified => state.unified_search.value(),
-                super::models::SearchMode::Independent => {
-                    &format!("source:'{}', target:'{}'", state.source_search.value(), state.target_search.value())
-                }
+                super::models::SearchMode::Independent => &format!(
+                    "source:'{}', target:'{}'",
+                    state.source_search.value(),
+                    state.target_search.value()
+                ),
             };
-            log::debug!("✓ Registering multi-select shortcuts (search_value='{}')", search_value);
+            log::debug!(
+                "✓ Registering multi-select shortcuts (search_value='{}')",
+                search_value
+            );
 
             // Multi-select shortcuts - route to focused tree based on state.focused_side
             match state.focused_side {
@@ -1171,28 +1424,28 @@ impl App for EntityComparisonApp {
                     subs.push(Subscription::keyboard(
                         KeyCode::Char(' '),
                         "Toggle multi-select",
-                        Msg::SourceTreeEvent(TreeEvent::ToggleMultiSelect)
+                        Msg::SourceTreeEvent(TreeEvent::ToggleMultiSelect),
                     ));
 
                     // Ctrl+D: Clear multi-selection
                     subs.push(Subscription::ctrl_key(
                         KeyCode::Char('d'),
                         "Clear selection",
-                        Msg::SourceTreeEvent(TreeEvent::ClearMultiSelection)
+                        Msg::SourceTreeEvent(TreeEvent::ClearMultiSelection),
                     ));
 
                     // Shift+Up: Extend selection up
                     subs.push(Subscription::shift_key(
                         KeyCode::Up,
                         "Extend selection up",
-                        Msg::SourceTreeEvent(TreeEvent::ExtendSelectionUp)
+                        Msg::SourceTreeEvent(TreeEvent::ExtendSelectionUp),
                     ));
 
                     // Shift+Down: Extend selection down
                     subs.push(Subscription::shift_key(
                         KeyCode::Down,
                         "Extend selection down",
-                        Msg::SourceTreeEvent(TreeEvent::ExtendSelectionDown)
+                        Msg::SourceTreeEvent(TreeEvent::ExtendSelectionDown),
                     ));
                 }
                 Side::Target => {
@@ -1200,40 +1453,45 @@ impl App for EntityComparisonApp {
                     subs.push(Subscription::keyboard(
                         KeyCode::Char(' '),
                         "Toggle multi-select",
-                        Msg::TargetTreeEvent(TreeEvent::ToggleMultiSelect)
+                        Msg::TargetTreeEvent(TreeEvent::ToggleMultiSelect),
                     ));
 
                     // Ctrl+D: Clear multi-selection
                     subs.push(Subscription::ctrl_key(
                         KeyCode::Char('d'),
                         "Clear selection",
-                        Msg::TargetTreeEvent(TreeEvent::ClearMultiSelection)
+                        Msg::TargetTreeEvent(TreeEvent::ClearMultiSelection),
                     ));
 
                     // Shift+Up: Extend selection up
                     subs.push(Subscription::shift_key(
                         KeyCode::Up,
                         "Extend selection up",
-                        Msg::TargetTreeEvent(TreeEvent::ExtendSelectionUp)
+                        Msg::TargetTreeEvent(TreeEvent::ExtendSelectionUp),
                     ));
 
                     // Shift+Down: Extend selection down
                     subs.push(Subscription::shift_key(
                         KeyCode::Down,
                         "Extend selection down",
-                        Msg::TargetTreeEvent(TreeEvent::ExtendSelectionDown)
+                        Msg::TargetTreeEvent(TreeEvent::ExtendSelectionDown),
                     ));
                 }
             }
         } else {
             let search_value = match state.search_mode {
                 super::models::SearchMode::Unified => state.unified_search.value(),
-                super::models::SearchMode::Independent => {
-                    &format!("source:'{}', target:'{}'", state.source_search.value(), state.target_search.value())
-                }
+                super::models::SearchMode::Independent => &format!(
+                    "source:'{}', target:'{}'",
+                    state.source_search.value(),
+                    state.target_search.value()
+                ),
             };
-            log::debug!("✗ Skipping multi-select shortcuts (any_modal_open={}, search_value='{}')",
-                       any_modal_open, search_value);
+            log::debug!(
+                "✗ Skipping multi-select shortcuts (any_modal_open={}, search_value='{}')",
+                any_modal_open,
+                search_value
+            );
         }
 
         // Search - add global `/` key unless a modal is open
@@ -1247,73 +1505,205 @@ impl App for EntityComparisonApp {
             || state.show_ignore_modal;
 
         if !any_modal_open {
-            subs.push(Subscription::keyboard(KeyCode::Char('/'), "Focus search", Msg::ToggleSearch));
-            subs.push(Subscription::keyboard(KeyCode::Char('?'), "Toggle search mode", Msg::ToggleSearchMode));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('/'),
+                "Focus search",
+                Msg::ToggleSearch,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('?'),
+                "Toggle search mode",
+                Msg::ToggleSearchMode,
+            ));
         }
 
         // Match mode toggle - always available
-        subs.push(Subscription::keyboard(KeyCode::Char('f'), "Toggle match mode", Msg::ToggleMatchMode));
+        subs.push(Subscription::keyboard(
+            KeyCode::Char('f'),
+            "Toggle match mode",
+            Msg::ToggleMatchMode,
+        ));
 
         // When showing confirmation modal, add y/n hotkeys
         if state.show_back_confirmation {
-            subs.push(Subscription::keyboard(KeyCode::Char('y'), "Confirm", Msg::ConfirmBack));
-            subs.push(Subscription::keyboard(KeyCode::Char('Y'), "Confirm", Msg::ConfirmBack));
-            subs.push(Subscription::keyboard(KeyCode::Char('n'), "Cancel", Msg::CancelBack));
-            subs.push(Subscription::keyboard(KeyCode::Char('N'), "Cancel", Msg::CancelBack));
-            subs.push(Subscription::keyboard(KeyCode::Enter, "Confirm", Msg::ConfirmBack));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('y'),
+                "Confirm",
+                Msg::ConfirmBack,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('Y'),
+                "Confirm",
+                Msg::ConfirmBack,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('n'),
+                "Cancel",
+                Msg::CancelBack,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('N'),
+                "Cancel",
+                Msg::CancelBack,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Enter,
+                "Confirm",
+                Msg::ConfirmBack,
+            ));
         }
 
         // When showing examples modal, add hotkeys
         if state.show_examples_modal {
-            subs.push(Subscription::keyboard(KeyCode::Char('a'), "Add example pair", Msg::AddExamplePair));
-            subs.push(Subscription::keyboard(KeyCode::Char('d'), "Delete example pair", Msg::DeleteExamplePair));
-            subs.push(Subscription::keyboard(KeyCode::Char('c'), "Close modal", Msg::CloseExamplesModal));
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseExamplesModal));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('a'),
+                "Add example pair",
+                Msg::AddExamplePair,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('d'),
+                "Delete example pair",
+                Msg::DeleteExamplePair,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('c'),
+                "Close modal",
+                Msg::CloseExamplesModal,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Close modal",
+                Msg::CloseExamplesModal,
+            ));
         }
 
         // When showing prefix mappings modal, add hotkeys
         if state.show_prefix_mappings_modal {
-            subs.push(Subscription::keyboard(KeyCode::Char('a'), "Add prefix mapping", Msg::AddPrefixMapping));
-            subs.push(Subscription::keyboard(KeyCode::Char('d'), "Delete prefix mapping", Msg::DeletePrefixMapping));
-            subs.push(Subscription::keyboard(KeyCode::Char('c'), "Close modal", Msg::ClosePrefixMappingsModal));
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::ClosePrefixMappingsModal));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('a'),
+                "Add prefix mapping",
+                Msg::AddPrefixMapping,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('d'),
+                "Delete prefix mapping",
+                Msg::DeletePrefixMapping,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('c'),
+                "Close modal",
+                Msg::ClosePrefixMappingsModal,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Close modal",
+                Msg::ClosePrefixMappingsModal,
+            ));
         }
 
         // When showing negative matches modal, add hotkeys
         if state.show_negative_matches_modal {
-            subs.push(Subscription::keyboard(KeyCode::Char('d'), "Delete negative match", Msg::DeleteNegativeMatch));
-            subs.push(Subscription::keyboard(KeyCode::Char('c'), "Close modal", Msg::CloseNegativeMatchesModal));
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseNegativeMatchesModal));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('d'),
+                "Delete negative match",
+                Msg::DeleteNegativeMatch,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('c'),
+                "Close modal",
+                Msg::CloseNegativeMatchesModal,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Close modal",
+                Msg::CloseNegativeMatchesModal,
+            ));
         }
 
         // When showing manual mappings modal, add hotkeys
         if state.show_manual_mappings_modal {
-            subs.push(Subscription::keyboard(KeyCode::Char('d'), "Delete manual mapping", Msg::DeleteManualMappingFromModal));
-            subs.push(Subscription::keyboard(KeyCode::Char('c'), "Close modal", Msg::CloseManualMappingsModal));
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseManualMappingsModal));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('d'),
+                "Delete manual mapping",
+                Msg::DeleteManualMappingFromModal,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('c'),
+                "Close modal",
+                Msg::CloseManualMappingsModal,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Close modal",
+                Msg::CloseManualMappingsModal,
+            ));
         }
 
         // When showing import modal, add hotkeys
         if state.show_import_modal {
-            subs.push(Subscription::keyboard(KeyCode::Char('c'), "Close modal", Msg::CloseImportModal));
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseImportModal));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('c'),
+                "Close modal",
+                Msg::CloseImportModal,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Close modal",
+                Msg::CloseImportModal,
+            ));
         }
 
         // When showing import results modal, add hotkeys
         if state.show_import_results_modal {
-            subs.push(Subscription::keyboard(KeyCode::Up, "Navigate up", Msg::ImportResultsNavigate(KeyCode::Up)));
-            subs.push(Subscription::keyboard(KeyCode::Down, "Navigate down", Msg::ImportResultsNavigate(KeyCode::Down)));
-            subs.push(Subscription::keyboard(KeyCode::Char('c'), "Clear imports", Msg::ClearImportedMappings));
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseImportResultsModal));
+            subs.push(Subscription::keyboard(
+                KeyCode::Up,
+                "Navigate up",
+                Msg::ImportResultsNavigate(KeyCode::Up),
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Down,
+                "Navigate down",
+                Msg::ImportResultsNavigate(KeyCode::Down),
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('c'),
+                "Clear imports",
+                Msg::ClearImportedMappings,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Close modal",
+                Msg::CloseImportResultsModal,
+            ));
         }
 
         // When showing ignore modal, add hotkeys
         if state.show_ignore_modal {
-            subs.push(Subscription::keyboard(KeyCode::Up, "Navigate up", Msg::IgnoreListNavigate(KeyCode::Up)));
-            subs.push(Subscription::keyboard(KeyCode::Down, "Navigate down", Msg::IgnoreListNavigate(KeyCode::Down)));
-            subs.push(Subscription::keyboard(KeyCode::Char('d'), "Delete ignored item", Msg::DeleteIgnoredItem));
-            subs.push(Subscription::keyboard(KeyCode::Char('C'), "Clear all ignored", Msg::ClearAllIgnored));
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CloseIgnoreModal));
+            subs.push(Subscription::keyboard(
+                KeyCode::Up,
+                "Navigate up",
+                Msg::IgnoreListNavigate(KeyCode::Up),
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Down,
+                "Navigate down",
+                Msg::IgnoreListNavigate(KeyCode::Down),
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('d'),
+                "Delete ignored item",
+                Msg::DeleteIgnoredItem,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('C'),
+                "Clear all ignored",
+                Msg::ClearAllIgnored,
+            ));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Close modal",
+                Msg::CloseIgnoreModal,
+            ));
         }
 
         subs
@@ -1355,7 +1745,10 @@ impl App for EntityComparisonApp {
         }
 
         // Add separator
-        spans.push(Span::styled(" | ", Style::default().fg(theme.border_primary)));
+        spans.push(Span::styled(
+            " | ",
+            Style::default().fg(theme.border_primary),
+        ));
 
         // Hide mode
         spans.push(Span::styled(
@@ -1364,28 +1757,48 @@ impl App for EntityComparisonApp {
         ));
 
         // Sort mode with direction
-        spans.push(Span::styled(" | ", Style::default().fg(theme.border_primary)));
         spans.push(Span::styled(
-            format!("Sort: {} {}", state.sort_mode.label(), state.sort_direction.label()),
+            " | ",
+            Style::default().fg(theme.border_primary),
+        ));
+        spans.push(Span::styled(
+            format!(
+                "Sort: {} {}",
+                state.sort_mode.label(),
+                state.sort_direction.label()
+            ),
             Style::default().fg(theme.text_secondary),
         ));
 
         // Match mode
-        spans.push(Span::styled(" | ", Style::default().fg(theme.border_primary)));
+        spans.push(Span::styled(
+            " | ",
+            Style::default().fg(theme.border_primary),
+        ));
         spans.push(Span::styled(
             format!("Match: {}", state.match_mode.label()),
             Style::default().fg(theme.text_secondary),
         ));
 
         // Technical/display names indicator
-        spans.push(Span::styled(" | ", Style::default().fg(theme.border_primary)));
         spans.push(Span::styled(
-            if state.show_technical_names { "Names: Technical" } else { "Names: Display" },
+            " | ",
+            Style::default().fg(theme.border_primary),
+        ));
+        spans.push(Span::styled(
+            if state.show_technical_names {
+                "Names: Technical"
+            } else {
+                "Names: Display"
+            },
             Style::default().fg(theme.text_secondary),
         ));
 
         // Mirror mode
-        spans.push(Span::styled(" | ", Style::default().fg(theme.border_primary)));
+        spans.push(Span::styled(
+            " | ",
+            Style::default().fg(theme.border_primary),
+        ));
         spans.push(Span::styled(
             state.mirror_mode.label(),
             Style::default().fg(theme.text_secondary),
@@ -1395,10 +1808,18 @@ impl App for EntityComparisonApp {
         if state.examples.enabled {
             if let Some(active_pair) = state.examples.get_active_pair() {
                 // Find the index of the active pair
-                let active_index = state.examples.pairs.iter().position(|p| p.id == active_pair.id).unwrap_or(0);
+                let active_index = state
+                    .examples
+                    .pairs
+                    .iter()
+                    .position(|p| p.id == active_pair.id)
+                    .unwrap_or(0);
                 let total_count = state.examples.pairs.len();
 
-                spans.push(Span::styled(" | ", Style::default().fg(theme.border_primary)));
+                spans.push(Span::styled(
+                    " | ",
+                    Style::default().fg(theme.border_primary),
+                ));
 
                 let example_text = if let Some(label) = &active_pair.label {
                     format!("Example: {} ({}/{})", label, active_index + 1, total_count)

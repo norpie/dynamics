@@ -4,8 +4,8 @@
 //! and cancellation support.
 
 use anyhow::{Context, Result};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
 
 use super::runtime::LuaRuntime;
@@ -142,12 +142,9 @@ pub async fn execute_transform_async(
 }
 
 /// Format a progress message combining status and progress info
-/// 
+///
 /// Output format: "{status} - {current}/{total} ({pct:.1}%)"
-fn format_progress_message(
-    status: &Option<String>,
-    progress: &Option<(usize, usize)>,
-) -> String {
+fn format_progress_message(status: &Option<String>, progress: &Option<(usize, usize)>) -> String {
     match (status, progress) {
         (Some(s), Some((current, total))) => {
             let pct = if *total > 0 {
@@ -246,7 +243,9 @@ fn execute_transform_with_updates(
     // Get captured logs before dropping runtime
     let logs = {
         let ctx = runtime.context();
-        let guard = ctx.lock().map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
+        let guard = ctx
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
         guard.logs.clone()
     };
 
@@ -374,7 +373,8 @@ mod tests {
             return M
         "#;
 
-        let result = execute_transform(script, &serde_json::json!({}), &serde_json::json!({})).unwrap();
+        let result =
+            execute_transform(script, &serde_json::json!({}), &serde_json::json!({})).unwrap();
 
         assert_eq!(result.logs.len(), 2);
         assert!(matches!(&result.logs[0], LogMessage::Info(s) if s == "Processing started"));
@@ -423,7 +423,9 @@ mod tests {
                 entity: "account".to_string(),
                 operation: OperationType::Update,
                 id: None, // Missing id - invalid for update
-                fields: [("name".to_string(), serde_json::json!("Test"))].into_iter().collect(),
+                fields: [("name".to_string(), serde_json::json!("Test"))]
+                    .into_iter()
+                    .collect(),
                 reason: None,
                 error: None,
             },
@@ -447,20 +449,17 @@ mod tests {
                 }
             end
             return M
-        "#.to_string();
+        "#
+        .to_string();
 
         let (tx, mut rx) = mpsc::channel(100);
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let ctx = ExecutionContext::new(tx, cancel_flag);
 
-        let result = execute_transform_async(
-            script,
-            serde_json::json!({}),
-            serde_json::json!({}),
-            ctx,
-        )
-        .await
-        .unwrap();
+        let result =
+            execute_transform_async(script, serde_json::json!({}), serde_json::json!({}), ctx)
+                .await
+                .unwrap();
 
         assert_eq!(result.operations.len(), 1);
 
@@ -487,20 +486,17 @@ mod tests {
             function M.declare() return { source = {}, target = {} } end
             function M.transform(source, target) return {} end
             return M
-        "#.to_string();
+        "#
+        .to_string();
 
         let (tx, _rx) = mpsc::channel(100);
         let cancel_flag = Arc::new(AtomicBool::new(true)); // Pre-cancelled
         let ctx = ExecutionContext::new(tx, cancel_flag);
 
-        let result = execute_transform_async(
-            script,
-            serde_json::json!({}),
-            serde_json::json!({}),
-            ctx,
-        )
-        .await
-        .unwrap();
+        let result =
+            execute_transform_async(script, serde_json::json!({}), serde_json::json!({}), ctx)
+                .await
+                .unwrap();
 
         assert!(result.was_cancelled);
         assert!(result.operations.is_empty());

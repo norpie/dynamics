@@ -2,7 +2,7 @@
 
 use crate::config::options::{OptionDefBuilder, OptionsRegistry};
 use crate::tui::color::color_to_hex;
-use crate::tui::state::theme::{Theme, COLOR_NAMES};
+use crate::tui::state::theme::{COLOR_NAMES, Theme};
 use anyhow::Result;
 
 /// Register all theme-related options
@@ -13,14 +13,17 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
             .display_name("Active Theme")
             .description("The currently active color theme")
             .string_type("mocha", Some(32))
-            .build()?
+            .build()?,
     )?;
 
     // Register built-in themes
     register_theme(registry, "mocha", &Theme::mocha())?;
     register_theme(registry, "latte", &Theme::latte())?;
 
-    log::info!("Registered {} theme options (1 control + 2 themes × 21 colors)", 43);
+    log::info!(
+        "Registered {} theme options (1 control + 2 themes × 21 colors)",
+        43
+    );
     Ok(())
 }
 
@@ -37,7 +40,7 @@ fn register_theme(registry: &OptionsRegistry, name: &str, theme: &Theme) -> Resu
                 .display_name(color_name)
                 .description(description)
                 .string_type(&hex, Some(7)) // "#RRGGBB"
-                .build()?
+                .build()?,
         )?;
     }
 
@@ -89,7 +92,8 @@ pub fn list_themes(registry: &OptionsRegistry) -> Vec<String> {
     let mut names = std::collections::HashSet::new();
     for opt_def in theme_opts {
         let parts: Vec<&str> = opt_def.key.split('.').collect();
-        if parts.len() >= 3 {  // Only include keys with 3+ parts (theme.NAME.color)
+        if parts.len() >= 3 {
+            // Only include keys with 3+ parts (theme.NAME.color)
             names.insert(parts[1].to_string());
         }
     }

@@ -1,9 +1,14 @@
-use ratatui::{Frame, style::Style, widgets::{Block, Borders}, layout::{Rect, Constraint, Direction, Layout}};
-use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::{Element, Theme, LayoutConstraint};
-use crate::tui::element::FocusId;
 use crate::tui::command::DispatchTarget;
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, DropdownRegistry, FocusableInfo};
+use crate::tui::element::FocusId;
+use crate::tui::renderer::{DropdownRegistry, FocusRegistry, FocusableInfo, InteractionRegistry};
+use crate::tui::{Element, LayoutConstraint, Theme};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{
+    Frame,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::Style,
+    widgets::{Block, Borders},
+};
 
 /// Apply horizontal scroll offset to an element by modifying its text content
 fn apply_horizontal_offset<Msg: Clone>(element: &Element<Msg>, offset: usize) -> Element<Msg> {
@@ -75,7 +80,10 @@ fn apply_horizontal_offset<Msg: Clone>(element: &Element<Msg>, offset: usize) ->
                     }
                 } else if remaining_offset > 0 {
                     // Partially visible child
-                    new_items.push((*constraint, apply_horizontal_offset(child, remaining_offset)));
+                    new_items.push((
+                        *constraint,
+                        apply_horizontal_offset(child, remaining_offset),
+                    ));
                     remaining_offset = 0;
                 } else {
                     // Fully visible child
@@ -103,11 +111,18 @@ fn measure_element_width<Msg>(element: &Element<Msg>) -> usize {
         }
         Element::Column { items, .. } => {
             // Max width of any child
-            items.iter().map(|(_, child)| measure_element_width(child)).max().unwrap_or(0)
+            items
+                .iter()
+                .map(|(_, child)| measure_element_width(child))
+                .max()
+                .unwrap_or(0)
         }
         Element::Row { items, spacing, .. } => {
             // Sum of all children + spacing
-            let content_width: usize = items.iter().map(|(_, child)| measure_element_width(child)).sum();
+            let content_width: usize = items
+                .iter()
+                .map(|(_, child)| measure_element_width(child))
+                .sum();
             let spacing_width = items.len().saturating_sub(1) * (*spacing as usize);
             content_width + spacing_width
         }
@@ -124,8 +139,14 @@ pub fn scrollable_on_key<Msg: Clone + Send + 'static>(
 ) -> Box<dyn Fn(KeyEvent) -> DispatchTarget<Msg> + Send> {
     Box::new(move |key_event| match key_event.code {
         // Scroll navigation keys (including horizontal)
-        KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown
-        | KeyCode::Home | KeyCode::End | KeyCode::Left | KeyCode::Right => {
+        KeyCode::Up
+        | KeyCode::Down
+        | KeyCode::PageUp
+        | KeyCode::PageDown
+        | KeyCode::Home
+        | KeyCode::End
+        | KeyCode::Left
+        | KeyCode::Right => {
             if let Some(f) = on_navigate {
                 DispatchTarget::AppMsg(f(key_event.code))
             } else {
@@ -143,7 +164,7 @@ pub fn scrollable_on_key<Msg: Clone + Send + 'static>(
 /// Render Scrollable element
 pub fn render_scrollable<Msg: Clone + Send + 'static>(
     frame: &mut Frame,
-    
+
     registry: &mut InteractionRegistry<Msg>,
     focus_registry: &mut FocusRegistry<Msg>,
     dropdown_registry: &mut DropdownRegistry<Msg>,
@@ -160,7 +181,16 @@ pub fn render_scrollable<Msg: Clone + Send + 'static>(
     on_blur: &Option<Msg>,
     area: Rect,
     inside_panel: bool,
-    render_fn: impl Fn(&mut Frame, &mut InteractionRegistry<Msg>, &mut FocusRegistry<Msg>, &mut DropdownRegistry<Msg>, Option<&FocusId>, &Element<Msg>, Rect, bool),
+    render_fn: impl Fn(
+        &mut Frame,
+        &mut InteractionRegistry<Msg>,
+        &mut FocusRegistry<Msg>,
+        &mut DropdownRegistry<Msg>,
+        Option<&FocusId>,
+        &Element<Msg>,
+        Rect,
+        bool,
+    ),
 ) {
     let theme = &crate::global_runtime_config().theme;
     // Register in focus registry
@@ -184,12 +214,15 @@ pub fn render_scrollable<Msg: Clone + Send + 'static>(
     let detected_content_height = match child {
         Element::Column { items, spacing } => {
             // Sum up item heights + spacing between items
-            let total_item_height: usize = items.iter().map(|(constraint, _)| {
-                match constraint {
-                    LayoutConstraint::Length(n) => *n as usize,
-                    _ => 1, // Default to 1 for other constraint types
-                }
-            }).sum();
+            let total_item_height: usize = items
+                .iter()
+                .map(|(constraint, _)| {
+                    match constraint {
+                        LayoutConstraint::Length(n) => *n as usize,
+                        _ => 1, // Default to 1 for other constraint types
+                    }
+                })
+                .sum();
 
             // Add spacing between items (N items = N-1 gaps)
             let total_spacing = items.len().saturating_sub(1) * (*spacing as usize);
@@ -203,11 +236,18 @@ pub fn render_scrollable<Msg: Clone + Send + 'static>(
     let detected_content_width = match child {
         Element::Column { items, .. } => {
             // Find maximum width of any item
-            items.iter().map(|(_, item)| measure_element_width(item)).max().unwrap_or(viewport_width)
+            items
+                .iter()
+                .map(|(_, item)| measure_element_width(item))
+                .max()
+                .unwrap_or(viewport_width)
         }
         Element::Row { items, .. } => {
             // Sum widths of all items
-            items.iter().map(|(_, item)| measure_element_width(item)).sum()
+            items
+                .iter()
+                .map(|(_, item)| measure_element_width(item))
+                .sum()
         }
         _ => measure_element_width(child),
     };
@@ -215,7 +255,12 @@ pub fn render_scrollable<Msg: Clone + Send + 'static>(
 
     // Call on_render with actual dimensions (all four: height and width)
     if let Some(render_fn) = on_render {
-        registry.add_render_message(render_fn(viewport_height, actual_content_height, viewport_width, actual_content_width));
+        registry.add_render_message(render_fn(
+            viewport_height,
+            actual_content_height,
+            viewport_width,
+            actual_content_width,
+        ));
     }
 
     // Reserve space for scrollbars if needed
@@ -267,8 +312,10 @@ pub fn render_scrollable<Msg: Clone + Send + 'static>(
                 // Check if item is within visible viewport
                 if scrolled_y + item_height as i32 > 0 && scrolled_y < available_height as i32 {
                     // Calculate actual screen position
-                    let screen_y = (content_area.y as i32 + scrolled_y).max(content_area.y as i32) as u16;
-                    let available_item_height = (content_area.y + content_area.height).saturating_sub(screen_y);
+                    let screen_y =
+                        (content_area.y as i32 + scrolled_y).max(content_area.y as i32) as u16;
+                    let available_item_height =
+                        (content_area.y + content_area.height).saturating_sub(screen_y);
 
                     if available_item_height > 0 {
                         // Apply horizontal scroll offset to the content
@@ -285,7 +332,16 @@ pub fn render_scrollable<Msg: Clone + Send + 'static>(
                             height: (item_height as u16).min(available_item_height),
                         };
 
-                        render_fn(frame, registry, focus_registry, dropdown_registry, focused_id, &scrolled_child, item_area, inside_panel);
+                        render_fn(
+                            frame,
+                            registry,
+                            focus_registry,
+                            dropdown_registry,
+                            focused_id,
+                            &scrolled_child,
+                            item_area,
+                            inside_panel,
+                        );
                     }
                 }
 
@@ -306,7 +362,16 @@ pub fn render_scrollable<Msg: Clone + Send + 'static>(
                 child.clone()
             };
 
-            render_fn(frame, registry, focus_registry, dropdown_registry, focused_id, &scrolled_child, content_area, inside_panel);
+            render_fn(
+                frame,
+                registry,
+                focus_registry,
+                dropdown_registry,
+                focused_id,
+                &scrolled_child,
+                content_area,
+                inside_panel,
+            );
         }
     }
 
@@ -320,7 +385,8 @@ pub fn render_scrollable<Msg: Clone + Send + 'static>(
         };
 
         let scrollbar_position = if max_vertical_scroll > 0 {
-            (clamped_vertical_scroll as f32 / max_vertical_scroll as f32 * (available_height - 1) as f32) as u16
+            (clamped_vertical_scroll as f32 / max_vertical_scroll as f32
+                * (available_height - 1) as f32) as u16
         } else {
             0
         };
@@ -348,7 +414,8 @@ pub fn render_scrollable<Msg: Clone + Send + 'static>(
         };
 
         let scrollbar_position = if max_horizontal_scroll > 0 {
-            (clamped_horizontal_scroll as f32 / max_horizontal_scroll as f32 * (available_width - 1) as f32) as u16
+            (clamped_horizontal_scroll as f32 / max_horizontal_scroll as f32
+                * (available_width - 1) as f32) as u16
         } else {
             0
         };

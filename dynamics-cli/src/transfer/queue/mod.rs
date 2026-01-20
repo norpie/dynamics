@@ -2,4 +2,4 @@
 
 mod builder;
 
-pub use builder::{build_queue_items, QueueBuildOptions};
+pub use builder::{QueueBuildOptions, build_queue_items};

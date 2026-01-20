@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::lookup::LookupBindingContext;
 use super::Value;
+use super::lookup::LookupBindingContext;
 
 /// A fully resolved transfer ready for queue/execution
 #[derive(Debug, Clone, Serialize, Deserialize)]

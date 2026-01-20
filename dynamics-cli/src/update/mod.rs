@@ -105,7 +105,7 @@ pub async fn install_update(show_progress: bool) -> Result<String> {
             .bin_name(BIN_NAME)
             .show_download_progress(show_progress)
             .current_version(current)
-            .bin_path_in_archive("{{ bin }}")  // Windows: flat structure
+            .bin_path_in_archive("{{ bin }}") // Windows: flat structure
             .identifier(".zip")
             .build()
             .context("Failed to configure updater")?
@@ -123,7 +123,7 @@ pub async fn install_update(show_progress: bool) -> Result<String> {
             .bin_name(BIN_NAME)
             .show_download_progress(show_progress)
             .current_version(current)
-            .bin_path_in_archive("{{ bin }}-{{ target }}/{{ bin }}")  // Unix: has subdirectory
+            .bin_path_in_archive("{{ bin }}-{{ target }}/{{ bin }}") // Unix: has subdirectory
             .build()
             .context("Failed to configure updater")?
             .update()
@@ -145,7 +145,12 @@ pub async fn install_version(version: &str, show_progress: bool) -> Result<Strin
     let current = current_version();
     let version = version.to_string();
 
-    log::info!("Installing version {} from {}/{}", version, REPO_OWNER, REPO_NAME);
+    log::info!(
+        "Installing version {} from {}/{}",
+        version,
+        REPO_OWNER,
+        REPO_NAME
+    );
 
     // Run blocking self_update calls in a blocking thread pool
     tokio::task::spawn_blocking(move || {
@@ -159,7 +164,7 @@ pub async fn install_version(version: &str, show_progress: bool) -> Result<Strin
             .show_download_progress(show_progress)
             .current_version(current)
             .target_version_tag(&format!("v{}", version))
-            .bin_path_in_archive("{{ bin }}")  // Windows: flat structure
+            .bin_path_in_archive("{{ bin }}") // Windows: flat structure
             .identifier(".zip")
             .build()
             .context("Failed to configure updater")?
@@ -178,7 +183,7 @@ pub async fn install_version(version: &str, show_progress: bool) -> Result<Strin
             .show_download_progress(show_progress)
             .current_version(current)
             .target_version_tag(&format!("v{}", version))
-            .bin_path_in_archive("{{ bin }}-{{ target }}/{{ bin }}")  // Unix: has subdirectory
+            .bin_path_in_archive("{{ bin }}-{{ target }}/{{ bin }}") // Unix: has subdirectory
             .build()
             .context("Failed to configure updater")?
             .update()

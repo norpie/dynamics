@@ -6,13 +6,13 @@ use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 
 use crate::tui::element::Element;
-use crate::tui::widgets::ListItem;
 use crate::tui::state::theme::Theme;
-use crate::{col, row, spacer, use_constraints, button_row};
+use crate::tui::widgets::ListItem;
+use crate::{button_row, col, row, spacer, use_constraints};
 
-use super::super::state::{State, ExecutionPhase};
+use super::super::logic::operation_builder::{OperationSummary, build_operation_summary};
 use super::super::msg::Msg;
-use super::super::logic::operation_builder::{build_operation_summary, OperationSummary};
+use super::super::state::{ExecutionPhase, State};
 
 /// Summary list item for the confirm view
 #[derive(Clone)]
@@ -32,7 +32,12 @@ enum SummaryStyle {
 impl ListItem for SummaryItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_focused: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_focused: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         let text = format!("{}: {}", self.label, self.value);
@@ -137,10 +142,13 @@ fn render_operation_summary(summary: &OperationSummary, theme: &Theme) -> Elemen
     // Deletes section (junction entities only)
     if !summary.entities_with_deletes.is_empty() {
         let total_deletes: usize = summary.entities_with_deletes.iter().map(|(_, c)| c).sum();
-        lines.push(Element::styled_text(Line::from(Span::styled(
-            format!("Junction records to DELETE: {}", total_deletes),
-            Style::default().fg(theme.accent_error).bold()
-        ))).build());
+        lines.push(
+            Element::styled_text(Line::from(Span::styled(
+                format!("Junction records to DELETE: {}", total_deletes),
+                Style::default().fg(theme.accent_error).bold(),
+            )))
+            .build(),
+        );
 
         for (entity, count) in &summary.entities_with_deletes {
             lines.push(Element::text(format!("  {} ({} records)", entity, count)));
@@ -150,11 +158,18 @@ fn render_operation_summary(summary: &OperationSummary, theme: &Theme) -> Elemen
 
     // Deactivates section (regular entities, target-only)
     if !summary.entities_with_deactivates.is_empty() {
-        let total_deactivates: usize = summary.entities_with_deactivates.iter().map(|(_, c)| c).sum();
-        lines.push(Element::styled_text(Line::from(Span::styled(
-            format!("Records to DEACTIVATE: {}", total_deactivates),
-            Style::default().fg(theme.accent_warning).bold()
-        ))).build());
+        let total_deactivates: usize = summary
+            .entities_with_deactivates
+            .iter()
+            .map(|(_, c)| c)
+            .sum();
+        lines.push(
+            Element::styled_text(Line::from(Span::styled(
+                format!("Records to DEACTIVATE: {}", total_deactivates),
+                Style::default().fg(theme.accent_warning).bold(),
+            )))
+            .build(),
+        );
 
         for (entity, count) in &summary.entities_with_deactivates {
             lines.push(Element::text(format!("  {} ({} records)", entity, count)));
@@ -164,11 +179,18 @@ fn render_operation_summary(summary: &OperationSummary, theme: &Theme) -> Elemen
 
     // Schema changes section
     if !summary.entities_with_schema_changes.is_empty() {
-        let total_schema: usize = summary.entities_with_schema_changes.iter().map(|(_, c)| c).sum();
-        lines.push(Element::styled_text(Line::from(Span::styled(
-            format!("Fields to ADD: {}", total_schema),
-            Style::default().fg(theme.accent_info).bold()
-        ))).build());
+        let total_schema: usize = summary
+            .entities_with_schema_changes
+            .iter()
+            .map(|(_, c)| c)
+            .sum();
+        lines.push(
+            Element::styled_text(Line::from(Span::styled(
+                format!("Fields to ADD: {}", total_schema),
+                Style::default().fg(theme.accent_info).bold(),
+            )))
+            .build(),
+        );
 
         for (entity, count) in &summary.entities_with_schema_changes {
             lines.push(Element::text(format!("  {} ({} fields)", entity, count)));
@@ -179,10 +201,13 @@ fn render_operation_summary(summary: &OperationSummary, theme: &Theme) -> Elemen
     // Updates section (records in both)
     if !summary.entities_with_updates.is_empty() {
         let total_updates: usize = summary.entities_with_updates.iter().map(|(_, c)| c).sum();
-        lines.push(Element::styled_text(Line::from(Span::styled(
-            format!("Records to UPDATE: {}", total_updates),
-            Style::default().fg(theme.accent_info).bold()
-        ))).build());
+        lines.push(
+            Element::styled_text(Line::from(Span::styled(
+                format!("Records to UPDATE: {}", total_updates),
+                Style::default().fg(theme.accent_info).bold(),
+            )))
+            .build(),
+        );
 
         for (entity, count) in &summary.entities_with_updates {
             lines.push(Element::text(format!("  {} ({} records)", entity, count)));
@@ -193,10 +218,13 @@ fn render_operation_summary(summary: &OperationSummary, theme: &Theme) -> Elemen
     // Creates section (origin-only)
     if !summary.entities_with_creates.is_empty() {
         let total_creates: usize = summary.entities_with_creates.iter().map(|(_, c)| c).sum();
-        lines.push(Element::styled_text(Line::from(Span::styled(
-            format!("Records to CREATE: {}", total_creates),
-            Style::default().fg(theme.accent_success).bold()
-        ))).build());
+        lines.push(
+            Element::styled_text(Line::from(Span::styled(
+                format!("Records to CREATE: {}", total_creates),
+                Style::default().fg(theme.accent_success).bold(),
+            )))
+            .build(),
+        );
 
         for (entity, count) in &summary.entities_with_creates {
             lines.push(Element::text(format!("  {} ({} records)", entity, count)));
@@ -205,9 +233,7 @@ fn render_operation_summary(summary: &OperationSummary, theme: &Theme) -> Elemen
 
     let content = Element::column(lines).build();
 
-    Element::panel(content)
-        .title("Operations Summary")
-        .build()
+    Element::panel(content).title("Operations Summary").build()
 }
 
 /// Render warnings panel
@@ -218,10 +244,16 @@ fn render_warnings(summary: &OperationSummary, theme: &Theme) -> Element<Msg> {
 
     // Fields needing review
     if !summary.fields_needing_review.is_empty() {
-        lines.push(Element::styled_text(Line::from(Span::styled(
-            format!("Fields needing manual review: {}", summary.fields_needing_review.len()),
-            Style::default().fg(theme.accent_warning).bold()
-        ))).build());
+        lines.push(
+            Element::styled_text(Line::from(Span::styled(
+                format!(
+                    "Fields needing manual review: {}",
+                    summary.fields_needing_review.len()
+                ),
+                Style::default().fg(theme.accent_warning).bold(),
+            )))
+            .build(),
+        );
 
         for (entity, field, reason) in summary.fields_needing_review.iter().take(5) {
             lines.push(Element::text(format!("  {}.{}: {}", entity, field, reason)));
@@ -237,10 +269,13 @@ fn render_warnings(summary: &OperationSummary, theme: &Theme) -> Element<Msg> {
 
     // Nulled lookups
     if !summary.lookups_to_null.is_empty() {
-        lines.push(Element::styled_text(Line::from(Span::styled(
-            format!("Lookups to be NULLED: {}", summary.lookups_to_null.len()),
-            Style::default().fg(theme.accent_warning).bold()
-        ))).build());
+        lines.push(
+            Element::styled_text(Line::from(Span::styled(
+                format!("Lookups to be NULLED: {}", summary.lookups_to_null.len()),
+                Style::default().fg(theme.accent_warning).bold(),
+            )))
+            .build(),
+        );
 
         for (entity, field, target, count) in summary.lookups_to_null.iter().take(5) {
             lines.push(Element::text(format!(
@@ -258,17 +293,18 @@ fn render_warnings(summary: &OperationSummary, theme: &Theme) -> Element<Msg> {
 
     // No warnings message
     if summary.fields_needing_review.is_empty() && summary.lookups_to_null.is_empty() {
-        lines.push(Element::styled_text(Line::from(Span::styled(
-            "No warnings - all fields match",
-            Style::default().fg(theme.accent_success)
-        ))).build());
+        lines.push(
+            Element::styled_text(Line::from(Span::styled(
+                "No warnings - all fields match",
+                Style::default().fg(theme.accent_success),
+            )))
+            .build(),
+        );
     }
 
     let content = Element::column(lines).build();
 
-    Element::panel(content)
-        .title("Warnings")
-        .build()
+    Element::panel(content).title("Warnings").build()
 }
 
 /// Render confirmation panel
@@ -295,8 +331,9 @@ fn render_confirmation(state: &State, theme: &Theme) -> Element<Msg> {
     let export_hint = if state.confirm.export_path.is_some() {
         Element::styled_text(Line::from(Span::styled(
             "Report will be exported before execution",
-            Style::default().fg(theme.accent_info)
-        ))).build()
+            Style::default().fg(theme.accent_info),
+        )))
+        .build()
     } else {
         Element::text("Press 'e' to export a report before executing")
     };
@@ -305,11 +342,10 @@ fn render_confirmation(state: &State, theme: &Theme) -> Element<Msg> {
         Element::styled_text(Line::from(Span::styled(confirm_text, confirm_style))).build(),
         spacer!(),
         export_hint,
-    ]).build();
+    ])
+    .build();
 
-    Element::panel(content)
-        .title("Confirmation")
-        .build()
+    Element::panel(content).title("Confirmation").build()
 }
 
 /// Render execution progress
@@ -331,19 +367,26 @@ fn render_execution_progress(state: &State, theme: &Theme) -> Element<Msg> {
         ExecutionPhase::Failed => Style::default().fg(theme.accent_error),
         _ => Style::default().fg(theme.text_primary),
     };
-    let status_text = Element::styled_text(Line::from(Span::styled(
-        status,
-        status_style,
-    ))).build();
+    let status_text = Element::styled_text(Line::from(Span::styled(status, status_style))).build();
 
     // Phase indicators
     let phase_lines: Vec<Element<Msg>> = vec![
         render_phase_indicator("Deleting junctions", phase, ExecutionPhase::Deleting, theme),
-        render_phase_indicator("Deactivating records", phase, ExecutionPhase::Deactivating, theme),
+        render_phase_indicator(
+            "Deactivating records",
+            phase,
+            ExecutionPhase::Deactivating,
+            theme,
+        ),
         render_phase_indicator("Adding fields", phase, ExecutionPhase::AddingFields, theme),
         render_phase_indicator("Updating records", phase, ExecutionPhase::Updating, theme),
         render_phase_indicator("Creating records", phase, ExecutionPhase::Inserting, theme),
-        render_phase_indicator("Creating associations", phase, ExecutionPhase::InsertingJunctions, theme),
+        render_phase_indicator(
+            "Creating associations",
+            phase,
+            ExecutionPhase::InsertingJunctions,
+            theme,
+        ),
     ];
 
     let content = Element::column(vec![
@@ -353,11 +396,10 @@ fn render_execution_progress(state: &State, theme: &Theme) -> Element<Msg> {
         status_text,
         Element::text(""),
         Element::column(phase_lines).build(),
-    ]).build();
+    ])
+    .build();
 
-    Element::panel(content)
-        .title("Execution Progress")
-        .build()
+    Element::panel(content).title("Execution Progress").build()
 }
 
 /// Render a phase indicator line
@@ -417,13 +459,15 @@ fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
         let status = if state.confirm.confirmed {
             Element::styled_text(Line::from(Span::styled(
                 "Ready to execute",
-                Style::default().fg(theme.accent_success)
-            ))).build()
+                Style::default().fg(theme.accent_success),
+            )))
+            .build()
         } else {
             Element::styled_text(Line::from(Span::styled(
                 "Check the confirmation box to enable execution",
-                Style::default().fg(theme.accent_warning)
-            ))).build()
+                Style::default().fg(theme.accent_warning),
+            )))
+            .build()
         };
 
         let buttons = button_row![

@@ -22,7 +22,11 @@ pub struct QueryResponse {
 }
 
 impl QueryResult {
-    pub fn success(data: QueryResponse, status_code: u16, headers: HashMap<String, String>) -> Self {
+    pub fn success(
+        data: QueryResponse,
+        status_code: u16,
+        headers: HashMap<String, String>,
+    ) -> Self {
         Self {
             success: true,
             data: Some(data),
@@ -32,7 +36,11 @@ impl QueryResult {
         }
     }
 
-    pub fn error(error: String, status_code: Option<u16>, headers: HashMap<String, String>) -> Self {
+    pub fn error(
+        error: String,
+        status_code: Option<u16>,
+        headers: HashMap<String, String>,
+    ) -> Self {
         Self {
             success: false,
             data: None,
@@ -81,7 +89,11 @@ impl QueryResult {
     }
 
     /// Execute the next page if available
-    pub async fn next_page(&self, client: &crate::api::DynamicsClient, page_size: Option<u32>) -> anyhow::Result<Option<QueryResult>> {
+    pub async fn next_page(
+        &self,
+        client: &crate::api::DynamicsClient,
+        page_size: Option<u32>,
+    ) -> anyhow::Result<Option<QueryResult>> {
         match self.next_link() {
             Some(next_link) => Ok(Some(client.execute_next_page(next_link, page_size).await?)),
             None => Ok(None),
@@ -92,15 +104,16 @@ impl QueryResult {
 impl QueryResponse {
     /// Parse OData response JSON into QueryResponse
     pub fn from_json(json: Value) -> anyhow::Result<Self> {
-        let value = json.get("value")
+        let value = json
+            .get("value")
             .and_then(|v| v.as_array())
             .ok_or_else(|| anyhow::anyhow!("Missing or invalid 'value' array in response"))?
             .clone();
 
-        let count = json.get("@odata.count")
-            .and_then(|c| c.as_u64());
+        let count = json.get("@odata.count").and_then(|c| c.as_u64());
 
-        let next_link = json.get("@odata.nextLink")
+        let next_link = json
+            .get("@odata.nextLink")
             .and_then(|n| n.as_str())
             .map(|s| s.to_string());
 
@@ -113,16 +126,19 @@ impl QueryResponse {
 
     /// Get a specific field from all records
     pub fn get_field_values(&self, field_name: &str) -> Vec<Option<&Value>> {
-        self.value.iter()
+        self.value
+            .iter()
             .map(|record| record.get(field_name))
             .collect()
     }
 
     /// Find records where a field matches a value
     pub fn find_by_field(&self, field_name: &str, field_value: &Value) -> Vec<&Value> {
-        self.value.iter()
+        self.value
+            .iter()
             .filter(|record| {
-                record.get(field_name)
+                record
+                    .get(field_name)
                     .map(|v| v == field_value)
                     .unwrap_or(false)
             })
@@ -155,7 +171,10 @@ mod tests {
 
         assert_eq!(response.value.len(), 2);
         assert_eq!(response.count, Some(2));
-        assert_eq!(response.next_link, Some("https://api.example.com/contacts?$skip=10".to_string()));
+        assert_eq!(
+            response.next_link,
+            Some("https://api.example.com/contacts?$skip=10".to_string())
+        );
     }
 
     #[test]
@@ -191,11 +210,7 @@ mod tests {
 
     #[test]
     fn test_query_result_error() {
-        let result = QueryResult::error(
-            "Not found".to_string(),
-            Some(404),
-            HashMap::new(),
-        );
+        let result = QueryResult::error("Not found".to_string(), Some(404), HashMap::new());
 
         assert!(result.is_error());
         assert!(!result.is_success());

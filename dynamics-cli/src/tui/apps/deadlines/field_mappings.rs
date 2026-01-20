@@ -5,7 +5,6 @@
 ///
 /// Checkbox columns (after "Raad van Bestuur") are NOT defined here - they are
 /// dynamically discovered from entity metadata.
-
 use std::collections::HashMap;
 
 /// Entities that need to be fetched and cached for lookups and checkboxes
@@ -62,7 +61,10 @@ pub enum FieldType {
     /// Picklist field - maps label to integer value
     Picklist { options: HashMap<String, i32> },
     /// Boolean field - maps string values to true/false
-    Boolean { true_value: String, false_value: String },
+    Boolean {
+        true_value: String,
+        false_value: String,
+    },
     /// Custom junction entity - for relationships that use a separate entity instead of N:N
     /// Used when the junction has additional fields (e.g., nrq_deadlinesupport)
     CustomJunction {
@@ -98,7 +100,6 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Fund
         FieldMapping {
             excel_column: "Fonds*".to_string(),
@@ -108,7 +109,6 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Deadline name (just the value from Deadline column)
         FieldMapping {
             excel_column: "Deadline*".to_string(),
@@ -116,7 +116,6 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Direct,
             required: false,
         },
-
         // Project manager
         FieldMapping {
             excel_column: "Projectbeheerder".to_string(),
@@ -126,7 +125,6 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Info field
         FieldMapping {
             excel_column: "Info".to_string(),
@@ -134,7 +132,6 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Direct,
             required: false,
         },
-
         // Deadline date (combined with time from "Uur" column)
         FieldMapping {
             excel_column: "Datum Deadline".to_string(),
@@ -142,7 +139,6 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Date,
             required: false,
         },
-
         // Time for deadline (combined into cgk_date)
         FieldMapping {
             excel_column: "Uur".to_string(),
@@ -150,7 +146,6 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Time,
             required: false,
         },
-
         // Commission lookup
         FieldMapping {
             excel_column: "Commissie".to_string(),
@@ -160,7 +155,6 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Commission meeting date
         FieldMapping {
             excel_column: "Datum Commissievergadering".to_string(),
@@ -168,7 +162,6 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Date,
             required: false,
         },
-
         // Commission meeting time (combined into cgk_datumcommissievergadering)
         FieldMapping {
             excel_column: "Uur Commissie".to_string(),
@@ -176,7 +169,6 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Time,
             required: false,
         },
-
         // Board meeting (Raad van Bestuur) - hidden field only visible in $metadata
         FieldMapping {
             excel_column: "Raad van Bestuur".to_string(),
@@ -186,7 +178,6 @@ pub fn get_cgk_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Support Type - picklist field
         FieldMapping {
             excel_column: "Support Type".to_string(),
@@ -225,7 +216,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Fund
         FieldMapping {
             excel_column: "Fonds*".to_string(),
@@ -235,7 +225,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Deadline name (raw value goes to nrq_deadlinename, nrq_name is generated with date/time)
         FieldMapping {
             excel_column: "Deadline*".to_string(),
@@ -243,7 +232,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Direct,
             required: false,
         },
-
         // Project manager
         FieldMapping {
             excel_column: "Projectbeheerder".to_string(),
@@ -253,7 +241,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Info field
         FieldMapping {
             excel_column: "Info".to_string(),
@@ -261,7 +248,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Direct,
             required: false,
         },
-
         // Deadline date
         FieldMapping {
             excel_column: "Datum Deadline".to_string(),
@@ -269,7 +255,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Date,
             required: false,
         },
-
         // Deadline time (combined into nrq_deadlinedate)
         FieldMapping {
             excel_column: "Uur".to_string(),
@@ -277,7 +262,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Time,
             required: false,
         },
-
         // Commission
         FieldMapping {
             excel_column: "Commissie".to_string(),
@@ -287,7 +271,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Board meeting (Raad van Bestuur) - separate entity for NRQ
         FieldMapping {
             excel_column: "Raad van Bestuur".to_string(),
@@ -297,7 +280,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Type - lookup to nrq_type (NRQ only, not supported in CGK)
         FieldMapping {
             excel_column: "Type".to_string(),
@@ -307,7 +289,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Commission meeting date (NRQ has this too, unlike what was previously assumed)
         FieldMapping {
             excel_column: "Datum Commissievergadering".to_string(),
@@ -315,7 +296,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Date,
             required: false,
         },
-
         // Commission meeting time (combined into nrq_committeemeetingdate)
         FieldMapping {
             excel_column: "Uur Commissie".to_string(),
@@ -323,7 +303,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             field_type: FieldType::Time,
             required: false,
         },
-
         // Commission meeting in person (Online of Fysiek)
         FieldMapping {
             excel_column: "Online of Fysiek".to_string(),
@@ -334,7 +313,6 @@ pub fn get_nrq_mappings() -> Vec<FieldMapping> {
             },
             required: false,
         },
-
         // Support Type - picklist field (NRQ uses nrq_supporttypeoptionset with different values)
         FieldMapping {
             excel_column: "Support Type".to_string(),
@@ -413,13 +391,19 @@ mod tests {
     #[test]
     fn test_detect_cgk_entity() {
         let entities = vec!["cgk_pillar".to_string(), "cgk_deadline".to_string()];
-        assert_eq!(detect_deadline_entity(&entities), Some("cgk_deadline".to_string()));
+        assert_eq!(
+            detect_deadline_entity(&entities),
+            Some("cgk_deadline".to_string())
+        );
     }
 
     #[test]
     fn test_detect_nrq_entity() {
         let entities = vec!["nrq_domain".to_string(), "nrq_deadline".to_string()];
-        assert_eq!(detect_deadline_entity(&entities), Some("nrq_deadline".to_string()));
+        assert_eq!(
+            detect_deadline_entity(&entities),
+            Some("nrq_deadline".to_string())
+        );
     }
 
     #[test]

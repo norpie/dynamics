@@ -51,7 +51,10 @@ pub fn resolve_path(record: &serde_json::Value, path: &FieldPath) -> Value {
 }
 
 /// Find a key in a JSON object using case-insensitive matching
-fn find_case_insensitive<'a>(obj: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
+fn find_case_insensitive<'a>(
+    obj: &'a serde_json::Value,
+    key: &str,
+) -> Option<&'a serde_json::Value> {
     let obj = obj.as_object()?;
     let key_lower = key.to_lowercase();
     for (k, v) in obj.iter() {

@@ -9,9 +9,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::api::metadata::{FieldMetadata, FieldType};
-use crate::tui::apps::sync::types::{
-    DependencyCategory, LookupInfo, SyncEntityInfo,
-};
+use crate::tui::apps::sync::types::{DependencyCategory, LookupInfo, SyncEntityInfo};
 
 /// Entity with its lookup relationships
 #[derive(Debug, Clone)]
@@ -61,7 +59,8 @@ impl EntityWithLookups {
 
     /// Count of unique internal lookup targets (excluding self-references)
     pub fn internal_target_count(&self) -> usize {
-        let targets: HashSet<_> = self.internal_lookups()
+        let targets: HashSet<_> = self
+            .internal_lookups()
             .iter()
             .map(|l| &l.target_entity)
             // Exclude self-references
@@ -84,9 +83,7 @@ pub struct DependencyGraph {
 
 impl DependencyGraph {
     /// Build a dependency graph from entities with their fields
-    pub fn build(
-        entities_with_fields: Vec<(String, Option<String>, Vec<FieldMetadata>)>,
-    ) -> Self {
+    pub fn build(entities_with_fields: Vec<(String, Option<String>, Vec<FieldMetadata>)>) -> Self {
         let selected_set: HashSet<String> = entities_with_fields
             .iter()
             .map(|(name, _, _)| name.clone())
@@ -119,7 +116,8 @@ impl DependencyGraph {
 
             // Update reverse adjacency
             for dep in deps {
-                graph.dependents
+                graph
+                    .dependents
                     .entry(dep)
                     .or_default()
                     .insert(name.clone());
@@ -202,11 +200,15 @@ impl DependencyGraph {
 
         // Check for cycles
         if result.len() != self.entities.len() {
-            let remaining: Vec<_> = self.entities.keys()
+            let remaining: Vec<_> = self
+                .entities
+                .keys()
                 .filter(|e| !result.contains(e))
                 .cloned()
                 .collect();
-            return Err(CycleError { entities: remaining });
+            return Err(CycleError {
+                entities: remaining,
+            });
         }
 
         Ok(result)
@@ -223,7 +225,6 @@ impl DependencyGraph {
         order.reverse();
         Ok(order)
     }
-
 }
 
 /// Error when a cycle is detected in the dependency graph
@@ -234,7 +235,11 @@ pub struct CycleError {
 
 impl std::fmt::Display for CycleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Circular dependency detected involving: {}", self.entities.join(", "))
+        write!(
+            f,
+            "Circular dependency detected involving: {}",
+            self.entities.join(", ")
+        )
     }
 }
 
@@ -276,23 +281,29 @@ mod tests {
 
     #[test]
     fn test_standalone_entity() {
-        let entities = vec![
-            ("standalone".to_string(), None, vec![make_string_field("name")]),
-        ];
+        let entities = vec![(
+            "standalone".to_string(),
+            None,
+            vec![make_string_field("name")],
+        )];
 
         let graph = DependencyGraph::build(entities);
 
-        assert_eq!(graph.categorize("standalone"), DependencyCategory::Standalone);
+        assert_eq!(
+            graph.categorize("standalone"),
+            DependencyCategory::Standalone
+        );
     }
 
     #[test]
     fn test_dependent_entity() {
         let entities = vec![
             ("parent".to_string(), None, vec![make_string_field("name")]),
-            ("child".to_string(), None, vec![
-                make_string_field("name"),
-                make_lookup("parentid", "parent"),
-            ]),
+            (
+                "child".to_string(),
+                None,
+                vec![make_string_field("name"), make_lookup("parentid", "parent")],
+            ),
         ];
 
         let graph = DependencyGraph::build(entities);
@@ -309,10 +320,14 @@ mod tests {
         let entities = vec![
             ("account".to_string(), None, vec![make_string_field("name")]),
             ("contact".to_string(), None, vec![make_string_field("name")]),
-            ("account_contact".to_string(), None, vec![
-                make_lookup("accountid", "account"),
-                make_lookup("contactid", "contact"),
-            ]),
+            (
+                "account_contact".to_string(),
+                None,
+                vec![
+                    make_lookup("accountid", "account"),
+                    make_lookup("contactid", "contact"),
+                ],
+            ),
         ];
 
         let graph = DependencyGraph::build(entities);
@@ -320,17 +335,21 @@ mod tests {
         assert_eq!(graph.categorize("account"), DependencyCategory::Standalone);
         assert_eq!(graph.categorize("contact"), DependencyCategory::Standalone);
         // Has lookups to selected entities, so it's Dependent (Junction is set via is_intersect metadata)
-        assert_eq!(graph.categorize("account_contact"), DependencyCategory::Dependent);
+        assert_eq!(
+            graph.categorize("account_contact"),
+            DependencyCategory::Dependent
+        );
     }
 
     #[test]
     fn test_topological_sort_simple() {
         let entities = vec![
             ("parent".to_string(), None, vec![make_string_field("name")]),
-            ("child".to_string(), None, vec![
-                make_string_field("name"),
-                make_lookup("parentid", "parent"),
-            ]),
+            (
+                "child".to_string(),
+                None,
+                vec![make_string_field("name"), make_lookup("parentid", "parent")],
+            ),
         ];
 
         let graph = DependencyGraph::build(entities);
@@ -345,15 +364,24 @@ mod tests {
     #[test]
     fn test_topological_sort_chain() {
         let entities = vec![
-            ("grandparent".to_string(), None, vec![make_string_field("name")]),
-            ("parent".to_string(), None, vec![
-                make_string_field("name"),
-                make_lookup("grandparentid", "grandparent"),
-            ]),
-            ("child".to_string(), None, vec![
-                make_string_field("name"),
-                make_lookup("parentid", "parent"),
-            ]),
+            (
+                "grandparent".to_string(),
+                None,
+                vec![make_string_field("name")],
+            ),
+            (
+                "parent".to_string(),
+                None,
+                vec![
+                    make_string_field("name"),
+                    make_lookup("grandparentid", "grandparent"),
+                ],
+            ),
+            (
+                "child".to_string(),
+                None,
+                vec![make_string_field("name"), make_lookup("parentid", "parent")],
+            ),
         ];
 
         let graph = DependencyGraph::build(entities);
@@ -371,10 +399,11 @@ mod tests {
     fn test_delete_order_reverses_insert() {
         let entities = vec![
             ("parent".to_string(), None, vec![make_string_field("name")]),
-            ("child".to_string(), None, vec![
-                make_string_field("name"),
-                make_lookup("parentid", "parent"),
-            ]),
+            (
+                "child".to_string(),
+                None,
+                vec![make_string_field("name"), make_lookup("parentid", "parent")],
+            ),
         ];
 
         let graph = DependencyGraph::build(entities);
@@ -394,12 +423,14 @@ mod tests {
 
     #[test]
     fn test_external_lookup_ignored_for_ordering() {
-        let entities = vec![
-            ("myentity".to_string(), None, vec![
+        let entities = vec![(
+            "myentity".to_string(),
+            None,
+            vec![
                 make_string_field("name"),
                 make_lookup("systemuserid", "systemuser"), // External - not in selection
-            ]),
-        ];
+            ],
+        )];
 
         let graph = DependencyGraph::build(entities);
 
@@ -414,12 +445,14 @@ mod tests {
 
     #[test]
     fn test_self_reference_ignored() {
-        let entities = vec![
-            ("account".to_string(), None, vec![
+        let entities = vec![(
+            "account".to_string(),
+            None,
+            vec![
                 make_string_field("name"),
                 make_lookup("parentaccountid", "account"), // Self-reference
-            ]),
-        ];
+            ],
+        )];
 
         let graph = DependencyGraph::build(entities);
 

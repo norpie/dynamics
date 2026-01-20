@@ -1,10 +1,12 @@
-use crossterm::event::KeyCode;
-use ratatui::text::{Line, Span};
-use ratatui::style::Style;
-use ratatui::prelude::Stylize;
-use serde_json::Value;
-use crate::tui::{App, AppId, Command, Element, Subscription, Theme, LayoutConstraint, LayeredView};
 use crate::tui::element::ColumnBuilder;
+use crate::tui::{
+    App, AppId, Command, Element, LayeredView, LayoutConstraint, Subscription, Theme,
+};
+use crossterm::event::KeyCode;
+use ratatui::prelude::Stylize;
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
+use serde_json::Value;
 
 pub struct LoadingScreen;
 
@@ -57,7 +59,7 @@ pub struct State {
     cancellable: bool,
     spinner_state: usize,
     countdown_ticks: Option<usize>, // Number of ticks remaining before navigation (80ms per tick)
-    navigation_sent: bool, // Prevent sending navigation multiple times
+    navigation_sent: bool,          // Prevent sending navigation multiple times
 }
 
 const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -72,7 +74,8 @@ impl App for LoadingScreen {
     fn init(params: LoadingScreenParams) -> (State, Command<Msg>) {
         let mut state = State::default();
 
-        state.tasks = params.tasks
+        state.tasks = params
+            .tasks
             .iter()
             .map(|name| LoadingTask {
                 name: name.clone(),
@@ -105,7 +108,8 @@ impl App for LoadingScreen {
 
                 if let Some(task) = state.tasks.iter_mut().find(|t| t.name == task_name) {
                     // Don't downgrade from Completed/Failed back to InProgress
-                    let already_done = matches!(task.status, TaskStatus::Completed | TaskStatus::Failed(_));
+                    let already_done =
+                        matches!(task.status, TaskStatus::Completed | TaskStatus::Failed(_));
 
                     if !already_done || status_str == "Completed" || status_str == "Failed" {
                         task.status = match status_str {
@@ -118,7 +122,7 @@ impl App for LoadingScreen {
                                 data.get("error")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("Unknown error")
-                                    .to_string()
+                                    .to_string(),
                             ),
                             _ => TaskStatus::Pending,
                         };
@@ -135,9 +139,11 @@ impl App for LoadingScreen {
                 // Check if all tasks are complete
                 // IMPORTANT: Only start countdown if we have tasks AND they're all done
                 // This prevents edge cases where empty task list triggers immediate countdown
-                let all_done = !state.tasks.is_empty() && state.tasks.iter().all(|t| {
-                    matches!(t.status, TaskStatus::Completed | TaskStatus::Failed(_))
-                });
+                let all_done = !state.tasks.is_empty()
+                    && state
+                        .tasks
+                        .iter()
+                        .all(|t| matches!(t.status, TaskStatus::Completed | TaskStatus::Failed(_)));
 
                 if all_done && state.countdown_ticks.is_none() {
                     log::info!("✓ LoadingScreen - all tasks complete, starting countdown");
@@ -158,20 +164,29 @@ impl App for LoadingScreen {
                             // Only navigate if we have tasks (prevents stale countdown from navigating)
                             if !state.tasks.is_empty() {
                                 if let Some(target) = state.target_app {
-                                    log::info!("✓ LoadingScreen - countdown complete, navigating to {:?}", target);
+                                    log::info!(
+                                        "✓ LoadingScreen - countdown complete, navigating to {:?}",
+                                        target
+                                    );
                                     state.navigation_sent = true; // Mark navigation as sent
                                     return Command::batch(vec![
                                         Command::navigate_to(target),
                                         Command::quit_self(), // Clean up after navigation
                                     ]);
                                 } else {
-                                    log::warn!("✗ LoadingScreen - countdown complete but target_app is None!");
+                                    log::warn!(
+                                        "✗ LoadingScreen - countdown complete but target_app is None!"
+                                    );
                                 }
                             } else {
-                                log::warn!("✗ LoadingScreen - countdown complete but tasks is empty!");
+                                log::warn!(
+                                    "✗ LoadingScreen - countdown complete but tasks is empty!"
+                                );
                             }
                         } else {
-                            log::debug!("⏸️  LoadingScreen - countdown complete but navigation already sent, skipping");
+                            log::debug!(
+                                "⏸️  LoadingScreen - countdown complete but navigation already sent, skipping"
+                            );
                         }
                     } else {
                         state.countdown_ticks = Some(remaining - 1);
@@ -196,7 +211,6 @@ impl App for LoadingScreen {
                     Command::None
                 }
             }
-
         }
     }
 
@@ -205,9 +219,10 @@ impl App for LoadingScreen {
         let theme = &crate::global_runtime_config().theme;
 
         // Header
-        let all_done = state.tasks.iter().all(|t| {
-            matches!(t.status, TaskStatus::Completed | TaskStatus::Failed(_))
-        });
+        let all_done = state
+            .tasks
+            .iter()
+            .all(|t| matches!(t.status, TaskStatus::Completed | TaskStatus::Failed(_)));
 
         let header_text = if state.countdown_ticks.is_some() {
             "All tasks completed! Returning in 1 second...".to_string()
@@ -217,11 +232,17 @@ impl App for LoadingScreen {
             "Loading...".to_string()
         };
 
-        content.push(Element::styled_text(Line::from(vec![
-            Span::styled(SPINNER_FRAMES[state.spinner_state], Style::default().fg(theme.palette_4).bold()),
-            Span::raw(" "),
-            Span::styled(header_text.clone(), Style::default().fg(theme.palette_4)),
-        ])).build());
+        content.push(
+            Element::styled_text(Line::from(vec![
+                Span::styled(
+                    SPINNER_FRAMES[state.spinner_state],
+                    Style::default().fg(theme.palette_4).bold(),
+                ),
+                Span::raw(" "),
+                Span::styled(header_text.clone(), Style::default().fg(theme.palette_4)),
+            ]))
+            .build(),
+        );
         content.push(Element::text(""));
 
         // Tasks
@@ -260,19 +281,23 @@ impl App for LoadingScreen {
             "Please wait..."
         };
 
-        content.push(Element::styled_text(Line::from(
-            Span::styled(footer_text, Style::default().fg(theme.border_primary))
-        )).build());
+        content.push(
+            Element::styled_text(Line::from(Span::styled(
+                footer_text,
+                Style::default().fg(theme.border_primary),
+            )))
+            .build(),
+        );
 
         // Wrap in panel
         let panel = Element::panel(
             Element::container(
                 ColumnBuilder::new()
                     .add(Element::column(content).build(), LayoutConstraint::Fill(1))
-                    .build()
+                    .build(),
             )
             .padding(2)
-            .build()
+            .build(),
         )
         .title("Loading Tasks")
         .build();
@@ -298,8 +323,12 @@ impl App for LoadingScreen {
 
     fn on_suspend(state: &mut State) -> Command<Msg> {
         log::info!("🛑 LoadingScreen::on_suspend - clearing countdown and navigation state");
-        log::debug!("  Previous state: countdown_ticks={:?}, target_app={:?}, navigation_sent={}",
-                    state.countdown_ticks, state.target_app, state.navigation_sent);
+        log::debug!(
+            "  Previous state: countdown_ticks={:?}, target_app={:?}, navigation_sent={}",
+            state.countdown_ticks,
+            state.target_app,
+            state.navigation_sent
+        );
 
         // Clear countdown to prevent navigation while suspended
         state.countdown_ticks = None;
@@ -315,7 +344,11 @@ impl App for LoadingScreen {
 
     fn on_resume(state: &mut State) -> Command<Msg> {
         log::info!("▶️  LoadingScreen::on_resume - resuming loading screen");
-        log::debug!("  Current state: {} tasks, countdown_ticks={:?}", state.tasks.len(), state.countdown_ticks);
+        log::debug!(
+            "  Current state: {} tasks, countdown_ticks={:?}",
+            state.tasks.len(),
+            state.countdown_ticks
+        );
         Command::None
     }
 }

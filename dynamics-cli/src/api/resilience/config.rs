@@ -86,7 +86,10 @@ impl Default for BypassConfig {
 impl BypassConfig {
     /// Check if any bypass options are enabled
     pub fn is_enabled(&self) -> bool {
-        self.custom_sync || self.custom_async || !self.step_ids.is_empty() || self.power_automate_flows
+        self.custom_sync
+            || self.custom_async
+            || !self.step_ids.is_empty()
+            || self.power_automate_flows
     }
 
     /// Create a config that bypasses all custom logic (plugins, workflows, flows)
@@ -261,43 +264,91 @@ impl ResilienceConfig {
         let config = crate::global_config();
 
         // Load retry options
-        let retry_enabled = config.options.get_bool("api.retry.enabled").await
+        let retry_enabled = config
+            .options
+            .get_bool("api.retry.enabled")
+            .await
             .unwrap_or(true);
-        let max_attempts = config.options.get_uint("api.retry.max_attempts").await
+        let max_attempts = config
+            .options
+            .get_uint("api.retry.max_attempts")
+            .await
             .unwrap_or(3) as u32;
-        let base_delay_ms = config.options.get_uint("api.retry.base_delay_ms").await
+        let base_delay_ms = config
+            .options
+            .get_uint("api.retry.base_delay_ms")
+            .await
             .unwrap_or(500);
-        let max_delay_ms = config.options.get_uint("api.retry.max_delay_ms").await
+        let max_delay_ms = config
+            .options
+            .get_uint("api.retry.max_delay_ms")
+            .await
             .unwrap_or(30000);
-        let backoff_multiplier = config.options.get_float("api.retry.backoff_multiplier").await
+        let backoff_multiplier = config
+            .options
+            .get_float("api.retry.backoff_multiplier")
+            .await
             .unwrap_or(2.0);
-        let jitter = config.options.get_bool("api.retry.jitter").await
+        let jitter = config
+            .options
+            .get_bool("api.retry.jitter")
+            .await
             .unwrap_or(true);
 
         // Load rate limit options
-        let rate_limit_enabled = config.options.get_bool("api.rate_limit.enabled").await
+        let rate_limit_enabled = config
+            .options
+            .get_bool("api.rate_limit.enabled")
+            .await
             .unwrap_or(true);
-        let requests_per_minute = config.options.get_uint("api.rate_limit.requests_per_minute").await
+        let requests_per_minute = config
+            .options
+            .get_uint("api.rate_limit.requests_per_minute")
+            .await
             .unwrap_or(600) as u32;
-        let burst_capacity = config.options.get_uint("api.rate_limit.burst_capacity").await
+        let burst_capacity = config
+            .options
+            .get_uint("api.rate_limit.burst_capacity")
+            .await
             .unwrap_or(30) as u32;
 
         // Load concurrency options
-        let concurrency_enabled = config.options.get_bool("api.concurrency.enabled").await
+        let concurrency_enabled = config
+            .options
+            .get_bool("api.concurrency.enabled")
+            .await
             .unwrap_or(true);
-        let max_concurrent_requests = config.options.get_uint("api.concurrency.max_concurrent_requests").await
+        let max_concurrent_requests = config
+            .options
+            .get_uint("api.concurrency.max_concurrent_requests")
+            .await
             .unwrap_or(20) as usize;
-        let max_queue_items = config.options.get_uint("api.concurrency.max_queue_items").await
+        let max_queue_items = config
+            .options
+            .get_uint("api.concurrency.max_queue_items")
+            .await
             .unwrap_or(10) as usize;
 
         // Load monitoring options
-        let correlation_ids = config.options.get_bool("api.monitoring.correlation_ids").await
+        let correlation_ids = config
+            .options
+            .get_bool("api.monitoring.correlation_ids")
+            .await
             .unwrap_or(true);
-        let request_logging = config.options.get_bool("api.monitoring.request_logging").await
+        let request_logging = config
+            .options
+            .get_bool("api.monitoring.request_logging")
+            .await
             .unwrap_or(true);
-        let performance_metrics = config.options.get_bool("api.monitoring.performance_metrics").await
+        let performance_metrics = config
+            .options
+            .get_bool("api.monitoring.performance_metrics")
+            .await
             .unwrap_or(true);
-        let log_level_str = config.options.get_string("api.monitoring.log_level").await
+        let log_level_str = config
+            .options
+            .get_string("api.monitoring.log_level")
+            .await
             .unwrap_or_else(|_| "info".to_string());
 
         let log_level = match log_level_str.as_str() {
@@ -310,18 +361,33 @@ impl ResilienceConfig {
         };
 
         // Load bypass options
-        let bypass_custom_sync = config.options.get_bool("api.bypass.custom_sync").await
+        let bypass_custom_sync = config
+            .options
+            .get_bool("api.bypass.custom_sync")
+            .await
             .unwrap_or(false);
-        let bypass_custom_async = config.options.get_bool("api.bypass.custom_async").await
+        let bypass_custom_async = config
+            .options
+            .get_bool("api.bypass.custom_async")
+            .await
             .unwrap_or(false);
-        let bypass_power_automate = config.options.get_bool("api.bypass.power_automate").await
+        let bypass_power_automate = config
+            .options
+            .get_bool("api.bypass.power_automate")
+            .await
             .unwrap_or(false);
-        let bypass_step_ids_str = config.options.get_string("api.bypass.step_ids").await
+        let bypass_step_ids_str = config
+            .options
+            .get_string("api.bypass.step_ids")
+            .await
             .unwrap_or_default();
         let bypass_step_ids: Vec<String> = if bypass_step_ids_str.is_empty() {
             Vec::new()
         } else {
-            bypass_step_ids_str.split(',').map(|s| s.trim().to_string()).collect()
+            bypass_step_ids_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect()
         };
 
         Ok(Self {

@@ -29,7 +29,10 @@ fn get_selected_item_id(state: &mut State) -> Option<String> {
             super::super::Side::Source => "source",
             super::super::Side::Target => "target",
         };
-        Some(format!("{}:{}:{}", tab_prefix, side_prefix, selected_node_id))
+        Some(format!(
+            "{}:{}:{}",
+            tab_prefix, side_prefix, selected_node_id
+        ))
     } else {
         None
     }
@@ -56,11 +59,14 @@ pub fn handle_ignore_item(state: &mut State) -> Command<Msg> {
         Command::perform(
             async move {
                 let config = crate::global_config();
-                if let Err(e) = config.set_ignored_items(&source_entity, &target_entity, &ignored).await {
+                if let Err(e) = config
+                    .set_ignored_items(&source_entity, &target_entity, &ignored)
+                    .await
+                {
                     log::error!("Failed to save ignored items: {}", e);
                 }
             },
-            |_| Msg::IgnoredItemsSaved  // Dummy message - doesn't trigger another ignore
+            |_| Msg::IgnoredItemsSaved, // Dummy message - doesn't trigger another ignore
         )
     } else {
         log::warn!("No item selected to ignore");
@@ -104,7 +110,9 @@ pub fn handle_navigate(state: &mut State, key: KeyCode) -> Command<Msg> {
 /// Handle selecting an item in ignore list
 pub fn handle_select(state: &mut State, index: usize) -> Command<Msg> {
     let item_count = state.ignored_items.len();
-    state.ignore_list_state.select_and_scroll(Some(index), item_count);
+    state
+        .ignore_list_state
+        .select_and_scroll(Some(index), item_count);
     Command::None
 }
 
@@ -139,11 +147,14 @@ pub fn handle_delete_item(state: &mut State) -> Command<Msg> {
             return Command::perform(
                 async move {
                     let config = crate::global_config();
-                    if let Err(e) = config.set_ignored_items(&source_entity, &target_entity, &ignored).await {
+                    if let Err(e) = config
+                        .set_ignored_items(&source_entity, &target_entity, &ignored)
+                        .await
+                    {
                         log::error!("Failed to save ignored items: {}", e);
                     }
                 },
-                |_| Msg::IgnoredItemsSaved  // Dummy message - doesn't close modal
+                |_| Msg::IgnoredItemsSaved, // Dummy message - doesn't close modal
             );
         }
     }
@@ -164,11 +175,14 @@ pub fn handle_clear_all(state: &mut State) -> Command<Msg> {
     Command::perform(
         async move {
             let config = crate::global_config();
-            if let Err(e) = config.clear_ignored_items(&source_entity, &target_entity).await {
+            if let Err(e) = config
+                .clear_ignored_items(&source_entity, &target_entity)
+                .await
+            {
                 log::error!("Failed to clear ignored items in config: {}", e);
             }
         },
-        |_| Msg::IgnoredItemsSaved  // Dummy message - doesn't close modal
+        |_| Msg::IgnoredItemsSaved, // Dummy message - doesn't close modal
     )
 }
 

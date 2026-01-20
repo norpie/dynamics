@@ -2,9 +2,9 @@
 //!
 //! Provides a fluent API that builds Query objects for execution
 
-use super::query::Query;
 use super::filters::Filter;
 use super::orderby::{OrderBy, OrderByClause};
+use super::query::Query;
 use super::result::QueryResult;
 use crate::api::client::DynamicsClient;
 
@@ -108,7 +108,6 @@ impl QueryBuilder {
     pub fn oldest_first(self) -> Self {
         self.orderby(OrderBy::asc("createdon"))
     }
-
 }
 
 #[cfg(test)]
@@ -126,7 +125,10 @@ mod tests {
             .build();
 
         assert_eq!(query.entity, "contacts");
-        assert_eq!(query.select, Some(vec!["firstname".to_string(), "lastname".to_string()]));
+        assert_eq!(
+            query.select,
+            Some(vec!["firstname".to_string(), "lastname".to_string()])
+        );
         assert!(query.filter.is_some());
         assert_eq!(query.top, Some(10));
     }
@@ -167,8 +169,8 @@ mod tests {
                 Filter::eq("statecode", 0),
                 Filter::or(vec![
                     Filter::contains("firstname", "John"),
-                    Filter::contains("lastname", "Smith")
-                ])
+                    Filter::contains("lastname", "Smith"),
+                ]),
             ]))
             .build();
 
@@ -189,9 +191,12 @@ mod tests {
             .expand(&["parentcontactid($select=fullname)", "account($select=name)"])
             .build();
 
-        assert_eq!(query.expand, Some(vec![
-            "parentcontactid($select=fullname)".to_string(),
-            "account($select=name)".to_string()
-        ]));
+        assert_eq!(
+            query.expand,
+            Some(vec![
+                "parentcontactid($select=fullname)".to_string(),
+                "account($select=name)".to_string()
+            ])
+        );
     }
 }

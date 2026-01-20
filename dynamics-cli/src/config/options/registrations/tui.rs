@@ -10,11 +10,8 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
         OptionDefBuilder::new("tui", "focus_mode")
             .display_name("Focus Mode")
             .description("How interactive elements gain keyboard focus")
-            .enum_type(
-                vec!["click", "hover", "hover_when_unfocused"],
-                "hover"
-            )
-            .build()?
+            .enum_type(vec!["click", "hover", "hover_when_unfocused"], "hover")
+            .build()?,
     )?;
 
     // Color picker mode option
@@ -22,11 +19,8 @@ pub fn register(registry: &OptionsRegistry) -> Result<()> {
         OptionDefBuilder::new("tui", "colorpicker_mode")
             .display_name("Color Picker Mode")
             .description("Default color adjustment mode (HSL or RGB)")
-            .enum_type(
-                vec!["hsl", "rgb"],
-                "hsl"
-            )
-            .build()?
+            .enum_type(vec!["hsl", "rgb"], "hsl")
+            .build()?,
     )?;
 
     log::info!("Registered {} TUI options", 2);

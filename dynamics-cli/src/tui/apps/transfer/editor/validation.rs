@@ -39,7 +39,11 @@ impl ValidationResult {
 
 /// Try to parse a string value as the given field type
 /// Returns Error if definitely invalid, Warning if might work, Valid if definitely valid
-pub fn validate_constant_value(value: &str, target_type: &FieldType, is_required: bool) -> ValidationResult {
+pub fn validate_constant_value(
+    value: &str,
+    target_type: &FieldType,
+    is_required: bool,
+) -> ValidationResult {
     let trimmed = value.trim();
 
     // Empty/null handling
@@ -57,19 +61,18 @@ pub fn validate_constant_value(value: &str, target_type: &FieldType, is_required
             ValidationResult::Valid
         }
 
-        FieldType::Boolean => {
-            match trimmed.to_lowercase().as_str() {
-                "true" | "false" | "1" | "0" | "yes" | "no" => ValidationResult::Valid,
-                _ => ValidationResult::Error(format!("'{}' is not a valid boolean (use true/false)", trimmed)),
-            }
-        }
+        FieldType::Boolean => match trimmed.to_lowercase().as_str() {
+            "true" | "false" | "1" | "0" | "yes" | "no" => ValidationResult::Valid,
+            _ => ValidationResult::Error(format!(
+                "'{}' is not a valid boolean (use true/false)",
+                trimmed
+            )),
+        },
 
-        FieldType::Integer | FieldType::OptionSet => {
-            match trimmed.parse::<i64>() {
-                Ok(_) => ValidationResult::Valid,
-                Err(_) => ValidationResult::Error(format!("'{}' is not a valid integer", trimmed)),
-            }
-        }
+        FieldType::Integer | FieldType::OptionSet => match trimmed.parse::<i64>() {
+            Ok(_) => ValidationResult::Valid,
+            Err(_) => ValidationResult::Error(format!("'{}' is not a valid integer", trimmed)),
+        },
 
         FieldType::MultiSelectOptionSet => {
             // Comma-separated list of integers (option values)
@@ -79,25 +82,29 @@ pub fn validate_constant_value(value: &str, target_type: &FieldType, is_required
                     continue;
                 }
                 if part.parse::<i64>().is_err() {
-                    return ValidationResult::Error(format!("'{}' is not a valid integer in multi-select", part));
+                    return ValidationResult::Error(format!(
+                        "'{}' is not a valid integer in multi-select",
+                        part
+                    ));
                 }
             }
             ValidationResult::Valid
         }
 
-        FieldType::Decimal | FieldType::Money => {
-            match trimmed.parse::<f64>() {
-                Ok(_) => ValidationResult::Valid,
-                Err(_) => ValidationResult::Error(format!("'{}' is not a valid decimal", trimmed)),
-            }
-        }
+        FieldType::Decimal | FieldType::Money => match trimmed.parse::<f64>() {
+            Ok(_) => ValidationResult::Valid,
+            Err(_) => ValidationResult::Error(format!("'{}' is not a valid decimal", trimmed)),
+        },
 
         FieldType::DateTime => {
             // Accept ISO 8601 formats and common date formats
             if parse_datetime(trimmed).is_some() {
                 ValidationResult::Valid
             } else {
-                ValidationResult::Error(format!("'{}' is not a valid date/time (use ISO 8601 format)", trimmed))
+                ValidationResult::Error(format!(
+                    "'{}' is not a valid date/time (use ISO 8601 format)",
+                    trimmed
+                ))
             }
         }
 
@@ -180,25 +187,36 @@ pub fn validate_copy_types(source_type: &FieldType, target_type: &FieldType) -> 
         (DateTime, String) | (DateTime, Memo) => ValidationResult::Valid,
 
         // Invalid conversions
-        (DateTime, Integer) | (DateTime, Decimal) | (DateTime, Boolean) |
-        (DateTime, Money) | (DateTime, OptionSet) | (DateTime, UniqueIdentifier) | (DateTime, Lookup) => {
+        (DateTime, Integer)
+        | (DateTime, Decimal)
+        | (DateTime, Boolean)
+        | (DateTime, Money)
+        | (DateTime, OptionSet)
+        | (DateTime, UniqueIdentifier)
+        | (DateTime, Lookup) => {
             ValidationResult::Error("DateTime cannot be converted to this type".into())
         }
 
-        (Boolean, Decimal) | (Boolean, Money) | (Boolean, DateTime) |
-        (Boolean, UniqueIdentifier) | (Boolean, Lookup) => {
+        (Boolean, Decimal)
+        | (Boolean, Money)
+        | (Boolean, DateTime)
+        | (Boolean, UniqueIdentifier)
+        | (Boolean, Lookup) => {
             ValidationResult::Error("Boolean cannot be converted to this type".into())
         }
 
-        (Integer, DateTime) | (Decimal, DateTime) | (Money, DateTime) |
-        (OptionSet, DateTime) => {
+        (Integer, DateTime) | (Decimal, DateTime) | (Money, DateTime) | (OptionSet, DateTime) => {
             ValidationResult::Error("Numeric types cannot be converted to DateTime".into())
         }
 
-        (Integer, UniqueIdentifier) | (Integer, Lookup) |
-        (Decimal, UniqueIdentifier) | (Decimal, Lookup) |
-        (Money, UniqueIdentifier) | (Money, Lookup) |
-        (OptionSet, UniqueIdentifier) | (OptionSet, Lookup) => {
+        (Integer, UniqueIdentifier)
+        | (Integer, Lookup)
+        | (Decimal, UniqueIdentifier)
+        | (Decimal, Lookup)
+        | (Money, UniqueIdentifier)
+        | (Money, Lookup)
+        | (OptionSet, UniqueIdentifier)
+        | (OptionSet, Lookup) => {
             ValidationResult::Error("Numeric types cannot be converted to GUID/Lookup".into())
         }
 
@@ -210,10 +228,18 @@ pub fn validate_copy_types(source_type: &FieldType, target_type: &FieldType) -> 
             ValidationResult::Error("Decimal cannot be converted to OptionSet".into())
         }
 
-        (UniqueIdentifier, Integer) | (UniqueIdentifier, Decimal) | (UniqueIdentifier, Boolean) |
-        (UniqueIdentifier, DateTime) | (UniqueIdentifier, Money) | (UniqueIdentifier, OptionSet) |
-        (Lookup, Integer) | (Lookup, Decimal) | (Lookup, Boolean) |
-        (Lookup, DateTime) | (Lookup, Money) | (Lookup, OptionSet) => {
+        (UniqueIdentifier, Integer)
+        | (UniqueIdentifier, Decimal)
+        | (UniqueIdentifier, Boolean)
+        | (UniqueIdentifier, DateTime)
+        | (UniqueIdentifier, Money)
+        | (UniqueIdentifier, OptionSet)
+        | (Lookup, Integer)
+        | (Lookup, Decimal)
+        | (Lookup, Boolean)
+        | (Lookup, DateTime)
+        | (Lookup, Money)
+        | (Lookup, OptionSet) => {
             ValidationResult::Error("GUID/Lookup cannot be converted to this type".into())
         }
 
@@ -223,7 +249,7 @@ pub fn validate_copy_types(source_type: &FieldType, target_type: &FieldType) -> 
         }
 
         // Catch-all for any missed combinations
-        _ => ValidationResult::Warning("Type compatibility uncertain".into())
+        _ => ValidationResult::Warning("Type compatibility uncertain".into()),
     }
 }
 
@@ -234,11 +260,15 @@ pub fn validate_optionset_copy(
     target_type: &FieldType,
 ) -> ValidationResult {
     // Only warn for OptionSet fields mapping to OptionSet
-    if matches!(source_type, FieldType::OptionSet | FieldType::MultiSelectOptionSet)
-        && matches!(target_type, FieldType::OptionSet | FieldType::MultiSelectOptionSet)
-    {
+    if matches!(
+        source_type,
+        FieldType::OptionSet | FieldType::MultiSelectOptionSet
+    ) && matches!(
+        target_type,
+        FieldType::OptionSet | FieldType::MultiSelectOptionSet
+    ) {
         ValidationResult::Warning(
-            "OptionSet field: Consider using ValueMap to ensure values are mapped correctly".into()
+            "OptionSet field: Consider using ValueMap to ensure values are mapped correctly".into(),
         )
     } else {
         ValidationResult::Valid
@@ -249,13 +279,13 @@ pub fn validate_optionset_copy(
 fn parse_datetime(s: &str) -> Option<()> {
     // ISO 8601 formats
     let formats = [
-        "%Y-%m-%dT%H:%M:%S%.fZ",      // 2024-01-15T10:30:00.000Z
-        "%Y-%m-%dT%H:%M:%SZ",          // 2024-01-15T10:30:00Z
-        "%Y-%m-%dT%H:%M:%S",           // 2024-01-15T10:30:00
-        "%Y-%m-%d %H:%M:%S",           // 2024-01-15 10:30:00
-        "%Y-%m-%d",                    // 2024-01-15
-        "%d/%m/%Y",                    // 15/01/2024
-        "%m/%d/%Y",                    // 01/15/2024
+        "%Y-%m-%dT%H:%M:%S%.fZ", // 2024-01-15T10:30:00.000Z
+        "%Y-%m-%dT%H:%M:%SZ",    // 2024-01-15T10:30:00Z
+        "%Y-%m-%dT%H:%M:%S",     // 2024-01-15T10:30:00
+        "%Y-%m-%d %H:%M:%S",     // 2024-01-15 10:30:00
+        "%Y-%m-%d",              // 2024-01-15
+        "%d/%m/%Y",              // 15/01/2024
+        "%m/%d/%Y",              // 01/15/2024
     ];
 
     for format in formats {

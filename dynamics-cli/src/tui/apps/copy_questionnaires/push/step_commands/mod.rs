@@ -1,3 +1,5 @@
+mod error;
+mod execution;
 /// Step-by-step questionnaire copy implementation
 ///
 /// This module contains the 11-step copy process for duplicating questionnaires
@@ -11,10 +13,7 @@
 /// - `execution` - Generic execution logic with automatic batching
 /// - `rollback` - Rollback operations for cleanup
 /// - `steps` - Individual step implementations (step1-step11)
-
 mod helpers;
-mod error;
-mod execution;
 mod rollback;
 mod steps;
 
@@ -23,16 +22,9 @@ pub mod field_specs;
 
 // Re-export public API
 pub use steps::{
-    step1_create_questionnaire,
-    step2_create_pages,
-    step3_create_page_lines,
-    step4_create_groups,
-    step5_create_group_lines,
-    step6_create_questions,
-    step7_create_template_lines,
-    step8_create_conditions,
-    step9_create_condition_actions,
-    step10_create_classifications,
+    step1_create_questionnaire, step2_create_pages, step3_create_page_lines, step4_create_groups,
+    step5_create_group_lines, step6_create_questions, step7_create_template_lines,
+    step8_create_conditions, step9_create_condition_actions, step10_create_classifications,
     step11_publish_conditions,
 };
 

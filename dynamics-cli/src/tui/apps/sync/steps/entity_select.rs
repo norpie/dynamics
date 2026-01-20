@@ -5,15 +5,15 @@
 use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span};
 
-use crate::tui::element::Element;
-use crate::tui::widgets::ListItem;
-use crate::tui::state::theme::Theme;
 use crate::tui::FocusId;
 use crate::tui::Resource;
-use crate::{col, row, spacer, use_constraints, button_row};
+use crate::tui::element::Element;
+use crate::tui::state::theme::Theme;
+use crate::tui::widgets::ListItem;
+use crate::{button_row, col, row, spacer, use_constraints};
 
-use super::super::state::{State, EntityListItem, JunctionCandidate};
 use super::super::msg::Msg;
+use super::super::state::{EntityListItem, JunctionCandidate, State};
 
 /// Hardcoded presets for entity selection
 pub struct EntityPreset {
@@ -49,24 +49,15 @@ pub const PRESETS: &[EntityPreset] = &[
     },
     EntityPreset {
         name: "VAF Settings (minimal)",
-        entities: &[
-            "nrq_fund",
-            "nrq_type",
-        ],
+        entities: &["nrq_fund", "nrq_type"],
     },
     EntityPreset {
         name: "VAF Settings (junction test)",
-        entities: &[
-            "nrq_flemishshare",
-            "nrq_category",
-        ],
+        entities: &["nrq_flemishshare", "nrq_category"],
     },
     EntityPreset {
         name: "VAF (test)",
-        entities: &[
-            "cgk_category",
-            "cgk_length",
-        ],
+        entities: &["cgk_category", "cgk_length"],
     },
     EntityPreset {
         name: "VAF Settings (absolute minimal)",
@@ -89,13 +80,20 @@ struct SelectableEntity<'a> {
 impl<'a> ListItem for SelectableEntity<'a> {
     type Msg = Msg;
 
-    fn to_element(&self, is_focused: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_focused: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         let checkbox = if self.is_selected { "[✓]" } else { "[ ]" };
 
         let display_text = self.entity.display_text();
-        let count_text = self.entity.record_count
+        let count_text = self
+            .entity
+            .record_count
             .map(|c| format!(" ({} records)", c))
             .unwrap_or_default();
 
@@ -129,7 +127,12 @@ struct SelectableJunction<'a> {
 impl<'a> ListItem for SelectableJunction<'a> {
     type Msg = Msg;
 
-    fn to_element(&self, is_focused: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_focused: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         let checkbox = if self.is_included { "[✓]" } else { "[ ]" };
@@ -158,15 +161,9 @@ pub fn render_entity_select(state: &mut State, theme: &Theme) -> Element<Msg> {
     use_constraints!();
 
     let content = match &state.entity_select.available_entities {
-        Resource::NotAsked | Resource::Loading => {
-            render_loading(theme)
-        }
-        Resource::Failure(err) => {
-            render_error(err, theme)
-        }
-        Resource::Success(_) => {
-            render_entity_lists(state, theme)
-        }
+        Resource::NotAsked | Resource::Loading => render_loading(theme),
+        Resource::Failure(err) => render_error(err, theme),
+        Resource::Success(_) => render_entity_lists(state, theme),
     };
 
     let header = render_step_header(state, theme);
@@ -189,9 +186,7 @@ fn render_loading(_theme: &Theme) -> Element<Msg> {
 /// Render error state
 fn render_error(err: &str, _theme: &Theme) -> Element<Msg> {
     let text = format!("Error: {}", err);
-    Element::panel(Element::text(text))
-        .title("Error")
-        .build()
+    Element::panel(Element::text(text)).title("Error").build()
 }
 
 /// Render entity and junction lists
@@ -207,9 +202,7 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
     .on_event(Msg::PresetSelectEvent)
     .build();
 
-    let preset_panel = Element::panel(preset_select)
-        .title("Preset")
-        .build();
+    let preset_panel = Element::panel(preset_select).title("Preset").build();
 
     // Filter input
     let filter_input = Element::text_input(
@@ -221,9 +214,7 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
     .on_event(Msg::FilterInputEvent)
     .build();
 
-    let filter_panel = Element::panel(filter_input)
-        .title("Filter")
-        .build();
+    let filter_panel = Element::panel(filter_input).title("Filter").build();
 
     // Top row with preset and filter
     let top_row = row![
@@ -233,12 +224,16 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
 
     // Get filtered entities
     let filtered_entities = state.entity_select.filtered_entities();
-    let entity_items: Vec<SelectableEntity> = filtered_entities.iter().map(|e| {
-        SelectableEntity {
+    let entity_items: Vec<SelectableEntity> = filtered_entities
+        .iter()
+        .map(|e| SelectableEntity {
             entity: *e,
-            is_selected: state.entity_select.selected_entities.contains(&e.logical_name),
-        }
-    }).collect();
+            is_selected: state
+                .entity_select
+                .selected_entities
+                .contains(&e.logical_name),
+        })
+        .collect();
 
     // Entity list
     let entity_title = format!(
@@ -258,19 +253,23 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
     .on_navigate(Msg::EntityListNavigate)
     .build();
 
-    let entity_panel = Element::panel(entity_list)
-        .title(entity_title)
-        .build();
+    let entity_panel = Element::panel(entity_list).title(entity_title).build();
 
     // Build main content with optional junction panel
     if state.entity_select.show_junctions && !state.entity_select.junction_candidates.is_empty() {
         // Show junction panel
-        let junction_items: Vec<SelectableJunction> = state.entity_select.junction_candidates.iter().map(|j| {
-            SelectableJunction {
+        let junction_items: Vec<SelectableJunction> = state
+            .entity_select
+            .junction_candidates
+            .iter()
+            .map(|j| SelectableJunction {
                 junction: j,
-                is_included: state.entity_select.included_junctions.contains(&j.logical_name),
-            }
-        }).collect();
+                is_included: state
+                    .entity_select
+                    .included_junctions
+                    .contains(&j.logical_name),
+            })
+            .collect();
 
         let junction_title = format!(
             "Junction Entities ({} found, {} included)",
@@ -318,7 +317,10 @@ fn render_entity_lists(state: &mut State, theme: &Theme) -> Element<Msg> {
     } else {
         // No junction panel
         let junction_hint = if !state.entity_select.junction_candidates.is_empty() {
-            let text = format!("{} junction candidates available", state.entity_select.junction_candidates.len());
+            let text = format!(
+                "{} junction candidates available",
+                state.entity_select.junction_candidates.len()
+            );
             Element::text(text)
         } else {
             Element::text("")
@@ -367,21 +369,24 @@ fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
         let text = "Loading entities...".to_string();
         Element::styled_text(Line::from(Span::styled(
             text,
-            Style::default().fg(theme.text_secondary)
-        ))).build()
+            Style::default().fg(theme.text_secondary),
+        )))
+        .build()
     } else if !has_selection {
         let text = "⚠ Select at least one entity".to_string();
         Element::styled_text(Line::from(Span::styled(
             text,
-            Style::default().fg(theme.accent_warning)
-        ))).build()
+            Style::default().fg(theme.accent_warning),
+        )))
+        .build()
     } else {
         let total = state.entity_select.entities_to_sync().len();
         let text = format!("✓ {} entities will be synced", total);
         Element::styled_text(Line::from(Span::styled(
             text,
-            Style::default().fg(theme.accent_success)
-        ))).build()
+            Style::default().fg(theme.accent_success),
+        )))
+        .build()
     };
 
     // Hide buttons during loading to prevent UB from canceling fetch
@@ -403,9 +408,7 @@ fn render_step_footer(state: &State, theme: &Theme) -> Element<Msg> {
             buttons => Length(3),
         ]
     } else {
-        let buttons = button_row![
-            ("entity-back-btn", "Back", Msg::Back),
-        ];
+        let buttons = button_row![("entity-back-btn", "Back", Msg::Back),];
 
         col![
             status => Length(1),

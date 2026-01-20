@@ -16,23 +16,35 @@ pub fn render(state: &State, theme: &Theme) -> Element<Msg> {
     let has_multi_selection = state.list_state.has_multi_selection();
 
     // Title
-    let title = Element::styled_text(Line::from(vec![
-        Span::styled("Apply action to records", Style::default().fg(theme.text_primary).add_modifier(Modifier::BOLD)),
-    ]))
+    let title = Element::styled_text(Line::from(vec![Span::styled(
+        "Apply action to records",
+        Style::default()
+            .fg(theme.text_primary)
+            .add_modifier(Modifier::BOLD),
+    )]))
     .build();
 
     // Scope section
-    let scope_header = Element::styled_text(Line::from(vec![
-        Span::styled("Scope:", Style::default().fg(theme.text_secondary)),
-    ]))
+    let scope_header = Element::styled_text(Line::from(vec![Span::styled(
+        "Scope:",
+        Style::default().fg(theme.text_secondary),
+    )]))
     .build();
 
-    let scope_options = render_scope_options(state, theme, all_count, filtered_count, selected_count, has_multi_selection);
+    let scope_options = render_scope_options(
+        state,
+        theme,
+        all_count,
+        filtered_count,
+        selected_count,
+        has_multi_selection,
+    );
 
     // Action section
-    let action_header = Element::styled_text(Line::from(vec![
-        Span::styled("Action:", Style::default().fg(theme.text_secondary)),
-    ]))
+    let action_header = Element::styled_text(Line::from(vec![Span::styled(
+        "Action:",
+        Style::default().fg(theme.text_secondary),
+    )]))
     .build();
 
     let action_options = render_action_options(state, theme);
@@ -45,7 +57,10 @@ pub fn render(state: &State, theme: &Theme) -> Element<Msg> {
         .add(title, LayoutConstraint::Length(1))
         .add(Element::text(""), LayoutConstraint::Length(1))
         .add(scope_header, LayoutConstraint::Length(1))
-        .add(scope_options, LayoutConstraint::Length(if has_multi_selection { 3 } else { 2 }))
+        .add(
+            scope_options,
+            LayoutConstraint::Length(if has_multi_selection { 3 } else { 2 }),
+        )
         .add(Element::text(""), LayoutConstraint::Length(1))
         .add(action_header, LayoutConstraint::Length(1))
         .add(action_options, LayoutConstraint::Length(3))
@@ -62,25 +77,34 @@ pub fn render(state: &State, theme: &Theme) -> Element<Msg> {
 
 /// Calculate record counts for each scope
 fn calculate_counts(state: &State) -> (usize, usize, usize) {
-    let (all_count, filtered_count) = if let crate::tui::resource::Resource::Success(resolved) = &state.resolved {
-        if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
-            let all = entity.records.len();
-            let query = state.search_field.value().to_lowercase();
-            let filtered = entity.records.iter()
-                .filter(|r| state.filter.matches(r.action))
-                .filter(|r| {
-                    if query.is_empty() { return true; }
-                    if r.source_id.to_string().to_lowercase().contains(&query) { return true; }
-                    r.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
-                })
-                .count();
-            (all, filtered)
+    let (all_count, filtered_count) =
+        if let crate::tui::resource::Resource::Success(resolved) = &state.resolved {
+            if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
+                let all = entity.records.len();
+                let query = state.search_field.value().to_lowercase();
+                let filtered = entity
+                    .records
+                    .iter()
+                    .filter(|r| state.filter.matches(r.action))
+                    .filter(|r| {
+                        if query.is_empty() {
+                            return true;
+                        }
+                        if r.source_id.to_string().to_lowercase().contains(&query) {
+                            return true;
+                        }
+                        r.fields
+                            .values()
+                            .any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                    })
+                    .count();
+                (all, filtered)
+            } else {
+                (0, 0)
+            }
         } else {
             (0, 0)
-        }
-    } else {
-        (0, 0)
-    };
+        };
 
     let selected_count = state.list_state.multi_select_count();
 
@@ -104,10 +128,21 @@ fn render_scope_options(
     builder = builder.add(
         Element::styled_text(Line::from(vec![
             Span::styled("[1] ", Style::default().fg(theme.text_tertiary)),
-            Span::styled(filtered_radio, Style::default().fg(if filtered_selected { theme.accent_primary } else { theme.text_tertiary })),
+            Span::styled(
+                filtered_radio,
+                Style::default().fg(if filtered_selected {
+                    theme.accent_primary
+                } else {
+                    theme.text_tertiary
+                }),
+            ),
             Span::styled(
                 format!(" Filtered ({} records)", filtered_count),
-                Style::default().fg(if filtered_selected { theme.text_primary } else { theme.text_secondary }),
+                Style::default().fg(if filtered_selected {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                }),
             ),
         ]))
         .build(),
@@ -120,10 +155,21 @@ fn render_scope_options(
     builder = builder.add(
         Element::styled_text(Line::from(vec![
             Span::styled("[2] ", Style::default().fg(theme.text_tertiary)),
-            Span::styled(all_radio, Style::default().fg(if all_selected { theme.accent_primary } else { theme.text_tertiary })),
+            Span::styled(
+                all_radio,
+                Style::default().fg(if all_selected {
+                    theme.accent_primary
+                } else {
+                    theme.text_tertiary
+                }),
+            ),
             Span::styled(
                 format!(" All ({} records)", all_count),
-                Style::default().fg(if all_selected { theme.text_primary } else { theme.text_secondary }),
+                Style::default().fg(if all_selected {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                }),
             ),
         ]))
         .build(),
@@ -137,10 +183,21 @@ fn render_scope_options(
         builder = builder.add(
             Element::styled_text(Line::from(vec![
                 Span::styled("[3] ", Style::default().fg(theme.text_tertiary)),
-                Span::styled(selected_radio, Style::default().fg(if selected_selected { theme.accent_primary } else { theme.text_tertiary })),
+                Span::styled(
+                    selected_radio,
+                    Style::default().fg(if selected_selected {
+                        theme.accent_primary
+                    } else {
+                        theme.text_tertiary
+                    }),
+                ),
                 Span::styled(
                     format!(" Selected ({} records)", selected_count),
-                    Style::default().fg(if selected_selected { theme.text_primary } else { theme.text_secondary }),
+                    Style::default().fg(if selected_selected {
+                        theme.text_primary
+                    } else {
+                        theme.text_secondary
+                    }),
                 ),
             ]))
             .build(),
@@ -167,11 +224,25 @@ fn render_action_options(state: &State, theme: &Theme) -> Element<Msg> {
 
         builder = builder.add(
             Element::styled_text(Line::from(vec![
-                Span::styled(format!("[{}] ", key), Style::default().fg(theme.text_tertiary)),
-                Span::styled(radio, Style::default().fg(if is_selected { theme.accent_primary } else { theme.text_tertiary })),
+                Span::styled(
+                    format!("[{}] ", key),
+                    Style::default().fg(theme.text_tertiary),
+                ),
+                Span::styled(
+                    radio,
+                    Style::default().fg(if is_selected {
+                        theme.accent_primary
+                    } else {
+                        theme.text_tertiary
+                    }),
+                ),
                 Span::styled(
                     format!(" {}", action.display_name()),
-                    Style::default().fg(if is_selected { theme.text_primary } else { theme.text_secondary }),
+                    Style::default().fg(if is_selected {
+                        theme.text_primary
+                    } else {
+                        theme.text_secondary
+                    }),
                 ),
             ]))
             .build(),

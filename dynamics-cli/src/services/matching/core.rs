@@ -2,7 +2,7 @@
 //! Phase 1: Excludes example-based matching for simplicity
 
 use super::models::{MatchInfo, MatchType};
-use crate::api::metadata::{EntityMetadata, FieldMetadata, RelationshipMetadata, FieldType};
+use crate::api::metadata::{EntityMetadata, FieldMetadata, FieldType, RelationshipMetadata};
 use std::collections::{HashMap, HashSet};
 
 /// Extract entities from relationships
@@ -64,7 +64,8 @@ pub fn compute_entity_matches(
         // 1. Check manual mappings first (highest priority)
         if let Some(target_names) = manual_mappings.get(source_name) {
             // Filter targets that exist in target_entities
-            let valid_targets: Vec<String> = target_names.iter()
+            let valid_targets: Vec<String> = target_names
+                .iter()
                 .filter(|tn| target_lookup.contains_key(*tn))
                 .cloned()
                 .collect();
@@ -76,7 +77,9 @@ pub fn compute_entity_matches(
                     confidences: HashMap::new(),
                 };
                 for target in valid_targets {
-                    match_info.match_types.insert(target.clone(), MatchType::Manual);
+                    match_info
+                        .match_types
+                        .insert(target.clone(), MatchType::Manual);
                     match_info.confidences.insert(target, 1.0);
                 }
                 matches.insert(source_name.clone(), match_info);
@@ -95,7 +98,8 @@ pub fn compute_entity_matches(
 
         // 3. Check prefix-transformed matches (1-to-N support)
         let transformed_names = apply_prefix_transform(source_name, prefix_mappings);
-        let valid_transformed: Vec<String> = transformed_names.iter()
+        let valid_transformed: Vec<String> = transformed_names
+            .iter()
             .filter(|tn| target_lookup.contains_key(*tn))
             .cloned()
             .collect();
@@ -107,7 +111,9 @@ pub fn compute_entity_matches(
                 confidences: HashMap::new(),
             };
             for target in valid_transformed {
-                match_info.match_types.insert(target.clone(), MatchType::Prefix);
+                match_info
+                    .match_types
+                    .insert(target.clone(), MatchType::Prefix);
                 match_info.confidences.insert(target, 0.9);
             }
             matches.insert(source_name.clone(), match_info);
@@ -153,7 +159,8 @@ pub fn compute_field_matches(
 
         // 1. Check manual mappings first (highest priority, 1-to-N support)
         if let Some(target_names) = manual_mappings.get(source_name) {
-            let valid_targets: Vec<String> = target_names.iter()
+            let valid_targets: Vec<String> = target_names
+                .iter()
                 .filter(|tn| target_lookup.contains_key(*tn))
                 .cloned()
                 .collect();
@@ -165,7 +172,9 @@ pub fn compute_field_matches(
                     confidences: HashMap::new(),
                 };
                 for target in &valid_targets {
-                    match_info.match_types.insert(target.clone(), MatchType::Manual);
+                    match_info
+                        .match_types
+                        .insert(target.clone(), MatchType::Manual);
                     match_info.confidences.insert(target.clone(), 1.0);
                     already_matched.insert(target.clone());
                 }
@@ -179,7 +188,9 @@ pub fn compute_field_matches(
         if let Some(target_names_cs) = imported_mappings.get(source_name) {
             let mut valid_targets = Vec::new();
             for target_name_cs in target_names_cs {
-                if let Some(target_field) = target_lookup_lowercase.get(&target_name_cs.to_lowercase()) {
+                if let Some(target_field) =
+                    target_lookup_lowercase.get(&target_name_cs.to_lowercase())
+                {
                     valid_targets.push(target_field.logical_name.clone());
                 }
             }
@@ -191,7 +202,9 @@ pub fn compute_field_matches(
                     confidences: HashMap::new(),
                 };
                 for target in &valid_targets {
-                    match_info.match_types.insert(target.clone(), MatchType::Import);
+                    match_info
+                        .match_types
+                        .insert(target.clone(), MatchType::Import);
                     match_info.confidences.insert(target.clone(), 1.0);
                     already_matched.insert(target.clone());
                 }
@@ -207,7 +220,11 @@ pub fn compute_field_matches(
                 source_name.clone(),
                 MatchInfo::single(
                     source_name.clone(),
-                    if types_match { MatchType::Exact } else { MatchType::TypeMismatch(Box::new(MatchType::Exact)) },
+                    if types_match {
+                        MatchType::Exact
+                    } else {
+                        MatchType::TypeMismatch(Box::new(MatchType::Exact))
+                    },
                     if types_match { 1.0 } else { 0.7 },
                 ),
             );
@@ -225,7 +242,11 @@ pub fn compute_field_matches(
                     let types_match = source_field.field_type == target_field.field_type;
                     valid_transformed.push((
                         transformed.clone(),
-                        if types_match { MatchType::Prefix } else { MatchType::TypeMismatch(Box::new(MatchType::Prefix)) },
+                        if types_match {
+                            MatchType::Prefix
+                        } else {
+                            MatchType::TypeMismatch(Box::new(MatchType::Prefix))
+                        },
                         if types_match { 0.9 } else { 0.6 },
                     ));
                 }
@@ -233,7 +254,10 @@ pub fn compute_field_matches(
 
             if !valid_transformed.is_empty() {
                 let mut match_info = MatchInfo {
-                    target_fields: valid_transformed.iter().map(|(name, _, _)| name.clone()).collect(),
+                    target_fields: valid_transformed
+                        .iter()
+                        .map(|(name, _, _)| name.clone())
+                        .collect(),
                     match_types: HashMap::new(),
                     confidences: HashMap::new(),
                 };
@@ -291,7 +315,8 @@ pub fn compute_relationship_matches(
 
         // 1. Check manual mappings first (1-to-N support)
         if let Some(target_names) = manual_mappings.get(source_name) {
-            let valid_targets: Vec<String> = target_names.iter()
+            let valid_targets: Vec<String> = target_names
+                .iter()
                 .filter(|tn| target_lookup.contains_key(*tn))
                 .cloned()
                 .collect();
@@ -303,7 +328,9 @@ pub fn compute_relationship_matches(
                     confidences: HashMap::new(),
                 };
                 for target in valid_targets {
-                    match_info.match_types.insert(target.clone(), MatchType::Manual);
+                    match_info
+                        .match_types
+                        .insert(target.clone(), MatchType::Manual);
                     match_info.confidences.insert(target, 1.0);
                 }
                 matches.insert(source_name.clone(), match_info);
@@ -315,12 +342,20 @@ pub fn compute_relationship_matches(
         if let Some(target_rel) = target_lookup.get(source_name) {
             // Compare relationship type and related entity (entity-aware)
             let types_match = source_rel.relationship_type == target_rel.relationship_type
-                && entities_match(&source_rel.related_entity, &target_rel.related_entity, entity_matches);
+                && entities_match(
+                    &source_rel.related_entity,
+                    &target_rel.related_entity,
+                    entity_matches,
+                );
             matches.insert(
                 source_name.clone(),
                 MatchInfo::single(
                     source_name.clone(),
-                    if types_match { MatchType::Exact } else { MatchType::TypeMismatch(Box::new(MatchType::Exact)) },
+                    if types_match {
+                        MatchType::Exact
+                    } else {
+                        MatchType::TypeMismatch(Box::new(MatchType::Exact))
+                    },
                     if types_match { 1.0 } else { 0.7 },
                 ),
             );
@@ -334,10 +369,18 @@ pub fn compute_relationship_matches(
             if let Some(target_rel) = target_lookup.get(&transformed) {
                 // Compare relationship type and related entity (entity-aware)
                 let types_match = source_rel.relationship_type == target_rel.relationship_type
-                    && entities_match(&source_rel.related_entity, &target_rel.related_entity, entity_matches);
+                    && entities_match(
+                        &source_rel.related_entity,
+                        &target_rel.related_entity,
+                        entity_matches,
+                    );
                 valid_transformed.push((
                     transformed.clone(),
-                    if types_match { MatchType::Prefix } else { MatchType::TypeMismatch(Box::new(MatchType::Prefix)) },
+                    if types_match {
+                        MatchType::Prefix
+                    } else {
+                        MatchType::TypeMismatch(Box::new(MatchType::Prefix))
+                    },
                     if types_match { 0.9 } else { 0.6 },
                 ));
             }
@@ -345,7 +388,10 @@ pub fn compute_relationship_matches(
 
         if !valid_transformed.is_empty() {
             let mut match_info = MatchInfo {
-                target_fields: valid_transformed.iter().map(|(name, _, _)| name.clone()).collect(),
+                target_fields: valid_transformed
+                    .iter()
+                    .map(|(name, _, _)| name.clone())
+                    .collect(),
                 match_types: HashMap::new(),
                 confidences: HashMap::new(),
             };

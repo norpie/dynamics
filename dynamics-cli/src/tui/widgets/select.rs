@@ -3,8 +3,8 @@
 pub struct SelectState {
     selected_index: usize,
     is_open: bool,
-    highlight_index: usize,  // For keyboard navigation when dropdown is open
-    option_count: usize,     // Cached for bounds checking
+    highlight_index: usize, // For keyboard navigation when dropdown is open
+    option_count: usize,    // Cached for bounds checking
 }
 
 impl Default for SelectState {
@@ -144,7 +144,10 @@ impl SelectState {
 
     /// Handle select event (unified event pattern)
     /// Returns Some(selected_index) on Select event, None otherwise
-    pub fn handle_event(&mut self, event: crate::tui::widgets::events::SelectEvent) -> Option<usize> {
+    pub fn handle_event(
+        &mut self,
+        event: crate::tui::widgets::events::SelectEvent,
+    ) -> Option<usize> {
         use crate::tui::widgets::events::SelectEvent;
         use crossterm::event::KeyCode;
 

@@ -1,16 +1,16 @@
+use crate::tui::command::DispatchTarget;
+use crate::tui::element::FocusId;
+use crate::tui::renderer::{DropdownRegistry, FocusRegistry, FocusableInfo, InteractionRegistry};
+use crate::tui::widgets::{FlatTableNode, TreeEvent};
+use crate::tui::{LayoutConstraint, Theme};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    style::Style,
-    widgets::{Block, Borders, Row, Table, Cell},
-    layout::{Rect, Constraint},
+    layout::{Constraint, Rect},
     prelude::Stylize,
+    style::Style,
+    widgets::{Block, Borders, Cell, Row, Table},
 };
-use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::{Theme, LayoutConstraint};
-use crate::tui::element::FocusId;
-use crate::tui::command::DispatchTarget;
-use crate::tui::widgets::{TreeEvent, FlatTableNode};
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, DropdownRegistry, FocusableInfo};
 
 /// Create on_key handler for table trees (reuse tree event handling)
 pub fn table_tree_on_key_event<Msg: Clone + Send + 'static>(
@@ -18,14 +18,16 @@ pub fn table_tree_on_key_event<Msg: Clone + Send + 'static>(
 ) -> Box<dyn Fn(KeyEvent) -> DispatchTarget<Msg> + Send> {
     Box::new(move |key_event| match key_event.code {
         // Navigation keys
-        KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown
-        | KeyCode::Home | KeyCode::End | KeyCode::Left | KeyCode::Right => {
-            DispatchTarget::AppMsg(on_event(TreeEvent::Navigate(key_event.code)))
-        }
+        KeyCode::Up
+        | KeyCode::Down
+        | KeyCode::PageUp
+        | KeyCode::PageDown
+        | KeyCode::Home
+        | KeyCode::End
+        | KeyCode::Left
+        | KeyCode::Right => DispatchTarget::AppMsg(on_event(TreeEvent::Navigate(key_event.code))),
         // Enter toggles expansion
-        KeyCode::Enter => {
-            DispatchTarget::AppMsg(on_event(TreeEvent::Toggle))
-        }
+        KeyCode::Enter => DispatchTarget::AppMsg(on_event(TreeEvent::Toggle)),
         _ => {
             // Unhandled key - pass through to global subscriptions
             DispatchTarget::PassThrough
@@ -37,7 +39,7 @@ pub fn table_tree_on_key_event<Msg: Clone + Send + 'static>(
 #[allow(clippy::too_many_arguments)]
 pub fn render_table_tree<Msg: Clone + Send + 'static>(
     frame: &mut Frame,
-    
+
     registry: &mut InteractionRegistry<Msg>,
     focus_registry: &mut FocusRegistry<Msg>,
     _dropdown_registry: &mut DropdownRegistry<Msg>,
@@ -105,11 +107,7 @@ pub fn render_table_tree<Msg: Clone + Send + 'static>(
                 let expansion_indicator = if node.depth > 0 {
                     "  " // Child nodes just get indentation
                 } else {
-                    if node.is_expanded {
-                        "▼ "
-                    } else {
-                        "▶ "
-                    }
+                    if node.is_expanded { "▼ " } else { "▶ " }
                 };
 
                 columns[0] = format!("{}{}{}", indent, expansion_indicator, columns[0]);
@@ -138,8 +136,7 @@ pub fn render_table_tree<Msg: Clone + Send + 'static>(
         .height(1);
 
     // Create table widget without borders (parent panel handles that)
-    let table = Table::new(rows, column_widths)
-        .header(header);
+    let table = Table::new(rows, column_widths).header(header);
 
     frame.render_widget(table, area);
 

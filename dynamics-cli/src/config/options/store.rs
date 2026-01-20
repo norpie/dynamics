@@ -121,23 +121,19 @@ impl Options {
     fn parse_value(&self, raw: &str, ty: &OptionType) -> Result<OptionValue> {
         match ty {
             OptionType::Bool => {
-                let value = raw.parse::<bool>()
-                    .context("Failed to parse as bool")?;
+                let value = raw.parse::<bool>().context("Failed to parse as bool")?;
                 Ok(OptionValue::Bool(value))
             }
             OptionType::Int { .. } => {
-                let value = raw.parse::<i64>()
-                    .context("Failed to parse as int")?;
+                let value = raw.parse::<i64>().context("Failed to parse as int")?;
                 Ok(OptionValue::Int(value))
             }
             OptionType::UInt { .. } => {
-                let value = raw.parse::<u64>()
-                    .context("Failed to parse as uint")?;
+                let value = raw.parse::<u64>().context("Failed to parse as uint")?;
                 Ok(OptionValue::UInt(value))
             }
             OptionType::Float { .. } => {
-                let value = raw.parse::<f64>()
-                    .context("Failed to parse as float")?;
+                let value = raw.parse::<f64>().context("Failed to parse as float")?;
                 Ok(OptionValue::Float(value))
             }
             OptionType::String { .. } | OptionType::Enum { .. } => {
@@ -170,7 +166,7 @@ impl Options {
     async fn set_raw(&self, key: &str, value: &str) -> Result<()> {
         sqlx::query(
             "INSERT INTO options (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-             ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP"
+             ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP",
         )
         .bind(key)
         .bind(value)
@@ -198,7 +194,7 @@ mod tests {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )"
+            )",
         )
         .execute(&pool)
         .await
@@ -214,15 +210,17 @@ mod tests {
     async fn test_bool_roundtrip() {
         let (store, registry) = setup_test_store().await;
 
-        registry.register(OptionDefinition {
-            key: "test.bool".to_string(),
-            namespace: "test".to_string(),
-            local_key: "bool".to_string(),
-            display_name: "Test Bool".to_string(),
-            description: "".to_string(),
-            ty: OptionType::Bool,
-            default: OptionValue::Bool(false),
-        }).unwrap();
+        registry
+            .register(OptionDefinition {
+                key: "test.bool".to_string(),
+                namespace: "test".to_string(),
+                local_key: "bool".to_string(),
+                display_name: "Test Bool".to_string(),
+                description: "".to_string(),
+                ty: OptionType::Bool,
+                default: OptionValue::Bool(false),
+            })
+            .unwrap();
 
         // Should return default
         assert_eq!(store.get_bool("test.bool").await.unwrap(), false);
@@ -236,18 +234,20 @@ mod tests {
     async fn test_uint_validation() {
         let (store, registry) = setup_test_store().await;
 
-        registry.register(OptionDefinition {
-            key: "test.uint".to_string(),
-            namespace: "test".to_string(),
-            local_key: "uint".to_string(),
-            display_name: "Test UInt".to_string(),
-            description: "".to_string(),
-            ty: OptionType::UInt {
-                min: Some(1),
-                max: Some(10),
-            },
-            default: OptionValue::UInt(5),
-        }).unwrap();
+        registry
+            .register(OptionDefinition {
+                key: "test.uint".to_string(),
+                namespace: "test".to_string(),
+                local_key: "uint".to_string(),
+                display_name: "Test UInt".to_string(),
+                description: "".to_string(),
+                ty: OptionType::UInt {
+                    min: Some(1),
+                    max: Some(10),
+                },
+                default: OptionValue::UInt(5),
+            })
+            .unwrap();
 
         // Should accept valid value
         store.set_uint("test.uint", 7).await.unwrap();
@@ -266,20 +266,25 @@ mod tests {
     async fn test_enum_validation() {
         let (store, registry) = setup_test_store().await;
 
-        registry.register(OptionDefinition {
-            key: "test.enum".to_string(),
-            namespace: "test".to_string(),
-            local_key: "enum".to_string(),
-            display_name: "Test Enum".to_string(),
-            description: "".to_string(),
-            ty: OptionType::Enum {
-                variants: vec!["option1".to_string(), "option2".to_string()],
-            },
-            default: OptionValue::String("option1".to_string()),
-        }).unwrap();
+        registry
+            .register(OptionDefinition {
+                key: "test.enum".to_string(),
+                namespace: "test".to_string(),
+                local_key: "enum".to_string(),
+                display_name: "Test Enum".to_string(),
+                description: "".to_string(),
+                ty: OptionType::Enum {
+                    variants: vec!["option1".to_string(), "option2".to_string()],
+                },
+                default: OptionValue::String("option1".to_string()),
+            })
+            .unwrap();
 
         // Should accept valid variant
-        store.set_string("test.enum", "option2".to_string()).await.unwrap();
+        store
+            .set_string("test.enum", "option2".to_string())
+            .await
+            .unwrap();
         assert_eq!(store.get_string("test.enum").await.unwrap(), "option2");
 
         // Should reject invalid variant

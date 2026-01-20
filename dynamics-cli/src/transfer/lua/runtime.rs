@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use mlua::{Function, Lua, StdLib, Table, Value};
 use std::sync::{Arc, Mutex};
 
-use super::stdlib::{register_stdlib, StdlibContext};
+use super::stdlib::{StdlibContext, register_stdlib};
 use super::types::Declaration;
 
 /// A sandboxed Lua runtime for executing transform scripts
@@ -69,9 +69,7 @@ impl LuaRuntime {
     /// Run the declare function and parse the result
     pub fn run_declare(&self, module: &Table) -> Result<Declaration> {
         let declare_fn = self.get_declare_fn(module)?;
-        let result: Table = declare_fn
-            .call(())
-            .context("Failed to call declare()")?;
+        let result: Table = declare_fn.call(()).context("Failed to call declare()")?;
 
         self.parse_declaration(result)
     }
@@ -104,10 +102,7 @@ impl LuaRuntime {
     }
 
     /// Parse a single entity declaration
-    fn parse_entity_declaration(
-        &self,
-        table: Table,
-    ) -> Result<super::types::EntityDeclaration> {
+    fn parse_entity_declaration(&self, table: Table) -> Result<super::types::EntityDeclaration> {
         let mut decl = super::types::EntityDeclaration::default();
 
         // Parse fields array
@@ -177,9 +172,7 @@ impl LuaRuntime {
                     Ok(Value::Nil)
                 }
             }
-            serde_json::Value::String(s) => {
-                Ok(Value::String(self.lua.create_string(s)?))
-            }
+            serde_json::Value::String(s) => Ok(Value::String(self.lua.create_string(s)?)),
             serde_json::Value::Array(arr) => {
                 let table = self.lua.create_table()?;
                 for (i, item) in arr.iter().enumerate() {
@@ -250,10 +243,11 @@ impl LuaRuntime {
 
         for pair in table.pairs::<i64, Table>() {
             op_index += 1;
-            let (_, op_table) = pair.with_context(|| format!("Invalid operation at index {}", op_index))?;
-            let op = self.parse_single_operation(op_table).with_context(|| {
-                format!("Failed to parse operation at index {}", op_index)
-            })?;
+            let (_, op_table) =
+                pair.with_context(|| format!("Invalid operation at index {}", op_index))?;
+            let op = self
+                .parse_single_operation(op_table)
+                .with_context(|| format!("Failed to parse operation at index {}", op_index))?;
             operations.push(op);
         }
 
@@ -273,13 +267,19 @@ impl LuaRuntime {
             .get("operation")
             .context("Operation must have 'operation' field")?;
 
-        let operation = OperationType::from_str(&op_str)
-            .ok_or_else(|| anyhow::anyhow!("Invalid operation type: '{}' (entity: {})", op_str, entity))?;
+        let operation = OperationType::from_str(&op_str).ok_or_else(|| {
+            anyhow::anyhow!("Invalid operation type: '{}' (entity: {})", op_str, entity)
+        })?;
 
         // Parse optional id
         let id = if let Ok(id_str) = table.get::<String>("id") {
             Some(uuid::Uuid::parse_str(&id_str).with_context(|| {
-                format!("Invalid UUID '{}' in 'id' field for {} {}", id_str, operation.label(), entity)
+                format!(
+                    "Invalid UUID '{}' in 'id' field for {} {}",
+                    id_str,
+                    operation.label(),
+                    entity
+                )
             })?)
         } else {
             None
@@ -290,10 +290,19 @@ impl LuaRuntime {
         if let Ok(fields_table) = table.get::<Table>("fields") {
             for pair in fields_table.pairs::<String, Value>() {
                 let (key, value) = pair.with_context(|| {
-                    format!("Failed to iterate fields for {} {}", operation.label(), entity)
+                    format!(
+                        "Failed to iterate fields for {} {}",
+                        operation.label(),
+                        entity
+                    )
                 })?;
                 let json_value = self.lua_to_json(value).with_context(|| {
-                    format!("Failed to convert field '{}' to JSON for {} {}", key, operation.label(), entity)
+                    format!(
+                        "Failed to convert field '{}' to JSON for {} {}",
+                        key,
+                        operation.label(),
+                        entity
+                    )
                 })?;
                 fields.insert(key, json_value);
             }
@@ -329,7 +338,7 @@ impl LuaRuntime {
     }
 
     /// Set a channel for real-time status updates
-    /// 
+    ///
     /// When set, calls to `lib.status()` and `lib.progress()` will immediately
     /// send updates through this channel in addition to storing them in context.
     pub fn set_status_channel(&self, tx: std::sync::mpsc::Sender<super::stdlib::StatusUpdate>) {
@@ -363,14 +372,14 @@ mod tests {
     #[test]
     fn test_load_minimal_script() {
         let runtime = LuaRuntime::new().unwrap();
-        
+
         let script = r#"
             local M = {}
             function M.declare() return { source = {}, target = {} } end
             function M.transform(source, target) return {} end
             return M
         "#;
-        
+
         let module = runtime.load_script(script);
         assert!(module.is_ok());
     }
@@ -378,13 +387,13 @@ mod tests {
     #[test]
     fn test_missing_declare_function() {
         let runtime = LuaRuntime::new().unwrap();
-        
+
         let script = r#"
             local M = {}
             function M.transform(source, target) return {} end
             return M
         "#;
-        
+
         let result = runtime.load_script(script);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("declare"));
@@ -393,13 +402,13 @@ mod tests {
     #[test]
     fn test_missing_transform_function() {
         let runtime = LuaRuntime::new().unwrap();
-        
+
         let script = r#"
             local M = {}
             function M.declare() return { source = {}, target = {} } end
             return M
         "#;
-        
+
         let result = runtime.load_script(script);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("transform"));
@@ -408,7 +417,7 @@ mod tests {
     #[test]
     fn test_run_declare() {
         let runtime = LuaRuntime::new().unwrap();
-        
+
         let script = r#"
             local M = {}
             function M.declare()
@@ -431,13 +440,13 @@ mod tests {
             function M.transform(source, target) return {} end
             return M
         "#;
-        
+
         let module = runtime.load_script(script).unwrap();
         let declaration = runtime.run_declare(&module).unwrap();
-        
+
         assert!(declaration.source.contains_key("account"));
         assert!(declaration.target.contains_key("account"));
-        
+
         let source_account = &declaration.source["account"];
         assert_eq!(source_account.fields, vec!["accountid", "name", "revenue"]);
         assert_eq!(source_account.filter, Some("statecode eq 0".to_string()));
@@ -448,7 +457,7 @@ mod tests {
     #[test]
     fn test_run_transform() {
         let runtime = LuaRuntime::new().unwrap();
-        
+
         let script = r#"
             local M = {}
             function M.declare() return { source = {}, target = {} } end
@@ -478,41 +487,49 @@ mod tests {
             end
             return M
         "#;
-        
+
         let module = runtime.load_script(script).unwrap();
-        
+
         let source_data = serde_json::json!({
             "account": [
                 { "accountid": "11111111-1111-1111-1111-111111111111", "name": "Acme Corp", "revenue": 1000000 },
                 { "accountid": "22222222-2222-2222-2222-222222222222", "name": "New Company", "revenue": 50000 }
             ]
         });
-        
+
         let target_data = serde_json::json!({
             "account": [
                 { "accountid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "name": "Acme Corp", "revenue": 500000 }
             ]
         });
-        
-        let operations = runtime.run_transform(&module, &source_data, &target_data).unwrap();
-        
+
+        let operations = runtime
+            .run_transform(&module, &source_data, &target_data)
+            .unwrap();
+
         assert_eq!(operations.len(), 2);
-        
+
         // First should be update (Acme Corp exists)
         assert_eq!(operations[0].entity, "account");
-        assert_eq!(operations[0].operation, super::super::types::OperationType::Update);
+        assert_eq!(
+            operations[0].operation,
+            super::super::types::OperationType::Update
+        );
         assert!(operations[0].id.is_some());
-        
+
         // Second should be create (New Company doesn't exist)
         assert_eq!(operations[1].entity, "account");
-        assert_eq!(operations[1].operation, super::super::types::OperationType::Create);
+        assert_eq!(
+            operations[1].operation,
+            super::super::types::OperationType::Create
+        );
         assert!(operations[1].id.is_none());
     }
 
     #[test]
     fn test_json_roundtrip() {
         let runtime = LuaRuntime::new().unwrap();
-        
+
         let original = serde_json::json!({
             "name": "Test",
             "value": 42,
@@ -521,31 +538,37 @@ mod tests {
                 "boolean": true
             }
         });
-        
+
         let lua_value = runtime.json_to_lua(&original).unwrap();
         let result = runtime.lua_to_json(lua_value).unwrap();
-        
+
         assert_eq!(original, result);
     }
 
     #[test]
     fn test_sandboxing() {
         let runtime = LuaRuntime::new().unwrap();
-        
+
         // io should not be available
         let result: Value = runtime.lua().load("return io").eval().unwrap();
         assert!(matches!(result, Value::Nil), "io should not be available");
-        
+
         // os should not be available
         let result: Value = runtime.lua().load("return os").eval().unwrap();
         assert!(matches!(result, Value::Nil), "os should not be available");
-        
+
         // debug should not be available
         let result: Value = runtime.lua().load("return debug").eval().unwrap();
-        assert!(matches!(result, Value::Nil), "debug should not be available");
-        
+        assert!(
+            matches!(result, Value::Nil),
+            "debug should not be available"
+        );
+
         // package should not be available (no require)
         let result: Value = runtime.lua().load("return package").eval().unwrap();
-        assert!(matches!(result, Value::Nil), "package should not be available");
+        assert!(
+            matches!(result, Value::Nil),
+            "package should not be available"
+        );
     }
 }

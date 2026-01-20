@@ -1,9 +1,9 @@
 //! Repository for token operations
 
+use crate::api::models::TokenInfo;
+use crate::config::models::{DbToken, chrono_to_system_time, system_time_to_chrono};
 use anyhow::{Context, Result};
 use sqlx::SqlitePool;
-use crate::api::models::TokenInfo;
-use crate::config::models::{DbToken, system_time_to_chrono, chrono_to_system_time};
 
 /// Save or update token for environment
 pub async fn save(pool: &SqlitePool, env_name: String, token: TokenInfo) -> Result<()> {
@@ -66,25 +66,28 @@ pub async fn delete(pool: &SqlitePool, env_name: &str) -> Result<()> {
 
 /// List all environments with tokens
 pub async fn list_environments_with_tokens(pool: &SqlitePool) -> Result<Vec<String>> {
-    let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT environment_name FROM tokens ORDER BY environment_name",
-    )
-    .fetch_all(pool)
-    .await
-    .context("Failed to list environments with tokens")?;
+    let rows: Vec<(String,)> =
+        sqlx::query_as("SELECT environment_name FROM tokens ORDER BY environment_name")
+            .fetch_all(pool)
+            .await
+            .context("Failed to list environments with tokens")?;
 
     Ok(rows.into_iter().map(|(name,)| name).collect())
 }
 
 /// Check if token exists and is not expired
 pub async fn is_valid(pool: &SqlitePool, env_name: &str) -> Result<bool> {
-    let row: Option<(chrono::DateTime<chrono::Utc>,)> = sqlx::query_as(
-        "SELECT expires_at FROM tokens WHERE environment_name = ?",
-    )
-    .bind(env_name)
-    .fetch_optional(pool)
-    .await
-    .with_context(|| format!("Failed to check token validity for environment '{}'", env_name))?;
+    let row: Option<(chrono::DateTime<chrono::Utc>,)> =
+        sqlx::query_as("SELECT expires_at FROM tokens WHERE environment_name = ?")
+            .bind(env_name)
+            .fetch_optional(pool)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to check token validity for environment '{}'",
+                    env_name
+                )
+            })?;
 
     if let Some((expires_at,)) = row {
         Ok(expires_at > chrono::Utc::now())
@@ -109,14 +112,21 @@ pub async fn cleanup_expired(pool: &SqlitePool) -> Result<u64> {
 }
 
 /// Get token expiration info
-pub async fn get_expiration(pool: &SqlitePool, env_name: &str) -> Result<Option<chrono::DateTime<chrono::Utc>>> {
-    let row: Option<(chrono::DateTime<chrono::Utc>,)> = sqlx::query_as(
-        "SELECT expires_at FROM tokens WHERE environment_name = ?",
-    )
-    .bind(env_name)
-    .fetch_optional(pool)
-    .await
-    .with_context(|| format!("Failed to get token expiration for environment '{}'", env_name))?;
+pub async fn get_expiration(
+    pool: &SqlitePool,
+    env_name: &str,
+) -> Result<Option<chrono::DateTime<chrono::Utc>>> {
+    let row: Option<(chrono::DateTime<chrono::Utc>,)> =
+        sqlx::query_as("SELECT expires_at FROM tokens WHERE environment_name = ?")
+            .bind(env_name)
+            .fetch_optional(pool)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to get token expiration for environment '{}'",
+                    env_name
+                )
+            })?;
 
     Ok(row.map(|(expires_at,)| expires_at))
 }
@@ -169,7 +179,12 @@ pub async fn update_access_token(
     .bind(env_name)
     .execute(pool)
     .await
-    .with_context(|| format!("Failed to update access token for environment '{}'", env_name))?;
+    .with_context(|| {
+        format!(
+            "Failed to update access token for environment '{}'",
+            env_name
+        )
+    })?;
 
     if result.rows_affected() == 0 {
         anyhow::bail!("No token found for environment '{}'", env_name);

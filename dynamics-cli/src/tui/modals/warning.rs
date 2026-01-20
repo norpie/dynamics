@@ -1,5 +1,5 @@
-use crate::tui::{Element, Theme, FocusId};
-use crate::tui::element::{LayoutConstraint, RowBuilder, ColumnBuilder};
+use crate::tui::element::{ColumnBuilder, LayoutConstraint, RowBuilder};
+use crate::tui::{Element, FocusId, Theme};
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
 
@@ -77,12 +77,12 @@ impl<Msg: Clone> WarningModal<Msg> {
         let theme = &crate::global_runtime_config().theme;
         let title_element = Element::styled_text(Line::from(vec![
             Span::styled("⚠ ", Style::default().fg(theme.accent_warning).bold()),
-            Span::styled(self.title, Style::default().fg(theme.accent_warning).bold())
-        ])).build();
+            Span::styled(self.title, Style::default().fg(theme.accent_warning).bold()),
+        ]))
+        .build();
 
-        let mut content_elements: Vec<(LayoutConstraint, Element<Msg>)> = vec![
-            (LayoutConstraint::Length(1), title_element),
-        ];
+        let mut content_elements: Vec<(LayoutConstraint, Element<Msg>)> =
+            vec![(LayoutConstraint::Length(1), title_element)];
 
         // Message element (if present)
         if let Some(msg) = self.message {
@@ -92,9 +92,11 @@ impl<Msg: Clone> WarningModal<Msg> {
             for line in msg.split('\n') {
                 content_elements.push((
                     LayoutConstraint::Length(1),
-                    Element::styled_text(Line::from(vec![
-                        Span::styled(line.to_string(), Style::default().fg(theme.text_primary))
-                    ])).build()
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        line.to_string(),
+                        Style::default().fg(theme.text_primary),
+                    )]))
+                    .build(),
                 ));
             }
         }
@@ -108,23 +110,23 @@ impl<Msg: Clone> WarningModal<Msg> {
                     LayoutConstraint::Length(1),
                     Element::styled_text(Line::from(vec![
                         Span::styled("  • ", Style::default().fg(theme.accent_warning)),
-                        Span::styled(item.clone(), Style::default().fg(theme.text_primary))
-                    ])).build()
+                        Span::styled(item.clone(), Style::default().fg(theme.text_primary)),
+                    ]))
+                    .build(),
                 ));
             }
         }
 
         // Extract message to ensure proper typing
-        let close_msg = self.on_close.clone()
+        let close_msg = self
+            .on_close
+            .clone()
             .expect("WarningModal requires on_close callback");
 
         // Close button with hotkey indicator
-        let close_button = Element::button(
-            FocusId::new("warning-close"),
-            "[ OK ]".to_string(),
-        )
-        .on_press(close_msg)
-        .build();
+        let close_button = Element::button(FocusId::new("warning-close"), "[ OK ]".to_string())
+            .on_press(close_msg)
+            .build();
 
         // Button row - centered
         let button_row = RowBuilder::new()

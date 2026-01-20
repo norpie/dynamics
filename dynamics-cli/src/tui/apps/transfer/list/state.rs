@@ -3,8 +3,8 @@ use crossterm::event::KeyCode;
 use crate::config::repository::transfer::TransferConfigSummary;
 use crate::transfer::TransferMode;
 use crate::tui::resource::Resource;
-use crate::tui::widgets::{ListState, AutocompleteField, TextInputField};
 use crate::tui::widgets::events::{AutocompleteEvent, ListEvent, TextInputEvent};
+use crate::tui::widgets::{AutocompleteField, ListState, TextInputField};
 
 #[derive(Default)]
 pub struct State {

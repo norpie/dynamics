@@ -1,20 +1,18 @@
 //! Repository for environment operations
 
-use anyhow::{Context, Result};
-use sqlx::SqlitePool;
 use crate::api::models::Environment as ApiEnvironment;
 use crate::config::models::DbEnvironment;
+use anyhow::{Context, Result};
+use sqlx::SqlitePool;
 
 /// Insert or update environment
 pub async fn insert(pool: &SqlitePool, environment: ApiEnvironment) -> Result<()> {
     // Check if credentials exist
-    let creds_exist: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM credentials WHERE name = ?",
-    )
-    .bind(&environment.credentials_ref)
-    .fetch_one(pool)
-    .await
-    .context("Failed to check if credentials exist")?;
+    let creds_exist: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credentials WHERE name = ?")
+        .bind(&environment.credentials_ref)
+        .fetch_one(pool)
+        .await
+        .context("Failed to check if credentials exist")?;
 
     if creds_exist == 0 {
         anyhow::bail!(
@@ -70,12 +68,10 @@ pub async fn get(pool: &SqlitePool, name: &str) -> Result<Option<ApiEnvironment>
 
 /// List all environment names
 pub async fn list(pool: &SqlitePool) -> Result<Vec<String>> {
-    let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT name FROM environments ORDER BY name",
-    )
-    .fetch_all(pool)
-    .await
-    .context("Failed to list environments")?;
+    let rows: Vec<(String,)> = sqlx::query_as("SELECT name FROM environments ORDER BY name")
+        .fetch_all(pool)
+        .await
+        .context("Failed to list environments")?;
 
     Ok(rows.into_iter().map(|(name,)| name).collect())
 }
@@ -158,12 +154,11 @@ pub async fn rename(pool: &SqlitePool, old_name: &str, new_name: String) -> Resu
 
 /// Get current environment name
 pub async fn get_current(pool: &SqlitePool) -> Result<Option<String>> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT name FROM environments WHERE is_current = TRUE LIMIT 1",
-    )
-    .fetch_optional(pool)
-    .await
-    .context("Failed to get current environment")?;
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT name FROM environments WHERE is_current = TRUE LIMIT 1")
+            .fetch_optional(pool)
+            .await
+            .context("Failed to get current environment")?;
 
     Ok(row.map(|(name,)| name))
 }
@@ -190,11 +185,13 @@ pub async fn set_current(pool: &SqlitePool, name: String) -> Result<()> {
         .context("Failed to clear current environment flags")?;
 
     // Set current flag on specified environment
-    sqlx::query("UPDATE environments SET is_current = TRUE, updated_at = CURRENT_TIMESTAMP WHERE name = ?")
-        .bind(&name)
-        .execute(&mut *tx)
-        .await
-        .context("Failed to set current environment")?;
+    sqlx::query(
+        "UPDATE environments SET is_current = TRUE, updated_at = CURRENT_TIMESTAMP WHERE name = ?",
+    )
+    .bind(&name)
+    .execute(&mut *tx)
+    .await
+    .context("Failed to set current environment")?;
 
     tx.commit().await.context("Failed to commit transaction")?;
 
@@ -204,13 +201,17 @@ pub async fn set_current(pool: &SqlitePool, name: String) -> Result<()> {
 
 /// Get environments using specific credentials
 pub async fn list_by_credentials(pool: &SqlitePool, credentials_ref: &str) -> Result<Vec<String>> {
-    let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT name FROM environments WHERE credentials_ref = ? ORDER BY name",
-    )
-    .bind(credentials_ref)
-    .fetch_all(pool)
-    .await
-    .with_context(|| format!("Failed to list environments using credentials '{}'", credentials_ref))?;
+    let rows: Vec<(String,)> =
+        sqlx::query_as("SELECT name FROM environments WHERE credentials_ref = ? ORDER BY name")
+            .bind(credentials_ref)
+            .fetch_all(pool)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to list environments using credentials '{}'",
+                    credentials_ref
+                )
+            })?;
 
     Ok(rows.into_iter().map(|(name,)| name).collect())
 }
@@ -227,7 +228,10 @@ pub async fn exists(pool: &SqlitePool, name: &str) -> Result<bool> {
 }
 
 /// Get environment details with credentials info
-pub async fn get_with_credentials_info(pool: &SqlitePool, name: &str) -> Result<Option<(ApiEnvironment, String)>> {
+pub async fn get_with_credentials_info(
+    pool: &SqlitePool,
+    name: &str,
+) -> Result<Option<(ApiEnvironment, String)>> {
     let row: Option<(String, String, String, String)> = sqlx::query_as(
         r#"
         SELECT e.name, e.host, e.credentials_ref, c.type

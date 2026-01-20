@@ -58,10 +58,7 @@ impl OptionsRegistry {
     /// Get all unique namespaces
     pub fn namespaces(&self) -> Vec<String> {
         let defs = self.definitions.read().unwrap();
-        let mut namespaces: Vec<_> = defs
-            .values()
-            .map(|def| def.namespace.clone())
-            .collect();
+        let mut namespaces: Vec<_> = defs.values().map(|def| def.namespace.clone()).collect();
 
         namespaces.sort();
         namespaces.dedup();

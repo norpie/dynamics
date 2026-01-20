@@ -1,8 +1,7 @@
-/// Rollback operations for cleaning up partially created entities
-
-use crate::api::{ResilienceConfig};
-use crate::api::operations::{Operation, Operations};
 use super::execution::BATCH_CHUNK_SIZE;
+/// Rollback operations for cleaning up partially created entities
+use crate::api::ResilienceConfig;
+use crate::api::operations::{Operation, Operations};
 use std::fs::File;
 use std::io::Write;
 
@@ -17,8 +16,7 @@ fn export_orphaned_entities_csv(entities: &[(String, String)]) -> Result<String,
 
     let path = downloads_dir.join(&filename);
 
-    let mut file = File::create(&path)
-        .map_err(|e| format!("Failed to create CSV file: {}", e))?;
+    let mut file = File::create(&path).map_err(|e| format!("Failed to create CSV file: {}", e))?;
 
     // Write CSV header
     writeln!(file, "entity_set,entity_id")
@@ -30,23 +28,34 @@ fn export_orphaned_entities_csv(entities: &[(String, String)]) -> Result<String,
             .map_err(|e| format!("Failed to write entity to CSV: {}", e))?;
     }
 
-    log::info!("Exported {} orphaned entities to: {}", entities.len(), path.display());
+    log::info!(
+        "Exported {} orphaned entities to: {}",
+        entities.len(),
+        path.display()
+    );
 
     Ok(path.to_string_lossy().to_string())
 }
 
 /// Rollback all created entities in reverse order
 /// Returns Ok(()) if rollback succeeded, Err(csv_path) if it failed
-pub async fn rollback_created_entities(
-    created_ids: Vec<(String, String)>,
-) -> Result<(), String> {
+pub async fn rollback_created_entities(created_ids: Vec<(String, String)>) -> Result<(), String> {
     if created_ids.is_empty() {
         log::info!("Rollback: No entities to delete");
         return Ok(()); // Nothing to rollback
     }
 
-    log::info!("Starting rollback: deleting {} entities in reverse order", created_ids.len());
-    log::debug!("Entities to delete: {:?}", created_ids.iter().map(|(set, id)| format!("{}({})", set, id)).collect::<Vec<_>>());
+    log::info!(
+        "Starting rollback: deleting {} entities in reverse order",
+        created_ids.len()
+    );
+    log::debug!(
+        "Entities to delete: {:?}",
+        created_ids
+            .iter()
+            .map(|(set, id)| format!("{}({})", set, id))
+            .collect::<Vec<_>>()
+    );
 
     let client_manager = crate::client_manager();
 
@@ -77,7 +86,13 @@ pub async fn rollback_created_entities(
     // Delete in REVERSE order (bottom-up to respect dependencies)
     log::debug!("Building delete operations in reverse order");
     for (idx, (entity_set, entity_id)) in created_ids.iter().rev().enumerate() {
-        log::debug!("Queuing delete [{}/{}]: {} ({})", idx + 1, created_ids.len(), entity_id, entity_set);
+        log::debug!(
+            "Queuing delete [{}/{}]: {} ({})",
+            idx + 1,
+            created_ids.len(),
+            entity_id,
+            entity_set
+        );
         operations = operations.add(Operation::Delete {
             entity: entity_set.clone(),
             id: entity_id.clone(),
@@ -90,15 +105,21 @@ pub async fn rollback_created_entities(
     let mut results = Vec::with_capacity(entity_count);
 
     if entity_count > BATCH_CHUNK_SIZE {
-        log::info!("Chunking {} delete operations into batches of {}", entity_count, BATCH_CHUNK_SIZE);
+        log::info!(
+            "Chunking {} delete operations into batches of {}",
+            entity_count,
+            BATCH_CHUNK_SIZE
+        );
 
         for (chunk_idx, chunk) in all_operations.chunks(BATCH_CHUNK_SIZE).enumerate() {
             let chunk_ops = Operations::from_operations(chunk.to_vec());
 
-            log::debug!("Executing rollback chunk {}/{} ({} operations)",
+            log::debug!(
+                "Executing rollback chunk {}/{} ({} operations)",
                 chunk_idx + 1,
                 (entity_count + BATCH_CHUNK_SIZE - 1) / BATCH_CHUNK_SIZE,
-                chunk.len());
+                chunk.len()
+            );
 
             match chunk_ops.execute(&client, &resilience).await {
                 Ok(chunk_results) => {
@@ -138,7 +159,13 @@ pub async fn rollback_created_entities(
         let (entity_set, entity_id) = &created_ids[created_ids.len() - 1 - idx];
 
         if result.success {
-            log::debug!("Deleted [{}/{}]: {} ({})", idx + 1, results.len(), entity_id, entity_set);
+            log::debug!(
+                "Deleted [{}/{}]: {} ({})",
+                idx + 1,
+                results.len(),
+                entity_id,
+                entity_set
+            );
             success_count += 1;
         } else {
             log::error!(
@@ -155,10 +182,17 @@ pub async fn rollback_created_entities(
     }
 
     if all_success {
-        log::info!("Rollback completed successfully - deleted {} entities", created_ids.len());
+        log::info!(
+            "Rollback completed successfully - deleted {} entities",
+            created_ids.len()
+        );
         Ok(())
     } else {
-        log::warn!("Rollback partially failed: {} succeeded, {} failed", success_count, failure_count);
+        log::warn!(
+            "Rollback partially failed: {} succeeded, {} failed",
+            success_count,
+            failure_count
+        );
         let csv_path = export_orphaned_entities_csv(&created_ids)
             .unwrap_or_else(|e| format!("(CSV export also failed: {})", e));
         log::error!("Orphaned entities exported to: {}", csv_path);

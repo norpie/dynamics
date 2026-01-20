@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use crate::api::{FieldMetadata, FieldType};
 use crate::transfer::{EntityMapping, FieldMapping, Resolver};
 use crate::tui::{Element, widgets::TreeItem};
-use ratatui::{style::Style, text::{Line, Span}};
+use ratatui::{
+    style::Style,
+    text::{Line, Span},
+};
 
 use super::state::Msg;
 
@@ -42,7 +45,9 @@ impl TreeItem for MappingTreeItem {
 
                 // Add resolvers first
                 for (idx, resolver) in node.resolvers.iter().enumerate() {
-                    children.push(Self::Resolver(ResolverNode::from_resolver(node.idx, idx, resolver)));
+                    children.push(Self::Resolver(ResolverNode::from_resolver(
+                        node.idx, idx, resolver,
+                    )));
                 }
 
                 // Then add field mappings
@@ -71,9 +76,15 @@ impl TreeItem for MappingTreeItem {
         is_expanded: bool,
     ) -> Element<Self::Msg> {
         match self {
-            Self::Resolver(node) => node.to_element(depth, is_selected, is_multi_selected, is_expanded),
-            Self::Entity(node) => node.to_element(depth, is_selected, is_multi_selected, is_expanded),
-            Self::Field(node) => node.to_element(depth, is_selected, is_multi_selected, is_expanded),
+            Self::Resolver(node) => {
+                node.to_element(depth, is_selected, is_multi_selected, is_expanded)
+            }
+            Self::Entity(node) => {
+                node.to_element(depth, is_selected, is_multi_selected, is_expanded)
+            }
+            Self::Field(node) => {
+                node.to_element(depth, is_selected, is_multi_selected, is_expanded)
+            }
         }
     }
 }
@@ -151,7 +162,10 @@ impl ResolverNode {
         ));
 
         // Arrow
-        spans.push(Span::styled(" → ", Style::default().fg(theme.border_primary)));
+        spans.push(Span::styled(
+            " → ",
+            Style::default().fg(theme.border_primary),
+        ));
 
         // Source entity
         spans.push(Span::styled(
@@ -188,7 +202,11 @@ pub struct EntityNode {
 }
 
 impl EntityNode {
-    pub fn from_mapping(idx: usize, mapping: &EntityMapping, field_metadata: Option<&[FieldMetadata]>) -> Self {
+    pub fn from_mapping(
+        idx: usize,
+        mapping: &EntityMapping,
+        field_metadata: Option<&[FieldMetadata]>,
+    ) -> Self {
         // Build field type lookup from metadata if available
         let field_types: HashMap<String, FieldType> = field_metadata
             .map(|fields| {
@@ -233,7 +251,10 @@ impl EntityNode {
         // Expand/collapse indicator
         if !self.field_mappings.is_empty() {
             let indicator = if is_expanded { "▼ " } else { "▶ " };
-            spans.push(Span::styled(indicator, Style::default().fg(theme.text_tertiary)));
+            spans.push(Span::styled(
+                indicator,
+                Style::default().fg(theme.text_tertiary),
+            ));
         } else {
             spans.push(Span::styled("  ", Style::default()));
         }
@@ -251,7 +272,10 @@ impl EntityNode {
         ));
 
         // Arrow
-        spans.push(Span::styled(" → ", Style::default().fg(theme.border_primary)));
+        spans.push(Span::styled(
+            " → ",
+            Style::default().fg(theme.border_primary),
+        ));
 
         // Target entity
         spans.push(Span::styled(
@@ -362,7 +386,11 @@ pub fn build_tree(
     // Add entity mappings (resolvers are now children of entities)
     for (idx, em) in config.entity_mappings.iter().enumerate() {
         let field_metadata = field_cache.get(&idx).map(|v| v.as_slice());
-        items.push(MappingTreeItem::Entity(EntityNode::from_mapping(idx, em, field_metadata)));
+        items.push(MappingTreeItem::Entity(EntityNode::from_mapping(
+            idx,
+            em,
+            field_metadata,
+        )));
     }
 
     items

@@ -107,24 +107,16 @@ impl RelevantFields {
 
     pub fn for_page_line() -> Self {
         Self {
-            fields: [
-                "nrq_order",
-                "nrq_createquestions",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
+            fields: ["nrq_order", "nrq_createquestions"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 
     pub fn for_group_line() -> Self {
         Self {
-            fields: [
-                "nrq_order",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
+            fields: ["nrq_order"].iter().map(|s| s.to_string()).collect(),
         }
     }
 
@@ -160,27 +152,19 @@ impl RelevantFields {
 
     pub fn for_condition_action() -> Self {
         Self {
-            fields: [
-                "nrq_name",
-                "nrq_visible",
-                "nrq_required",
-                "nrq_settings",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
+            fields: ["nrq_name", "nrq_visible", "nrq_required", "nrq_settings"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 
     pub fn for_classification() -> Self {
         Self {
-            fields: [
-                "nrq_name",
-                "nrq_code",
-            ]
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
+            fields: ["nrq_name", "nrq_code"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 
@@ -222,18 +206,19 @@ impl RelevantFields {
 
                 // Check if there's a formatted value annotation
                 let formatted_key = format!("{}@OData.Community.Display.V1.FormattedValue", key);
-                let display_value = if let Some(formatted) = obj.get(&formatted_key).and_then(|v| v.as_str()) {
-                    formatted.to_string()
-                } else {
-                    match val {
-                        Value::Null => "null".to_string(),
-                        Value::Bool(b) => b.to_string(),
-                        Value::Number(n) => n.to_string(),
-                        Value::String(s) => s.clone(),
-                        Value::Array(_) => "[array]".to_string(),
-                        Value::Object(_) => "{object}".to_string(),
-                    }
-                };
+                let display_value =
+                    if let Some(formatted) = obj.get(&formatted_key).and_then(|v| v.as_str()) {
+                        formatted.to_string()
+                    } else {
+                        match val {
+                            Value::Null => "null".to_string(),
+                            Value::Bool(b) => b.to_string(),
+                            Value::Number(n) => n.to_string(),
+                            Value::String(s) => s.clone(),
+                            Value::Array(_) => "[array]".to_string(),
+                            Value::Object(_) => "{object}".to_string(),
+                        }
+                    };
 
                 result.push((key.clone(), display_value));
             }
@@ -264,20 +249,23 @@ pub struct AffectedQuestion {
 impl ConditionLogic {
     /// Parse condition JSON string
     pub fn parse(json_str: &str) -> Result<Self, String> {
-        let json: Value = serde_json::from_str(json_str)
-            .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        let json: Value =
+            serde_json::from_str(json_str).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-        let trigger_question_id = json.get("questionId")
+        let trigger_question_id = json
+            .get("questionId")
             .and_then(|v| v.as_str())
             .ok_or("Missing questionId")?
             .to_string();
 
-        let condition_operator = json.get("condition")
+        let condition_operator = json
+            .get("condition")
             .and_then(|v| v.as_str())
             .unwrap_or("eq")
             .to_string();
 
-        let value = json.get("value")
+        let value = json
+            .get("value")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();

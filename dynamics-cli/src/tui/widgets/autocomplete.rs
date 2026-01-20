@@ -1,5 +1,5 @@
-use crossterm::event::KeyCode;
 use crate::tui::widgets::TextInputState;
+use crossterm::event::KeyCode;
 
 /// Manages state for Autocomplete input widgets
 /// Combines text input with fuzzy-matched dropdown suggestions
@@ -53,9 +53,11 @@ impl AutocompleteState {
     pub fn set_cursor_to_end(&mut self, text: &str) {
         self.input_state = TextInputState::new();
         // Use End key logic to move cursor to end
-        self.input_state.handle_key(crossterm::event::KeyCode::End, text, None);
+        self.input_state
+            .handle_key(crossterm::event::KeyCode::End, text, None);
         // Update scroll to keep cursor visible at end
-        self.input_state.update_scroll(Self::DEFAULT_VISIBLE_WIDTH, text);
+        self.input_state
+            .update_scroll(Self::DEFAULT_VISIBLE_WIDTH, text);
     }
 
     /// Get whether dropdown is open
@@ -70,7 +72,10 @@ impl AutocompleteState {
 
     /// Get filtered options (top 100 by score)
     pub fn filtered_options(&self) -> Vec<String> {
-        self.filtered_options.iter().map(|(opt, _)| opt.clone()).collect()
+        self.filtered_options
+            .iter()
+            .map(|(opt, _)| opt.clone())
+            .collect()
     }
 
     /// Update filtered options using fuzzy matching
@@ -94,7 +99,8 @@ impl AutocompleteState {
         let mut scored: Vec<(String, i64)> = all_options
             .iter()
             .filter_map(|opt| {
-                matcher.fuzzy_match(opt, input)
+                matcher
+                    .fuzzy_match(opt, input)
                     .map(|score| (opt.clone(), score))
             })
             .collect();
@@ -170,7 +176,8 @@ impl AutocompleteState {
         // Update scroll to keep cursor visible
         // Use the new value if changed, otherwise current value
         let text = result.as_deref().unwrap_or(current_value);
-        self.input_state.update_scroll(Self::DEFAULT_VISIBLE_WIDTH, text);
+        self.input_state
+            .update_scroll(Self::DEFAULT_VISIBLE_WIDTH, text);
         result
     }
 

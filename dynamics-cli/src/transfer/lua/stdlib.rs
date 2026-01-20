@@ -163,12 +163,12 @@ fn create_map_fn(lua: &Lua) -> LuaResult<Function> {
 fn create_group_by_fn(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|lua, (records, field): (Table, String)| {
         let result = lua.create_table()?;
-        
+
         for pair in records.pairs::<Value, Table>() {
             if let Ok((_, record)) = pair {
                 if let Ok(key) = record.get::<Value>(field.as_str()) {
                     let key_str = value_to_string(&key);
-                    
+
                     // Get or create the group
                     let group: Table = match result.get::<Table>(key_str.as_str()) {
                         Ok(g) => g,
@@ -178,7 +178,7 @@ fn create_group_by_fn(lua: &Lua) -> LuaResult<Function> {
                             g
                         }
                     };
-                    
+
                     // Add record to group
                     let len = group.len()? + 1;
                     group.set(len, record)?;
@@ -196,22 +196,18 @@ fn create_group_by_fn(lua: &Lua) -> LuaResult<Function> {
 /// lib.guid() -> string
 /// Generate a new random GUID
 fn create_guid_fn(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|_, ()| {
-        Ok(Uuid::new_v4().to_string())
-    })
+    lua.create_function(|_, ()| Ok(Uuid::new_v4().to_string()))
 }
 
 /// lib.is_guid(value) -> bool
 /// Check if value is a valid GUID string
 fn create_is_guid_fn(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|_, value: Value| {
-        match value {
-            Value::String(s) => {
-                let str_ref = s.to_str()?;
-                Ok(Uuid::parse_str(str_ref.as_ref()).is_ok())
-            }
-            _ => Ok(false),
+    lua.create_function(|_, value: Value| match value {
+        Value::String(s) => {
+            let str_ref = s.to_str()?;
+            Ok(Uuid::parse_str(str_ref.as_ref()).is_ok())
         }
+        _ => Ok(false),
     })
 }
 
@@ -267,9 +263,7 @@ fn create_ends_with_fn(lua: &Lua) -> LuaResult<Function> {
 /// lib.now() -> string
 /// Returns current UTC time in ISO 8601 format
 fn create_now_fn(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|_, ()| {
-        Ok(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string())
-    })
+    lua.create_function(|_, ()| Ok(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string()))
 }
 
 /// lib.parse_date(s) -> string|nil
@@ -288,7 +282,7 @@ fn create_parse_date_fn(lua: &Lua) -> LuaResult<Function> {
             "%m/%d/%Y %H:%M:%S",
             "%m/%d/%Y",
         ];
-        
+
         for fmt in formats {
             if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&s, fmt) {
                 let result = dt.format("%Y-%m-%dT%H:%M:%SZ").to_string();
@@ -300,7 +294,7 @@ fn create_parse_date_fn(lua: &Lua) -> LuaResult<Function> {
                 return Ok(Value::String(lua.create_string(&result)?));
             }
         }
-        
+
         Ok(Value::Nil)
     })
 }
@@ -311,7 +305,9 @@ fn create_format_date_fn(lua: &Lua) -> LuaResult<Function> {
     lua.create_function(|_, (dt, fmt): (String, String)| {
         if let Ok(parsed) = chrono::NaiveDateTime::parse_from_str(&dt, "%Y-%m-%dT%H:%M:%SZ") {
             Ok(Some(parsed.format(&fmt).to_string()))
-        } else if let Ok(parsed) = chrono::NaiveDateTime::parse_from_str(&dt, "%Y-%m-%dT%H:%M:%S%.fZ") {
+        } else if let Ok(parsed) =
+            chrono::NaiveDateTime::parse_from_str(&dt, "%Y-%m-%dT%H:%M:%S%.fZ")
+        {
             Ok(Some(parsed.format(&fmt).to_string()))
         } else {
             Ok(None)
@@ -453,15 +449,18 @@ mod tests {
     #[test]
     fn test_guid_functions() {
         let (lua, _) = create_test_lua();
-        
+
         // Test guid generation
         let guid: String = lua.load("return lib.guid()").eval().unwrap();
         assert!(Uuid::parse_str(&guid).is_ok());
-        
+
         // Test is_guid
-        let is_valid: bool = lua.load("return lib.is_guid('550e8400-e29b-41d4-a716-446655440000')").eval().unwrap();
+        let is_valid: bool = lua
+            .load("return lib.is_guid('550e8400-e29b-41d4-a716-446655440000')")
+            .eval()
+            .unwrap();
         assert!(is_valid);
-        
+
         let is_invalid: bool = lua.load("return lib.is_guid('not-a-guid')").eval().unwrap();
         assert!(!is_invalid);
     }
@@ -469,54 +468,68 @@ mod tests {
     #[test]
     fn test_string_functions() {
         let (lua, _) = create_test_lua();
-        
+
         let lower: String = lua.load("return lib.lower('HELLO')").eval().unwrap();
         assert_eq!(lower, "hello");
-        
+
         let upper: String = lua.load("return lib.upper('hello')").eval().unwrap();
         assert_eq!(upper, "HELLO");
-        
+
         let trimmed: String = lua.load("return lib.trim('  hello  ')").eval().unwrap();
         assert_eq!(trimmed, "hello");
-        
-        let contains: bool = lua.load("return lib.contains('hello world', 'world')").eval().unwrap();
+
+        let contains: bool = lua
+            .load("return lib.contains('hello world', 'world')")
+            .eval()
+            .unwrap();
         assert!(contains);
-        
-        let starts: bool = lua.load("return lib.starts_with('hello world', 'hello')").eval().unwrap();
+
+        let starts: bool = lua
+            .load("return lib.starts_with('hello world', 'hello')")
+            .eval()
+            .unwrap();
         assert!(starts);
-        
-        let ends: bool = lua.load("return lib.ends_with('hello world', 'world')").eval().unwrap();
+
+        let ends: bool = lua
+            .load("return lib.ends_with('hello world', 'world')")
+            .eval()
+            .unwrap();
         assert!(ends);
     }
 
     #[test]
     fn test_split() {
         let (lua, _) = create_test_lua();
-        
-        let result: Vec<String> = lua.load(r#"
+
+        let result: Vec<String> = lua
+            .load(
+                r#"
             local parts = lib.split('a,b,c', ',')
             return { parts[1], parts[2], parts[3] }
-        "#).eval().unwrap();
-        
+        "#,
+            )
+            .eval()
+            .unwrap();
+
         assert_eq!(result, vec!["a", "b", "c"]);
     }
 
     #[test]
     fn test_type_checks() {
         let (lua, _) = create_test_lua();
-        
+
         let is_nil: bool = lua.load("return lib.is_nil(nil)").eval().unwrap();
         assert!(is_nil);
-        
+
         let is_string: bool = lua.load("return lib.is_string('hello')").eval().unwrap();
         assert!(is_string);
-        
+
         let is_number: bool = lua.load("return lib.is_number(42)").eval().unwrap();
         assert!(is_number);
-        
+
         let is_table: bool = lua.load("return lib.is_table({})").eval().unwrap();
         assert!(is_table);
-        
+
         let is_bool: bool = lua.load("return lib.is_boolean(true)").eval().unwrap();
         assert!(is_bool);
     }
@@ -524,8 +537,10 @@ mod tests {
     #[test]
     fn test_find() {
         let (lua, _) = create_test_lua();
-        
-        let result: String = lua.load(r#"
+
+        let result: String = lua
+            .load(
+                r#"
             local records = {
                 { name = "Alice", age = 30 },
                 { name = "Bob", age = 25 },
@@ -533,16 +548,21 @@ mod tests {
             }
             local found = lib.find(records, "name", "Bob")
             return found.age
-        "#).eval().unwrap();
-        
+        "#,
+            )
+            .eval()
+            .unwrap();
+
         assert_eq!(result, "25");
     }
 
     #[test]
     fn test_filter() {
         let (lua, _) = create_test_lua();
-        
-        let count: i32 = lua.load(r#"
+
+        let count: i32 = lua
+            .load(
+                r#"
             local records = {
                 { name = "Alice", age = 30 },
                 { name = "Bob", age = 25 },
@@ -550,32 +570,42 @@ mod tests {
             }
             local filtered = lib.filter(records, function(r) return r.age >= 30 end)
             return #filtered
-        "#).eval().unwrap();
-        
+        "#,
+            )
+            .eval()
+            .unwrap();
+
         assert_eq!(count, 2);
     }
 
     #[test]
     fn test_map() {
         let (lua, _) = create_test_lua();
-        
-        let result: Vec<String> = lua.load(r#"
+
+        let result: Vec<String> = lua
+            .load(
+                r#"
             local records = {
                 { name = "Alice" },
                 { name = "Bob" }
             }
             local names = lib.map(records, function(r) return r.name end)
             return { names[1], names[2] }
-        "#).eval().unwrap();
-        
+        "#,
+            )
+            .eval()
+            .unwrap();
+
         assert_eq!(result, vec!["Alice", "Bob"]);
     }
 
     #[test]
     fn test_group_by() {
         let (lua, _) = create_test_lua();
-        
-        let count_a: i32 = lua.load(r#"
+
+        let count_a: i32 = lua
+            .load(
+                r#"
             local records = {
                 { name = "Alice", dept = "A" },
                 { name = "Bob", dept = "B" },
@@ -583,20 +613,27 @@ mod tests {
             }
             local groups = lib.group_by(records, "dept")
             return #groups["A"]
-        "#).eval().unwrap();
-        
+        "#,
+            )
+            .eval()
+            .unwrap();
+
         assert_eq!(count_a, 2);
     }
 
     #[test]
     fn test_logging() {
         let (lua, context) = create_test_lua();
-        
-        lua.load(r#"
+
+        lua.load(
+            r#"
             lib.log("Info message")
             lib.warn("Warning message")
-        "#).exec().unwrap();
-        
+        "#,
+        )
+        .exec()
+        .unwrap();
+
         let ctx = context.lock().unwrap();
         assert_eq!(ctx.logs.len(), 2);
         assert!(matches!(&ctx.logs[0], LogMessage::Info(s) if s == "Info message"));
@@ -606,9 +643,9 @@ mod tests {
     #[test]
     fn test_status() {
         let (lua, context) = create_test_lua();
-        
+
         lua.load(r#"lib.status("Processing...")"#).exec().unwrap();
-        
+
         let ctx = context.lock().unwrap();
         assert!(matches!(&ctx.status, Some(StatusUpdate::Status(s)) if s == "Processing..."));
     }
@@ -616,17 +653,23 @@ mod tests {
     #[test]
     fn test_progress() {
         let (lua, context) = create_test_lua();
-        
+
         lua.load(r#"lib.progress(50, 100)"#).exec().unwrap();
-        
+
         let ctx = context.lock().unwrap();
-        assert!(matches!(&ctx.status, Some(StatusUpdate::Progress { current: 50, total: 100 })));
+        assert!(matches!(
+            &ctx.status,
+            Some(StatusUpdate::Progress {
+                current: 50,
+                total: 100
+            })
+        ));
     }
 
     #[test]
     fn test_now() {
         let (lua, _) = create_test_lua();
-        
+
         let now: String = lua.load("return lib.now()").eval().unwrap();
         // Should be in ISO format
         assert!(now.contains("T"));

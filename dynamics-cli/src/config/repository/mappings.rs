@@ -25,7 +25,8 @@ pub async fn get_field_mappings(
     // Group by source_field to support 1-to-N mappings
     let mut mappings: HashMap<String, Vec<String>> = HashMap::new();
     for (source_field, target_field) in rows {
-        mappings.entry(source_field)
+        mappings
+            .entry(source_field)
             .or_insert_with(Vec::new)
             .push(target_field);
     }
@@ -126,7 +127,8 @@ pub async fn get_prefix_mappings(
     // Group by source_prefix to support 1-to-N mappings
     let mut mappings: HashMap<String, Vec<String>> = HashMap::new();
     for (source_prefix, target_prefix) in rows {
-        mappings.entry(source_prefix)
+        mappings
+            .entry(source_prefix)
             .or_insert_with(Vec::new)
             .push(target_prefix);
     }
@@ -227,7 +229,8 @@ pub async fn get_imported_mappings(
     // Group by source_field to support 1-to-N mappings
     let mut mappings: HashMap<String, Vec<String>> = HashMap::new();
     for (source_field, target_field, _) in &rows {
-        mappings.entry(source_field.clone())
+        mappings
+            .entry(source_field.clone())
             .or_insert_with(Vec::new)
             .push(target_field.clone());
     }
@@ -320,9 +323,8 @@ pub async fn get_ignored_items(
     .await
     .context("Failed to fetch ignored items")?;
 
-    let ignored: std::collections::HashSet<String> = rows.into_iter()
-        .map(|(item_id,)| item_id)
-        .collect();
+    let ignored: std::collections::HashSet<String> =
+        rows.into_iter().map(|(item_id,)| item_id).collect();
 
     Ok(ignored)
 }
@@ -449,7 +451,10 @@ fn parse_qualified(qualified: &str) -> Result<(String, String)> {
     if parts.len() == 2 {
         Ok((parts[0].to_string(), parts[1].to_string()))
     } else {
-        anyhow::bail!("Invalid qualified field name: '{}'. Expected format: 'entity.field'", qualified)
+        anyhow::bail!(
+            "Invalid qualified field name: '{}'. Expected format: 'entity.field'",
+            qualified
+        )
     }
 }
 
@@ -486,7 +491,8 @@ pub async fn get_field_mappings_multi(
                 let qualified_source = format!("{}.{}", source_entity, source_field);
                 let qualified_target = format!("{}.{}", target_entity, target_field);
 
-                all_mappings.entry(qualified_source)
+                all_mappings
+                    .entry(qualified_source)
                     .or_insert_with(Vec::new)
                     .push(qualified_target);
             }
@@ -500,22 +506,29 @@ pub async fn get_field_mappings_multi(
 /// Parses the qualified names and delegates to the existing set_field_mapping function
 pub async fn set_field_mapping_qualified(
     pool: &SqlitePool,
-    qualified_source: &str,  // e.g. "contact.fullname"
-    qualified_target: &str,  // e.g. "lead.firstname"
+    qualified_source: &str, // e.g. "contact.fullname"
+    qualified_target: &str, // e.g. "lead.firstname"
 ) -> Result<()> {
     let (source_entity, source_field) = parse_qualified(qualified_source)
         .with_context(|| format!("Failed to parse source field: {}", qualified_source))?;
     let (target_entity, target_field) = parse_qualified(qualified_target)
         .with_context(|| format!("Failed to parse target field: {}", qualified_target))?;
 
-    set_field_mapping(pool, &source_entity, &target_entity, &source_field, &target_field).await
+    set_field_mapping(
+        pool,
+        &source_entity,
+        &target_entity,
+        &source_field,
+        &target_field,
+    )
+    .await
 }
 
 /// Delete a field mapping using qualified names (entity.field format)
 /// Parses the qualified names and delegates to the existing delete_field_mapping function
 pub async fn delete_field_mapping_qualified(
     pool: &SqlitePool,
-    qualified_source: &str,  // e.g. "contact.fullname"
+    qualified_source: &str, // e.g. "contact.fullname"
 ) -> Result<()> {
     let (source_entity, source_field) = parse_qualified(qualified_source)
         .with_context(|| format!("Failed to parse source field: {}", qualified_source))?;
@@ -524,19 +537,28 @@ pub async fn delete_field_mapping_qualified(
     // target entity to delete from. This may need refinement based on actual usage.
     // For now, let's assume we want to delete all mappings for this source field across all targets.
     // This is a simplification - in practice, we might need additional context.
-    anyhow::bail!("delete_field_mapping_qualified requires target entity context. Use delete_specific_field_mapping_qualified instead.");
+    anyhow::bail!(
+        "delete_field_mapping_qualified requires target entity context. Use delete_specific_field_mapping_qualified instead."
+    );
 }
 
 /// Delete a specific field mapping using qualified names
 pub async fn delete_specific_field_mapping_qualified(
     pool: &SqlitePool,
-    qualified_source: &str,  // e.g. "contact.fullname"
-    qualified_target: &str,  // e.g. "lead.firstname"
+    qualified_source: &str, // e.g. "contact.fullname"
+    qualified_target: &str, // e.g. "lead.firstname"
 ) -> Result<()> {
     let (source_entity, source_field) = parse_qualified(qualified_source)
         .with_context(|| format!("Failed to parse source field: {}", qualified_source))?;
     let (target_entity, target_field) = parse_qualified(qualified_target)
         .with_context(|| format!("Failed to parse target field: {}", qualified_target))?;
 
-    delete_specific_field_mapping(pool, &source_entity, &target_entity, &source_field, &target_field).await
+    delete_specific_field_mapping(
+        pool,
+        &source_entity,
+        &target_entity,
+        &source_field,
+        &target_field,
+    )
+    .await
 }

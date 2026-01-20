@@ -7,7 +7,10 @@ use ratatui::text::{Line, Span};
 
 use crate::api::metadata::FieldMetadata;
 use crate::config::repository::transfer::get_transfer_config;
-use crate::transfer::{ExpandTree, LookupBindingContext, RecordAction, ResolvedTransfer, TransferConfig, TransferMode, TransformEngine};
+use crate::transfer::{
+    ExpandTree, LookupBindingContext, RecordAction, ResolvedTransfer, TransferConfig, TransferMode,
+    TransformEngine,
+};
 use crate::tui::resource::Resource;
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
@@ -34,10 +37,7 @@ impl App for TransferPreviewApp {
         };
 
         // First load config to know which entities to fetch
-        let cmd = Command::perform(
-            load_config(params.config_name),
-            Msg::ConfigLoaded,
-        );
+        let cmd = Command::perform(load_config(params.config_name), Msg::ConfigLoaded);
 
         (state, cmd)
     }
@@ -65,14 +65,17 @@ impl App for TransferPreviewApp {
                             .collect();
 
                         // Get unique target entities that need metadata (including resolver source entities)
-                        let target_entities: Vec<String> = config
-                            .entity_mappings
-                            .iter()
-                            .map(|m| m.target_entity.clone())
-                            .chain(config.entity_mappings.iter().flat_map(|m| m.resolvers.iter().map(|r| r.source_entity.clone())))
-                            .collect::<std::collections::HashSet<_>>()
-                            .into_iter()
-                            .collect();
+                        let target_entities: Vec<String> =
+                            config
+                                .entity_mappings
+                                .iter()
+                                .map(|m| m.target_entity.clone())
+                                .chain(config.entity_mappings.iter().flat_map(|m| {
+                                    m.resolvers.iter().map(|r| r.source_entity.clone())
+                                }))
+                                .collect::<std::collections::HashSet<_>>()
+                                .into_iter()
+                                .collect();
 
                         state.pending_source_metadata_fetches = source_entities.len();
                         state.pending_target_metadata_fetches = target_entities.len();
@@ -84,8 +87,8 @@ impl App for TransferPreviewApp {
                         );
 
                         // Build parallel fetch tasks for source AND target metadata
-                        let mut builder = Command::perform_parallel()
-                            .with_title("Fetching Entity Metadata");
+                        let mut builder =
+                            Command::perform_parallel().with_title("Fetching Entity Metadata");
 
                         // Track how many source tasks we add (to distinguish in callback)
                         let num_source_tasks = source_entities.len();
@@ -93,38 +96,49 @@ impl App for TransferPreviewApp {
                         for entity in source_entities {
                             let env = config.source_env.clone();
                             let e = entity.clone();
-                            builder = builder.add_task(
-                                format!("Source: {}", e),
-                                fetch_source_metadata(env, e),
-                            );
+                            builder = builder
+                                .add_task(format!("Source: {}", e), fetch_source_metadata(env, e));
                         }
 
                         for entity in target_entities {
                             let env = config.target_env.clone();
                             let e = entity.clone();
-                            builder = builder.add_task(
-                                format!("Target: {}", e),
-                                fetch_target_metadata(env, e),
-                            );
+                            builder = builder
+                                .add_task(format!("Target: {}", e), fetch_target_metadata(env, e));
                         }
 
-                        builder
-                            .on_complete(AppId::TransferPreview)
-                            .build(move |task_idx, result| {
+                        builder.on_complete(AppId::TransferPreview).build(
+                            move |task_idx, result| {
                                 if task_idx < num_source_tasks {
                                     // Source metadata returns (entity_name, fields, primary_id_attribute)
                                     let data = result
-                                        .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String>>()
+                                        .downcast::<Result<
+                                            (
+                                                String,
+                                                Vec<crate::api::metadata::FieldMetadata>,
+                                                String,
+                                            ),
+                                            String,
+                                        >>()
                                         .unwrap();
                                     Msg::SourceMetadataResult(*data)
                                 } else {
                                     // Target metadata returns (entity_name, fields, entity_set_name, primary_id_attribute)
                                     let data = result
-                                        .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String>>()
+                                        .downcast::<Result<
+                                            (
+                                                String,
+                                                Vec<crate::api::metadata::FieldMetadata>,
+                                                String,
+                                                String,
+                                            ),
+                                            String,
+                                        >>()
                                         .unwrap();
                                     Msg::TargetMetadataResult(*data)
                                 }
-                            })
+                            },
+                        )
                     }
                     Err(e) => {
                         state.resolved = Resource::Failure(e);
@@ -146,10 +160,13 @@ impl App for TransferPreviewApp {
                         );
                         state.source_metadata.insert(entity_name.clone(), fields);
                         state.primary_id_map.insert(entity_name, primary_id);
-                        state.pending_source_metadata_fetches = state.pending_source_metadata_fetches.saturating_sub(1);
+                        state.pending_source_metadata_fetches =
+                            state.pending_source_metadata_fetches.saturating_sub(1);
 
                         // Check if BOTH source and target metadata are loaded
-                        if state.pending_source_metadata_fetches == 0 && state.pending_target_metadata_fetches == 0 {
+                        if state.pending_source_metadata_fetches == 0
+                            && state.pending_target_metadata_fetches == 0
+                        {
                             // Trigger related metadata check via message (to avoid nested parallel commands)
                             return Command::perform(async { () }, |_| Msg::FetchRelatedMetadata);
                         }
@@ -179,10 +196,13 @@ impl App for TransferPreviewApp {
                         state.target_metadata.insert(entity_name.clone(), fields);
                         state.entity_set_map.insert(entity_name.clone(), entity_set);
                         state.primary_id_map.insert(entity_name, primary_id);
-                        state.pending_target_metadata_fetches = state.pending_target_metadata_fetches.saturating_sub(1);
+                        state.pending_target_metadata_fetches =
+                            state.pending_target_metadata_fetches.saturating_sub(1);
 
                         // Check if BOTH source and target metadata are loaded
-                        if state.pending_source_metadata_fetches == 0 && state.pending_target_metadata_fetches == 0 {
+                        if state.pending_source_metadata_fetches == 0
+                            && state.pending_target_metadata_fetches == 0
+                        {
                             // Trigger related metadata check via message (to avoid nested parallel commands)
                             return Command::perform(async { () }, |_| Msg::FetchRelatedMetadata);
                         }
@@ -195,7 +215,6 @@ impl App for TransferPreviewApp {
                     }
                 }
                 Command::None
-
             }
 
             // Data loading - Step 1d: Related entity metadata loaded (for lookup traversals)
@@ -212,7 +231,8 @@ impl App for TransferPreviewApp {
                         // Store in source_metadata since it's used for source query building
                         state.source_metadata.insert(entity_name.clone(), fields);
                         state.primary_id_map.insert(entity_name, primary_id);
-                        state.pending_related_metadata_fetches = state.pending_related_metadata_fetches.saturating_sub(1);
+                        state.pending_related_metadata_fetches =
+                            state.pending_related_metadata_fetches.saturating_sub(1);
 
                         // Check if all related metadata is loaded
                         if state.pending_related_metadata_fetches == 0 {
@@ -243,8 +263,7 @@ impl App for TransferPreviewApp {
             Msg::FetchRecords => {
                 if let Some(ref config) = state.config {
                     // Build parallel fetch tasks for loading screen
-                    let mut builder = Command::perform_parallel()
-                        .with_title("Fetching Records");
+                    let mut builder = Command::perform_parallel().with_title("Fetching Records");
 
                     let num_entities = config.entity_mappings.len();
 
@@ -261,7 +280,9 @@ impl App for TransferPreviewApp {
                             .map(|s| s.to_string())
                             .collect();
                         // Add primary key field (use fetched metadata or fallback to convention)
-                        let pk_field = state.primary_id_map.get(&entity)
+                        let pk_field = state
+                            .primary_id_map
+                            .get(&entity)
                             .cloned()
                             .unwrap_or_else(|| format!("{}id", entity));
                         source_fields.push(pk_field);
@@ -277,14 +298,17 @@ impl App for TransferPreviewApp {
                         // Otherwise add the base field to source_fields
                         for fm in &mapping.field_mappings {
                             if let Some(resolver_name) = fm.transform.resolver_name() {
-                                if let Some(resolver) = mapping.resolvers.iter().find(|r| r.name == resolver_name) {
+                                if let Some(resolver) =
+                                    mapping.resolvers.iter().find(|r| r.name == resolver_name)
+                                {
                                     for mf in &resolver.match_fields {
                                         if mf.source_path.is_lookup_traversal() {
                                             // Add to expand tree - the nested field will be fetched via $expand
                                             expand_tree.add_path(&mf.source_path);
                                         } else {
                                             // Simple field - add to select
-                                            source_fields.push(mf.source_path.base_field().to_string());
+                                            source_fields
+                                                .push(mf.source_path.base_field().to_string());
                                         }
                                     }
                                 }
@@ -295,7 +319,8 @@ impl App for TransferPreviewApp {
                         let (nav_prop_map, all_lookup_fields): (
                             Option<std::collections::HashMap<String, String>>,
                             Option<std::collections::HashSet<String>>,
-                        ) = if let Some(fields) = state.source_metadata.get(&mapping.source_entity) {
+                        ) = if let Some(fields) = state.source_metadata.get(&mapping.source_entity)
+                        {
                             let lookup_fields: std::collections::HashSet<&str> = fields
                                 .iter()
                                 .filter(|f| f.related_entity.is_some())
@@ -317,8 +342,16 @@ impl App for TransferPreviewApp {
                             // Build nav prop map: logical_name -> navigation_property_name for lookups
                             let map: std::collections::HashMap<String, String> = fields
                                 .iter()
-                                .filter(|f| f.related_entity.is_some() && f.navigation_property_name.is_some())
-                                .map(|f| (f.logical_name.clone(), f.navigation_property_name.clone().unwrap()))
+                                .filter(|f| {
+                                    f.related_entity.is_some()
+                                        && f.navigation_property_name.is_some()
+                                })
+                                .map(|f| {
+                                    (
+                                        f.logical_name.clone(),
+                                        f.navigation_property_name.clone().unwrap(),
+                                    )
+                                })
                                 .collect();
 
                             // Build lookup_fields set from ALL source_metadata (including related entities)
@@ -333,7 +366,11 @@ impl App for TransferPreviewApp {
 
                             (
                                 if map.is_empty() { None } else { Some(map) },
-                                if all_lookups.is_empty() { None } else { Some(all_lookups) },
+                                if all_lookups.is_empty() {
+                                    None
+                                } else {
+                                    Some(all_lookups)
+                                },
                             )
                         } else {
                             (None, None)
@@ -342,7 +379,10 @@ impl App for TransferPreviewApp {
                         source_fields.sort();
                         source_fields.dedup();
 
-                        let expands = expand_tree.build_expand_clauses(nav_prop_map.as_ref(), all_lookup_fields.as_ref());
+                        let expands = expand_tree.build_expand_clauses(
+                            nav_prop_map.as_ref(),
+                            all_lookup_fields.as_ref(),
+                        );
 
                         log::info!(
                             "[{}] Source fetch will select {} fields, expand {} lookups",
@@ -356,7 +396,17 @@ impl App for TransferPreviewApp {
 
                         builder = builder.add_task_with_progress(
                             format!("Source: {}", entity),
-                            move |progress| fetch_entity_records(env, entity, true, source_fields, expands, Some(progress), false), // use cache
+                            move |progress| {
+                                fetch_entity_records(
+                                    env,
+                                    entity,
+                                    true,
+                                    source_fields,
+                                    expands,
+                                    Some(progress),
+                                    false,
+                                )
+                            }, // use cache
                         );
                     }
 
@@ -372,7 +422,9 @@ impl App for TransferPreviewApp {
                             .map(|fm| fm.target_field.clone())
                             .collect();
                         // Add primary key field (use fetched metadata or fallback to convention)
-                        let pk_field = state.primary_id_map.get(&entity)
+                        let pk_field = state
+                            .primary_id_map
+                            .get(&entity)
                             .cloned()
                             .unwrap_or_else(|| format!("{}id", entity));
                         target_fields.push(pk_field);
@@ -401,14 +453,28 @@ impl App for TransferPreviewApp {
                         target_fields.sort();
                         target_fields.dedup();
 
-                        log::info!("[{}] Target fetch will select {} fields", entity, target_fields.len());
+                        log::info!(
+                            "[{}] Target fetch will select {} fields",
+                            entity,
+                            target_fields.len()
+                        );
 
                         // Target fetch doesn't need expands - we compare final values
                         let no_expands: Vec<String> = vec![];
 
                         builder = builder.add_task_with_progress(
                             format!("Target: {}", entity),
-                            move |progress| fetch_entity_records(env, entity, false, target_fields, no_expands, Some(progress), false), // use cache
+                            move |progress| {
+                                fetch_entity_records(
+                                    env,
+                                    entity,
+                                    false,
+                                    target_fields,
+                                    no_expands,
+                                    Some(progress),
+                                    false,
+                                )
+                            }, // use cache
                         );
                     }
 
@@ -425,16 +491,23 @@ impl App for TransferPreviewApp {
                         .collect();
 
                     // Build a map of resolver entity -> fields needed (aggregated from all resolvers using that entity)
-                    let mut resolver_entity_fields: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+                    let mut resolver_entity_fields: std::collections::HashMap<String, Vec<String>> =
+                        std::collections::HashMap::new();
                     for mapping in &config.entity_mappings {
                         for resolver in &mapping.resolvers {
                             // Skip if already fetched as part of entity mappings
-                            if config.entity_mappings.iter().any(|m| m.target_entity == resolver.source_entity) {
+                            if config
+                                .entity_mappings
+                                .iter()
+                                .any(|m| m.target_entity == resolver.source_entity)
+                            {
                                 continue;
                             }
 
                             // Use fetched primary key or fallback to convention
-                            let pk_field = state.primary_id_map.get(&resolver.source_entity)
+                            let pk_field = state
+                                .primary_id_map
+                                .get(&resolver.source_entity)
                                 .cloned()
                                 .unwrap_or_else(|| format!("{}id", resolver.source_entity));
                             let entry = resolver_entity_fields
@@ -488,21 +561,32 @@ impl App for TransferPreviewApp {
 
                         builder = builder.add_task_with_progress(
                             format!("Resolver: {}", entity),
-                            move |progress| fetch_entity_records(env, entity_clone, false, resolver_fields, no_expands, Some(progress), false),
+                            move |progress| {
+                                fetch_entity_records(
+                                    env,
+                                    entity_clone,
+                                    false,
+                                    resolver_fields,
+                                    no_expands,
+                                    Some(progress),
+                                    false,
+                                )
+                            },
                         );
                     }
 
                     // Track how many fetches we're waiting for (source + target for each entity + resolver entities)
                     state.pending_fetches = num_entities * 2 + resolver_entities.len();
 
-                    return builder
-                        .on_complete(AppId::TransferPreview)
-                        .build(|_task_idx, result| {
+                    return builder.on_complete(AppId::TransferPreview).build(
+                        |_task_idx, result| {
                             let data = result
-                                .downcast::<Result<(String, bool, Vec<serde_json::Value>), String>>()
+                                .downcast::<Result<(String, bool, Vec<serde_json::Value>), String>>(
+                                )
                                 .unwrap();
                             Msg::FetchResult(*data)
-                        });
+                        },
+                    );
                 }
                 Command::None
             }
@@ -555,8 +639,8 @@ impl App for TransferPreviewApp {
                         state.pending_metadata_fetches = missing_target_metadata.len();
 
                         let target_env = config.target_env.clone();
-                        let mut builder = Command::perform_parallel()
-                            .with_title("Fetching Entity Metadata");
+                        let mut builder =
+                            Command::perform_parallel().with_title("Fetching Entity Metadata");
 
                         for entity in missing_target_metadata {
                             let env = target_env.clone();
@@ -567,14 +651,22 @@ impl App for TransferPreviewApp {
                             );
                         }
 
-                        return builder
-                            .on_complete(AppId::TransferPreview)
-                            .build(|_task_idx, result| {
+                        return builder.on_complete(AppId::TransferPreview).build(
+                            |_task_idx, result| {
                                 let data = result
-                                    .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String>>()
+                                    .downcast::<Result<
+                                        (
+                                            String,
+                                            Vec<crate::api::metadata::FieldMetadata>,
+                                            String,
+                                            String,
+                                        ),
+                                        String,
+                                    >>()
                                     .unwrap();
                                 Msg::MetadataResult(*data)
-                            });
+                            },
+                        );
                     }
 
                     // Check if we need to fetch metadata for lookup target entities
@@ -622,14 +714,22 @@ impl App for TransferPreviewApp {
                             );
                         }
 
-                        return builder
-                            .on_complete(AppId::TransferPreview)
-                            .build(|_task_idx, result| {
+                        return builder.on_complete(AppId::TransferPreview).build(
+                            |_task_idx, result| {
                                 let data = result
-                                    .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String>>()
+                                    .downcast::<Result<
+                                        (
+                                            String,
+                                            Vec<crate::api::metadata::FieldMetadata>,
+                                            String,
+                                            String,
+                                        ),
+                                        String,
+                                    >>()
                                     .unwrap();
                                 Msg::MetadataResult(*data)
-                            });
+                            },
+                        );
                     }
 
                     // All metadata loaded - proceed with transform
@@ -637,10 +737,14 @@ impl App for TransferPreviewApp {
                     // Use fetched primary_id_attribute from metadata, fall back to convention if not available
                     let mut primary_keys: HashMap<String, String> = HashMap::new();
                     for m in &config.entity_mappings {
-                        let source_pk = state.primary_id_map.get(&m.source_entity)
+                        let source_pk = state
+                            .primary_id_map
+                            .get(&m.source_entity)
                             .cloned()
                             .unwrap_or_else(|| format!("{}id", m.source_entity));
-                        let target_pk = state.primary_id_map.get(&m.target_entity)
+                        let target_pk = state
+                            .primary_id_map
+                            .get(&m.target_entity)
                             .cloned()
                             .unwrap_or_else(|| format!("{}id", m.target_entity));
                         primary_keys.insert(m.source_entity.clone(), source_pk);
@@ -649,7 +753,9 @@ impl App for TransferPreviewApp {
                     // Also add resolver source entities (from all entity mappings)
                     for m in &config.entity_mappings {
                         for r in &m.resolvers {
-                            let resolver_pk = state.primary_id_map.get(&r.source_entity)
+                            let resolver_pk = state
+                                .primary_id_map
+                                .get(&r.source_entity)
                                 .cloned()
                                 .unwrap_or_else(|| format!("{}id", r.source_entity));
                             primary_keys.insert(r.source_entity.clone(), resolver_pk);
@@ -692,7 +798,10 @@ impl App for TransferPreviewApp {
                                 .cloned()
                                 .collect();
 
-                            match LookupBindingContext::from_field_metadata(&fields_to_use, &state.entity_set_map) {
+                            match LookupBindingContext::from_field_metadata(
+                                &fields_to_use,
+                                &state.entity_set_map,
+                            ) {
                                 Ok(ctx) => {
                                     log::info!(
                                         "[{}] Built lookup context with {} lookup fields (from {} mapped fields)",
@@ -746,7 +855,10 @@ impl App for TransferPreviewApp {
                     // Calculate column widths for the current entity
                     if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
                         state.column_widths = super::state::calculate_column_widths(entity);
-                        log::debug!("RunTransform: column_widths calculated: {:?}", state.column_widths);
+                        log::debug!(
+                            "RunTransform: column_widths calculated: {:?}",
+                            state.column_widths
+                        );
                     }
                     state.horizontal_scroll = 0;
 
@@ -766,12 +878,15 @@ impl App for TransferPreviewApp {
                             entity_set,
                             primary_id
                         );
-                        state.target_metadata.insert(entity_name.clone(), fields.clone());
+                        state
+                            .target_metadata
+                            .insert(entity_name.clone(), fields.clone());
                         state.entity_set_map.insert(entity_name.clone(), entity_set);
                         state.primary_id_map.insert(entity_name, primary_id);
 
                         // Track pending results - we get one MetadataResult per task from perform_parallel
-                        state.pending_metadata_fetches = state.pending_metadata_fetches.saturating_sub(1);
+                        state.pending_metadata_fetches =
+                            state.pending_metadata_fetches.saturating_sub(1);
 
                         // When all results processed, trigger RunTransform to check for more metadata needs
                         if state.pending_metadata_fetches == 0 {
@@ -781,7 +896,8 @@ impl App for TransferPreviewApp {
                     }
                     Err(e) => {
                         log::error!("Metadata fetch failed: {}", e);
-                        state.resolved = Resource::Failure(format!("Failed to fetch metadata: {}", e));
+                        state.resolved =
+                            Resource::Failure(format!("Failed to fetch metadata: {}", e));
                         state.pending_metadata_fetches = 0;
                     }
                 }
@@ -792,7 +908,10 @@ impl App for TransferPreviewApp {
                 log::debug!("ResolvedLoaded: received result");
                 state.resolved = match result {
                     Ok(resolved) => {
-                        log::debug!("ResolvedLoaded: success with {} entities", resolved.entities.len());
+                        log::debug!(
+                            "ResolvedLoaded: success with {} entities",
+                            resolved.entities.len()
+                        );
                         Resource::Success(resolved)
                     }
                     Err(e) => {
@@ -802,12 +921,21 @@ impl App for TransferPreviewApp {
                 };
                 // Calculate column widths for the current entity
                 if let Resource::Success(resolved) = &state.resolved {
-                    log::debug!("ResolvedLoaded: calculating column widths for entity idx {}", state.current_entity_idx);
+                    log::debug!(
+                        "ResolvedLoaded: calculating column widths for entity idx {}",
+                        state.current_entity_idx
+                    );
                     if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
                         state.column_widths = super::state::calculate_column_widths(entity);
-                        log::debug!("ResolvedLoaded: column_widths set to {:?}", state.column_widths);
+                        log::debug!(
+                            "ResolvedLoaded: column_widths set to {:?}",
+                            state.column_widths
+                        );
                     } else {
-                        log::debug!("ResolvedLoaded: no entity at index {}", state.current_entity_idx);
+                        log::debug!(
+                            "ResolvedLoaded: no entity at index {}",
+                            state.current_entity_idx
+                        );
                     }
                 }
                 state.horizontal_scroll = 0;
@@ -828,7 +956,8 @@ impl App for TransferPreviewApp {
                         state.target_metadata.insert(entity_name.clone(), fields);
                         state.entity_set_map.insert(entity_name.clone(), entity_set);
                         state.primary_id_map.insert(entity_name, primary_id);
-                        state.pending_lua_metadata_fetches = state.pending_lua_metadata_fetches.saturating_sub(1);
+                        state.pending_lua_metadata_fetches =
+                            state.pending_lua_metadata_fetches.saturating_sub(1);
 
                         // When all metadata is loaded, start fetching data
                         if state.pending_lua_metadata_fetches == 0 {
@@ -845,9 +974,7 @@ impl App for TransferPreviewApp {
             }
 
             // Lua mode - start fetching records after metadata is loaded
-            Msg::LuaFetchRecords => {
-                build_lua_data_fetch_commands(state)
-            }
+            Msg::LuaFetchRecords => build_lua_data_fetch_commands(state),
 
             // Lua mode data loading - accumulate fetched data
             Msg::LuaFetchResult(result) => {
@@ -886,7 +1013,8 @@ impl App for TransferPreviewApp {
                     let script = match &config.lua_script {
                         Some(s) => s.clone(),
                         None => {
-                            state.resolved = Resource::Failure("Lua mode config has no script".to_string());
+                            state.resolved =
+                                Resource::Failure("Lua mode config has no script".to_string());
                             return Command::None;
                         }
                     };
@@ -897,16 +1025,24 @@ impl App for TransferPreviewApp {
                     // Use parallel command to show loading screen with progress
                     return Command::perform_parallel()
                         .with_title("Running Lua Transform")
-                        .add_task_with_progress(
-                            "Lua Transform",
-                            move |progress| run_lua_transform_with_progress(
-                                script, source_data, target_data, progress
-                            ),
-                        )
+                        .add_task_with_progress("Lua Transform", move |progress| {
+                            run_lua_transform_with_progress(
+                                script,
+                                source_data,
+                                target_data,
+                                progress,
+                            )
+                        })
                         .on_complete(AppId::TransferPreview)
                         .build(|_idx, result| {
                             let data = result
-                                .downcast::<Result<(Vec<crate::transfer::lua::LuaOperation>, Vec<crate::transfer::lua::LogMessage>), String>>()
+                                .downcast::<Result<
+                                    (
+                                        Vec<crate::transfer::lua::LuaOperation>,
+                                        Vec<crate::transfer::lua::LogMessage>,
+                                    ),
+                                    String,
+                                >>()
                                 .unwrap();
                             Msg::LuaTransformComplete(*data)
                         });
@@ -929,12 +1065,19 @@ impl App for TransferPreviewApp {
                                 }
                             }
                         }
-                        log::info!("[Lua] Transform complete: {} operations, {} log messages", operations.len(), logs.len());
+                        log::info!(
+                            "[Lua] Transform complete: {} operations, {} log messages",
+                            operations.len(),
+                            logs.len()
+                        );
 
                         // Build primary keys map using fetched metadata
                         let mut primary_keys = HashMap::new();
-                        for entity_name in state.source_data.keys().chain(state.target_data.keys()) {
-                            let pk = state.primary_id_map.get(entity_name)
+                        for entity_name in state.source_data.keys().chain(state.target_data.keys())
+                        {
+                            let pk = state
+                                .primary_id_map
+                                .get(entity_name)
                                 .cloned()
                                 .unwrap_or_else(|| format!("{}id", entity_name));
                             primary_keys.insert(entity_name.clone(), pk);
@@ -949,18 +1092,27 @@ impl App for TransferPreviewApp {
                         );
 
                         // Convert Lua operations to resolved entities/records
-                        TransformEngine::lua_operations_to_resolved(&mut resolved, operations, &primary_keys);
+                        TransformEngine::lua_operations_to_resolved(
+                            &mut resolved,
+                            operations,
+                            &primary_keys,
+                        );
 
                         // Build lookup context for each entity using fetched metadata
                         for entity in &mut resolved.entities {
                             // Set entity_set_name for API calls
-                            if let Some(entity_set) = state.entity_set_map.get(&entity.entity_name) {
+                            if let Some(entity_set) = state.entity_set_map.get(&entity.entity_name)
+                            {
                                 entity.set_entity_set_name(entity_set.clone());
                             }
 
                             // Build lookup context from metadata
-                            if let Some(all_fields) = state.target_metadata.get(&entity.entity_name) {
-                                match LookupBindingContext::from_field_metadata(all_fields, &state.entity_set_map) {
+                            if let Some(all_fields) = state.target_metadata.get(&entity.entity_name)
+                            {
+                                match LookupBindingContext::from_field_metadata(
+                                    all_fields,
+                                    &state.entity_set_map,
+                                ) {
                                     Ok(ctx) => {
                                         log::info!(
                                             "[Lua][{}] Built lookup context with {} lookup fields",
@@ -1008,10 +1160,13 @@ impl App for TransferPreviewApp {
                 // Count filtered records for proper navigation bounds
                 let item_count = if let Resource::Success(resolved) = &state.resolved {
                     let query = state.search_field.value().to_lowercase();
-                    resolved.entities.get(state.current_entity_idx)
+                    resolved
+                        .entities
+                        .get(state.current_entity_idx)
                         .map(|e| {
                             // Count only records matching current filter and search
-                            e.records.iter()
+                            e.records
+                                .iter()
                                 .filter(|r| state.filter.matches(r.action))
                                 .filter(|r| {
                                     if query.is_empty() {
@@ -1020,9 +1175,9 @@ impl App for TransferPreviewApp {
                                     if r.source_id.to_string().to_lowercase().contains(&query) {
                                         return true;
                                     }
-                                    r.fields.values().any(|v| {
-                                        format!("{:?}", v).to_lowercase().contains(&query)
-                                    })
+                                    r.fields
+                                        .values()
+                                        .any(|v| format!("{:?}", v).to_lowercase().contains(&query))
                                 })
                                 .count()
                         })
@@ -1030,7 +1185,9 @@ impl App for TransferPreviewApp {
                 } else {
                     0
                 };
-                state.list_state.handle_event(event, item_count, state.viewport_height);
+                state
+                    .list_state
+                    .handle_event(event, item_count, state.viewport_height);
                 Command::None
             }
 
@@ -1054,7 +1211,8 @@ impl App for TransferPreviewApp {
 
             Msg::ScrollRight => {
                 if let Resource::Success(resolved) = &state.resolved {
-                    let field_count = resolved.entities
+                    let field_count = resolved
+                        .entities
                         .get(state.current_entity_idx)
                         .map(|e| e.field_names.len())
                         .unwrap_or(0);
@@ -1146,10 +1304,18 @@ impl App for TransferPreviewApp {
                                 }
                                 let matches_search = if query.is_empty() {
                                     true
-                                } else if record.source_id.to_string().to_lowercase().contains(&query) {
+                                } else if record
+                                    .source_id
+                                    .to_string()
+                                    .to_lowercase()
+                                    .contains(&query)
+                                {
                                     true
                                 } else {
-                                    record.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                    record
+                                        .fields
+                                        .values()
+                                        .any(|v| format!("{:?}", v).to_lowercase().contains(&query))
                                 };
                                 if !matches_search {
                                     continue;
@@ -1164,7 +1330,9 @@ impl App for TransferPreviewApp {
 
                             // Toggle skip on found record
                             if let Some(source_id) = target_source_id {
-                                if let Some(record) = entity.records.iter_mut().find(|r| r.source_id == source_id) {
+                                if let Some(record) =
+                                    entity.records.iter_mut().find(|r| r.source_id == source_id)
+                                {
                                     if record.action == RecordAction::Skip {
                                         // Restore original action (we'll use NoChange as fallback)
                                         // In a real implementation, we'd track original_action per record
@@ -1186,13 +1354,21 @@ impl App for TransferPreviewApp {
                     if let Resource::Success(resolved) = &state.resolved {
                         if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
                             // Get filtered records to find the actual record
-                            let filtered: Vec<_> = entity.records.iter()
+                            let filtered: Vec<_> = entity
+                                .records
+                                .iter()
                                 .filter(|r| state.filter.matches(r.action))
                                 .filter(|r| {
                                     let query = state.search_field.value().to_lowercase();
-                                    if query.is_empty() { return true; }
-                                    if r.source_id.to_string().to_lowercase().contains(&query) { return true; }
-                                    r.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                    if query.is_empty() {
+                                        return true;
+                                    }
+                                    if r.source_id.to_string().to_lowercase().contains(&query) {
+                                        return true;
+                                    }
+                                    r.fields
+                                        .values()
+                                        .any(|v| format!("{:?}", v).to_lowercase().contains(&query))
                                 })
                                 .collect();
 
@@ -1203,9 +1379,10 @@ impl App for TransferPreviewApp {
                                     &entity.field_names,
                                     &record.fields,
                                 ));
-                                state.active_modal = Some(super::state::PreviewModal::RecordDetails {
-                                    record_idx: idx,
-                                });
+                                state.active_modal =
+                                    Some(super::state::PreviewModal::RecordDetails {
+                                        record_idx: idx,
+                                    });
                             }
                         }
                     }
@@ -1217,13 +1394,21 @@ impl App for TransferPreviewApp {
                 if let Some(idx) = state.list_state.selected() {
                     if let Resource::Success(resolved) = &state.resolved {
                         if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
-                            let filtered: Vec<_> = entity.records.iter()
+                            let filtered: Vec<_> = entity
+                                .records
+                                .iter()
                                 .filter(|r| state.filter.matches(r.action))
                                 .filter(|r| {
                                     let query = state.search_field.value().to_lowercase();
-                                    if query.is_empty() { return true; }
-                                    if r.source_id.to_string().to_lowercase().contains(&query) { return true; }
-                                    r.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                    if query.is_empty() {
+                                        return true;
+                                    }
+                                    if r.source_id.to_string().to_lowercase().contains(&query) {
+                                        return true;
+                                    }
+                                    r.fields
+                                        .values()
+                                        .any(|v| format!("{:?}", v).to_lowercase().contains(&query))
                                 })
                                 .collect();
 
@@ -1236,9 +1421,10 @@ impl App for TransferPreviewApp {
                                 );
                                 detail_state.editing = true; // Start in edit mode
                                 state.record_detail_state = Some(detail_state);
-                                state.active_modal = Some(super::state::PreviewModal::RecordDetails {
-                                    record_idx: idx,
-                                });
+                                state.active_modal =
+                                    Some(super::state::PreviewModal::RecordDetails {
+                                        record_idx: idx,
+                                    });
                             }
                         }
                     }
@@ -1394,10 +1580,18 @@ impl App for TransferPreviewApp {
                                 }
                                 let matches_search = if query.is_empty() {
                                     true
-                                } else if record.source_id.to_string().to_lowercase().contains(&query) {
+                                } else if record
+                                    .source_id
+                                    .to_string()
+                                    .to_lowercase()
+                                    .contains(&query)
+                                {
                                     true
                                 } else {
-                                    record.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                    record
+                                        .fields
+                                        .values()
+                                        .any(|v| format!("{:?}", v).to_lowercase().contains(&query))
                                 };
                                 if !matches_search {
                                     continue;
@@ -1413,7 +1607,9 @@ impl App for TransferPreviewApp {
                             // Second pass: apply changes to the found record
                             if let Some(source_id) = target_source_id {
                                 // Find and update the record
-                                if let Some(record) = entity.records.iter_mut().find(|r| r.source_id == source_id) {
+                                if let Some(record) =
+                                    entity.records.iter_mut().find(|r| r.source_id == source_id)
+                                {
                                     // Apply action change
                                     if detail.current_action != detail.original_action {
                                         record.action = detail.current_action;
@@ -1426,7 +1622,9 @@ impl App for TransferPreviewApp {
                                     for field_state in &detail.fields {
                                         if field_state.is_dirty {
                                             let new_value = field_state.parse_value();
-                                            record.fields.insert(field_state.field_name.clone(), new_value);
+                                            record
+                                                .fields
+                                                .insert(field_state.field_name.clone(), new_value);
                                         }
                                     }
                                 }
@@ -1465,15 +1663,25 @@ impl App for TransferPreviewApp {
                     if let Some(entity) = resolved.entities.get(state.current_entity_idx) {
                         // Count filtered records for item_count
                         let query = state.search_field.value().to_lowercase();
-                        let item_count = entity.records.iter()
+                        let item_count = entity
+                            .records
+                            .iter()
                             .filter(|r| state.filter.matches(r.action))
                             .filter(|r| {
-                                if query.is_empty() { return true; }
-                                if r.source_id.to_string().to_lowercase().contains(&query) { return true; }
-                                r.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                if query.is_empty() {
+                                    return true;
+                                }
+                                if r.source_id.to_string().to_lowercase().contains(&query) {
+                                    return true;
+                                }
+                                r.fields
+                                    .values()
+                                    .any(|v| format!("{:?}", v).to_lowercase().contains(&query))
                             })
                             .count();
-                        state.list_state.handle_event(event, item_count, state.viewport_height);
+                        state
+                            .list_state
+                            .handle_event(event, item_count, state.viewport_height);
                     }
                 }
                 Command::None
@@ -1510,18 +1718,24 @@ impl App for TransferPreviewApp {
                             super::state::BulkActionScope::All => {
                                 (0..entity.records.len()).collect()
                             }
-                            super::state::BulkActionScope::Filtered => {
-                                entity.records.iter()
-                                    .enumerate()
-                                    .filter(|(_, r)| filter.matches(r.action))
-                                    .filter(|(_, r)| {
-                                        if query.is_empty() { return true; }
-                                        if r.source_id.to_string().to_lowercase().contains(&query) { return true; }
-                                        r.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
-                                    })
-                                    .map(|(i, _)| i)
-                                    .collect()
-                            }
+                            super::state::BulkActionScope::Filtered => entity
+                                .records
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, r)| filter.matches(r.action))
+                                .filter(|(_, r)| {
+                                    if query.is_empty() {
+                                        return true;
+                                    }
+                                    if r.source_id.to_string().to_lowercase().contains(&query) {
+                                        return true;
+                                    }
+                                    r.fields
+                                        .values()
+                                        .any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                })
+                                .map(|(i, _)| i)
+                                .collect(),
                             super::state::BulkActionScope::Selected => {
                                 // Convert filtered indices to actual record indices
                                 let multi_selected = state.list_state.all_selected();
@@ -1533,10 +1747,17 @@ impl App for TransferPreviewApp {
                                     }
                                     let matches_search = if query.is_empty() {
                                         true
-                                    } else if record.source_id.to_string().to_lowercase().contains(&query) {
+                                    } else if record
+                                        .source_id
+                                        .to_string()
+                                        .to_lowercase()
+                                        .contains(&query)
+                                    {
                                         true
                                     } else {
-                                        record.fields.values().any(|v| format!("{:?}", v).to_lowercase().contains(&query))
+                                        record.fields.values().any(|v| {
+                                            format!("{:?}", v).to_lowercase().contains(&query)
+                                        })
                                     };
                                     if !matches_search {
                                         continue;
@@ -1611,7 +1832,7 @@ impl App for TransferPreviewApp {
             }
 
             Msg::ExportFileNavigate(key) => {
-                use crate::tui::widgets::{FileBrowserEvent, FileBrowserAction};
+                use crate::tui::widgets::{FileBrowserAction, FileBrowserEvent};
 
                 match key {
                     crossterm::event::KeyCode::Up => {
@@ -1622,7 +1843,10 @@ impl App for TransferPreviewApp {
                     }
                     crossterm::event::KeyCode::Enter => {
                         // Enter directory if selected, otherwise do nothing (we select directory, not file)
-                        if let Some(action) = state.export_file_browser.handle_event(FileBrowserEvent::Activate) {
+                        if let Some(action) = state
+                            .export_file_browser
+                            .handle_event(FileBrowserEvent::Activate)
+                        {
                             match action {
                                 FileBrowserAction::DirectoryEntered(_) => {
                                     // Directory changed, stay in modal
@@ -1630,7 +1854,8 @@ impl App for TransferPreviewApp {
                                 FileBrowserAction::FileSelected(_) => {
                                     // User selected existing file - could overwrite or ignore
                                     // For now, just update filename field
-                                    if let Some(entry) = state.export_file_browser.selected_entry() {
+                                    if let Some(entry) = state.export_file_browser.selected_entry()
+                                    {
                                         if !entry.is_dir {
                                             state.export_filename.set_value(entry.name.clone());
                                         }
@@ -1642,7 +1867,9 @@ impl App for TransferPreviewApp {
                     }
                     crossterm::event::KeyCode::Backspace => {
                         // Go up one directory
-                        let _ = state.export_file_browser.handle_event(FileBrowserEvent::GoUp);
+                        let _ = state
+                            .export_file_browser
+                            .handle_event(FileBrowserEvent::GoUp);
                     }
                     _ => {
                         state.export_file_browser.handle_navigation_key(key);
@@ -1684,9 +1911,7 @@ impl App for TransferPreviewApp {
                         state.active_modal = None;
 
                         return Command::perform(
-                            async move {
-                                export_entity_to_excel(entity_clone, path_str).await
-                            },
+                            async move { export_entity_to_excel(entity_clone, path_str).await },
                             Msg::ExportCompleted,
                         );
                     }
@@ -1705,7 +1930,7 @@ impl App for TransferPreviewApp {
             }
 
             Msg::ImportFileNavigate(key) => {
-                use crate::tui::widgets::{FileBrowserEvent, FileBrowserAction};
+                use crate::tui::widgets::{FileBrowserAction, FileBrowserEvent};
 
                 match key {
                     crossterm::event::KeyCode::Up => {
@@ -1715,7 +1940,10 @@ impl App for TransferPreviewApp {
                         state.import_file_browser.navigate_down();
                     }
                     crossterm::event::KeyCode::Enter => {
-                        if let Some(action) = state.import_file_browser.handle_event(FileBrowserEvent::Activate) {
+                        if let Some(action) = state
+                            .import_file_browser
+                            .handle_event(FileBrowserEvent::Activate)
+                        {
                             match action {
                                 FileBrowserAction::DirectoryEntered(_) => {
                                     // Directory changed, stay in modal
@@ -1732,7 +1960,9 @@ impl App for TransferPreviewApp {
                         }
                     }
                     crossterm::event::KeyCode::Backspace => {
-                        let _ = state.import_file_browser.handle_event(FileBrowserEvent::GoUp);
+                        let _ = state
+                            .import_file_browser
+                            .handle_event(FileBrowserEvent::GoUp);
                     }
                     _ => {
                         state.import_file_browser.handle_navigation_key(key);
@@ -1758,9 +1988,7 @@ impl App for TransferPreviewApp {
                         let path_str = path.to_string_lossy().to_string();
 
                         return Command::perform(
-                            async move {
-                                preview_import(entity_clone, entity_idx, path_str).await
-                            },
+                            async move { preview_import(entity_clone, entity_idx, path_str).await },
                             Msg::ImportPreviewLoaded,
                         );
                     }
@@ -1774,7 +2002,12 @@ impl App for TransferPreviewApp {
                         state.pending_import = Some(pending);
                         state.active_modal = Some(super::state::PreviewModal::ImportConfirm {
                             path: state.pending_import.as_ref().unwrap().path.clone(),
-                            conflicts: state.pending_import.as_ref().unwrap().conflicts.iter()
+                            conflicts: state
+                                .pending_import
+                                .as_ref()
+                                .unwrap()
+                                .conflicts
+                                .iter()
                                 .map(|id| id.to_string())
                                 .collect(),
                         });
@@ -1788,7 +2021,9 @@ impl App for TransferPreviewApp {
             }
 
             Msg::ConfirmImport => {
-                if let (Some(pending), Resource::Success(resolved)) = (&state.pending_import, &mut state.resolved) {
+                if let (Some(pending), Resource::Success(resolved)) =
+                    (&state.pending_import, &mut state.resolved)
+                {
                     if let Some(entity) = resolved.entities.get_mut(pending.entity_idx) {
                         let entity_clone = entity.clone();
                         let path = pending.path.clone();
@@ -1797,9 +2032,7 @@ impl App for TransferPreviewApp {
                         state.pending_import = None;
 
                         return Command::perform(
-                            async move {
-                                apply_import(entity_clone, path).await
-                            },
+                            async move { apply_import(entity_clone, path).await },
                             |result| match result {
                                 Ok(updated_entity) => Msg::ImportCompleted(Ok(updated_entity)),
                                 Err(e) => Msg::ImportCompleted(Err(e)),
@@ -1835,7 +2068,9 @@ impl App for TransferPreviewApp {
                     Ok(updated_entity) => {
                         // Replace the entity in the resolved transfer
                         if let Resource::Success(resolved) = &mut state.resolved {
-                            if let Some(entity) = resolved.entities.get_mut(state.current_entity_idx) {
+                            if let Some(entity) =
+                                resolved.entities.get_mut(state.current_entity_idx)
+                            {
                                 *entity = updated_entity;
                             }
                         }
@@ -1868,8 +2103,7 @@ impl App for TransferPreviewApp {
                 state.target_data.clear();
 
                 // Build parallel fetch tasks (same as ConfigLoaded but uses existing config)
-                let mut builder = Command::perform_parallel()
-                    .with_title("Refreshing Records");
+                let mut builder = Command::perform_parallel().with_title("Refreshing Records");
 
                 let num_entities = config.entity_mappings.len();
 
@@ -1886,7 +2120,9 @@ impl App for TransferPreviewApp {
                         .map(|s| s.to_string())
                         .collect();
                     // Add primary key field (use fetched metadata or fallback to convention)
-                    let pk_field = state.primary_id_map.get(&entity)
+                    let pk_field = state
+                        .primary_id_map
+                        .get(&entity)
                         .cloned()
                         .unwrap_or_else(|| format!("{}id", entity));
                     source_fields.push(pk_field);
@@ -1903,7 +2139,9 @@ impl App for TransferPreviewApp {
                     for fm in &mapping.field_mappings {
                         if let Some(resolver_name) = fm.transform.resolver_name() {
                             // Look for resolver in this entity mapping's resolvers
-                            if let Some(resolver) = mapping.resolvers.iter().find(|r| r.name == resolver_name) {
+                            if let Some(resolver) =
+                                mapping.resolvers.iter().find(|r| r.name == resolver_name)
+                            {
                                 for mf in &resolver.match_fields {
                                     if mf.source_path.is_lookup_traversal() {
                                         // Add to expand tree - the nested field will be fetched via $expand
@@ -1943,8 +2181,15 @@ impl App for TransferPreviewApp {
                         // Build nav prop map: logical_name -> navigation_property_name for lookups
                         let map: std::collections::HashMap<String, String> = fields
                             .iter()
-                            .filter(|f| f.related_entity.is_some() && f.navigation_property_name.is_some())
-                            .map(|f| (f.logical_name.clone(), f.navigation_property_name.clone().unwrap()))
+                            .filter(|f| {
+                                f.related_entity.is_some() && f.navigation_property_name.is_some()
+                            })
+                            .map(|f| {
+                                (
+                                    f.logical_name.clone(),
+                                    f.navigation_property_name.clone().unwrap(),
+                                )
+                            })
                             .collect();
 
                         // Build lookup_fields set from ALL source_metadata (including related entities)
@@ -1958,7 +2203,11 @@ impl App for TransferPreviewApp {
 
                         (
                             if map.is_empty() { None } else { Some(map) },
-                            if all_lookups.is_empty() { None } else { Some(all_lookups) },
+                            if all_lookups.is_empty() {
+                                None
+                            } else {
+                                Some(all_lookups)
+                            },
                         )
                     } else {
                         (None, None)
@@ -1967,11 +2216,22 @@ impl App for TransferPreviewApp {
                     source_fields.sort();
                     source_fields.dedup();
 
-                    let expands = expand_tree.build_expand_clauses(nav_prop_map.as_ref(), all_lookup_fields.as_ref());
+                    let expands = expand_tree
+                        .build_expand_clauses(nav_prop_map.as_ref(), all_lookup_fields.as_ref());
 
                     builder = builder.add_task_with_progress(
                         format!("Source: {}", entity),
-                        move |progress| fetch_entity_records(env, entity, true, source_fields, expands, Some(progress), true), // force refresh
+                        move |progress| {
+                            fetch_entity_records(
+                                env,
+                                entity,
+                                true,
+                                source_fields,
+                                expands,
+                                Some(progress),
+                                true,
+                            )
+                        }, // force refresh
                     );
                 }
 
@@ -1986,7 +2246,9 @@ impl App for TransferPreviewApp {
                         .map(|fm| fm.target_field.clone())
                         .collect();
                     // Add primary key field (use fetched metadata or fallback to convention)
-                    let pk_field = state.primary_id_map.get(&entity)
+                    let pk_field = state
+                        .primary_id_map
+                        .get(&entity)
                         .cloned()
                         .unwrap_or_else(|| format!("{}id", entity));
                     target_fields.push(pk_field);
@@ -2019,7 +2281,17 @@ impl App for TransferPreviewApp {
 
                     builder = builder.add_task_with_progress(
                         format!("Target: {}", entity),
-                        move |progress| fetch_entity_records(env, entity, false, target_fields, no_expands, Some(progress), true), // force refresh
+                        move |progress| {
+                            fetch_entity_records(
+                                env,
+                                entity,
+                                false,
+                                target_fields,
+                                no_expands,
+                                Some(progress),
+                                true,
+                            )
+                        }, // force refresh
                     );
                 }
 
@@ -2029,13 +2301,21 @@ impl App for TransferPreviewApp {
                 for m in &config.entity_mappings {
                     for r in &m.resolvers {
                         // Skip if already fetched as part of entity mappings
-                        if config.entity_mappings.iter().any(|em| em.target_entity == r.source_entity) {
+                        if config
+                            .entity_mappings
+                            .iter()
+                            .any(|em| em.target_entity == r.source_entity)
+                        {
                             continue;
                         }
 
-                        let fields = resolver_entity_fields.entry(r.source_entity.clone()).or_default();
+                        let fields = resolver_entity_fields
+                            .entry(r.source_entity.clone())
+                            .or_default();
                         // Add primary key field (use fetched metadata or fallback to convention)
-                        let pk_field = state.primary_id_map.get(&r.source_entity)
+                        let pk_field = state
+                            .primary_id_map
+                            .get(&r.source_entity)
                             .cloned()
                             .unwrap_or_else(|| format!("{}id", r.source_entity));
                         fields.push(pk_field);
@@ -2078,7 +2358,17 @@ impl App for TransferPreviewApp {
 
                     builder = builder.add_task_with_progress(
                         format!("Resolver: {}", entity),
-                        move |progress| fetch_entity_records(env, entity_clone, false, resolver_fields, no_expands, Some(progress), true), // force refresh
+                        move |progress| {
+                            fetch_entity_records(
+                                env,
+                                entity_clone,
+                                false,
+                                resolver_fields,
+                                no_expands,
+                                Some(progress),
+                                true,
+                            )
+                        }, // force refresh
                     );
                 }
 
@@ -2102,9 +2392,7 @@ impl App for TransferPreviewApp {
             }
 
             // Navigation
-            Msg::Back => {
-                Command::navigate_to(AppId::TransferMappingEditor)
-            }
+            Msg::Back => Command::navigate_to(AppId::TransferMappingEditor),
 
             // Send to Queue
             Msg::OpenSendToQueue => {
@@ -2146,7 +2434,8 @@ impl App for TransferPreviewApp {
                         return Command::None;
                     }
 
-                    let total_ops: usize = queue_items.iter().map(|item| item.operations.len()).sum();
+                    let total_ops: usize =
+                        queue_items.iter().map(|item| item.operations.len()).sum();
                     log::info!("✅ Sending {} operations to queue", total_ops);
 
                     // Serialize and publish via Command
@@ -2188,9 +2477,10 @@ impl App for TransferPreviewApp {
 
         match &state.resolved {
             Resource::NotAsked => None,
-            Resource::Loading => Some(Line::from(vec![
-                Span::styled("Loading...", Style::default().fg(theme.text_secondary)),
-            ])),
+            Resource::Loading => Some(Line::from(vec![Span::styled(
+                "Loading...",
+                Style::default().fg(theme.text_secondary),
+            )])),
             Resource::Failure(err) => Some(Line::from(vec![
                 Span::styled("Error: ", Style::default().fg(theme.accent_error)),
                 Span::styled(err.clone(), Style::default().fg(theme.text_primary)),
@@ -2201,7 +2491,9 @@ impl App for TransferPreviewApp {
                 }
 
                 let entity = &resolved.entities[state.current_entity_idx];
-                let filtered_count = entity.records.iter()
+                let filtered_count = entity
+                    .records
+                    .iter()
                     .filter(|r| state.filter.matches(r.action))
                     .filter(|r| {
                         let query = state.search_field.value().to_lowercase();
@@ -2212,45 +2504,106 @@ impl App for TransferPreviewApp {
                         if r.source_id.to_string().to_lowercase().contains(&query) {
                             return true;
                         }
-                        r.fields.values().any(|v| {
-                            format!("{:?}", v).to_lowercase().contains(&query)
-                        })
+                        r.fields
+                            .values()
+                            .any(|v| format!("{:?}", v).to_lowercase().contains(&query))
                     })
                     .count();
 
                 Some(Line::from(vec![
-                    Span::styled(entity.entity_name.clone(), Style::default().fg(theme.accent_primary)),
                     Span::styled(
-                        format!(" ({}/{})", state.current_entity_idx + 1, resolved.entities.len()),
+                        entity.entity_name.clone(),
+                        Style::default().fg(theme.accent_primary),
+                    ),
+                    Span::styled(
+                        format!(
+                            " ({}/{})",
+                            state.current_entity_idx + 1,
+                            resolved.entities.len()
+                        ),
                         Style::default().fg(theme.text_secondary),
                     ),
                     Span::raw(" | "),
-                    Span::styled(format!("{}", entity.create_count()), Style::default().fg(theme.accent_success)),
-                    Span::styled(" create".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        format!("{}", entity.create_count()),
+                        Style::default().fg(theme.accent_success),
+                    ),
+                    Span::styled(
+                        " create".to_string(),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::raw(" "),
-                    Span::styled(format!("{}", entity.update_count()), Style::default().fg(theme.accent_secondary)),
-                    Span::styled(" update".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        format!("{}", entity.update_count()),
+                        Style::default().fg(theme.accent_secondary),
+                    ),
+                    Span::styled(
+                        " update".to_string(),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::raw(" "),
-                    Span::styled(format!("{}", entity.delete_count()), Style::default().fg(theme.accent_error)),
-                    Span::styled(" delete".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        format!("{}", entity.delete_count()),
+                        Style::default().fg(theme.accent_error),
+                    ),
+                    Span::styled(
+                        " delete".to_string(),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::raw(" "),
-                    Span::styled(format!("{}", entity.deactivate_count()), Style::default().fg(theme.accent_warning)),
-                    Span::styled(" deactivate".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        format!("{}", entity.deactivate_count()),
+                        Style::default().fg(theme.accent_warning),
+                    ),
+                    Span::styled(
+                        " deactivate".to_string(),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::raw(" "),
-                    Span::styled(format!("{}", entity.nochange_count()), Style::default().fg(theme.text_tertiary)),
-                    Span::styled(" unchanged".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        format!("{}", entity.nochange_count()),
+                        Style::default().fg(theme.text_tertiary),
+                    ),
+                    Span::styled(
+                        " unchanged".to_string(),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::raw(" "),
-                    Span::styled(format!("{}", entity.target_only_count()), Style::default().fg(theme.text_tertiary)),
-                    Span::styled(" target-only".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        format!("{}", entity.target_only_count()),
+                        Style::default().fg(theme.text_tertiary),
+                    ),
+                    Span::styled(
+                        " target-only".to_string(),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::raw(" "),
-                    Span::styled(format!("{}", entity.skip_count()), Style::default().fg(theme.accent_warning)),
-                    Span::styled(" skip".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        format!("{}", entity.skip_count()),
+                        Style::default().fg(theme.accent_warning),
+                    ),
+                    Span::styled(
+                        " skip".to_string(),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::raw(" "),
-                    Span::styled(format!("{}", entity.error_count()), Style::default().fg(theme.accent_error)),
-                    Span::styled(" error".to_string(), Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        format!("{}", entity.error_count()),
+                        Style::default().fg(theme.accent_error),
+                    ),
+                    Span::styled(
+                        " error".to_string(),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::raw(" | "),
-                    Span::styled(state.filter.display_name().to_string(), Style::default().fg(theme.accent_primary)),
-                    Span::styled(format!(" ({})", filtered_count), Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        state.filter.display_name().to_string(),
+                        Style::default().fg(theme.accent_primary),
+                    ),
+                    Span::styled(
+                        format!(" ({})", filtered_count),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     // Show selection count if multi-selection is active
                     if state.list_state.has_multi_selection() {
                         Span::styled(
@@ -2305,7 +2658,7 @@ async fn fetch_entity_records(
     fields: Vec<String>,  // Fields to select (for performance)
     expands: Vec<String>, // Expand clauses for lookup traversals
     progress: Option<crate::tui::command::ProgressSender>,
-    force_refresh: bool,  // If true, bypass cache and fetch fresh
+    force_refresh: bool, // If true, bypass cache and fetch fresh
 ) -> Result<(String, bool, Vec<serde_json::Value>), String> {
     use crate::api::pluralization::pluralize_entity_name;
     use crate::api::query::QueryBuilder;
@@ -2318,7 +2671,10 @@ async fn fetch_entity_records(
             let _ = tx.send("Checking cache...".to_string());
         }
 
-        match config.get_entity_data_cache(&env_name, &entity_name, 1).await {
+        match config
+            .get_entity_data_cache(&env_name, &entity_name, 1)
+            .await
+        {
             Ok(Some(cached_data)) => {
                 log::info!(
                     "✅ Using cached data for {} from {} ({} records)",
@@ -2335,7 +2691,11 @@ async fn fetch_entity_records(
                 log::info!("[{}] No valid cache, fetching from API", entity_name);
             }
             Err(e) => {
-                log::warn!("[{}] Cache check failed, fetching from API: {}", entity_name, e);
+                log::warn!(
+                    "[{}] Cache check failed, fetching from API: {}",
+                    entity_name,
+                    e
+                );
             }
         }
     } else {
@@ -2356,19 +2716,23 @@ async fn fetch_entity_records(
         entity_name, entity_name
     );
 
-    let total_count: Option<u64> = match client.execute_fetchxml(&entity_name, &count_fetchxml).await {
-        Ok(result) => {
-            result.get("value")
+    let total_count: Option<u64> =
+        match client.execute_fetchxml(&entity_name, &count_fetchxml).await {
+            Ok(result) => result
+                .get("value")
                 .and_then(|v| v.as_array())
                 .and_then(|arr| arr.first())
                 .and_then(|obj| obj.get("total"))
-                .and_then(|t| t.as_u64())
-        }
-        Err(e) => {
-            log::warn!("[{}] Count query failed, progress will show records only: {}", entity_name, e);
-            None
-        }
-    };
+                .and_then(|t| t.as_u64()),
+            Err(e) => {
+                log::warn!(
+                    "[{}] Count query failed, progress will show records only: {}",
+                    entity_name,
+                    e
+                );
+                None
+            }
+        };
     log::info!("[{}] Total count: {:?}", entity_name, total_count);
 
     // Report initial progress
@@ -2421,7 +2785,8 @@ async fn fetch_entity_records(
     }
 
     let initial_count = result.data.as_ref().map(|d| d.value.len()).unwrap_or(0);
-    log::info!("[{}] Initial response: has_data={}, record_count={}, has_more={}",
+    log::info!(
+        "[{}] Initial response: has_data={}, record_count={}, has_more={}",
         entity_name,
         result.data.is_some(),
         initial_count,
@@ -2430,7 +2795,10 @@ async fn fetch_entity_records(
 
     // Log warning with query details when we get 0 records - often indicates invalid field
     if initial_count == 0 {
-        log::warn!("[{}] ⚠️ Query returned 0 records. This may indicate an invalid field in the query.", entity_name);
+        log::warn!(
+            "[{}] ⚠️ Query returned 0 records. This may indicate an invalid field in the query.",
+            entity_name
+        );
         log::warn!("[{}]   $select fields: {:?}", entity_name, fields);
         if !expands.is_empty() {
             log::warn!("[{}]   $expand clauses: {:?}", entity_name, expands);
@@ -2441,13 +2809,15 @@ async fn fetch_entity_records(
         page += 1;
         let page_start = std::time::Instant::now();
 
-        let page_records = result.data
-            .as_ref()
-            .map(|d| d.value.len())
-            .unwrap_or(0);
+        let page_records = result.data.as_ref().map(|d| d.value.len()).unwrap_or(0);
 
-        log::info!("[{}] ✅ Page {} fetched in {}ms ({} records)",
-            entity_name, page, page_start.elapsed().as_millis(), page_records);
+        log::info!(
+            "[{}] ✅ Page {} fetched in {}ms ({} records)",
+            entity_name,
+            page,
+            page_start.elapsed().as_millis(),
+            page_records
+        );
 
         if let Some(ref data) = result.data {
             all_records.extend(data.value.clone());
@@ -2497,7 +2867,11 @@ async fn fetch_entity_records(
             .map_err(|e| format!("Pagination failed: {}", e))?
             .ok_or_else(|| "nextLink returned no data".to_string())?;
 
-        log::debug!("[{}] Next page request took {}ms", entity_name, next_start.elapsed().as_millis());
+        log::debug!(
+            "[{}] Next page request took {}ms",
+            entity_name,
+            next_start.elapsed().as_millis()
+        );
     }
 
     let total_time = fetch_start.elapsed();
@@ -2510,7 +2884,10 @@ async fn fetch_entity_records(
     );
 
     // Save to cache for future use
-    if let Err(e) = config.set_entity_data_cache(&env_name, &entity_name, &all_records).await {
+    if let Err(e) = config
+        .set_entity_data_cache(&env_name, &entity_name, &all_records)
+        .await
+    {
         log::warn!("[{}] Failed to cache data: {}", entity_name, e);
     } else {
         log::info!("[{}] Cached {} records", entity_name, all_records.len());
@@ -2527,12 +2904,10 @@ async fn export_entity_to_excel(
     use crate::transfer::excel::resolved::write_resolved_excel;
 
     // The write function is synchronous, so we wrap it in spawn_blocking
-    let result = tokio::task::spawn_blocking(move || {
-        write_resolved_excel(&entity, &path)
-            .map(|_| path)
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?;
+    let result =
+        tokio::task::spawn_blocking(move || write_resolved_excel(&entity, &path).map(|_| path))
+            .await
+            .map_err(|e| format!("Task failed: {}", e))?;
 
     result.map_err(|e| format!("Export failed: {}", e))
 }
@@ -2555,7 +2930,9 @@ async fn preview_import(
             .map_err(|e| format!("Failed to read Excel: {}", e))?;
 
         // Detect conflicts: records that are dirty locally AND changed in Excel
-        let conflicts: Vec<uuid::Uuid> = edits.changed_records.keys()
+        let conflicts: Vec<uuid::Uuid> = edits
+            .changed_records
+            .keys()
             .filter(|id| entity.is_dirty(**id))
             .copied()
             .collect();
@@ -2593,8 +2970,10 @@ async fn apply_import(
 }
 
 /// Build queue items from resolved transfer
-fn build_queue_items_from_resolved(resolved: &ResolvedTransfer) -> Vec<crate::tui::apps::queue::models::QueueItem> {
-    use crate::transfer::queue::{build_queue_items, QueueBuildOptions};
+fn build_queue_items_from_resolved(
+    resolved: &ResolvedTransfer,
+) -> Vec<crate::tui::apps::queue::models::QueueItem> {
+    use crate::transfer::queue::{QueueBuildOptions, build_queue_items};
 
     let options = QueueBuildOptions::default();
     build_queue_items(resolved, &options)
@@ -2616,7 +2995,9 @@ fn check_and_fetch_related_metadata(state: &mut State) -> Option<Command<Msg>> {
         let lookup_map: std::collections::HashMap<&str, &str> = source_fields
             .iter()
             .filter_map(|f| {
-                f.related_entity.as_ref().map(|re| (f.logical_name.as_str(), re.as_str()))
+                f.related_entity
+                    .as_ref()
+                    .map(|re| (f.logical_name.as_str(), re.as_str()))
             })
             .collect();
 
@@ -2668,16 +3049,12 @@ fn check_and_fetch_related_metadata(state: &mut State) -> Option<Command<Msg>> {
     state.pending_related_metadata_fetches = needed_entities.len();
 
     let source_env = config.source_env.clone();
-    let mut builder = Command::perform_parallel()
-        .with_title("Fetching Related Entity Metadata");
+    let mut builder = Command::perform_parallel().with_title("Fetching Related Entity Metadata");
 
     for entity in needed_entities {
         let env = source_env.clone();
         let e = entity.clone();
-        builder = builder.add_task(
-            format!("Related: {}", e),
-            fetch_source_metadata(env, e),
-        );
+        builder = builder.add_task(format!("Related: {}", e), fetch_source_metadata(env, e));
     }
 
     Some(builder
@@ -2697,12 +3074,19 @@ async fn fetch_source_metadata(
     env_name: String,
     entity_name: String,
 ) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>, String), String> {
-    log::debug!("[{}] fetch_source_metadata START for env={}", entity_name, env_name);
+    log::debug!(
+        "[{}] fetch_source_metadata START for env={}",
+        entity_name,
+        env_name
+    );
 
     let config = crate::global_config();
 
     // Check cache first (1 hour TTL)
-    match config.get_entity_metadata_cache(&env_name, &entity_name, 1).await {
+    match config
+        .get_entity_metadata_cache(&env_name, &entity_name, 1)
+        .await
+    {
         Ok(Some(cached)) if cached.primary_id_attribute.is_some() => {
             let primary_id = cached.primary_id_attribute.unwrap();
             log::info!(
@@ -2714,13 +3098,20 @@ async fn fetch_source_metadata(
             return Ok((entity_name, cached.fields, primary_id));
         }
         Ok(Some(_)) => {
-            log::info!("[{}] Source cache missing primary_id_attribute, fetching from API", entity_name);
+            log::info!(
+                "[{}] Source cache missing primary_id_attribute, fetching from API",
+                entity_name
+            );
         }
         Ok(None) => {
             log::info!("[{}] No valid source cache, fetching from API", entity_name);
         }
         Err(e) => {
-            log::warn!("[{}] Cache check failed, fetching from API: {}", entity_name, e);
+            log::warn!(
+                "[{}] Cache check failed, fetching from API: {}",
+                entity_name,
+                e
+            );
         }
     }
 
@@ -2756,7 +3147,10 @@ async fn fetch_source_metadata(
         primary_id_attribute: Some(entity_info.primary_id_attribute.clone()),
         ..Default::default()
     };
-    if let Err(e) = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await {
+    if let Err(e) = config
+        .set_entity_metadata_cache(&env_name, &entity_name, &metadata)
+        .await
+    {
         log::warn!("[{}] Failed to cache source metadata: {}", entity_name, e);
     }
 
@@ -2769,16 +3163,33 @@ async fn fetch_source_metadata(
 async fn fetch_target_metadata(
     env_name: String,
     entity_name: String,
-) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String> {
-    log::debug!("[{}] fetch_target_metadata START for env={}", entity_name, env_name);
+) -> Result<
+    (
+        String,
+        Vec<crate::api::metadata::FieldMetadata>,
+        String,
+        String,
+    ),
+    String,
+> {
+    log::debug!(
+        "[{}] fetch_target_metadata START for env={}",
+        entity_name,
+        env_name
+    );
 
     let config = crate::global_config();
 
     // Check cache first (1 hour TTL) - only use if entity_set_name is present
-    match config.get_entity_metadata_cache(&env_name, &entity_name, 1).await {
+    match config
+        .get_entity_metadata_cache(&env_name, &entity_name, 1)
+        .await
+    {
         Ok(Some(cached)) if cached.entity_set_name.is_some() => {
             let entity_set = cached.entity_set_name.unwrap();
-            let primary_id = cached.primary_id_attribute.unwrap_or_else(|| format!("{}id", entity_name));
+            let primary_id = cached
+                .primary_id_attribute
+                .unwrap_or_else(|| format!("{}id", entity_name));
             log::info!(
                 "[{}] Using cached target metadata: {} fields, entity_set={}, primary_id={}",
                 entity_name,
@@ -2789,10 +3200,17 @@ async fn fetch_target_metadata(
             return Ok((entity_name, cached.fields, entity_set, primary_id));
         }
         Ok(_) => {
-            log::info!("[{}] No valid target cache (or missing entity_set_name), fetching from API", entity_name);
+            log::info!(
+                "[{}] No valid target cache (or missing entity_set_name), fetching from API",
+                entity_name
+            );
         }
         Err(e) => {
-            log::warn!("[{}] Target cache check failed, fetching from API: {}", entity_name, e);
+            log::warn!(
+                "[{}] Target cache check failed, fetching from API: {}",
+                entity_name,
+                e
+            );
         }
     }
 
@@ -2807,7 +3225,12 @@ async fn fetch_target_metadata(
     let fields = client
         .fetch_entity_fields_alt(&entity_name)
         .await
-        .map_err(|e| format!("Failed to fetch target field metadata for {}: {}", entity_name, e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to fetch target field metadata for {}: {}",
+                entity_name, e
+            )
+        })?;
 
     // Fetch entity metadata info (includes entity_set_name)
     let entity_info = client
@@ -2830,11 +3253,19 @@ async fn fetch_target_metadata(
         primary_id_attribute: Some(entity_info.primary_id_attribute.clone()),
         ..Default::default()
     };
-    if let Err(e) = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await {
+    if let Err(e) = config
+        .set_entity_metadata_cache(&env_name, &entity_name, &metadata)
+        .await
+    {
         log::warn!("[{}] Failed to cache target metadata: {}", entity_name, e);
     }
 
-    Ok((entity_name, fields, entity_info.entity_set_name, entity_info.primary_id_attribute))
+    Ok((
+        entity_name,
+        fields,
+        entity_info.entity_set_name,
+        entity_info.primary_id_attribute,
+    ))
 }
 
 /// Fetch entity metadata (fields + entity set name) for lookup binding
@@ -2843,18 +3274,35 @@ async fn fetch_target_metadata(
 async fn fetch_entity_metadata(
     env_name: String,
     entity_name: String,
-) -> Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String> {
-    log::debug!("[{}] fetch_entity_metadata START for env={}", entity_name, env_name);
+) -> Result<
+    (
+        String,
+        Vec<crate::api::metadata::FieldMetadata>,
+        String,
+        String,
+    ),
+    String,
+> {
+    log::debug!(
+        "[{}] fetch_entity_metadata START for env={}",
+        entity_name,
+        env_name
+    );
 
     let config = crate::global_config();
     log::debug!("[{}] Got global_config", entity_name);
 
     // Check cache first (1 hour TTL)
     log::debug!("[{}] Checking cache...", entity_name);
-    match config.get_entity_metadata_cache(&env_name, &entity_name, 1).await {
+    match config
+        .get_entity_metadata_cache(&env_name, &entity_name, 1)
+        .await
+    {
         Ok(Some(cached)) if cached.entity_set_name.is_some() => {
             let entity_set = cached.entity_set_name.unwrap();
-            let primary_id = cached.primary_id_attribute.unwrap_or_else(|| format!("{}id", entity_name));
+            let primary_id = cached
+                .primary_id_attribute
+                .unwrap_or_else(|| format!("{}id", entity_name));
             log::info!(
                 "[{}] Using cached metadata: {} fields, entity_set={}, primary_id={} (from cache)",
                 entity_name,
@@ -2868,7 +3316,11 @@ async fn fetch_entity_metadata(
             log::info!("[{}] No valid cache, fetching from API", entity_name);
         }
         Err(e) => {
-            log::warn!("[{}] Cache check failed, fetching from API: {}", entity_name, e);
+            log::warn!(
+                "[{}] Cache check failed, fetching from API: {}",
+                entity_name,
+                e
+            );
         }
     }
 
@@ -2906,11 +3358,19 @@ async fn fetch_entity_metadata(
         primary_id_attribute: Some(entity_info.primary_id_attribute.clone()),
         ..Default::default()
     };
-    if let Err(e) = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await {
+    if let Err(e) = config
+        .set_entity_metadata_cache(&env_name, &entity_name, &metadata)
+        .await
+    {
         log::warn!("[{}] Failed to cache metadata: {}", entity_name, e);
     }
 
-    Ok((entity_name, fields, entity_info.entity_set_name, entity_info.primary_id_attribute))
+    Ok((
+        entity_name,
+        fields,
+        entity_info.entity_set_name,
+        entity_info.primary_id_attribute,
+    ))
 }
 
 /// Handle Lua mode config - first fetch metadata, then fetch data
@@ -2949,10 +3409,7 @@ fn handle_lua_mode_config(state: &mut State, config: TransferConfig) -> Command<
         // No data to fetch, run transform immediately with empty data
         state.resolved = Resource::Loading;
         let config_name = config.name.clone();
-        return Command::perform(
-            run_lua_transform(config_name),
-            Msg::ResolvedLoaded,
-        );
+        return Command::perform(run_lua_transform(config_name), Msg::ResolvedLoaded);
     }
 
     // Get unique target entities that need metadata (for LookupBindingContext)
@@ -2984,8 +3441,7 @@ fn handle_lua_mode_config(state: &mut State, config: TransferConfig) -> Command<
     );
 
     // Build parallel metadata fetch tasks
-    let mut builder = Command::perform_parallel()
-        .with_title("Fetching Entity Metadata");
+    let mut builder = Command::perform_parallel().with_title("Fetching Entity Metadata");
 
     for entity_name in metadata_entities {
         let env = target_env.clone();
@@ -3001,7 +3457,15 @@ fn handle_lua_mode_config(state: &mut State, config: TransferConfig) -> Command<
         .on_complete(AppId::TransferPreview)
         .build(|_task_idx, result| {
             let data = result
-                .downcast::<Result<(String, Vec<crate::api::metadata::FieldMetadata>, String, String), String>>()
+                .downcast::<Result<
+                    (
+                        String,
+                        Vec<crate::api::metadata::FieldMetadata>,
+                        String,
+                        String,
+                    ),
+                    String,
+                >>()
                 .unwrap();
             Msg::LuaMetadataResult(*data)
         })
@@ -3029,8 +3493,7 @@ fn build_lua_data_fetch_commands(state: &mut State) -> Command<Msg> {
     state.pending_lua_fetches = total_fetches;
 
     // Build parallel fetch tasks
-    let mut builder = Command::perform_parallel()
-        .with_title("Fetching Data for Lua Transform");
+    let mut builder = Command::perform_parallel().with_title("Fetching Data for Lua Transform");
 
     let source_env = config.source_env.clone();
     let target_env = config.target_env.clone();
@@ -3041,14 +3504,27 @@ fn build_lua_data_fetch_commands(state: &mut State) -> Command<Msg> {
         let entity = entity_name.clone();
         let fields = entity_decl.fields.clone();
         let filter = entity_decl.filter.clone();
-        let expand = if entity_decl.expand.is_empty() { None } else { Some(entity_decl.expand.clone()) };
+        let expand = if entity_decl.expand.is_empty() {
+            None
+        } else {
+            Some(entity_decl.expand.clone())
+        };
         let top = entity_decl.top;
         let primary_id = state.primary_id_map.get(entity_name).cloned();
 
-        builder = builder.add_task_with_progress(
-            format!("Source: {}", entity),
-            move |progress| fetch_lua_data(env, entity, fields, filter, expand, top, true, Some(progress), primary_id),
-        );
+        builder = builder.add_task_with_progress(format!("Source: {}", entity), move |progress| {
+            fetch_lua_data(
+                env,
+                entity,
+                fields,
+                filter,
+                expand,
+                top,
+                true,
+                Some(progress),
+                primary_id,
+            )
+        });
     }
 
     // Fetch target entities
@@ -3057,14 +3533,27 @@ fn build_lua_data_fetch_commands(state: &mut State) -> Command<Msg> {
         let entity = entity_name.clone();
         let fields = entity_decl.fields.clone();
         let filter = entity_decl.filter.clone();
-        let expand = if entity_decl.expand.is_empty() { None } else { Some(entity_decl.expand.clone()) };
+        let expand = if entity_decl.expand.is_empty() {
+            None
+        } else {
+            Some(entity_decl.expand.clone())
+        };
         let top = entity_decl.top;
         let primary_id = state.primary_id_map.get(entity_name).cloned();
 
-        builder = builder.add_task_with_progress(
-            format!("Target: {}", entity),
-            move |progress| fetch_lua_data(env, entity, fields, filter, expand, top, false, Some(progress), primary_id),
-        );
+        builder = builder.add_task_with_progress(format!("Target: {}", entity), move |progress| {
+            fetch_lua_data(
+                env,
+                entity,
+                fields,
+                filter,
+                expand,
+                top,
+                false,
+                Some(progress),
+                primary_id,
+            )
+        });
     }
 
     builder
@@ -3099,7 +3588,10 @@ async fn fetch_lua_data(
         let _ = tx.send("Checking cache...".to_string());
     }
 
-    match config.get_entity_data_cache(&env_name, &entity_name, 1).await {
+    match config
+        .get_entity_data_cache(&env_name, &entity_name, 1)
+        .await
+    {
         Ok(Some(cached_data)) => {
             log::info!(
                 "[Lua][{}] Using cached data from {} ({} records)",
@@ -3116,7 +3608,11 @@ async fn fetch_lua_data(
             log::info!("[Lua][{}] No valid cache, fetching from API", entity_name);
         }
         Err(e) => {
-            log::warn!("[Lua][{}] Cache check failed, fetching from API: {}", entity_name, e);
+            log::warn!(
+                "[Lua][{}] Cache check failed, fetching from API: {}",
+                entity_name,
+                e
+            );
         }
     }
 
@@ -3245,10 +3741,17 @@ async fn fetch_lua_data(
     );
 
     // Save to cache for future use
-    if let Err(e) = config.set_entity_data_cache(&env_name, &entity_name, &all_records).await {
+    if let Err(e) = config
+        .set_entity_data_cache(&env_name, &entity_name, &all_records)
+        .await
+    {
         log::warn!("[Lua][{}] Failed to cache data: {}", entity_name, e);
     } else {
-        log::info!("[Lua][{}] Cached {} records", entity_name, all_records.len());
+        log::info!(
+            "[Lua][{}] Cached {} records",
+            entity_name,
+            all_records.len()
+        );
     }
 
     Ok((entity_name, is_source, all_records))
@@ -3270,7 +3773,12 @@ async fn run_lua_transform(config_name: String) -> Result<ResolvedTransfer, Stri
     let target_data = HashMap::new();
     let primary_keys = HashMap::new();
 
-    Ok(TransformEngine::transform_all(&config, &source_data, &target_data, &primary_keys))
+    Ok(TransformEngine::transform_all(
+        &config,
+        &source_data,
+        &target_data,
+        &primary_keys,
+    ))
 }
 
 /// Run the Lua transform with accumulated data (synchronous, no progress)
@@ -3289,7 +3797,7 @@ fn run_lua_transform_with_data(
 }
 
 /// Run the Lua transform with progress streaming to the loading screen
-/// 
+///
 /// This function executes the Lua transform asynchronously and forwards
 /// status updates from `lib.status()` and `lib.progress()` to the loading screen.
 async fn run_lua_transform_with_progress(
@@ -3297,8 +3805,14 @@ async fn run_lua_transform_with_progress(
     source_data: HashMap<String, Vec<serde_json::Value>>,
     target_data: HashMap<String, Vec<serde_json::Value>>,
     progress: crate::tui::command::ProgressSender,
-) -> Result<(Vec<crate::transfer::lua::LuaOperation>, Vec<crate::transfer::lua::LogMessage>), String> {
-    use crate::transfer::lua::{execute_transform_async, ExecutionContext, ExecutionUpdate};
+) -> Result<
+    (
+        Vec<crate::transfer::lua::LuaOperation>,
+        Vec<crate::transfer::lua::LogMessage>,
+    ),
+    String,
+> {
+    use crate::transfer::lua::{ExecutionContext, ExecutionUpdate, execute_transform_async};
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
@@ -3326,13 +3840,16 @@ async fn run_lua_transform_with_progress(
                     let _ = progress_clone.send("Running transform...".to_string());
                 }
                 ExecutionUpdate::Completed { operation_count } => {
-                    let _ = progress_clone.send(format!("Complete: {} operations", operation_count));
+                    let _ =
+                        progress_clone.send(format!("Complete: {} operations", operation_count));
                 }
                 ExecutionUpdate::Failed(err) => {
                     let _ = progress_clone.send(format!("Failed: {}", err));
                 }
                 // Log and Warn are captured, not shown on progress
-                ExecutionUpdate::Log(_) | ExecutionUpdate::Warn(_) | ExecutionUpdate::Progress { .. } => {}
+                ExecutionUpdate::Log(_)
+                | ExecutionUpdate::Warn(_)
+                | ExecutionUpdate::Progress { .. } => {}
             }
         }
     });
@@ -3357,7 +3874,11 @@ async fn run_lua_transform_with_progress(
 
 /// Dirty records preserve their user-edited action and field values.
 fn merge_dirty_records(new_resolved: &mut ResolvedTransfer, old_resolved: &ResolvedTransfer) {
-    for (new_entity, old_entity) in new_resolved.entities.iter_mut().zip(old_resolved.entities.iter()) {
+    for (new_entity, old_entity) in new_resolved
+        .entities
+        .iter_mut()
+        .zip(old_resolved.entities.iter())
+    {
         // Skip if entity names don't match (shouldn't happen, but be safe)
         if new_entity.entity_name != old_entity.entity_name {
             log::warn!(
@@ -3377,14 +3898,20 @@ fn merge_dirty_records(new_resolved: &mut ResolvedTransfer, old_resolved: &Resol
             }
 
             // Find matching record in new entity by source_id
-            if let Some(new_record) = new_entity.records.iter_mut().find(|r| r.source_id == old_record.source_id) {
+            if let Some(new_record) = new_entity
+                .records
+                .iter_mut()
+                .find(|r| r.source_id == old_record.source_id)
+            {
                 // Preserve user edits: copy action and field values from old record
                 new_record.action = old_record.action;
                 new_record.error = old_record.error.clone();
 
                 // Copy all field values from old record
                 for (field_name, field_value) in &old_record.fields {
-                    new_record.fields.insert(field_name.clone(), field_value.clone());
+                    new_record
+                        .fields
+                        .insert(field_name.clone(), field_value.clone());
                 }
 
                 // Mark as dirty in new entity

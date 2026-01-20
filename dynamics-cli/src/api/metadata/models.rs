@@ -90,7 +90,7 @@ pub struct FormField {
     pub logical_name: String,
     pub label: String,
     pub visible: bool,
-    pub required_level: String,  // None, ApplicationRequired, SystemRequired
+    pub required_level: String, // None, ApplicationRequired, SystemRequired
     pub readonly: bool,
     pub row: i32,
     pub column: i32,

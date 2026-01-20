@@ -51,12 +51,10 @@ pub async fn handle_raw_command(args: RawCommands) -> Result<()> {
 
     // Execute the raw API request
     let result = match args.method {
-        HttpMethod::Get => {
-            client
-                .execute_raw("GET", &args.endpoint, None)
-                .await
-                .context("Failed to execute GET request")?
-        }
+        HttpMethod::Get => client
+            .execute_raw("GET", &args.endpoint, None)
+            .await
+            .context("Failed to execute GET request")?,
         HttpMethod::Post => {
             let data = args
                 .data
@@ -77,18 +75,19 @@ pub async fn handle_raw_command(args: RawCommands) -> Result<()> {
                 .await
                 .context("Failed to execute PATCH request")?
         }
-        HttpMethod::Delete => {
-            client
-                .execute_raw("DELETE", &args.endpoint, None)
-                .await
-                .context("Failed to execute DELETE request")?
-        }
+        HttpMethod::Delete => client
+            .execute_raw("DELETE", &args.endpoint, None)
+            .await
+            .context("Failed to execute DELETE request")?,
     };
 
     let exec_duration = start_exec.elapsed();
 
     if matches!(args.style, DisplayStyle::Verbose) {
-        println!("Execution time: {:.2}ms", exec_duration.as_secs_f64() * 1000.0);
+        println!(
+            "Execution time: {:.2}ms",
+            exec_duration.as_secs_f64() * 1000.0
+        );
         println!();
     }
 
@@ -118,7 +117,9 @@ pub async fn handle_raw_command(args: RawCommands) -> Result<()> {
 /// Format API results according to the specified output format
 fn format_output(data: &serde_json::Value, format: &OutputFormat) -> Result<String> {
     match format {
-        OutputFormat::Json => serde_json::to_string_pretty(data).context("Failed to format JSON output"),
+        OutputFormat::Json => {
+            serde_json::to_string_pretty(data).context("Failed to format JSON output")
+        }
         OutputFormat::JsonCompact => {
             serde_json::to_string(data).context("Failed to format JSON output")
         }

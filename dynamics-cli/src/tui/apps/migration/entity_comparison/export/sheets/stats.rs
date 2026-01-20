@@ -3,10 +3,10 @@
 use anyhow::Result;
 use rust_xlsxwriter::*;
 
-use crate::tui::Resource;
-use super::super::super::app::State;
 use super::super::super::MatchType;
+use super::super::super::app::State;
 use super::super::formatting::*;
+use crate::tui::Resource;
 
 /// Create statistics overview sheet
 pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> {
@@ -20,14 +20,32 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
 
     // Title
     let source_entities_str = if state.source_entities.len() > 1 {
-        format!("{} entities: {}", state.source_entities.len(), state.source_entities.join(", "))
+        format!(
+            "{} entities: {}",
+            state.source_entities.len(),
+            state.source_entities.join(", ")
+        )
     } else {
-        state.source_entities.first().map(|s| s.as_str()).unwrap_or("").to_string()
+        state
+            .source_entities
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("")
+            .to_string()
     };
     let target_entities_str = if state.target_entities.len() > 1 {
-        format!("{} entities: {}", state.target_entities.len(), state.target_entities.join(", "))
+        format!(
+            "{} entities: {}",
+            state.target_entities.len(),
+            state.target_entities.join(", ")
+        )
     } else {
-        state.target_entities.first().map(|s| s.as_str()).unwrap_or("").to_string()
+        state
+            .target_entities
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("")
+            .to_string()
     };
 
     let title_note = if state.source_entities.len() > 1 || state.target_entities.len() > 1 {
@@ -39,7 +57,10 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
     sheet.write_string_with_format(
         0,
         0,
-        &format!("Mapping Statistics - {} → {}{}", source_entities_str, target_entities_str, title_note),
+        &format!(
+            "Mapping Statistics - {} → {}{}",
+            source_entities_str, target_entities_str, title_note
+        ),
         &title_format,
     )?;
 
@@ -114,7 +135,9 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
         let ignore_id_simple = format!("fields:source:{}", field.logical_name);
         let ignore_id_qualified = format!("fields:source:{}", field_key);
 
-        if state.ignored_items.contains(&ignore_id_simple) || state.ignored_items.contains(&ignore_id_qualified) {
+        if state.ignored_items.contains(&ignore_id_simple)
+            || state.ignored_items.contains(&ignore_id_qualified)
+        {
             source_ignored += 1;
         } else if let Some(match_info) = state.field_matches.get(&field_key) {
             source_mapped += 1;
@@ -150,17 +173,32 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
 
     sheet.write_string(row, 0, "Mapped")?;
     sheet.write_number(row, 1, source_mapped as f64)?;
-    sheet.write_number_with_format(row, 2, source_mapped as f64 / source_total as f64, &percent_format)?;
+    sheet.write_number_with_format(
+        row,
+        2,
+        source_mapped as f64 / source_total as f64,
+        &percent_format,
+    )?;
     row += 1;
 
     sheet.write_string(row, 0, "Unmapped")?;
     sheet.write_number(row, 1, source_unmapped as f64)?;
-    sheet.write_number_with_format(row, 2, source_unmapped as f64 / source_total as f64, &percent_format)?;
+    sheet.write_number_with_format(
+        row,
+        2,
+        source_unmapped as f64 / source_total as f64,
+        &percent_format,
+    )?;
     row += 1;
 
     sheet.write_string(row, 0, "Ignored")?;
     sheet.write_number(row, 1, source_ignored as f64)?;
-    sheet.write_number_with_format(row, 2, source_ignored as f64 / source_total as f64, &percent_format)?;
+    sheet.write_number_with_format(
+        row,
+        2,
+        source_ignored as f64 / source_total as f64,
+        &percent_format,
+    )?;
     row += 2;
 
     // Write match type breakdown
@@ -170,42 +208,72 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
     if exact_count > 0 {
         sheet.write_string(row, 0, "  Exact Matches")?;
         sheet.write_number(row, 1, exact_count as f64)?;
-        sheet.write_number_with_format(row, 2, exact_count as f64 / source_total as f64, &percent_format)?;
+        sheet.write_number_with_format(
+            row,
+            2,
+            exact_count as f64 / source_total as f64,
+            &percent_format,
+        )?;
         row += 1;
     }
 
     if manual_count > 0 {
         sheet.write_string(row, 0, "  Manual Mappings")?;
         sheet.write_number(row, 1, manual_count as f64)?;
-        sheet.write_number_with_format(row, 2, manual_count as f64 / source_total as f64, &percent_format)?;
+        sheet.write_number_with_format(
+            row,
+            2,
+            manual_count as f64 / source_total as f64,
+            &percent_format,
+        )?;
         row += 1;
     }
 
     if prefix_count > 0 {
         sheet.write_string(row, 0, "  Prefix Matches")?;
         sheet.write_number(row, 1, prefix_count as f64)?;
-        sheet.write_number_with_format(row, 2, prefix_count as f64 / source_total as f64, &percent_format)?;
+        sheet.write_number_with_format(
+            row,
+            2,
+            prefix_count as f64 / source_total as f64,
+            &percent_format,
+        )?;
         row += 1;
     }
 
     if type_mismatch_count > 0 {
         sheet.write_string(row, 0, "  Type Mismatches")?;
         sheet.write_number(row, 1, type_mismatch_count as f64)?;
-        sheet.write_number_with_format(row, 2, type_mismatch_count as f64 / source_total as f64, &percent_format)?;
+        sheet.write_number_with_format(
+            row,
+            2,
+            type_mismatch_count as f64 / source_total as f64,
+            &percent_format,
+        )?;
         row += 1;
     }
 
     if example_count > 0 {
         sheet.write_string(row, 0, "  Example Matches")?;
         sheet.write_number(row, 1, example_count as f64)?;
-        sheet.write_number_with_format(row, 2, example_count as f64 / source_total as f64, &percent_format)?;
+        sheet.write_number_with_format(
+            row,
+            2,
+            example_count as f64 / source_total as f64,
+            &percent_format,
+        )?;
         row += 1;
     }
 
     if import_count > 0 {
         sheet.write_string(row, 0, "  Imported Mappings")?;
         sheet.write_number(row, 1, import_count as f64)?;
-        sheet.write_number_with_format(row, 2, import_count as f64 / source_total as f64, &percent_format)?;
+        sheet.write_number_with_format(
+            row,
+            2,
+            import_count as f64 / source_total as f64,
+            &percent_format,
+        )?;
         row += 1;
     }
 
@@ -236,7 +304,9 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
         let ignore_id_simple = format!("fields:target:{}", field.logical_name);
         let ignore_id_qualified = format!("fields:target:{}", field_key);
 
-        if state.ignored_items.contains(&ignore_id_simple) || state.ignored_items.contains(&ignore_id_qualified) {
+        if state.ignored_items.contains(&ignore_id_simple)
+            || state.ignored_items.contains(&ignore_id_qualified)
+        {
             target_ignored += 1;
         } else if reverse_matches.contains(&field_key) {
             target_mapped += 1;
@@ -258,17 +328,32 @@ pub fn create_stats_sheet(workbook: &mut Workbook, state: &State) -> Result<()> 
 
     sheet.write_string(row, 0, "Mapped")?;
     sheet.write_number(row, 1, target_mapped as f64)?;
-    sheet.write_number_with_format(row, 2, target_mapped as f64 / target_total as f64, &percent_format)?;
+    sheet.write_number_with_format(
+        row,
+        2,
+        target_mapped as f64 / target_total as f64,
+        &percent_format,
+    )?;
     row += 1;
 
     sheet.write_string(row, 0, "Unmapped")?;
     sheet.write_number(row, 1, target_unmapped as f64)?;
-    sheet.write_number_with_format(row, 2, target_unmapped as f64 / target_total as f64, &percent_format)?;
+    sheet.write_number_with_format(
+        row,
+        2,
+        target_unmapped as f64 / target_total as f64,
+        &percent_format,
+    )?;
     row += 1;
 
     sheet.write_string(row, 0, "Ignored")?;
     sheet.write_number(row, 1, target_ignored as f64)?;
-    sheet.write_number_with_format(row, 2, target_ignored as f64 / target_total as f64, &percent_format)?;
+    sheet.write_number_with_format(
+        row,
+        2,
+        target_ignored as f64 / target_total as f64,
+        &percent_format,
+    )?;
     row += 2;
 
     // ===== MAPPING QUALITY INDICATORS =====

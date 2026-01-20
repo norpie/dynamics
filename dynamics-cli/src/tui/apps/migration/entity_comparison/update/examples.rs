@@ -1,8 +1,8 @@
+use super::super::app::State;
+use super::super::{ExamplePair, Msg};
 use crate::tui::command::Command;
 use crate::tui::widgets::TextInputEvent;
 use crossterm::event::KeyCode;
-use super::super::{Msg, ExamplePair};
-use super::super::app::State;
 
 pub fn handle_open_modal(state: &mut State) -> Command<Msg> {
     state.show_examples_modal = true;
@@ -15,13 +15,17 @@ pub fn handle_close_modal(state: &mut State) -> Command<Msg> {
 }
 
 pub fn handle_list_navigate(state: &mut State, key: KeyCode) -> Command<Msg> {
-    state.examples_list_state.handle_key(key, state.examples.pairs.len(), 10);
+    state
+        .examples_list_state
+        .handle_key(key, state.examples.pairs.len(), 10);
     Command::None
 }
 
 pub fn handle_list_select(state: &mut State, index: usize) -> Command<Msg> {
     let item_count = state.examples.pairs.len();
-    state.examples_list_state.select_and_scroll(Some(index), item_count);
+    state
+        .examples_list_state
+        .select_and_scroll(Some(index), item_count);
     Command::None
 }
 
@@ -69,7 +73,10 @@ pub fn handle_add_example_pair(state: &mut State) -> Command<Msg> {
         let target_entity = state.target_entities.first().cloned().unwrap_or_default();
         tokio::spawn(async move {
             let config = crate::global_config();
-            if let Err(e) = config.save_example_pair(&source_entity, &target_entity, &pair).await {
+            if let Err(e) = config
+                .save_example_pair(&source_entity, &target_entity, &pair)
+                .await
+            {
                 log::error!("Failed to save example pair: {}", e);
             }
         });
@@ -90,12 +97,16 @@ pub fn handle_add_example_pair(state: &mut State) -> Command<Msg> {
                     &target_env,
                     &target_entity,
                     &target_record_id,
-                ).await.map(|(source, target)| (pair_id, source, target))
+                )
+                .await
+                .map(|(source, target)| (pair_id, source, target))
             },
             |result| match result {
-                Ok((pair_id, source, target)) => Msg::ExampleDataFetched(pair_id, Ok((source, target))),
+                Ok((pair_id, source, target)) => {
+                    Msg::ExampleDataFetched(pair_id, Ok((source, target)))
+                }
                 Err(e) => Msg::ExampleDataFetched(String::new(), Err(e)),
-            }
+            },
         );
     }
 
@@ -124,20 +135,40 @@ pub fn handle_delete_example_pair(state: &mut State) -> Command<Msg> {
 pub fn handle_example_data_fetched(
     state: &mut State,
     pair_id: String,
-    result: Result<(serde_json::Value, serde_json::Value), String>
+    result: Result<(serde_json::Value, serde_json::Value), String>,
 ) -> Command<Msg> {
     // Store fetched data in cache
     match result {
         Ok((source_data, target_data)) => {
             // Find the pair and store its record IDs as cache keys
             if let Some(pair) = state.examples.pairs.iter().find(|p| p.id == pair_id) {
-                log::info!("Fetched example data for pair {}: source_id={}, target_id={}",
-                    pair_id, pair.source_record_id, pair.target_record_id);
-                log::debug!("Source data keys: {:?}", source_data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
-                log::debug!("Target data keys: {:?}", target_data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+                log::info!(
+                    "Fetched example data for pair {}: source_id={}, target_id={}",
+                    pair_id,
+                    pair.source_record_id,
+                    pair.target_record_id
+                );
+                log::debug!(
+                    "Source data keys: {:?}",
+                    source_data
+                        .as_object()
+                        .map(|o| o.keys().collect::<Vec<_>>())
+                );
+                log::debug!(
+                    "Target data keys: {:?}",
+                    target_data
+                        .as_object()
+                        .map(|o| o.keys().collect::<Vec<_>>())
+                );
 
-                state.examples.cache.insert(pair.source_record_id.clone(), source_data);
-                state.examples.cache.insert(pair.target_record_id.clone(), target_data);
+                state
+                    .examples
+                    .cache
+                    .insert(pair.source_record_id.clone(), source_data);
+                state
+                    .examples
+                    .cache
+                    .insert(pair.target_record_id.clone(), target_data);
                 log::info!("Cached example data for pair {}", pair_id);
             } else {
                 log::error!("Pair {} not found in examples.pairs", pair_id);
@@ -152,8 +183,8 @@ pub fn handle_example_data_fetched(
 }
 
 pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
-    use crate::tui::Resource;
     use super::super::matching_adapter::{recompute_all_matches, recompute_all_matches_multi};
+    use crate::tui::Resource;
     use std::collections::HashMap;
 
     // Cycle through pairs, or toggle off if at end
@@ -167,8 +198,7 @@ pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
         state.examples.active_pair_id = state.examples.pairs.first().map(|p| p.id.clone());
     } else if let Some(active_id) = &state.examples.active_pair_id {
         // Find current pair index
-        let current_idx = state.examples.pairs.iter()
-            .position(|p| &p.id == active_id);
+        let current_idx = state.examples.pairs.iter().position(|p| &p.id == active_id);
 
         if let Some(idx) = current_idx {
             // Move to next, or toggle off if at end
@@ -195,7 +225,9 @@ pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
 
     if is_multi_entity {
         // Multi-entity mode: use recompute_all_matches_multi()
-        let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.source_metadata.iter()
+        let source_metadata_map: HashMap<String, crate::api::EntityMetadata> = state
+            .source_metadata
+            .iter()
             .filter_map(|(name, resource)| {
                 if let Resource::Success(metadata) = resource {
                     Some((name.clone(), metadata.clone()))
@@ -205,7 +237,9 @@ pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
             })
             .collect();
 
-        let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = state.target_metadata.iter()
+        let target_metadata_map: HashMap<String, crate::api::EntityMetadata> = state
+            .target_metadata
+            .iter()
             .filter_map(|(name, resource)| {
                 if let Resource::Success(metadata) = resource {
                     Some((name.clone(), metadata.clone()))
@@ -215,18 +249,23 @@ pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
             })
             .collect();
 
-        let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-            recompute_all_matches_multi(
-                &source_metadata_map,
-                &target_metadata_map,
-                &state.source_entities,
-                &state.target_entities,
-                &state.field_mappings,
-                &state.imported_mappings,
-                &state.prefix_mappings,
-                &state.examples,
-                &state.negative_matches,
-            );
+        let (
+            field_matches,
+            relationship_matches,
+            entity_matches,
+            source_related_entities,
+            target_related_entities,
+        ) = recompute_all_matches_multi(
+            &source_metadata_map,
+            &target_metadata_map,
+            &state.source_entities,
+            &state.target_entities,
+            &state.field_mappings,
+            &state.imported_mappings,
+            &state.prefix_mappings,
+            &state.examples,
+            &state.negative_matches,
+        );
         state.field_matches = field_matches;
         state.relationship_matches = relationship_matches;
         state.entity_matches = entity_matches;
@@ -237,21 +276,27 @@ pub fn handle_cycle_example_pair(state: &mut State) -> Command<Msg> {
         let first_source_entity = state.source_entities.first().cloned().unwrap_or_default();
         let first_target_entity = state.target_entities.first().cloned().unwrap_or_default();
 
-        if let (Some(Resource::Success(source)), Some(Resource::Success(target))) =
-            (state.source_metadata.get(&first_source_entity), state.target_metadata.get(&first_target_entity))
-        {
-            let (field_matches, relationship_matches, entity_matches, source_related_entities, target_related_entities) =
-                recompute_all_matches(
-                    source,
-                    target,
-                    &state.field_mappings,
-                    &state.imported_mappings,
-                    &state.prefix_mappings,
-                    &state.examples,
-                    &first_source_entity,
-                    &first_target_entity,
-                    &state.negative_matches,
-                );
+        if let (Some(Resource::Success(source)), Some(Resource::Success(target))) = (
+            state.source_metadata.get(&first_source_entity),
+            state.target_metadata.get(&first_target_entity),
+        ) {
+            let (
+                field_matches,
+                relationship_matches,
+                entity_matches,
+                source_related_entities,
+                target_related_entities,
+            ) = recompute_all_matches(
+                source,
+                target,
+                &state.field_mappings,
+                &state.imported_mappings,
+                &state.prefix_mappings,
+                &state.examples,
+                &first_source_entity,
+                &first_target_entity,
+                &state.negative_matches,
+            );
             state.field_matches = field_matches;
             state.relationship_matches = relationship_matches;
             state.entity_matches = entity_matches;

@@ -1,15 +1,15 @@
 //! Core types for data transfer
 
-mod value;
-mod transform;
 mod config;
-mod resolved;
 mod lookup;
+mod resolved;
 mod resolver;
+mod transform;
+mod value;
 
-pub use value::*;
-pub use transform::*;
 pub use config::*;
-pub use resolved::*;
 pub use lookup::*;
+pub use resolved::*;
 pub use resolver::*;
+pub use transform::*;
+pub use value::*;

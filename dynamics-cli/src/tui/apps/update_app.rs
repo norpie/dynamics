@@ -1,16 +1,16 @@
 //! Update TUI application for managing software updates
 
 use crate::tui::{
+    LayeredView, Resource,
     app::App,
     command::Command,
     element::{Element, FocusId},
     subscription::Subscription,
-    LayeredView, Resource,
 };
 use crate::{col, spacer};
-use ratatui::text::{Line, Span};
-use ratatui::style::Style;
 use ratatui::prelude::Stylize;
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -78,13 +78,13 @@ impl App for UpdateApp {
         let cmd = Command::perform(
             async {
                 let config = crate::global_config();
-                let options = crate::config::options::Options::new(config.pool.clone(), crate::options_registry());
+                let options = crate::config::options::Options::new(
+                    config.pool.clone(),
+                    crate::options_registry(),
+                );
 
                 // Load auto-check setting
-                let auto_check = options
-                    .get_bool("update.auto_check")
-                    .await
-                    .unwrap_or(false);
+                let auto_check = options.get_bool("update.auto_check").await.unwrap_or(false);
 
                 // Load auto-install setting
                 let auto_install = options
@@ -93,10 +93,11 @@ impl App for UpdateApp {
                     .unwrap_or(false);
 
                 // Load last check time
-                let last_check = crate::config::repository::update_metadata::get_last_check_time(&config.pool)
-                    .await
-                    .ok()
-                    .flatten();
+                let last_check =
+                    crate::config::repository::update_metadata::get_last_check_time(&config.pool)
+                        .await
+                        .ok()
+                        .flatten();
 
                 (auto_check, auto_install, last_check)
             },
@@ -104,7 +105,7 @@ impl App for UpdateApp {
                 auto_check,
                 auto_install,
                 last_check,
-            }
+            },
         );
 
         (state, cmd)
@@ -112,7 +113,11 @@ impl App for UpdateApp {
 
     fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         match msg {
-            Msg::InitialStateLoaded { auto_check, auto_install, last_check } => {
+            Msg::InitialStateLoaded {
+                auto_check,
+                auto_install,
+                last_check,
+            } => {
                 state.auto_check_enabled = auto_check;
                 state.auto_install_enabled = auto_install;
                 state.last_check_time = last_check;
@@ -123,10 +128,11 @@ impl App for UpdateApp {
                 state.update_info = Resource::Loading;
                 Command::perform(
                     async {
-                        crate::update::check_for_updates().await
+                        crate::update::check_for_updates()
+                            .await
                             .map_err(|e| e.to_string())
                     },
-                    Msg::UpdateInfoLoaded
+                    Msg::UpdateInfoLoaded,
                 )
             }
 
@@ -143,26 +149,28 @@ impl App for UpdateApp {
                                 async {
                                     let config = crate::global_config();
                                     let now = chrono::Utc::now();
-                                    crate::config::repository::update_metadata::set_last_check_time(&config.pool, now)
-                                        .await
-                                        .map_err(|e| e.to_string())
+                                    crate::config::repository::update_metadata::set_last_check_time(
+                                        &config.pool,
+                                        now,
+                                    )
+                                    .await
+                                    .map_err(|e| e.to_string())
                                 },
-                                |_result| Msg::TimerTick // Dummy message, we don't need to handle the result
-                            )
+                                |_result| Msg::TimerTick, // Dummy message, we don't need to handle the result
+                            ),
                         ];
 
                         // Auto-install if enabled and update is available
                         if state.auto_install_enabled && needs_update {
                             state.installing = true;
-                            commands.push(
-                                Command::perform(
-                                    async {
-                                        crate::update::install_update(false).await
-                                            .map_err(|e| e.to_string())
-                                    },
-                                    Msg::UpdateInstalled
-                                )
-                            );
+                            commands.push(Command::perform(
+                                async {
+                                    crate::update::install_update(false)
+                                        .await
+                                        .map_err(|e| e.to_string())
+                                },
+                                Msg::UpdateInstalled,
+                            ));
                         }
 
                         Command::batch(commands)
@@ -178,10 +186,11 @@ impl App for UpdateApp {
                 state.installing = true;
                 Command::perform(
                     async {
-                        crate::update::install_update(false).await
+                        crate::update::install_update(false)
+                            .await
                             .map_err(|e| e.to_string())
                     },
-                    Msg::UpdateInstalled
+                    Msg::UpdateInstalled,
                 )
             }
 
@@ -192,14 +201,16 @@ impl App for UpdateApp {
                         // Refresh update info to show we're up to date
                         Command::perform(
                             async {
-                                crate::update::check_for_updates().await
+                                crate::update::check_for_updates()
+                                    .await
                                     .map_err(|e| e.to_string())
                             },
-                            Msg::UpdateInfoLoaded
+                            Msg::UpdateInfoLoaded,
                         )
                     }
                     Err(e) => {
-                        state.update_info = Resource::Failure(format!("Installation failed: {}", e));
+                        state.update_info =
+                            Resource::Failure(format!("Installation failed: {}", e));
                         Command::None
                     }
                 }
@@ -214,10 +225,11 @@ impl App for UpdateApp {
                 state.update_info = Resource::Loading;
                 Command::perform(
                     async {
-                        crate::update::check_for_updates().await
+                        crate::update::check_for_updates()
+                            .await
                             .map_err(|e| e.to_string())
                     },
-                    Msg::UpdateInfoLoaded
+                    Msg::UpdateInfoLoaded,
                 )
             }
         }
@@ -228,31 +240,47 @@ impl App for UpdateApp {
         use crate::tui::LayoutConstraint::*;
 
         // Version info panel
-        let mut version_elements = vec![
-            Element::text(Line::from(vec![
-                Span::styled("Current Version: ", Style::default().fg(theme.text_secondary)),
-                Span::styled(&state.current_version, Style::default().fg(theme.accent_primary).bold()),
-            ])),
-        ];
+        let mut version_elements = vec![Element::text(Line::from(vec![
+            Span::styled(
+                "Current Version: ",
+                Style::default().fg(theme.text_secondary),
+            ),
+            Span::styled(
+                &state.current_version,
+                Style::default().fg(theme.accent_primary).bold(),
+            ),
+        ]))];
 
         // Show update status
         match &state.update_info {
             Resource::NotAsked => {
                 version_elements.push(Element::text(Line::from(vec![
-                    Span::styled("Latest Version:  ", Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        "Latest Version:  ",
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::styled("Not checked", Style::default().fg(theme.text_tertiary)),
                 ])));
             }
             Resource::Loading => {
                 version_elements.push(Element::text(Line::from(vec![
-                    Span::styled("Latest Version:  ", Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        "Latest Version:  ",
+                        Style::default().fg(theme.text_secondary),
+                    ),
                     Span::styled("Checking...", Style::default().fg(theme.accent_tertiary)),
                 ])));
             }
             Resource::Success(info) => {
                 version_elements.push(Element::text(Line::from(vec![
-                    Span::styled("Latest Version:  ", Style::default().fg(theme.text_secondary)),
-                    Span::styled(&info.latest, Style::default().fg(theme.accent_primary).bold()),
+                    Span::styled(
+                        "Latest Version:  ",
+                        Style::default().fg(theme.text_secondary),
+                    ),
+                    Span::styled(
+                        &info.latest,
+                        Style::default().fg(theme.accent_primary).bold(),
+                    ),
                 ])));
 
                 version_elements.push(spacer!());
@@ -260,7 +288,10 @@ impl App for UpdateApp {
                 if info.needs_update {
                     version_elements.push(Element::text(Line::from(vec![
                         Span::styled("Status: ", Style::default().fg(theme.text_secondary)),
-                        Span::styled("Update available!", Style::default().fg(theme.accent_success).bold()),
+                        Span::styled(
+                            "Update available!",
+                            Style::default().fg(theme.accent_success).bold(),
+                        ),
                     ])));
                 } else {
                     version_elements.push(Element::text(Line::from(vec![
@@ -283,7 +314,10 @@ impl App for UpdateApp {
             let local_time = last_check.with_timezone(&chrono::Local);
             version_elements.push(Element::text(Line::from(vec![
                 Span::styled("Last Check: ", Style::default().fg(theme.text_secondary)),
-                Span::styled(local_time.format("%Y-%m-%d %H:%M:%S").to_string(), Style::default().fg(theme.text_primary)),
+                Span::styled(
+                    local_time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                    Style::default().fg(theme.text_primary),
+                ),
             ])));
         }
 
@@ -300,16 +334,15 @@ impl App for UpdateApp {
 
         // Check for updates button
         if matches!(state.update_info, Resource::Loading) {
-            action_elements.push(
-                Element::text(Line::from(vec![
-                    Span::styled("⏳ Checking for updates...", Style::default().fg(theme.accent_tertiary)),
-                ]))
-            );
+            action_elements.push(Element::text(Line::from(vec![Span::styled(
+                "⏳ Checking for updates...",
+                Style::default().fg(theme.accent_tertiary),
+            )])));
         } else {
             action_elements.push(
                 Element::button(FocusId::new("check-btn"), "Check for Updates")
                     .on_press(Msg::CheckForUpdates)
-                    .build()
+                    .build(),
             );
         }
 
@@ -319,16 +352,15 @@ impl App for UpdateApp {
         if let Resource::Success(info) = &state.update_info {
             if info.needs_update {
                 if state.installing {
-                    action_elements.push(
-                        Element::text(Line::from(vec![
-                            Span::styled("⏳ Installing update...", Style::default().fg(theme.accent_tertiary)),
-                        ]))
-                    );
+                    action_elements.push(Element::text(Line::from(vec![Span::styled(
+                        "⏳ Installing update...",
+                        Style::default().fg(theme.accent_tertiary),
+                    )])));
                 } else {
                     action_elements.push(
                         Element::button(FocusId::new("install-btn"), "Install Update")
                             .on_press(Msg::InstallUpdate)
-                            .build()
+                            .build(),
                     );
                 }
             }
@@ -338,9 +370,7 @@ impl App for UpdateApp {
         for element in action_elements {
             actions_col = actions_col.add(element, Length(3));
         }
-        let actions_panel = Element::panel(actions_col.build())
-            .title("Actions")
-            .build();
+        let actions_panel = Element::panel(actions_col.build()).title("Actions").build();
 
         // Main layout
         let content = col![
@@ -348,9 +378,7 @@ impl App for UpdateApp {
             actions_panel => Fill(1),
         ];
 
-        let main_panel = Element::panel(content)
-            .title("Software Updates")
-            .build();
+        let main_panel = Element::panel(content).title("Software Updates").build();
 
         LayeredView::new(main_panel)
     }
@@ -362,7 +390,7 @@ impl App for UpdateApp {
         if state.auto_check_enabled {
             subs.push(Subscription::timer(
                 Duration::from_secs(3600), // 1 hour
-                Msg::TimerTick
+                Msg::TimerTick,
             ));
         }
 

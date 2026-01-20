@@ -13,10 +13,17 @@ use super::super::state::{Msg, State};
 /// Render the import file browser modal
 pub fn render_file_browser(state: &State, theme: &Theme) -> Element<Msg> {
     // Current directory display
-    let dir_path = state.import_file_browser.current_path().to_string_lossy().to_string();
+    let dir_path = state
+        .import_file_browser
+        .current_path()
+        .to_string_lossy()
+        .to_string();
     let dir_label = Element::styled_text(Line::from(vec![
         Span::styled("Directory: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(truncate_str(&dir_path, 60), Style::default().fg(theme.text_primary)),
+        Span::styled(
+            truncate_str(&dir_path, 60),
+            Style::default().fg(theme.text_primary),
+        ),
     ]))
     .build();
 
@@ -49,7 +56,10 @@ pub fn render_file_browser(state: &State, theme: &Theme) -> Element<Msg> {
     // Instructions
     let instructions = Element::styled_text(Line::from(vec![
         Span::styled("Enter", Style::default().fg(theme.accent_primary)),
-        Span::styled(" to select file or enter directory, ", Style::default().fg(theme.text_secondary)),
+        Span::styled(
+            " to select file or enter directory, ",
+            Style::default().fg(theme.text_secondary),
+        ),
         Span::styled("Backspace", Style::default().fg(theme.accent_primary)),
         Span::styled(" to go up", Style::default().fg(theme.text_secondary)),
     ]))
@@ -81,7 +91,12 @@ pub fn render_file_browser(state: &State, theme: &Theme) -> Element<Msg> {
 }
 
 /// Render the import confirmation modal
-pub fn render_confirmation(state: &State, path: &str, conflicts: &[String], theme: &Theme) -> Element<Msg> {
+pub fn render_confirmation(
+    state: &State,
+    path: &str,
+    conflicts: &[String],
+    theme: &Theme,
+) -> Element<Msg> {
     let pending = state.pending_import.as_ref();
     let edit_count = pending.map(|p| p.edit_count).unwrap_or(0);
     let conflict_count = conflicts.len();
@@ -89,13 +104,22 @@ pub fn render_confirmation(state: &State, path: &str, conflicts: &[String], them
     // Summary
     let summary = Element::styled_text(Line::from(vec![
         Span::styled("File: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(truncate_str(path, 55), Style::default().fg(theme.text_primary)),
+        Span::styled(
+            truncate_str(path, 55),
+            Style::default().fg(theme.text_primary),
+        ),
     ]))
     .build();
 
     let edit_info = Element::styled_text(Line::from(vec![
-        Span::styled(format!("{} ", edit_count), Style::default().fg(theme.accent_primary)),
-        Span::styled("records will be modified", Style::default().fg(theme.text_primary)),
+        Span::styled(
+            format!("{} ", edit_count),
+            Style::default().fg(theme.accent_primary),
+        ),
+        Span::styled(
+            "records will be modified",
+            Style::default().fg(theme.text_primary),
+        ),
     ]))
     .build();
 
@@ -103,24 +127,34 @@ pub fn render_confirmation(state: &State, path: &str, conflicts: &[String], them
     let conflict_section = if conflict_count > 0 {
         let warning = Element::styled_text(Line::from(vec![
             Span::styled("⚠ ", Style::default().fg(theme.accent_warning)),
-            Span::styled(format!("{} conflicts detected!", conflict_count), Style::default().fg(theme.accent_warning)),
+            Span::styled(
+                format!("{} conflicts detected!", conflict_count),
+                Style::default().fg(theme.accent_warning),
+            ),
         ]))
         .build();
 
         let explanation = Element::styled_text(Line::from(vec![
-            Span::styled("These records were edited locally and will be ", Style::default().fg(theme.text_secondary)),
+            Span::styled(
+                "These records were edited locally and will be ",
+                Style::default().fg(theme.text_secondary),
+            ),
             Span::styled("overwritten", Style::default().fg(theme.accent_error)),
             Span::styled(":", Style::default().fg(theme.text_secondary)),
         ]))
         .build();
 
         // List conflicting IDs (show first 5)
-        let conflict_list: Vec<Element<Msg>> = conflicts.iter()
+        let conflict_list: Vec<Element<Msg>> = conflicts
+            .iter()
             .take(5)
             .map(|id| {
                 Element::styled_text(Line::from(vec![
                     Span::styled("  • ", Style::default().fg(theme.text_tertiary)),
-                    Span::styled(truncate_str(id, 40), Style::default().fg(theme.text_secondary)),
+                    Span::styled(
+                        truncate_str(id, 40),
+                        Style::default().fg(theme.text_secondary),
+                    ),
                 ]))
                 .build()
             })
@@ -137,9 +171,10 @@ pub fn render_confirmation(state: &State, path: &str, conflicts: &[String], them
 
         if conflict_count > 5 {
             col = col.add(
-                Element::styled_text(Line::from(vec![
-                    Span::styled(format!("  ... and {} more", conflict_count - 5), Style::default().fg(theme.text_tertiary)),
-                ]))
+                Element::styled_text(Line::from(vec![Span::styled(
+                    format!("  ... and {} more", conflict_count - 5),
+                    Style::default().fg(theme.text_tertiary),
+                )]))
                 .build(),
                 LayoutConstraint::Length(1),
             );
@@ -149,7 +184,10 @@ pub fn render_confirmation(state: &State, path: &str, conflicts: &[String], them
     } else {
         Element::styled_text(Line::from(vec![
             Span::styled("✓ ", Style::default().fg(theme.accent_success)),
-            Span::styled("No conflicts with local edits", Style::default().fg(theme.accent_success)),
+            Span::styled(
+                "No conflicts with local edits",
+                Style::default().fg(theme.accent_success),
+            ),
         ]))
         .build()
     };
@@ -195,7 +233,12 @@ struct FileBrowserListItem {
 impl ListItem for FileBrowserListItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let (icon, color) = if self.is_dir {
             ("📁 ", self.theme.accent_secondary)
         } else {
@@ -210,8 +253,7 @@ impl ListItem for FileBrowserListItem {
 
         let display = format!("{}{}", icon, self.name);
 
-        Element::styled_text(Line::from(Span::styled(display, style)))
-            .build()
+        Element::styled_text(Line::from(Span::styled(display, style))).build()
     }
 }
 

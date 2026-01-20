@@ -1,5 +1,3 @@
-
-
 //! Convert TransformedDeadline records to Dynamics 365 API Operations
 //!
 //! This module handles the conversion of validated and transformed deadline records
@@ -9,12 +7,12 @@
 //! - DateTime timezone conversion (Brussels → UTC)
 //! - Proper @odata.bind formatting for lookups
 
+use super::diff::{AssociationDiff, diff_associations};
+use super::field_mappings::get_constant_fields;
+use super::models::{DeadlineMode, ExistingAssociations, TransformedDeadline};
 use crate::api::operations::Operation;
 use crate::api::pluralization::pluralize_entity_name;
-use super::models::{TransformedDeadline, DeadlineMode, ExistingAssociations};
-use super::field_mappings::get_constant_fields;
-use super::diff::{diff_associations, AssociationDiff};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 
 impl TransformedDeadline {
@@ -34,15 +32,31 @@ impl TransformedDeadline {
     /// Build the JSON payload for creating the main deadline entity
     fn build_create_payload(&self, entity_type: &str) -> Value {
         let mut payload = json!({});
-        let name_field = if entity_type == "cgk_deadline" { "cgk_deadlinename" } else { "nrq_deadlinename" };
-        let date_field = if entity_type == "cgk_deadline" { "cgk_date" } else { "nrq_deadlinedate" };
+        let name_field = if entity_type == "cgk_deadline" {
+            "cgk_deadlinename"
+        } else {
+            "nrq_deadlinename"
+        };
+        let date_field = if entity_type == "cgk_deadline" {
+            "cgk_date"
+        } else {
+            "nrq_deadlinedate"
+        };
 
         // Warn if required fields are missing
         if !self.direct_fields.contains_key(name_field) {
-            log::warn!("Create payload missing required field: {} (row {})", name_field, self.source_row);
+            log::warn!(
+                "Create payload missing required field: {} (row {})",
+                name_field,
+                self.source_row
+            );
         }
         if self.deadline_date.is_none() {
-            log::warn!("Create payload missing required field: {} (row {})", date_field, self.source_row);
+            log::warn!(
+                "Create payload missing required field: {} (row {})",
+                date_field,
+                self.source_row
+            );
         }
 
         // 0. Constant fields (entity-specific defaults)
@@ -114,7 +128,11 @@ impl TransformedDeadline {
 
         // 3. Deadline date/time (combined if both present)
         if let Some(date) = self.deadline_date {
-            let date_field = if entity_type == "cgk_deadline" { "cgk_date" } else { "nrq_deadlinedate" };
+            let date_field = if entity_type == "cgk_deadline" {
+                "cgk_date"
+            } else {
+                "nrq_deadlinedate"
+            };
 
             if let Some(time) = self.deadline_time {
                 // Combine date + time, convert Brussels → UTC
@@ -286,7 +304,10 @@ pub fn get_junction_entity_name(entity_type: &str, relationship_name: &str) -> S
             "cgk_deadline_cgk_length" => "cgk_cgk_deadline_cgk_length".to_string(),
             "cgk_deadline_cgk_flemishshare" => "cgk_cgk_flemishshare_cgk_deadline".to_string(), // REVERSED ORDER!
             _ => {
-                log::warn!("Unknown CGK relationship '{}', using fallback pattern", relationship_name);
+                log::warn!(
+                    "Unknown CGK relationship '{}', using fallback pattern",
+                    relationship_name
+                );
                 format!("cgk_{}", relationship_name)
             }
         }
@@ -296,12 +317,20 @@ pub fn get_junction_entity_name(entity_type: &str, relationship_name: &str) -> S
         // and is handled separately via custom_junction_records
         match relationship_name {
             "nrq_deadline_nrq_category" => "nrq_Deadline_nrq_Category_nrq_Category".to_string(),
-            "nrq_deadline_nrq_subcategory" => "nrq_Deadline_nrq_Subcategory_nrq_Subcategory".to_string(),
-            "nrq_deadline_nrq_flemishshare" => "nrq_Deadline_nrq_FlemishShare_nrq_Flemish".to_string(),
+            "nrq_deadline_nrq_subcategory" => {
+                "nrq_Deadline_nrq_Subcategory_nrq_Subcategory".to_string()
+            }
+            "nrq_deadline_nrq_flemishshare" => {
+                "nrq_Deadline_nrq_FlemishShare_nrq_Flemish".to_string()
+            }
             _ => {
-                log::warn!("Unknown NRQ relationship '{}', using fallback pattern", relationship_name);
+                log::warn!(
+                    "Unknown NRQ relationship '{}', using fallback pattern",
+                    relationship_name
+                );
                 // Extract entity name and capitalize
-                let entity = relationship_name.strip_prefix("nrq_deadline_nrq_")
+                let entity = relationship_name
+                    .strip_prefix("nrq_deadline_nrq_")
                     .unwrap_or(relationship_name);
                 let capitalized = capitalize_first_letter(entity);
                 format!("nrq_Deadline_nrq_{}_nrq_{}", capitalized, capitalized)
@@ -348,15 +377,13 @@ fn extract_entity_base_from_field(field: &str) -> String {
 /// Handles DST transitions automatically using chrono-tz.
 fn combine_brussels_datetime_to_iso(
     date: chrono::NaiveDate,
-    time: Option<chrono::NaiveTime>
+    time: Option<chrono::NaiveTime>,
 ) -> Result<String, String> {
-    use chrono::{TimeZone, Utc, LocalResult};
+    use chrono::{LocalResult, TimeZone, Utc};
     use chrono_tz::Europe::Brussels;
 
     // Use 12:00 as default if no time provided
-    let local_time = time.unwrap_or_else(||
-        chrono::NaiveTime::from_hms_opt(12, 0, 0).unwrap()
-    );
+    let local_time = time.unwrap_or_else(|| chrono::NaiveTime::from_hms_opt(12, 0, 0).unwrap());
 
     let brussels_naive = date.and_time(local_time);
 
@@ -373,7 +400,10 @@ fn combine_brussels_datetime_to_iso(
         }
         LocalResult::None => {
             // Spring forward gap
-            Err(format!("Invalid Brussels time (DST gap): {}", brussels_naive))
+            Err(format!(
+                "Invalid Brussels time (DST gap): {}",
+                brussels_naive
+            ))
         }
     }
 }
@@ -417,7 +447,11 @@ pub fn build_disassociate_operations(
     }
 
     // Category disassociations
-    let category_rel = if is_cgk { "cgk_deadline_cgk_category" } else { "nrq_deadline_nrq_category" };
+    let category_rel = if is_cgk {
+        "cgk_deadline_cgk_category"
+    } else {
+        "nrq_deadline_nrq_category"
+    };
     let nav_prop = get_junction_entity_name(entity_type, category_rel);
     for category_id in &association_diff.category_to_remove {
         operations.push(Operation::DisassociateRef {
@@ -442,7 +476,11 @@ pub fn build_disassociate_operations(
     }
 
     // Flemishshare disassociations
-    let flemishshare_rel = if is_cgk { "cgk_deadline_cgk_flemishshare" } else { "nrq_deadline_nrq_flemishshare" };
+    let flemishshare_rel = if is_cgk {
+        "cgk_deadline_cgk_flemishshare"
+    } else {
+        "nrq_deadline_nrq_flemishshare"
+    };
     let nav_prop = get_junction_entity_name(entity_type, flemishshare_rel);
     for flemishshare_id in &association_diff.flemishshare_to_remove {
         operations.push(Operation::DisassociateRef {

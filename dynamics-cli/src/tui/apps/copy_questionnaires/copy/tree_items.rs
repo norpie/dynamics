@@ -4,10 +4,10 @@ use serde_json::Value;
 /// Badge type for copy semantics
 #[derive(Clone, Debug, PartialEq)]
 pub enum CopyBadge {
-    Copy,        // Green - entity will be copied with new GUID
-    Reference,   // Blue - entity will be referenced (keep same GUID)
-    Junction,    // Yellow - junction record (will be copied)
-    Remap,       // Orange - contains IDs that must be remapped
+    Copy,      // Green - entity will be copied with new GUID
+    Reference, // Blue - entity will be referenced (keep same GUID)
+    Junction,  // Yellow - junction record (will be copied)
+    Remap,     // Orange - contains IDs that must be remapped
 }
 
 impl CopyBadge {
@@ -38,40 +38,40 @@ pub enum SnapshotTreeItem {
         name: String,
         id: String,
         badge: Option<CopyBadge>,
-        children: Vec<SnapshotTreeItem>
+        children: Vec<SnapshotTreeItem>,
     },
     /// Category grouping (e.g., "Pages (3)", "Conditions (5)")
     Category {
-        id: String,  // Unique ID for this category (e.g., "fields:questionnaire-abc")
-        name: String,  // Display name (e.g., "Fields", "Pages")
+        id: String,   // Unique ID for this category (e.g., "fields:questionnaire-abc")
+        name: String, // Display name (e.g., "Fields", "Pages")
         count: usize,
-        children: Vec<SnapshotTreeItem>
+        children: Vec<SnapshotTreeItem>,
     },
     /// Regular entity (page, group, question, condition, etc.)
     Entity {
         name: String,
         id: String,
         badge: Option<CopyBadge>,
-        children: Vec<SnapshotTreeItem>
+        children: Vec<SnapshotTreeItem>,
     },
     /// Junction record (page line, group line, template line)
     JunctionRecord {
         name: String,
         id: String,
-        description: Option<String>,  // e.g., "Order: 1, Create Questions: true"
-        children: Vec<SnapshotTreeItem>
+        description: Option<String>, // e.g., "Order: 1, Create Questions: true"
+        children: Vec<SnapshotTreeItem>,
     },
     /// Referenced entity (template, tag, classification - not copied)
     ReferencedEntity {
         name: String,
         id: String,
-        entity_type: String,  // e.g., "nrq_questiontemplate", "nrq_category"
+        entity_type: String, // e.g., "nrq_questiontemplate", "nrq_category"
     },
     /// Field attribute
     Attribute {
-        parent_id: String,  // Parent entity ID to ensure uniqueness
+        parent_id: String, // Parent entity ID to ensure uniqueness
         label: String,
-        value: String
+        value: String,
     },
     /// Parsed condition logic (with REMAP warning)
     ConditionLogicInfo {
@@ -79,7 +79,7 @@ pub enum SnapshotTreeItem {
         condition_operator: String,
         value: String,
         affected_count: usize,
-        details: Vec<String>,  // Formatted details for each affected question
+        details: Vec<String>, // Formatted details for each affected question
     },
 }
 
@@ -92,8 +92,14 @@ impl TreeItem for SnapshotTreeItem {
             Self::Category { id, .. } => id.clone(),
             Self::Entity { id, .. } => format!("entity:{}", id),
             Self::JunctionRecord { id, .. } => format!("junction:{}", id),
-            Self::ReferencedEntity { id, entity_type, .. } => format!("ref:{}:{}", entity_type, id),
-            Self::Attribute { parent_id, label, value } => {
+            Self::ReferencedEntity {
+                id, entity_type, ..
+            } => format!("ref:{}:{}", entity_type, id),
+            Self::Attribute {
+                parent_id,
+                label,
+                value,
+            } => {
                 // Generate stable ID based on parent, label, and value
                 use std::collections::hash_map::DefaultHasher;
                 use std::hash::{Hash, Hasher};
@@ -103,7 +109,10 @@ impl TreeItem for SnapshotTreeItem {
                 value.hash(&mut hasher);
                 format!("attr:{}", hasher.finish())
             }
-            Self::ConditionLogicInfo { trigger_question_id, .. } => {
+            Self::ConditionLogicInfo {
+                trigger_question_id,
+                ..
+            } => {
                 format!("condlogic:{}", trigger_question_id)
             }
         }
@@ -129,15 +138,21 @@ impl TreeItem for SnapshotTreeItem {
             Self::JunctionRecord { children, .. } => children.clone(),
             Self::ReferencedEntity { .. } => vec![],
             Self::Attribute { .. } => vec![],
-            Self::ConditionLogicInfo { trigger_question_id, details, .. } => {
+            Self::ConditionLogicInfo {
+                trigger_question_id,
+                details,
+                ..
+            } => {
                 // Convert details into Attribute nodes
-                details.iter().enumerate().map(|(i, detail)| {
-                    Self::Attribute {
+                details
+                    .iter()
+                    .enumerate()
+                    .map(|(i, detail)| Self::Attribute {
                         parent_id: format!("condlogic:{}", trigger_question_id),
                         label: format!("Target {}", i + 1),
                         value: detail.clone(),
-                    }
-                }).collect()
+                    })
+                    .collect()
             }
         }
     }
@@ -149,13 +164,22 @@ impl TreeItem for SnapshotTreeItem {
         _is_multi_selected: bool,
         is_expanded: bool,
     ) -> Element<Self::Msg> {
-        use ratatui::{style::Style, text::{Line, Span}, prelude::Stylize};
+        use ratatui::{
+            prelude::Stylize,
+            style::Style,
+            text::{Line, Span},
+        };
 
         let theme = &crate::global_runtime_config().theme;
         let indent = "  ".repeat(depth);
 
         match self {
-            Self::QuestionnaireRoot { name, badge, children, .. } => {
+            Self::QuestionnaireRoot {
+                name,
+                badge,
+                children,
+                ..
+            } => {
                 let mut spans = Vec::new();
 
                 // Indent
@@ -166,7 +190,10 @@ impl TreeItem for SnapshotTreeItem {
                 // Expand/collapse indicator
                 if !children.is_empty() {
                     let indicator = if is_expanded { "▼ " } else { "▶ " };
-                    spans.push(Span::styled(indicator, Style::default().fg(theme.border_primary)));
+                    spans.push(Span::styled(
+                        indicator,
+                        Style::default().fg(theme.border_primary),
+                    ));
                 }
 
                 // Questionnaire icon
@@ -195,7 +222,12 @@ impl TreeItem for SnapshotTreeItem {
 
                 builder.build()
             }
-            Self::Category { name, count, children, .. } => {
+            Self::Category {
+                name,
+                count,
+                children,
+                ..
+            } => {
                 let mut spans = Vec::new();
 
                 // Indent
@@ -206,7 +238,10 @@ impl TreeItem for SnapshotTreeItem {
                 // Expand/collapse indicator for categories with children
                 if !children.is_empty() {
                     let indicator = if is_expanded { "▼ " } else { "▶ " };
-                    spans.push(Span::styled(indicator, Style::default().fg(theme.border_primary)));
+                    spans.push(Span::styled(
+                        indicator,
+                        Style::default().fg(theme.border_primary),
+                    ));
                 }
 
                 // Category name with count
@@ -223,7 +258,12 @@ impl TreeItem for SnapshotTreeItem {
 
                 builder.build()
             }
-            Self::Entity { name, badge, children, .. } => {
+            Self::Entity {
+                name,
+                badge,
+                children,
+                ..
+            } => {
                 let mut spans = Vec::new();
 
                 // Indent
@@ -234,7 +274,10 @@ impl TreeItem for SnapshotTreeItem {
                 // Expand/collapse indicator if entity has children
                 if !children.is_empty() {
                     let indicator = if is_expanded { "▼ " } else { "▶ " };
-                    spans.push(Span::styled(indicator, Style::default().fg(theme.border_primary)));
+                    spans.push(Span::styled(
+                        indicator,
+                        Style::default().fg(theme.border_primary),
+                    ));
                 }
 
                 // Entity name
@@ -260,7 +303,12 @@ impl TreeItem for SnapshotTreeItem {
 
                 builder.build()
             }
-            Self::JunctionRecord { name, description, children, .. } => {
+            Self::JunctionRecord {
+                name,
+                description,
+                children,
+                ..
+            } => {
                 let mut spans = Vec::new();
 
                 // Indent
@@ -271,11 +319,17 @@ impl TreeItem for SnapshotTreeItem {
                 // Expand/collapse indicator if has children
                 if !children.is_empty() {
                     let indicator = if is_expanded { "▼ " } else { "▶ " };
-                    spans.push(Span::styled(indicator, Style::default().fg(theme.border_primary)));
+                    spans.push(Span::styled(
+                        indicator,
+                        Style::default().fg(theme.border_primary),
+                    ));
                 }
 
                 // Junction indicator
-                spans.push(Span::styled("⚡ ", Style::default().fg(theme.accent_warning)));
+                spans.push(Span::styled(
+                    "⚡ ",
+                    Style::default().fg(theme.accent_warning),
+                ));
 
                 // Junction name
                 spans.push(Span::styled(
@@ -306,7 +360,9 @@ impl TreeItem for SnapshotTreeItem {
 
                 builder.build()
             }
-            Self::ReferencedEntity { name, entity_type, .. } => {
+            Self::ReferencedEntity {
+                name, entity_type, ..
+            } => {
                 let mut spans = Vec::new();
 
                 // Indent
@@ -372,7 +428,13 @@ impl TreeItem for SnapshotTreeItem {
 
                 builder.build()
             }
-            Self::ConditionLogicInfo { trigger_question_id, condition_operator, value, affected_count, details } => {
+            Self::ConditionLogicInfo {
+                trigger_question_id,
+                condition_operator,
+                value,
+                affected_count,
+                details,
+            } => {
                 let mut spans = Vec::new();
 
                 // Indent
@@ -383,7 +445,10 @@ impl TreeItem for SnapshotTreeItem {
                 // Expand/collapse indicator if has details
                 if !details.is_empty() {
                     let indicator = if is_expanded { "▼ " } else { "▶ " };
-                    spans.push(Span::styled(indicator, Style::default().fg(theme.border_primary)));
+                    spans.push(Span::styled(
+                        indicator,
+                        Style::default().fg(theme.border_primary),
+                    ));
                 }
 
                 // Warning icon
@@ -391,7 +456,8 @@ impl TreeItem for SnapshotTreeItem {
 
                 // Summary
                 spans.push(Span::styled(
-                    format!("IF Question {} {} \"{}\" THEN affect {} question(s)",
+                    format!(
+                        "IF Question {} {} \"{}\" THEN affect {} question(s)",
                         &trigger_question_id[..8.min(trigger_question_id.len())],
                         condition_operator,
                         value,

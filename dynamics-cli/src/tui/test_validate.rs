@@ -1,6 +1,6 @@
 // Test file for Validate derive macro
+use crate::tui::widgets::{SelectField, TextInputField};
 use dynamics_lib_macros::Validate;
-use crate::tui::widgets::{TextInputField, SelectField};
 
 #[derive(Validate)]
 struct TestForm {
@@ -21,7 +21,10 @@ mod tests {
         source.set_value(Some("test".to_string()));
 
         let form = TestForm {
-            name: TextInputField { value: String::new(), state: Default::default() },
+            name: TextInputField {
+                value: String::new(),
+                state: Default::default(),
+            },
             source,
         };
 
@@ -33,7 +36,10 @@ mod tests {
     #[test]
     fn test_validate_missing_source() {
         let form = TestForm {
-            name: TextInputField { value: "test".to_string(), state: Default::default() },
+            name: TextInputField {
+                value: "test".to_string(),
+                state: Default::default(),
+            },
             source: SelectField::default(), // None by default
         };
 
@@ -48,7 +54,10 @@ mod tests {
         source.set_value(Some("source".to_string()));
 
         let form = TestForm {
-            name: TextInputField { value: "test".to_string(), state: Default::default() },
+            name: TextInputField {
+                value: "test".to_string(),
+                state: Default::default(),
+            },
             source,
         };
 

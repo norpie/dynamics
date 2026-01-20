@@ -1,7 +1,7 @@
 //! Database connection and schema management
 
 use anyhow::{Context, Result};
-use sqlx::{SqlitePool, Row};
+use sqlx::{Row, SqlitePool};
 use std::path::Path;
 
 /// Connect to SQLite database with proper configuration
@@ -63,7 +63,6 @@ pub async fn run_migrations(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
-
 /// Get database info for debugging
 pub async fn get_db_info(pool: &SqlitePool) -> Result<DatabaseInfo> {
     let version: String = sqlx::query_scalar("SELECT sqlite_version()")
@@ -71,15 +70,14 @@ pub async fn get_db_info(pool: &SqlitePool) -> Result<DatabaseInfo> {
         .await
         .context("Failed to get SQLite version")?;
 
-    let schema_version: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(version), 0) FROM schema_version"
-    )
-    .fetch_one(pool)
-    .await
-        .unwrap_or(0);
+    let schema_version: i64 =
+        sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM schema_version")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
 
     let table_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
     )
     .fetch_one(pool)
     .await

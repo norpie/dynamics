@@ -43,10 +43,7 @@ impl FormatTemplate {
 
     /// Get all base field names (for $select)
     pub fn base_fields(&self) -> Vec<&str> {
-        self.field_paths()
-            .iter()
-            .map(|p| p.base_field())
-            .collect()
+        self.field_paths().iter().map(|p| p.base_field()).collect()
     }
 
     /// Get expand specs for lookup traversals
@@ -148,9 +145,7 @@ pub enum FormatExpr {
         else_expr: Box<FormatExpr>,
     },
     /// Null coalesce: `a ?? b ?? c`
-    Coalesce {
-        exprs: Vec<FormatExpr>,
-    },
+    Coalesce { exprs: Vec<FormatExpr> },
     /// Formatted expression with format spec: `expr:,.2f`
     Formatted {
         expr: Box<FormatExpr>,

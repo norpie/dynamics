@@ -1,5 +1,5 @@
-use std::collections::{HashMap, HashSet};
 use chrono::NaiveDate;
+use std::collections::{HashMap, HashSet};
 
 /// Parameters passed from FileSelectApp to MappingApp
 #[derive(Clone, Debug)]
@@ -182,7 +182,6 @@ pub struct TransformedDeadline {
     // ========================================================================
     // Edit mode fields (for update support)
     // ========================================================================
-
     /// The mode/action for this record (Create/Update/Unchanged/Error)
     pub mode: DeadlineMode,
 

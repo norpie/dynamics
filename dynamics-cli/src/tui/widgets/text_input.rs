@@ -3,8 +3,8 @@ use crossterm::event::KeyCode;
 /// Manages text input cursor and scrolling state
 #[derive(Debug, Clone)]
 pub struct TextInputState {
-    cursor_pos: usize,      // Character index (0 = before first char)
-    scroll_offset: usize,   // For horizontal scrolling when text > width
+    cursor_pos: usize,    // Character index (0 = before first char)
+    scroll_offset: usize, // For horizontal scrolling when text > width
 }
 
 impl Default for TextInputState {

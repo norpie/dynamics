@@ -7,22 +7,22 @@ use std::collections::HashSet;
 use crate::api::operations::{Operation, Operations};
 use crate::tui::apps::queue::models::{QueueItem, QueueMetadata};
 
-use super::operation_builder::{
-    build_deactivate_operations, build_delete_operations, build_insert_operations,
-    build_junction_operations, build_post_insert_deactivate_operations, build_update_operations,
-    chunk_operations, DEFAULT_BATCH_SIZE,
-};
 use super::super::types::SyncPlan;
+use super::operation_builder::{
+    DEFAULT_BATCH_SIZE, build_deactivate_operations, build_delete_operations,
+    build_insert_operations, build_junction_operations, build_post_insert_deactivate_operations,
+    build_update_operations, chunk_operations,
+};
 
 /// Priority levels for sync operations (lower = higher priority)
 pub mod priority {
-    pub const DELETE: u8 = 16;      // Junction entities only
-    pub const DEACTIVATE: u8 = 32;  // Regular entities, target-only records
+    pub const DELETE: u8 = 16; // Junction entities only
+    pub const DEACTIVATE: u8 = 32; // Regular entities, target-only records
     pub const SCHEMA: u8 = 64;
-    pub const UPDATE: u8 = 80;      // Regular entities, records in both
-    pub const INSERT: u8 = 96;      // Regular entities, origin-only records
+    pub const UPDATE: u8 = 80; // Regular entities, records in both
+    pub const INSERT: u8 = 96; // Regular entities, origin-only records
     pub const POST_INSERT_DEACTIVATE: u8 = 112; // Deactivate newly created inactive records
-    pub const JUNCTION: u8 = 128;   // N:N associations
+    pub const JUNCTION: u8 = 128; // N:N associations
 }
 
 /// Result of building sync queue items
@@ -66,20 +66,51 @@ impl SyncQueueItems {
             schema_ids: self.schema_items.iter().map(|i| i.id.clone()).collect(),
             update_ids: self.update_items.iter().map(|i| i.id.clone()).collect(),
             insert_ids: self.insert_items.iter().map(|i| i.id.clone()).collect(),
-            post_insert_deactivate_ids: self.post_insert_deactivate_items.iter().map(|i| i.id.clone()).collect(),
+            post_insert_deactivate_ids: self
+                .post_insert_deactivate_items
+                .iter()
+                .map(|i| i.id.clone())
+                .collect(),
             junction_ids: self.junction_items.iter().map(|i| i.id.clone()).collect(),
         }
     }
 
     /// Total number of operations across all batches
     pub fn total_operations(&self) -> usize {
-        self.delete_items.iter().map(|i| i.operations.len()).sum::<usize>()
-            + self.deactivate_items.iter().map(|i| i.operations.len()).sum::<usize>()
-            + self.schema_items.iter().map(|i| i.operations.len()).sum::<usize>()
-            + self.update_items.iter().map(|i| i.operations.len()).sum::<usize>()
-            + self.insert_items.iter().map(|i| i.operations.len()).sum::<usize>()
-            + self.post_insert_deactivate_items.iter().map(|i| i.operations.len()).sum::<usize>()
-            + self.junction_items.iter().map(|i| i.operations.len()).sum::<usize>()
+        self.delete_items
+            .iter()
+            .map(|i| i.operations.len())
+            .sum::<usize>()
+            + self
+                .deactivate_items
+                .iter()
+                .map(|i| i.operations.len())
+                .sum::<usize>()
+            + self
+                .schema_items
+                .iter()
+                .map(|i| i.operations.len())
+                .sum::<usize>()
+            + self
+                .update_items
+                .iter()
+                .map(|i| i.operations.len())
+                .sum::<usize>()
+            + self
+                .insert_items
+                .iter()
+                .map(|i| i.operations.len())
+                .sum::<usize>()
+            + self
+                .post_insert_deactivate_items
+                .iter()
+                .map(|i| i.operations.len())
+                .sum::<usize>()
+            + self
+                .junction_items
+                .iter()
+                .map(|i| i.operations.len())
+                .sum::<usize>()
     }
 }
 
@@ -96,10 +127,7 @@ pub struct SyncQueueItemIds {
 }
 
 /// Build all queue items for executing a sync plan
-pub fn build_sync_queue_items(
-    plan: &SyncPlan,
-    target_env: &str,
-) -> SyncQueueItems {
+pub fn build_sync_queue_items(plan: &SyncPlan, target_env: &str) -> SyncQueueItems {
     // Build operations for each phase
     // Phase 1: Delete (junction entities only)
     let delete_ops = build_delete_operations(plan);
@@ -124,52 +152,33 @@ pub fn build_sync_queue_items(
     let schema_batches = chunk_operations(schema_ops, DEFAULT_BATCH_SIZE);
     let update_batches = chunk_operations(update_ops, DEFAULT_BATCH_SIZE);
     let insert_batches = chunk_operations(insert_ops, DEFAULT_BATCH_SIZE);
-    let post_insert_deactivate_batches = chunk_operations(post_insert_deactivate_ops, DEFAULT_BATCH_SIZE);
+    let post_insert_deactivate_batches =
+        chunk_operations(post_insert_deactivate_ops, DEFAULT_BATCH_SIZE);
     let junction_batches = chunk_operations(junction_ops, DEFAULT_BATCH_SIZE);
 
     // Build queue items
-    let delete_items = build_queue_items_for_phase(
-        delete_batches,
-        "delete",
-        priority::DELETE,
-        target_env,
-    );
+    let delete_items =
+        build_queue_items_for_phase(delete_batches, "delete", priority::DELETE, target_env);
     let deactivate_items = build_queue_items_for_phase(
         deactivate_batches,
         "deactivate",
         priority::DEACTIVATE,
         target_env,
     );
-    let schema_items = build_queue_items_for_phase(
-        schema_batches,
-        "schema",
-        priority::SCHEMA,
-        target_env,
-    );
-    let update_items = build_queue_items_for_phase(
-        update_batches,
-        "update",
-        priority::UPDATE,
-        target_env,
-    );
-    let insert_items = build_queue_items_for_phase(
-        insert_batches,
-        "create",
-        priority::INSERT,
-        target_env,
-    );
+    let schema_items =
+        build_queue_items_for_phase(schema_batches, "schema", priority::SCHEMA, target_env);
+    let update_items =
+        build_queue_items_for_phase(update_batches, "update", priority::UPDATE, target_env);
+    let insert_items =
+        build_queue_items_for_phase(insert_batches, "create", priority::INSERT, target_env);
     let post_insert_deactivate_items = build_queue_items_for_phase(
         post_insert_deactivate_batches,
         "deactivate-new",
         priority::POST_INSERT_DEACTIVATE,
         target_env,
     );
-    let junction_items = build_queue_items_for_phase(
-        junction_batches,
-        "junction",
-        priority::JUNCTION,
-        target_env,
-    );
+    let junction_items =
+        build_queue_items_for_phase(junction_batches, "junction", priority::JUNCTION, target_env);
 
     SyncQueueItems {
         delete_items,
@@ -196,12 +205,7 @@ fn build_queue_items_for_phase(
         .enumerate()
         .map(|(idx, ops)| {
             let entity_type = build_entity_type(phase_name, &ops);
-            let description = format!(
-                "{} (batch {}/{})",
-                phase_name,
-                idx + 1,
-                total_batches
-            );
+            let description = format!("{} (batch {}/{})", phase_name, idx + 1, total_batches);
 
             let metadata = QueueMetadata {
                 source: "Entity Sync".to_string(),
@@ -218,10 +222,7 @@ fn build_queue_items_for_phase(
 
 /// Build entity_type string from operations (e.g., "delete: contact, account")
 fn build_entity_type(phase_name: &str, operations: &[Operation]) -> String {
-    let unique_entities: HashSet<&str> = operations
-        .iter()
-        .map(|op| op.entity())
-        .collect();
+    let unique_entities: HashSet<&str> = operations.iter().map(|op| op.entity()).collect();
 
     let mut entities: Vec<&str> = unique_entities.into_iter().collect();
     entities.sort();
@@ -296,40 +297,34 @@ mod tests {
     #[test]
     fn test_sync_queue_items_total_operations() {
         let items = SyncQueueItems {
-            delete_items: vec![
-                QueueItem::new(
-                    Operations::from(vec![
-                        Operation::delete("contacts", "1"),
-                        Operation::delete("contacts", "2"),
-                    ]),
-                    QueueMetadata {
-                        source: "test".to_string(),
-                        entity_type: "delete".to_string(),
-                        description: "test".to_string(),
-                        row_number: None,
-                        environment_name: "test".to_string(),
-                    },
-                    priority::DELETE,
-                ),
-            ],
+            delete_items: vec![QueueItem::new(
+                Operations::from(vec![
+                    Operation::delete("contacts", "1"),
+                    Operation::delete("contacts", "2"),
+                ]),
+                QueueMetadata {
+                    source: "test".to_string(),
+                    entity_type: "delete".to_string(),
+                    description: "test".to_string(),
+                    row_number: None,
+                    environment_name: "test".to_string(),
+                },
+                priority::DELETE,
+            )],
             deactivate_items: vec![],
             schema_items: vec![],
             update_items: vec![],
-            insert_items: vec![
-                QueueItem::new(
-                    Operations::from(vec![
-                        Operation::create("contacts", json!({"name": "test"})),
-                    ]),
-                    QueueMetadata {
-                        source: "test".to_string(),
-                        entity_type: "insert".to_string(),
-                        description: "test".to_string(),
-                        row_number: None,
-                        environment_name: "test".to_string(),
-                    },
-                    priority::INSERT,
-                ),
-            ],
+            insert_items: vec![QueueItem::new(
+                Operations::from(vec![Operation::create("contacts", json!({"name": "test"}))]),
+                QueueMetadata {
+                    source: "test".to_string(),
+                    entity_type: "insert".to_string(),
+                    description: "test".to_string(),
+                    row_number: None,
+                    environment_name: "test".to_string(),
+                },
+                priority::INSERT,
+            )],
             post_insert_deactivate_items: vec![],
             junction_items: vec![],
         };

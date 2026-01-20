@@ -3,14 +3,14 @@
 //! This module defines all the messages (events/actions) that can occur
 //! in the sync wizard flow.
 
-use std::collections::HashSet;
-use crossterm::event::KeyCode;
 use crate::api::models::Environment as ApiEnvironment;
 use crate::tui::widgets::TextInputEvent;
+use crossterm::event::KeyCode;
+use std::collections::HashSet;
 
-use super::state::{EntityListItem, JunctionCandidate, AnalysisPhase, ExecutionPhase};
+use super::state::{AnalysisPhase, EntityListItem, ExecutionPhase, JunctionCandidate};
 use super::types::SyncPlan;
-use crate::tui::apps::queue::models::{QueueResult, QueueMetadata};
+use crate::tui::apps::queue::models::{QueueMetadata, QueueResult};
 
 /// All messages for the Entity Sync App
 #[derive(Clone)]

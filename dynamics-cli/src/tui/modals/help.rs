@@ -1,6 +1,6 @@
-use crate::tui::{Element, Theme, FocusId};
-use crate::tui::element::{LayoutConstraint, ColumnBuilder};
+use crate::tui::element::{ColumnBuilder, LayoutConstraint};
 use crate::tui::widgets::ScrollableState;
+use crate::tui::{Element, FocusId, Theme};
 use crossterm::event::KeyCode;
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
@@ -35,14 +35,16 @@ fn group_and_format_bindings(bindings: &[(KeyCode, String)]) -> Vec<(String, Str
     let mut grouped: HashMap<String, Vec<String>> = HashMap::new();
 
     for (key, desc) in bindings {
-        grouped.entry(desc.clone())
+        grouped
+            .entry(desc.clone())
             .or_default()
             .push(format_key(key));
     }
 
-    let mut result: Vec<(String, String)> = grouped.into_iter()
+    let mut result: Vec<(String, String)> = grouped
+        .into_iter()
         .map(|(desc, mut keys)| {
-            keys.sort();  // Consistent ordering
+            keys.sort(); // Consistent ordering
             let key_str = keys.join("/");
             (key_str, desc)
         })
@@ -95,7 +97,11 @@ impl<'a> HelpModal<'a> {
     }
 
     /// Set current app keybindings
-    pub fn current_app(mut self, title: impl Into<String>, bindings: Vec<(KeyCode, String)>) -> Self {
+    pub fn current_app(
+        mut self,
+        title: impl Into<String>,
+        bindings: Vec<(KeyCode, String)>,
+    ) -> Self {
         self.current_app_title = Some(title.into());
         self.current_app_bindings = bindings;
         self
@@ -130,22 +136,31 @@ impl<'a> HelpModal<'a> {
         // Build ALL help content items (no skipping - scrollable widget handles scrolling)
         let theme = &crate::global_runtime_config().theme;
         let mut help_items = vec![
-            Element::styled_text(Line::from(vec![
-                Span::styled("Keyboard Shortcuts", Style::default().fg(theme.accent_primary).bold())
-            ])).build(),
+            Element::styled_text(Line::from(vec![Span::styled(
+                "Keyboard Shortcuts",
+                Style::default().fg(theme.accent_primary).bold(),
+            )]))
+            .build(),
             Element::text(""),
         ];
 
         // Section 1: Global Keys (highest priority)
         if !self.global_bindings.is_empty() {
-            help_items.push(Element::styled_text(Line::from(vec![
-                Span::styled("▼ Global", Style::default().fg(theme.accent_muted).bold())
-            ])).build());
+            help_items.push(
+                Element::styled_text(Line::from(vec![Span::styled(
+                    "▼ Global",
+                    Style::default().fg(theme.accent_muted).bold(),
+                )]))
+                .build(),
+            );
 
             let formatted_global = group_and_format_bindings(&self.global_bindings);
             for (key_str, description) in &formatted_global {
                 let line = Line::from(vec![
-                    Span::styled(format!("  {:13}", key_str), Style::default().fg(theme.accent_tertiary)),
+                    Span::styled(
+                        format!("  {:13}", key_str),
+                        Style::default().fg(theme.accent_tertiary),
+                    ),
                     Span::raw("  "),
                     Span::styled(description.clone(), Style::default().fg(theme.text_primary)),
                 ]);
@@ -157,14 +172,21 @@ impl<'a> HelpModal<'a> {
 
         // Section 2: Current App Keys
         if let Some(title) = self.current_app_title {
-            help_items.push(Element::styled_text(Line::from(vec![
-                Span::styled(format!("▼ {}", title), Style::default().fg(theme.accent_secondary).bold())
-            ])).build());
+            help_items.push(
+                Element::styled_text(Line::from(vec![Span::styled(
+                    format!("▼ {}", title),
+                    Style::default().fg(theme.accent_secondary).bold(),
+                )]))
+                .build(),
+            );
 
             let formatted_current = group_and_format_bindings(&self.current_app_bindings);
             for (key_str, description) in &formatted_current {
                 let line = Line::from(vec![
-                    Span::styled(format!("  {:13}", key_str), Style::default().fg(theme.accent_success)),
+                    Span::styled(
+                        format!("  {:13}", key_str),
+                        Style::default().fg(theme.accent_success),
+                    ),
                     Span::raw("  "),
                     Span::styled(description.clone(), Style::default().fg(theme.text_primary)),
                 ]);
@@ -176,16 +198,26 @@ impl<'a> HelpModal<'a> {
 
         // Section 3: Other Apps
         for (app_title, app_bindings) in &self.other_apps {
-            help_items.push(Element::styled_text(Line::from(vec![
-                Span::styled(format!("▼ {}", app_title), Style::default().fg(theme.border_primary).bold())
-            ])).build());
+            help_items.push(
+                Element::styled_text(Line::from(vec![Span::styled(
+                    format!("▼ {}", app_title),
+                    Style::default().fg(theme.border_primary).bold(),
+                )]))
+                .build(),
+            );
 
             let formatted_other = group_and_format_bindings(app_bindings);
             for (key_str, description) in &formatted_other {
                 let line = Line::from(vec![
-                    Span::styled(format!("  {:13}", key_str), Style::default().fg(theme.border_tertiary)),
+                    Span::styled(
+                        format!("  {:13}", key_str),
+                        Style::default().fg(theme.border_tertiary),
+                    ),
                     Span::raw("  "),
-                    Span::styled(description.clone(), Style::default().fg(theme.text_tertiary)),
+                    Span::styled(
+                        description.clone(),
+                        Style::default().fg(theme.text_tertiary),
+                    ),
                 ]);
                 help_items.push(Element::styled_text(line).build());
             }
@@ -194,9 +226,13 @@ impl<'a> HelpModal<'a> {
         }
 
         help_items.push(Element::text(""));
-        help_items.push(Element::styled_text(Line::from(vec![
-            Span::styled("[ESC to close | ↑↓/PgUp/PgDn/Home/End to scroll]", Style::default().fg(theme.border_primary))
-        ])).build());
+        help_items.push(
+            Element::styled_text(Line::from(vec![Span::styled(
+                "[ESC to close | ↑↓/PgUp/PgDn/Home/End to scroll]",
+                Style::default().fg(theme.border_primary),
+            )]))
+            .build(),
+        );
 
         // Create scrollable column with all items (spacing=0 for dense packing)
         let mut column_builder = ColumnBuilder::new();
@@ -207,23 +243,16 @@ impl<'a> HelpModal<'a> {
 
         // Wrap in scrollable if we have scroll state
         let content = if let Some(scroll_state) = self.scroll_state {
-            Element::scrollable(
-                FocusId::new("help_scroll"),
-                help_column,
-                scroll_state,
-            ).build()
+            Element::scrollable(FocusId::new("help_scroll"), help_column, scroll_state).build()
         } else {
             help_column
         };
 
         // Wrap in container with padding
-        let padded_content = Element::container(content)
-            .padding(1)
-            .build();
+        let padded_content = Element::container(content).padding(1).build();
 
         // Wrap in panel
-        let mut panel = Element::panel(padded_content)
-            .title("Help");
+        let mut panel = Element::panel(padded_content).title("Help");
 
         if let Some(w) = self.width {
             panel = panel.width(w);

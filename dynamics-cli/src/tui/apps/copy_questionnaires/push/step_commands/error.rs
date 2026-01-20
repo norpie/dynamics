@@ -1,5 +1,4 @@
 /// Error handling and error construction
-
 use super::super::models::{CopyError, CopyPhase};
 use super::helpers::entity_set_to_friendly_name;
 use std::collections::HashMap;

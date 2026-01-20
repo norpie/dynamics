@@ -1,9 +1,9 @@
 //! Interactive menu system for authentication management
 
-use anyhow::Result;
-use dialoguer::Select;
 use crate::config::Config;
+use anyhow::Result;
 use colored::*;
+use dialoguer::Select;
 
 /// Clear the screen for a clean interactive experience
 fn clear_screen() {
@@ -31,10 +31,30 @@ enum MainMenuOption {
 impl std::fmt::Display for MainMenuOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MainMenuOption::Status => write!(f, "📊 {} - {}", "Status".bright_blue().bold(), "View current configuration".dimmed()),
-            MainMenuOption::Credentials => write!(f, "🔐 {} - {}", "Credentials".bright_yellow().bold(), "Manage credential sets".dimmed()),
-            MainMenuOption::Environments => write!(f, "🌍 {} - {}", "Environments".bright_green().bold(), "Manage environments".dimmed()),
-            MainMenuOption::Exit => write!(f, "🚪 {} - {}", "Exit".bright_red().bold(), "Leave authentication manager".dimmed()),
+            MainMenuOption::Status => write!(
+                f,
+                "📊 {} - {}",
+                "Status".bright_blue().bold(),
+                "View current configuration".dimmed()
+            ),
+            MainMenuOption::Credentials => write!(
+                f,
+                "🔐 {} - {}",
+                "Credentials".bright_yellow().bold(),
+                "Manage credential sets".dimmed()
+            ),
+            MainMenuOption::Environments => write!(
+                f,
+                "🌍 {} - {}",
+                "Environments".bright_green().bold(),
+                "Manage environments".dimmed()
+            ),
+            MainMenuOption::Exit => write!(
+                f,
+                "🚪 {} - {}",
+                "Exit".bright_red().bold(),
+                "Leave authentication manager".dimmed()
+            ),
         }
     }
 }
@@ -53,12 +73,42 @@ enum CredentialMenuOption {
 impl std::fmt::Display for CredentialMenuOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CredentialMenuOption::List => write!(f, "📋 {} - {}", "List".bright_blue().bold(), "View all credentials".dimmed()),
-            CredentialMenuOption::Add => write!(f, "➕ {} - {}", "Add".bright_green().bold(), "Create new credentials".dimmed()),
-            CredentialMenuOption::Test => write!(f, "🧪 {} - {}", "Test".bright_cyan().bold(), "Verify credential authentication".dimmed()),
-            CredentialMenuOption::Rename => write!(f, "✏️ {} - {}", "Rename".bright_yellow().bold(), "Change credential name".dimmed()),
-            CredentialMenuOption::Remove => write!(f, "🗑️ {} - {}", "Remove".bright_red().bold(), "Delete credentials".dimmed()),
-            CredentialMenuOption::Back => write!(f, "🔙 {} - {}", "Back".white().bold(), "Return to main menu".dimmed()),
+            CredentialMenuOption::List => write!(
+                f,
+                "📋 {} - {}",
+                "List".bright_blue().bold(),
+                "View all credentials".dimmed()
+            ),
+            CredentialMenuOption::Add => write!(
+                f,
+                "➕ {} - {}",
+                "Add".bright_green().bold(),
+                "Create new credentials".dimmed()
+            ),
+            CredentialMenuOption::Test => write!(
+                f,
+                "🧪 {} - {}",
+                "Test".bright_cyan().bold(),
+                "Verify credential authentication".dimmed()
+            ),
+            CredentialMenuOption::Rename => write!(
+                f,
+                "✏️ {} - {}",
+                "Rename".bright_yellow().bold(),
+                "Change credential name".dimmed()
+            ),
+            CredentialMenuOption::Remove => write!(
+                f,
+                "🗑️ {} - {}",
+                "Remove".bright_red().bold(),
+                "Delete credentials".dimmed()
+            ),
+            CredentialMenuOption::Back => write!(
+                f,
+                "🔙 {} - {}",
+                "Back".white().bold(),
+                "Return to main menu".dimmed()
+            ),
         }
     }
 }
@@ -78,13 +128,48 @@ enum EnvironmentMenuOption {
 impl std::fmt::Display for EnvironmentMenuOption {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EnvironmentMenuOption::List => write!(f, "📋 {} - {}", "List".bright_blue().bold(), "View all environments".dimmed()),
-            EnvironmentMenuOption::Add => write!(f, "➕ {} - {}", "Add".bright_green().bold(), "Create new environment".dimmed()),
-            EnvironmentMenuOption::SetCredentials => write!(f, "🔗 {} - {}", "Set Credentials".bright_yellow().bold(), "Change environment authentication".dimmed()),
-            EnvironmentMenuOption::Select => write!(f, "🎯 {} - {}", "Select".bright_cyan().bold(), "Choose current environment".dimmed()),
-            EnvironmentMenuOption::Rename => write!(f, "✏️ {} - {}", "Rename".bright_yellow().bold(), "Change environment name".dimmed()),
-            EnvironmentMenuOption::Remove => write!(f, "🗑️ {} - {}", "Remove".bright_red().bold(), "Delete environment".dimmed()),
-            EnvironmentMenuOption::Back => write!(f, "🔙 {} - {}", "Back".white().bold(), "Return to main menu".dimmed()),
+            EnvironmentMenuOption::List => write!(
+                f,
+                "📋 {} - {}",
+                "List".bright_blue().bold(),
+                "View all environments".dimmed()
+            ),
+            EnvironmentMenuOption::Add => write!(
+                f,
+                "➕ {} - {}",
+                "Add".bright_green().bold(),
+                "Create new environment".dimmed()
+            ),
+            EnvironmentMenuOption::SetCredentials => write!(
+                f,
+                "🔗 {} - {}",
+                "Set Credentials".bright_yellow().bold(),
+                "Change environment authentication".dimmed()
+            ),
+            EnvironmentMenuOption::Select => write!(
+                f,
+                "🎯 {} - {}",
+                "Select".bright_cyan().bold(),
+                "Choose current environment".dimmed()
+            ),
+            EnvironmentMenuOption::Rename => write!(
+                f,
+                "✏️ {} - {}",
+                "Rename".bright_yellow().bold(),
+                "Change environment name".dimmed()
+            ),
+            EnvironmentMenuOption::Remove => write!(
+                f,
+                "🗑️ {} - {}",
+                "Remove".bright_red().bold(),
+                "Delete environment".dimmed()
+            ),
+            EnvironmentMenuOption::Back => write!(
+                f,
+                "🔙 {} - {}",
+                "Back".white().bold(),
+                "Return to main menu".dimmed()
+            ),
         }
     }
 }
@@ -96,16 +181,35 @@ pub async fn run_main_menu() -> Result<()> {
     loop {
         clear_screen();
         println!();
-        println!("  {}", "🔧 Dynamics CLI - Authentication Manager".bright_blue().bold());
-        println!("  {}", "═══════════════════════════════════════".bright_blue());
+        println!(
+            "  {}",
+            "🔧 Dynamics CLI - Authentication Manager"
+                .bright_blue()
+                .bold()
+        );
+        println!(
+            "  {}",
+            "═══════════════════════════════════════".bright_blue()
+        );
         println!();
 
         // Show current status at the top
-        let current_env = client_manager.get_current_environment_name().await.unwrap_or_default();
+        let current_env = client_manager
+            .get_current_environment_name()
+            .await
+            .unwrap_or_default();
         if let Some(env_name) = &current_env {
-            println!("  {} {}", "Current Environment:".dimmed(), env_name.bright_white().bold());
+            println!(
+                "  {} {}",
+                "Current Environment:".dimmed(),
+                env_name.bright_white().bold()
+            );
         } else {
-            println!("  {} {}", "Current Environment:".dimmed(), "None selected".bright_red());
+            println!(
+                "  {} {}",
+                "Current Environment:".dimmed(),
+                "None selected".bright_red()
+            );
         }
         println!();
 
@@ -178,33 +282,43 @@ async fn run_credentials_menu() -> Result<()> {
 
         match options[selection] {
             CredentialMenuOption::List => {
-                super::credentials::list_credentials_interactive().await.unwrap_or_else(|e| {
-                    println!("Error: {}", e);
-                });
+                super::credentials::list_credentials_interactive()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Error: {}", e);
+                    });
                 pause_for_user();
             }
             CredentialMenuOption::Add => {
-                super::credentials::add_credentials_interactive().await.unwrap_or_else(|e| {
-                    println!("Error: {}", e);
-                });
+                super::credentials::add_credentials_interactive()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Error: {}", e);
+                    });
                 pause_for_user();
             }
             CredentialMenuOption::Test => {
-                super::credentials::test_credentials_interactive().await.unwrap_or_else(|e| {
-                    println!("Error: {}", e);
-                });
+                super::credentials::test_credentials_interactive()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Error: {}", e);
+                    });
                 pause_for_user();
             }
             CredentialMenuOption::Rename => {
-                super::credentials::rename_credentials_interactive().await.unwrap_or_else(|e| {
-                    println!("Error: {}", e);
-                });
+                super::credentials::rename_credentials_interactive()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Error: {}", e);
+                    });
                 pause_for_user();
             }
             CredentialMenuOption::Remove => {
-                super::credentials::remove_credentials_interactive().await.unwrap_or_else(|e| {
-                    println!("Error: {}", e);
-                });
+                super::credentials::remove_credentials_interactive()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Error: {}", e);
+                    });
                 pause_for_user();
             }
             CredentialMenuOption::Back => {
@@ -244,39 +358,51 @@ async fn run_environments_menu() -> Result<()> {
 
         match options[selection] {
             EnvironmentMenuOption::List => {
-                super::environments::list_environments_interactive().await.unwrap_or_else(|e| {
-                    println!("Error: {}", e);
-                });
+                super::environments::list_environments_interactive()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Error: {}", e);
+                    });
                 pause_for_user();
             }
             EnvironmentMenuOption::Add => {
-                super::environments::add_environment_interactive().await.unwrap_or_else(|e| {
-                    println!("Error: {}", e);
-                });
+                super::environments::add_environment_interactive()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Error: {}", e);
+                    });
                 pause_for_user();
             }
             EnvironmentMenuOption::SetCredentials => {
-                super::environments::set_credentials_interactive().await.unwrap_or_else(|e| {
-                    println!("Error: {}", e);
-                });
+                super::environments::set_credentials_interactive()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Error: {}", e);
+                    });
                 pause_for_user();
             }
             EnvironmentMenuOption::Select => {
-                super::environments::select_environment_interactive().await.unwrap_or_else(|e| {
-                    println!("Error: {}", e);
-                });
+                super::environments::select_environment_interactive()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Error: {}", e);
+                    });
                 pause_for_user();
             }
             EnvironmentMenuOption::Rename => {
-                super::environments::rename_environment_interactive().await.unwrap_or_else(|e| {
-                    println!("Error: {}", e);
-                });
+                super::environments::rename_environment_interactive()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Error: {}", e);
+                    });
                 pause_for_user();
             }
             EnvironmentMenuOption::Remove => {
-                super::environments::remove_environment_interactive().await.unwrap_or_else(|e| {
-                    println!("Error: {}", e);
-                });
+                super::environments::remove_environment_interactive()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Error: {}", e);
+                    });
                 pause_for_user();
             }
             EnvironmentMenuOption::Back => {

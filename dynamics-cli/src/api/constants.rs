@@ -78,7 +78,14 @@ pub fn entity_record_endpoint(base_url: &str, entity: &str, id: &str) -> String 
 
 /// Build upsert endpoint URL with alternate key
 pub fn upsert_endpoint(base_url: &str, entity: &str, key_field: &str, key_value: &str) -> String {
-    format!("{}{}/{}({}='{}')", base_url, api_path(), entity, key_field, key_value)
+    format!(
+        "{}{}/{}({}='{}')",
+        base_url,
+        api_path(),
+        entity,
+        key_field,
+        key_value
+    )
 }
 
 /// Build batch endpoint URL

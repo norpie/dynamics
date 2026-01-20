@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use crossterm::event::KeyCode;
 
-use crate::transfer::lua::ValidationResult;
 use crate::transfer::TransferConfig;
+use crate::transfer::lua::ValidationResult;
 use crate::tui::resource::Resource;
 use crate::tui::widgets::FileBrowserState;
 
@@ -91,7 +91,7 @@ impl StatusMessage {
 pub enum Msg {
     // Config loading
     ConfigLoaded(Result<TransferConfig, String>),
-    
+
     // File browser
     OpenFileBrowser,
     CloseFileBrowser,
@@ -99,18 +99,18 @@ pub enum Msg {
     FileSelected(PathBuf),
     DirectoryEntered(PathBuf),
     SetViewportHeight(usize),
-    
+
     // Script operations
     ScriptLoaded(Result<String, String>),
     ScriptSaved(Result<(), String>),
-    
+
     // Validation
     Validate,
     ValidationComplete(Result<ValidationResult, String>),
-    
+
     // Preview
     StartPreview,
-    
+
     // Navigation
     GoBack,
 }

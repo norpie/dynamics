@@ -1,8 +1,8 @@
 //! Manual mappings modal for viewing and deleting field mappings
 
-use crate::tui::{Element, Theme, FocusId};
-use crate::tui::element::{LayoutConstraint, RowBuilder, ColumnBuilder};
-use crate::tui::widgets::{ListState, ListItem};
+use crate::tui::element::{ColumnBuilder, LayoutConstraint, RowBuilder};
+use crate::tui::widgets::{ListItem, ListState};
+use crate::tui::{Element, FocusId, Theme};
 use crate::{button_row, col, spacer, use_constraints};
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
@@ -18,13 +18,19 @@ pub struct ManualMappingItem<Msg> {
 impl<Msg: Clone> ListItem for ManualMappingItem<Msg> {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
         let display = format!("{} → {}", self.source_field, self.target_field);
 
-        let mut builder = Element::styled_text(Line::from(vec![
-            Span::styled(display, Style::default().fg(theme.text_primary))
-        ]));
+        let mut builder = Element::styled_text(Line::from(vec![Span::styled(
+            display,
+            Style::default().fg(theme.text_primary),
+        )]));
 
         if is_selected {
             builder = builder.background(Style::default().bg(theme.bg_surface));
@@ -125,9 +131,11 @@ impl<Msg: Clone> ManualMappingsModal<Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         // Build list
-        let list_handler = self.on_list_navigate
+        let list_handler = self
+            .on_list_navigate
             .expect("ManualMappingsModal requires on_list_navigate");
-        let select_handler = self.on_list_select
+        let select_handler = self
+            .on_list_select
             .expect("ManualMappingsModal requires on_list_select");
         let mappings_list = Element::list(
             FocusId::new("manual-mappings-list"),
@@ -145,8 +153,20 @@ impl<Msg: Clone> ManualMappingsModal<Msg> {
 
         // Buttons
         let buttons = button_row![
-            ("manual-delete", "Delete (d)", self.on_delete.clone().expect("ManualMappingsModal requires on_delete")),
-            ("manual-close", "Close (Esc)", self.on_close.clone().expect("ManualMappingsModal requires on_close")),
+            (
+                "manual-delete",
+                "Delete (d)",
+                self.on_delete
+                    .clone()
+                    .expect("ManualMappingsModal requires on_delete")
+            ),
+            (
+                "manual-close",
+                "Close (Esc)",
+                self.on_close
+                    .clone()
+                    .expect("ManualMappingsModal requires on_close")
+            ),
         ];
 
         // Layout with explicit constraints
@@ -163,14 +183,10 @@ impl<Msg: Clone> ManualMappingsModal<Msg> {
         ];
 
         // Wrap in outer panel with title, width, and height
-        Element::panel(
-            Element::container(modal_body)
-                .padding(2)
-                .build()
-        )
-        .width(self.width.unwrap_or(70))
-        .height(self.height.unwrap_or(25))
-        .build()
+        Element::panel(Element::container(modal_body).padding(2).build())
+            .width(self.width.unwrap_or(70))
+            .height(self.height.unwrap_or(25))
+            .build()
     }
 }
 

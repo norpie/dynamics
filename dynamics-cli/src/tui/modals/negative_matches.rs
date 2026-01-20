@@ -1,8 +1,8 @@
 //! Negative matches modal for managing fields blocked from prefix matching
 
-use crate::tui::{Element, Theme, FocusId};
-use crate::tui::element::{LayoutConstraint, RowBuilder, ColumnBuilder};
-use crate::tui::widgets::{ListState, ListItem};
+use crate::tui::element::{ColumnBuilder, LayoutConstraint, RowBuilder};
+use crate::tui::widgets::{ListItem, ListState};
+use crate::tui::{Element, FocusId, Theme};
 use crate::{button_row, col, spacer, use_constraints};
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
@@ -17,13 +17,19 @@ pub struct NegativeMatchItem<Msg> {
 impl<Msg: Clone> ListItem for NegativeMatchItem<Msg> {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         let display_text = format!("⛔ {}", self.source_field);
-        let mut builder = Element::styled_text(Line::from(vec![
-            Span::styled(display_text, Style::default().fg(theme.text_primary))
-        ]));
+        let mut builder = Element::styled_text(Line::from(vec![Span::styled(
+            display_text,
+            Style::default().fg(theme.text_primary),
+        )]));
 
         if is_selected {
             builder = builder.background(Style::default().bg(theme.bg_surface));
@@ -124,9 +130,11 @@ impl<Msg: Clone> NegativeMatchesModal<Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         // Build list
-        let list_handler = self.on_list_navigate
+        let list_handler = self
+            .on_list_navigate
             .expect("NegativeMatchesModal requires on_list_navigate");
-        let select_handler = self.on_list_select
+        let select_handler = self
+            .on_list_select
             .expect("NegativeMatchesModal requires on_list_select");
         let matches_list = Element::list(
             FocusId::new("negative-matches-list"),
@@ -144,19 +152,36 @@ impl<Msg: Clone> NegativeMatchesModal<Msg> {
 
         // Buttons
         let buttons = button_row![
-            ("negative-delete", "Delete", self.on_delete.clone().expect("NegativeMatchesModal requires on_delete")),
-            ("negative-close", "Close", self.on_close.clone().expect("NegativeMatchesModal requires on_close")),
+            (
+                "negative-delete",
+                "Delete",
+                self.on_delete
+                    .clone()
+                    .expect("NegativeMatchesModal requires on_delete")
+            ),
+            (
+                "negative-close",
+                "Close",
+                self.on_close
+                    .clone()
+                    .expect("NegativeMatchesModal requires on_close")
+            ),
         ];
 
         // Help text
-        let help_text = Element::styled_text(
-            Line::from(vec![
-                Span::styled("These fields are blocked from automatic prefix matching. ", Style::default().fg(theme.text_secondary)),
-                Span::styled("Press ", Style::default().fg(theme.text_secondary)),
-                Span::styled("d", Style::default().fg(theme.accent_tertiary).bold()),
-                Span::styled(" on a prefix-matched field to add it.", Style::default().fg(theme.text_secondary)),
-            ])
-        ).build();
+        let help_text = Element::styled_text(Line::from(vec![
+            Span::styled(
+                "These fields are blocked from automatic prefix matching. ",
+                Style::default().fg(theme.text_secondary),
+            ),
+            Span::styled("Press ", Style::default().fg(theme.text_secondary)),
+            Span::styled("d", Style::default().fg(theme.accent_tertiary).bold()),
+            Span::styled(
+                " on a prefix-matched field to add it.",
+                Style::default().fg(theme.text_secondary),
+            ),
+        ]))
+        .build();
 
         // Layout with explicit constraints
         let modal_body = col![
@@ -174,14 +199,10 @@ impl<Msg: Clone> NegativeMatchesModal<Msg> {
         ];
 
         // Wrap in outer panel with title, width, and height
-        Element::panel(
-            Element::container(modal_body)
-                .padding(2)
-                .build()
-        )
-        .width(self.width.unwrap_or(70))
-        .height(self.height.unwrap_or(25))
-        .build()
+        Element::panel(Element::container(modal_body).padding(2).build())
+            .width(self.width.unwrap_or(70))
+            .height(self.height.unwrap_or(25))
+            .build()
     }
 }
 

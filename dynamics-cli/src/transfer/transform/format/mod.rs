@@ -9,13 +9,11 @@
 //! - Format specifiers: `${price:,.2f}`
 
 mod ast;
-mod parser;
 mod eval;
+mod parser;
 
 pub use ast::{
-    FormatTemplate, FormatPart, FormatExpr,
-    MathOp, CompareOp, FormatSpec, FormatType,
-    NullHandling,
+    CompareOp, FormatExpr, FormatPart, FormatSpec, FormatTemplate, FormatType, MathOp, NullHandling,
 };
-pub use parser::{parse_template, ParseError};
 pub use eval::evaluate;
+pub use parser::{ParseError, parse_template};

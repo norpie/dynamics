@@ -56,7 +56,7 @@ impl<T, E> Resource<T, E> {
     /// Get the data if successful, otherwise return default
     pub fn unwrap_or(&self, default: T) -> T
     where
-        T: Clone
+        T: Clone,
     {
         match self {
             Resource::Success(data) => data.clone(),

@@ -1,5 +1,5 @@
-use crossterm::event::KeyCode;
 use crate::tui::widgets::TextInputState;
+use crossterm::event::KeyCode;
 
 /// Manages state for multi-select input widgets
 /// Combines text input for filtering with a list of selected items and dropdown suggestions
@@ -85,7 +85,10 @@ impl MultiSelectState {
 
     /// Get filtered options (top 100 by score)
     pub fn filtered_options(&self) -> Vec<String> {
-        self.filtered_options.iter().map(|(opt, _)| opt.clone()).collect()
+        self.filtered_options
+            .iter()
+            .map(|(opt, _)| opt.clone())
+            .collect()
     }
 
     /// Clear search input
@@ -122,7 +125,9 @@ impl MultiSelectState {
             .iter()
             .filter(|opt| !self.selected_items.contains(opt))
             .filter_map(|opt| {
-                matcher.fuzzy_match(opt, input).map(|score| (opt.clone(), score))
+                matcher
+                    .fuzzy_match(opt, input)
+                    .map(|score| (opt.clone(), score))
             })
             .collect();
 
@@ -148,7 +153,9 @@ impl MultiSelectState {
                 true
             }
             KeyCode::Down => {
-                if !self.filtered_options.is_empty() && self.highlight_index < self.filtered_options.len() - 1 {
+                if !self.filtered_options.is_empty()
+                    && self.highlight_index < self.filtered_options.len() - 1
+                {
                     self.highlight_index += 1;
                 }
                 true

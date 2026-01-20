@@ -20,10 +20,7 @@ pub fn write_resolved_excel(entity: &ResolvedEntity, path: &str) -> Result<()> {
     worksheet.set_name(&entity.entity_name)?;
 
     // Build column list: special columns + field columns
-    let mut columns: Vec<&str> = vec![
-        special_cols::ACTION,
-        special_cols::SOURCE_ID,
-    ];
+    let mut columns: Vec<&str> = vec![special_cols::ACTION, special_cols::SOURCE_ID];
 
     // Add field columns
     for field_name in &entity.field_names {
@@ -63,7 +60,9 @@ pub fn write_resolved_excel(entity: &ResolvedEntity, path: &str) -> Result<()> {
         }
     }
 
-    workbook.save(path).with_context(|| format!("Failed to save Excel file: {}", path))?;
+    workbook
+        .save(path)
+        .with_context(|| format!("Failed to save Excel file: {}", path))?;
 
     Ok(())
 }
@@ -84,14 +83,30 @@ fn format_action(action: &RecordAction) -> &'static str {
 fn write_value(ws: &mut Worksheet, row: u32, col: u16, value: &Value) -> Result<()> {
     match value {
         Value::Null => { /* Leave cell empty */ }
-        Value::String(s) => { ws.write_string(row, col, s)?; }
-        Value::Int(i) => { ws.write_number(row, col, *i as f64)?; }
-        Value::Float(f) => { ws.write_number(row, col, *f)?; }
-        Value::Bool(b) => { ws.write_string(row, col, &b.to_string())?; }
-        Value::DateTime(dt) => { ws.write_string(row, col, &dt.to_rfc3339())?; }
-        Value::Guid(g) => { ws.write_string(row, col, &g.to_string())?; }
-        Value::OptionSet(i) => { ws.write_number(row, col, *i as f64)?; }
-        Value::Dynamic(d) => { ws.write_string(row, col, &d.to_string())?; }
+        Value::String(s) => {
+            ws.write_string(row, col, s)?;
+        }
+        Value::Int(i) => {
+            ws.write_number(row, col, *i as f64)?;
+        }
+        Value::Float(f) => {
+            ws.write_number(row, col, *f)?;
+        }
+        Value::Bool(b) => {
+            ws.write_string(row, col, &b.to_string())?;
+        }
+        Value::DateTime(dt) => {
+            ws.write_string(row, col, &dt.to_rfc3339())?;
+        }
+        Value::Guid(g) => {
+            ws.write_string(row, col, &g.to_string())?;
+        }
+        Value::OptionSet(i) => {
+            ws.write_number(row, col, *i as f64)?;
+        }
+        Value::Dynamic(d) => {
+            ws.write_string(row, col, &d.to_string())?;
+        }
     }
     Ok(())
 }

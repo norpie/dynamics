@@ -1,10 +1,13 @@
-use ratatui::{Frame, style::Style, widgets::Paragraph, layout::Rect};
-use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::{Element, Theme};
-use crate::tui::element::FocusId;
 use crate::tui::command::DispatchTarget;
+use crate::tui::element::FocusId;
+use crate::tui::renderer::{
+    DropdownCallback, DropdownInfo, DropdownRegistry, FocusRegistry, FocusableInfo,
+    InteractionRegistry,
+};
 use crate::tui::widgets::SelectEvent;
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, DropdownRegistry, DropdownInfo, DropdownCallback, FocusableInfo};
+use crate::tui::{Element, Theme};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{Frame, layout::Rect, style::Style, widgets::Paragraph};
 
 /// Create on_key handler for select elements (dropdown navigation) - old pattern
 pub fn select_on_key<Msg: Clone + Send + 'static>(
@@ -153,11 +156,10 @@ pub fn render_select<Msg: Clone + Send + 'static>(
 
     // Render borderless: selected value + arrow (like TextInput)
     let arrow = if is_open { " ▲" } else { " ▼" };
-    let display_text = format!(" {}{}", selected_text, arrow);  // Add left padding
+    let display_text = format!(" {}{}", selected_text, arrow); // Add left padding
 
     // Render text without border
-    let text_widget = Paragraph::new(display_text)
-        .style(Style::default().fg(theme.text_primary));
+    let text_widget = Paragraph::new(display_text).style(Style::default().fg(theme.text_primary));
     frame.render_widget(text_widget, area);
 
     // Register click handler for toggle

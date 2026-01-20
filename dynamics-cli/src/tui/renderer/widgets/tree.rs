@@ -1,10 +1,15 @@
-use ratatui::{Frame, style::Style, widgets::{Block, Borders}, layout::{Rect, Constraint, Direction, Layout}};
-use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::{Element, Theme, LayoutConstraint};
-use crate::tui::element::FocusId;
 use crate::tui::command::DispatchTarget;
+use crate::tui::element::FocusId;
+use crate::tui::renderer::{DropdownRegistry, FocusRegistry, FocusableInfo, InteractionRegistry};
 use crate::tui::widgets::TreeEvent;
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, DropdownRegistry, FocusableInfo};
+use crate::tui::{Element, LayoutConstraint, Theme};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{
+    Frame,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::Style,
+    widgets::{Block, Borders},
+};
 
 /// Create on_key handler for trees (navigation and toggle) - old pattern
 pub fn tree_on_key<Msg: Clone + Send + 'static>(
@@ -14,8 +19,12 @@ pub fn tree_on_key<Msg: Clone + Send + 'static>(
 ) -> Box<dyn Fn(KeyEvent) -> DispatchTarget<Msg> + Send> {
     Box::new(move |key_event| match key_event.code {
         // Navigation keys - handled by on_navigate callback
-        KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown
-        | KeyCode::Home | KeyCode::End => {
+        KeyCode::Up
+        | KeyCode::Down
+        | KeyCode::PageUp
+        | KeyCode::PageDown
+        | KeyCode::Home
+        | KeyCode::End => {
             if let Some(f) = on_navigate {
                 DispatchTarget::AppMsg(f(key_event.code))
             } else {
@@ -51,14 +60,16 @@ pub fn tree_on_key_event<Msg: Clone + Send + 'static>(
 ) -> Box<dyn Fn(KeyEvent) -> DispatchTarget<Msg> + Send> {
     Box::new(move |key_event| match key_event.code {
         // Navigation keys
-        KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown
-        | KeyCode::Home | KeyCode::End | KeyCode::Left | KeyCode::Right => {
-            DispatchTarget::AppMsg(on_event(TreeEvent::Navigate(key_event.code)))
-        }
+        KeyCode::Up
+        | KeyCode::Down
+        | KeyCode::PageUp
+        | KeyCode::PageDown
+        | KeyCode::Home
+        | KeyCode::End
+        | KeyCode::Left
+        | KeyCode::Right => DispatchTarget::AppMsg(on_event(TreeEvent::Navigate(key_event.code))),
         // Enter toggles expansion
-        KeyCode::Enter => {
-            DispatchTarget::AppMsg(on_event(TreeEvent::Toggle))
-        }
+        KeyCode::Enter => DispatchTarget::AppMsg(on_event(TreeEvent::Toggle)),
         _ => {
             // Unhandled key - pass through to global subscriptions
             DispatchTarget::PassThrough
@@ -69,7 +80,7 @@ pub fn tree_on_key_event<Msg: Clone + Send + 'static>(
 /// Render Tree element
 pub fn render_tree<Msg: Clone + Send + 'static>(
     frame: &mut Frame,
-    
+
     registry: &mut InteractionRegistry<Msg>,
     focus_registry: &mut FocusRegistry<Msg>,
     dropdown_registry: &mut DropdownRegistry<Msg>,
@@ -88,7 +99,16 @@ pub fn render_tree<Msg: Clone + Send + 'static>(
     on_render: &Option<fn(usize) -> Msg>,
     area: Rect,
     inside_panel: bool,
-    render_fn: impl Fn(&mut Frame, &mut InteractionRegistry<Msg>, &mut FocusRegistry<Msg>, &mut DropdownRegistry<Msg>, Option<&FocusId>, &Element<Msg>, Rect, bool),
+    render_fn: impl Fn(
+        &mut Frame,
+        &mut InteractionRegistry<Msg>,
+        &mut FocusRegistry<Msg>,
+        &mut DropdownRegistry<Msg>,
+        Option<&FocusId>,
+        &Element<Msg>,
+        Rect,
+        bool,
+    ),
 ) {
     let theme = &crate::global_runtime_config().theme;
     // Call on_render with actual viewport height from renderer
@@ -144,7 +164,16 @@ pub fn render_tree<Msg: Clone + Send + 'static>(
 
         // Render each visible item
         for ((_, child), chunk) in visible_items.iter().zip(chunks.iter()) {
-            render_fn(frame, registry, focus_registry, dropdown_registry, focused_id, child, *chunk, inside_panel);
+            render_fn(
+                frame,
+                registry,
+                focus_registry,
+                dropdown_registry,
+                focused_id,
+                child,
+                *chunk,
+                inside_panel,
+            );
         }
 
         // Register click handlers for nodes
@@ -169,7 +198,8 @@ pub fn render_tree<Msg: Clone + Send + 'static>(
         };
 
         let scrollbar_position = if items.len() > visible_height {
-            (scroll_offset as f32 / (items.len() - visible_height) as f32 * (area.height - 1) as f32) as u16
+            (scroll_offset as f32 / (items.len() - visible_height) as f32
+                * (area.height - 1) as f32) as u16
         } else {
             0
         };

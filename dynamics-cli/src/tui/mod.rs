@@ -1,17 +1,17 @@
+pub mod app;
+pub mod apps;
+pub mod color;
 pub mod command;
 pub mod element;
-pub mod subscription;
-pub mod app;
-pub mod renderer;
-pub mod runtime;
-pub mod multi_runtime;
-pub mod apps;
-pub mod state;
-pub mod widgets;
-pub mod resource;
-pub mod modals;
-pub mod color;
 pub mod lifecycle;
+pub mod modals;
+pub mod multi_runtime;
+pub mod renderer;
+pub mod resource;
+pub mod runtime;
+pub mod state;
+pub mod subscription;
+pub mod widgets;
 
 #[macro_use]
 pub mod macros;
@@ -22,14 +22,14 @@ mod test_validate;
 #[cfg(test)]
 mod test_resource_handlers;
 
-pub use command::{Command, AppId};
-pub use element::{Element, LayoutConstraint, Layer, Alignment, FocusId};
-pub use subscription::{Subscription, KeyBinding};
 pub use app::{App, AppState};
-pub use renderer::{Renderer, InteractionRegistry, RenderLayer, LayeredView};
-pub use runtime::{Runtime, AppRuntime};
+pub use command::{AppId, Command};
+pub use element::{Alignment, Element, FocusId, Layer, LayoutConstraint};
+pub use lifecycle::{AppLifecycle, KillReason, QuitPolicy, SuspendPolicy};
 pub use multi_runtime::MultiAppRuntime;
-pub use state::{Theme, ThemeVariant, FocusMode, RuntimeConfig, ModalState};
-pub use widgets::{ListItem, ListState, TextInputState};
+pub use renderer::{InteractionRegistry, LayeredView, RenderLayer, Renderer};
 pub use resource::Resource;
-pub use lifecycle::{AppLifecycle, QuitPolicy, SuspendPolicy, KillReason};
+pub use runtime::{AppRuntime, Runtime};
+pub use state::{FocusMode, ModalState, RuntimeConfig, Theme, ThemeVariant};
+pub use subscription::{KeyBinding, Subscription};
+pub use widgets::{ListItem, ListState, TextInputState};

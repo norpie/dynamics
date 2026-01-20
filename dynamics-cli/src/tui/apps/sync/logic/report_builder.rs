@@ -58,7 +58,10 @@ pub fn build_pre_execution_report(plan: &SyncPlan) -> SyncReport {
                 target_type,
             } = &field.status
             {
-                format!("Type mismatch: {} (origin) vs {} (target)", origin_type, target_type)
+                format!(
+                    "Type mismatch: {} (origin) vs {} (target)",
+                    origin_type, target_type
+                )
             } else {
                 "Type mismatch".to_string()
             };

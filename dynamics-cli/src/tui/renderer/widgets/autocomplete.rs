@@ -1,10 +1,19 @@
-use ratatui::{Frame, style::{Style, Stylize}, widgets::Paragraph, layout::Rect, text::{Line, Span}};
-use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::{Element, Theme};
-use crate::tui::element::FocusId;
 use crate::tui::command::DispatchTarget;
+use crate::tui::element::FocusId;
+use crate::tui::renderer::{
+    DropdownCallback, DropdownInfo, DropdownRegistry, FocusRegistry, FocusableInfo,
+    InteractionRegistry,
+};
 use crate::tui::widgets::AutocompleteEvent;
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, DropdownRegistry, DropdownInfo, DropdownCallback, FocusableInfo};
+use crate::tui::{Element, Theme};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Style, Stylize},
+    text::{Line, Span},
+    widgets::Paragraph,
+};
 
 /// Create on_key handler for autocomplete elements (old pattern)
 pub fn autocomplete_on_key<Msg: Clone + Send + 'static>(
@@ -20,7 +29,9 @@ pub fn autocomplete_on_key<Msg: Clone + Send + 'static>(
                     if let Some(f) = on_navigate {
                         DispatchTarget::AppMsg(f(key_event.code))
                     } else {
-                        DispatchTarget::WidgetEvent(Box::new(AutocompleteEvent::Navigate(key_event.code)))
+                        DispatchTarget::WidgetEvent(Box::new(AutocompleteEvent::Navigate(
+                            key_event.code,
+                        )))
                     }
                 }
                 _ => {
@@ -28,7 +39,9 @@ pub fn autocomplete_on_key<Msg: Clone + Send + 'static>(
                     if let Some(f) = on_input {
                         DispatchTarget::AppMsg(f(key_event.code))
                     } else {
-                        DispatchTarget::WidgetEvent(Box::new(AutocompleteEvent::Input(key_event.code)))
+                        DispatchTarget::WidgetEvent(Box::new(AutocompleteEvent::Input(
+                            key_event.code,
+                        )))
                     }
                 }
             }
@@ -40,7 +53,9 @@ pub fn autocomplete_on_key<Msg: Clone + Send + 'static>(
                     if let Some(f) = on_input {
                         DispatchTarget::AppMsg(f(key_event.code))
                     } else {
-                        DispatchTarget::WidgetEvent(Box::new(AutocompleteEvent::Input(key_event.code)))
+                        DispatchTarget::WidgetEvent(Box::new(AutocompleteEvent::Input(
+                            key_event.code,
+                        )))
                     }
                 }
             }
@@ -146,7 +161,8 @@ pub fn render_autocomplete<Msg: Clone + Send + 'static>(
     // Get visible portion of text with corrected scroll
     let start_idx = corrected_scroll;
     let end_idx = (start_idx + visible_width).min(char_count);
-    let visible_text: String = chars.get(start_idx..end_idx)
+    let visible_text: String = chars
+        .get(start_idx..end_idx)
         .map(|c| c.iter().collect())
         .unwrap_or_default();
 
@@ -172,7 +188,7 @@ pub fn render_autocomplete<Msg: Clone + Send + 'static>(
         let cursor_char = if cursor_in_visible < chars.len() {
             chars[cursor_in_visible].to_string()
         } else {
-            " ".to_string()  // Cursor at end - use space
+            " ".to_string() // Cursor at end - use space
         };
         let after: String = if cursor_in_visible < chars.len() {
             chars[cursor_in_visible + 1..].iter().collect()
@@ -184,9 +200,9 @@ pub fn render_autocomplete<Msg: Clone + Send + 'static>(
         let text_style = Style::default().fg(theme.text_primary);
         let cursor_style = Style::default()
             .fg(theme.text_primary)
-            .bg(theme.border_primary);  // Block cursor with inverted colors
+            .bg(theme.border_primary); // Block cursor with inverted colors
 
-        let mut spans = vec![Span::raw(" ")];  // Left padding
+        let mut spans = vec![Span::raw(" ")]; // Left padding
         if !before.is_empty() {
             spans.push(Span::styled(before, text_style));
         }
@@ -215,7 +231,7 @@ pub fn render_autocomplete<Msg: Clone + Send + 'static>(
         dropdown_registry.register(DropdownInfo {
             select_area: area,
             options: filtered_options.to_vec(),
-            selected: None,  // No checkmark for autocomplete
+            selected: None, // No checkmark for autocomplete
             highlight,
             on_select: callback,
         });

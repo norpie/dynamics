@@ -1,5 +1,5 @@
-use crate::tui::{Element, Theme, FocusId, AppId, AppLifecycle};
-use crate::tui::element::{LayoutConstraint, RowBuilder, ColumnBuilder};
+use crate::tui::element::{ColumnBuilder, LayoutConstraint, RowBuilder};
+use crate::tui::{AppId, AppLifecycle, Element, FocusId, Theme};
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
 
@@ -50,10 +50,18 @@ impl<Msg: Clone> AppOverviewModal<Msg> {
     /// Convert AppLifecycle to a display string with color
     fn lifecycle_to_styled_span(lifecycle: AppLifecycle, theme: &Theme) -> Span<'static> {
         match lifecycle {
-            AppLifecycle::NotCreated => Span::styled("Not Created", Style::default().fg(theme.border_tertiary)),
-            AppLifecycle::Running => Span::styled("Running", Style::default().fg(theme.accent_success).bold()),
-            AppLifecycle::Background => Span::styled("Background", Style::default().fg(theme.accent_tertiary)),
-            AppLifecycle::QuittingRequested => Span::styled("Quitting", Style::default().fg(theme.accent_warning)),
+            AppLifecycle::NotCreated => {
+                Span::styled("Not Created", Style::default().fg(theme.border_tertiary))
+            }
+            AppLifecycle::Running => {
+                Span::styled("Running", Style::default().fg(theme.accent_success).bold())
+            }
+            AppLifecycle::Background => {
+                Span::styled("Background", Style::default().fg(theme.accent_tertiary))
+            }
+            AppLifecycle::QuittingRequested => {
+                Span::styled("Quitting", Style::default().fg(theme.accent_warning))
+            }
             AppLifecycle::Dead => Span::styled("Dead", Style::default().fg(theme.accent_error)),
         }
     }
@@ -90,9 +98,11 @@ impl<Msg: Clone> AppOverviewModal<Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         // Title line
-        let title_element = Element::styled_text(Line::from(vec![
-            Span::styled("Runtime Apps Overview", Style::default().fg(theme.accent_primary).bold())
-        ])).build();
+        let title_element = Element::styled_text(Line::from(vec![Span::styled(
+            "Runtime Apps Overview",
+            Style::default().fg(theme.accent_primary).bold(),
+        )]))
+        .build();
 
         // Sort apps by lifecycle state (Running, Background, QuittingRequested, Dead, NotCreated)
         let mut apps = self.apps;
@@ -122,7 +132,10 @@ impl<Msg: Clone> AppOverviewModal<Msg> {
             let lifecycle_span = Self::lifecycle_to_styled_span(lifecycle, theme);
 
             let line = Line::from(vec![
-                Span::styled(format!("  {:30}", app_name), Style::default().fg(theme.text_primary)),
+                Span::styled(
+                    format!("  {:30}", app_name),
+                    Style::default().fg(theme.text_primary),
+                ),
                 Span::raw("  "),
                 lifecycle_span,
             ]);
@@ -131,17 +144,16 @@ impl<Msg: Clone> AppOverviewModal<Msg> {
         }
 
         // Extract close message to ensure proper typing
-        let close_msg = self.on_close.clone()
+        let close_msg = self
+            .on_close
+            .clone()
             .expect("AppOverviewModal requires on_close callback");
 
         // Close button
-        let close_button = Element::button(
-            FocusId::new("app-overview-close"),
-            "[ Close ]",
-        )
-        .on_press(close_msg)
-        .style(Style::default().fg(theme.accent_tertiary))
-        .build();
+        let close_button = Element::button(FocusId::new("app-overview-close"), "[ Close ]")
+            .on_press(close_msg)
+            .style(Style::default().fg(theme.accent_tertiary))
+            .build();
 
         // Build the modal content
         let mut content = ColumnBuilder::new();

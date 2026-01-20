@@ -3,13 +3,13 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 use crate::api::FieldMetadata;
-use crate::tui::widgets::{ListItem, ListState, TextInputField};
-use crate::tui::widgets::events::{ListEvent, TextInputEvent};
 use crate::transfer::ResolverFallback;
 use crate::tui::element::{ColumnBuilder, FocusId, RowBuilder};
 use crate::tui::modals::ConfirmationModal;
 use crate::tui::resource::Resource;
 use crate::tui::widgets::events::TreeEvent;
+use crate::tui::widgets::events::{ListEvent, TextInputEvent};
+use crate::tui::widgets::{ListItem, ListState, TextInputField};
 use crate::tui::{Alignment, Element, LayeredView, LayoutConstraint, Subscription, Theme};
 
 use super::state::{DeleteTarget, Msg, QuickFieldMatch, State, TransformType};
@@ -20,7 +20,13 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
     let (is_loading, is_error, error_msg, source_env, target_env) = match &state.config {
         Resource::NotAsked | Resource::Loading => (true, false, None, String::new(), String::new()),
         Resource::Failure(err) => (false, true, Some(err.clone()), String::new(), String::new()),
-        Resource::Success(config) => (false, false, None, config.source_env.clone(), config.target_env.clone()),
+        Resource::Success(config) => (
+            false,
+            false,
+            None,
+            config.source_env.clone(),
+            config.target_env.clone(),
+        ),
     };
 
     let content = if is_loading {
@@ -86,21 +92,33 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
             || matches!(&state.target_fields, Resource::Loading);
         // Get resolvers from the currently selected entity (if editing a field)
         let resolvers: Vec<_> = match (&state.config, state.editing_field) {
-            (Resource::Success(config), Some((entity_idx, _))) => {
-                config.entity_mappings.get(entity_idx)
-                    .map(|em| em.resolvers.iter().map(|r| {
-                        let match_field = r.match_fields.first().map(|mf| mf.target_field.as_str()).unwrap_or("");
-                        (r.name.as_str(), r.source_entity.as_str(), match_field)
-                    }).collect())
-                    .unwrap_or_default()
-            }
+            (Resource::Success(config), Some((entity_idx, _))) => config
+                .entity_mappings
+                .get(entity_idx)
+                .map(|em| {
+                    em.resolvers
+                        .iter()
+                        .map(|r| {
+                            let match_field = r
+                                .match_fields
+                                .first()
+                                .map(|mf| mf.target_field.as_str())
+                                .unwrap_or("");
+                            (r.name.as_str(), r.source_entity.as_str(), match_field)
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             _ => vec![],
         };
 
         view = view.with_app_modal(
             render_field_modal(
                 &mut state.field_form,
-                state.editing_field.map(|(_, f)| f != usize::MAX).unwrap_or(false),
+                state
+                    .editing_field
+                    .map(|(_, f)| f != usize::MAX)
+                    .unwrap_or(false),
                 source_fields,
                 target_fields,
                 fields_loading,
@@ -160,7 +178,9 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
     // Delete confirmation
     if state.show_delete_confirm {
         let message = match &state.delete_target {
-            Some(DeleteTarget::Entity(_)) => "Delete this entity mapping and all its field mappings?",
+            Some(DeleteTarget::Entity(_)) => {
+                "Delete this entity mapping and all its field mappings?"
+            }
             Some(DeleteTarget::Field(_, _)) => "Delete this field mapping?",
             Some(DeleteTarget::Resolver(_, _)) => "Delete this resolver?",
             None => "Delete?",
@@ -180,26 +200,34 @@ pub fn render(state: &mut State, theme: &Theme) -> LayeredView<Msg> {
     view
 }
 
-fn render_editor(state: &mut State, source_env: &str, target_env: &str, theme: &Theme) -> Element<Msg> {
+fn render_editor(
+    state: &mut State,
+    source_env: &str,
+    target_env: &str,
+    theme: &Theme,
+) -> Element<Msg> {
     let items = match &state.config {
         Resource::Success(config) => build_tree(config, &state.entity_target_fields_cache),
         _ => vec![],
     };
 
     let tree = if items.is_empty() {
-        Element::styled_text(Line::from(vec![
-            Span::styled(
-                "No entity mappings. Press 'a' to add one.",
-                Style::default().fg(theme.text_secondary),
-            ),
-        ]))
+        Element::styled_text(Line::from(vec![Span::styled(
+            "No entity mappings. Press 'a' to add one.",
+            Style::default().fg(theme.text_secondary),
+        )]))
         .build()
     } else {
-        Element::tree(FocusId::new("mapping-tree"), &items, &mut state.tree_state, theme)
-            .on_event(Msg::TreeEvent)
-            .on_select(Msg::TreeSelect)
-            .on_render(Msg::TreeViewportHeight)
-            .build()
+        Element::tree(
+            FocusId::new("mapping-tree"),
+            &items,
+            &mut state.tree_state,
+            theme,
+        )
+        .on_event(Msg::TreeEvent)
+        .on_select(Msg::TreeSelect)
+        .on_render(Msg::TreeViewportHeight)
+        .build()
     };
 
     let tree_panel = Element::panel(tree).title("Entity Mappings").build();
@@ -207,9 +235,15 @@ fn render_editor(state: &mut State, source_env: &str, target_env: &str, theme: &
     // Header info
     let header = Element::styled_text(Line::from(vec![
         Span::styled("Source: ", Style::default().fg(theme.text_tertiary)),
-        Span::styled(source_env.to_string(), Style::default().fg(theme.accent_primary)),
+        Span::styled(
+            source_env.to_string(),
+            Style::default().fg(theme.accent_primary),
+        ),
         Span::styled(" → Target: ", Style::default().fg(theme.text_tertiary)),
-        Span::styled(target_env.to_string(), Style::default().fg(theme.accent_secondary)),
+        Span::styled(
+            target_env.to_string(),
+            Style::default().fg(theme.accent_secondary),
+        ),
     ]))
     .build();
 
@@ -247,7 +281,11 @@ fn render_entity_modal(
     scroll_state: &crate::tui::widgets::ScrollableState,
     _theme: &Theme,
 ) -> Element<Msg> {
-    let title = if is_edit { "Edit Entity Mapping" } else { "Add Entity Mapping" };
+    let title = if is_edit {
+        "Edit Entity Mapping"
+    } else {
+        "Add Entity Mapping"
+    };
 
     // Source entity autocomplete
     let source_input = Element::autocomplete(
@@ -282,25 +320,43 @@ fn render_entity_modal(
     .placeholder("1")
     .on_event(Msg::EntityFormPriority)
     .build();
-    let priority_panel = Element::panel(priority_input).title("Priority (lower = first)").build();
+    let priority_panel = Element::panel(priority_input)
+        .title("Priority (lower = first)")
+        .build();
 
     // Operation filter toggles
-    let creates_label = if form.allow_creates { "[x] Creates" } else { "[ ] Creates" };
+    let creates_label = if form.allow_creates {
+        "[x] Creates"
+    } else {
+        "[ ] Creates"
+    };
     let creates_btn = Element::button(FocusId::new("entity-creates"), creates_label)
         .on_press(Msg::EntityFormToggleCreates)
         .build();
 
-    let updates_label = if form.allow_updates { "[x] Updates" } else { "[ ] Updates" };
+    let updates_label = if form.allow_updates {
+        "[x] Updates"
+    } else {
+        "[ ] Updates"
+    };
     let updates_btn = Element::button(FocusId::new("entity-updates"), updates_label)
         .on_press(Msg::EntityFormToggleUpdates)
         .build();
 
-    let deletes_label = if form.allow_deletes { "[x] Deletes" } else { "[ ] Deletes" };
+    let deletes_label = if form.allow_deletes {
+        "[x] Deletes"
+    } else {
+        "[ ] Deletes"
+    };
     let deletes_btn = Element::button(FocusId::new("entity-deletes"), deletes_label)
         .on_press(Msg::EntityFormToggleDeletes)
         .build();
 
-    let deactivates_label = if form.allow_deactivates { "[x] Deactivates" } else { "[ ] Deactivates" };
+    let deactivates_label = if form.allow_deactivates {
+        "[x] Deactivates"
+    } else {
+        "[ ] Deactivates"
+    };
     let deactivates_btn = Element::button(FocusId::new("entity-deactivates"), deactivates_label)
         .on_press(Msg::EntityFormToggleDeactivates)
         .build();
@@ -317,29 +373,42 @@ fn render_entity_modal(
     let op_filter_panel = Element::panel(op_filter_row).title("Operations").build();
 
     // Source filter section
-    let filter_toggle_label = if form.filter_enabled { "[x] Source Filter" } else { "[ ] Source Filter" };
-    let filter_toggle_btn = Element::button(FocusId::new("entity-filter-toggle"), filter_toggle_label)
-        .on_press(Msg::EntityFormToggleFilter)
-        .build();
+    let filter_toggle_label = if form.filter_enabled {
+        "[x] Source Filter"
+    } else {
+        "[ ] Source Filter"
+    };
+    let filter_toggle_btn =
+        Element::button(FocusId::new("entity-filter-toggle"), filter_toggle_label)
+            .on_press(Msg::EntityFormToggleFilter)
+            .build();
 
     let filter_panel = if form.filter_enabled {
         // Field autocomplete
-        let field_options: Vec<String> = source_fields.iter().map(|f| f.logical_name.clone()).collect();
+        let field_options: Vec<String> = source_fields
+            .iter()
+            .map(|f| f.logical_name.clone())
+            .collect();
         let field_input = Element::autocomplete(
             FocusId::new("entity-filter-field"),
             field_options,
             form.filter_field.value.clone(),
             &mut form.filter_field.state,
         )
-        .placeholder(if source_fields.is_empty() { "Select source entity first..." } else { "Select field..." })
+        .placeholder(if source_fields.is_empty() {
+            "Select source entity first..."
+        } else {
+            "Select field..."
+        })
         .on_event(Msg::EntityFormFilterField)
         .build();
 
         // Condition type button
         let condition_label = format!("{} (click to change)", form.filter_condition_type.label());
-        let condition_btn = Element::button(FocusId::new("entity-filter-condition"), condition_label)
-            .on_press(Msg::EntityFormToggleFilterCondition)
-            .build();
+        let condition_btn =
+            Element::button(FocusId::new("entity-filter-condition"), condition_label)
+                .on_press(Msg::EntityFormToggleFilterCondition)
+                .build();
 
         // Value input (only for Equals/NotEquals)
         let filter_content = if form.filter_condition_type.needs_value() {
@@ -368,35 +437,59 @@ fn render_entity_modal(
                 .build()
         };
 
-        Element::panel(filter_content).title("Source Record Filter").build()
+        Element::panel(filter_content)
+            .title("Source Record Filter")
+            .build()
     } else {
-        Element::panel(filter_toggle_btn).title("Source Record Filter").build()
+        Element::panel(filter_toggle_btn)
+            .title("Source Record Filter")
+            .build()
     };
 
     // Target filter section
-    let target_filter_toggle_label = if form.target_filter_enabled { "[x] Target Filter" } else { "[ ] Target Filter" };
-    let target_filter_toggle_btn = Element::button(FocusId::new("entity-target-filter-toggle"), target_filter_toggle_label)
-        .on_press(Msg::EntityFormToggleTargetFilter)
-        .build();
+    let target_filter_toggle_label = if form.target_filter_enabled {
+        "[x] Target Filter"
+    } else {
+        "[ ] Target Filter"
+    };
+    let target_filter_toggle_btn = Element::button(
+        FocusId::new("entity-target-filter-toggle"),
+        target_filter_toggle_label,
+    )
+    .on_press(Msg::EntityFormToggleTargetFilter)
+    .build();
 
     let target_filter_panel = if form.target_filter_enabled {
         // Field autocomplete
-        let field_options: Vec<String> = target_fields.iter().map(|f| f.logical_name.clone()).collect();
+        let field_options: Vec<String> = target_fields
+            .iter()
+            .map(|f| f.logical_name.clone())
+            .collect();
         let field_input = Element::autocomplete(
             FocusId::new("entity-target-filter-field"),
             field_options,
             form.target_filter_field.value.clone(),
             &mut form.target_filter_field.state,
         )
-        .placeholder(if target_fields.is_empty() { "Select target entity first..." } else { "Select field..." })
+        .placeholder(if target_fields.is_empty() {
+            "Select target entity first..."
+        } else {
+            "Select field..."
+        })
         .on_event(Msg::EntityFormTargetFilterField)
         .build();
 
         // Condition type button
-        let condition_label = format!("{} (click to change)", form.target_filter_condition_type.label());
-        let condition_btn = Element::button(FocusId::new("entity-target-filter-condition"), condition_label)
-            .on_press(Msg::EntityFormToggleTargetFilterCondition)
-            .build();
+        let condition_label = format!(
+            "{} (click to change)",
+            form.target_filter_condition_type.label()
+        );
+        let condition_btn = Element::button(
+            FocusId::new("entity-target-filter-condition"),
+            condition_label,
+        )
+        .on_press(Msg::EntityFormToggleTargetFilterCondition)
+        .build();
 
         // Value input (only for Equals/NotEquals)
         let filter_content = if form.target_filter_condition_type.needs_value() {
@@ -425,9 +518,13 @@ fn render_entity_modal(
                 .build()
         };
 
-        Element::panel(filter_content).title("Target Record Filter").build()
+        Element::panel(filter_content)
+            .title("Target Record Filter")
+            .build()
     } else {
-        Element::panel(target_filter_toggle_btn).title("Target Record Filter").build()
+        Element::panel(target_filter_toggle_btn)
+            .title("Target Record Filter")
+            .build()
     };
 
     // Buttons
@@ -451,13 +548,21 @@ fn render_entity_modal(
 
     // Calculate filter panel heights (3 per element + spacing + panel border)
     let source_filter_panel_height = if form.filter_enabled {
-        if form.filter_condition_type.needs_value() { 18 } else { 14 }
+        if form.filter_condition_type.needs_value() {
+            18
+        } else {
+            14
+        }
     } else {
         5
     };
 
     let target_filter_panel_height = if form.target_filter_enabled {
-        if form.target_filter_condition_type.needs_value() { 18 } else { 14 }
+        if form.target_filter_condition_type.needs_value() {
+            18
+        } else {
+            14
+        }
     } else {
         5
     };
@@ -468,8 +573,14 @@ fn render_entity_modal(
         .add(target_panel, LayoutConstraint::Length(3))
         .add(priority_panel, LayoutConstraint::Length(3))
         .add(op_filter_panel, LayoutConstraint::Length(5))
-        .add(filter_panel, LayoutConstraint::Length(source_filter_panel_height as u16))
-        .add(target_filter_panel, LayoutConstraint::Length(target_filter_panel_height as u16))
+        .add(
+            filter_panel,
+            LayoutConstraint::Length(source_filter_panel_height as u16),
+        )
+        .add(
+            target_filter_panel,
+            LayoutConstraint::Length(target_filter_panel_height as u16),
+        )
         .spacing(1)
         .build();
 
@@ -509,17 +620,28 @@ fn render_field_modal(
 ) -> Element<Msg> {
     use super::state::{ConditionType, FallbackType};
 
-    let title = if is_edit { "Edit Field Mapping" } else { "Add Field Mapping" };
+    let title = if is_edit {
+        "Edit Field Mapping"
+    } else {
+        "Add Field Mapping"
+    };
 
     // Target field autocomplete
-    let target_options: Vec<String> = target_fields.iter().map(|f| f.logical_name.clone()).collect();
+    let target_options: Vec<String> = target_fields
+        .iter()
+        .map(|f| f.logical_name.clone())
+        .collect();
     let target_input = Element::autocomplete(
         FocusId::new("field-target"),
         target_options,
         form.target_field.value.clone(),
         &mut form.target_field.state,
     )
-    .placeholder(if fields_loading { "Loading fields..." } else { "Type to search target fields..." })
+    .placeholder(if fields_loading {
+        "Loading fields..."
+    } else {
+        "Type to search target fields..."
+    })
     .on_event(Msg::FieldFormTarget)
     .build();
     let target_panel = Element::panel(target_input).title("Target Field").build();
@@ -532,7 +654,10 @@ fn render_field_modal(
     ]))
     .build();
 
-    let source_options: Vec<String> = source_fields.iter().map(|f| f.logical_name.clone()).collect();
+    let source_options: Vec<String> = source_fields
+        .iter()
+        .map(|f| f.logical_name.clone())
+        .collect();
 
     // Build transform-specific form section
     let (transform_content, modal_height) = match form.transform_type {
@@ -543,7 +668,11 @@ fn render_field_modal(
                 form.source_path.value.clone(),
                 &mut form.source_path.state,
             )
-            .placeholder(if fields_loading { "Loading..." } else { "e.g., name or accountid.name" })
+            .placeholder(if fields_loading {
+                "Loading..."
+            } else {
+                "e.g., name or accountid.name"
+            })
             .on_event(Msg::FieldFormSourcePath)
             .build();
             let source_panel = Element::panel(input).title("Source Field").build();
@@ -559,7 +688,10 @@ fn render_field_modal(
             } else if resolvers.is_empty() {
                 "Resolver: (none available)".to_string()
             } else {
-                format!("Resolver: (none) - Ctrl+R to cycle ({} available)", resolvers.len())
+                format!(
+                    "Resolver: (none) - Ctrl+R to cycle ({} available)",
+                    resolvers.len()
+                )
             };
 
             let resolver_btn = if !resolvers.is_empty() {
@@ -567,9 +699,10 @@ fn render_field_modal(
                     .on_press(Msg::FieldFormCycleResolver)
                     .build()
             } else {
-                Element::styled_text(Line::from(vec![
-                    Span::styled(resolver_label, Style::default().fg(theme.text_tertiary)),
-                ]))
+                Element::styled_text(Line::from(vec![Span::styled(
+                    resolver_label,
+                    Style::default().fg(theme.text_tertiary),
+                )]))
                 .build()
             };
 
@@ -600,7 +733,11 @@ fn render_field_modal(
                 form.condition_source.value.clone(),
                 &mut form.condition_source.state,
             )
-            .placeholder(if fields_loading { "Loading..." } else { "Source field to check" })
+            .placeholder(if fields_loading {
+                "Loading..."
+            } else {
+                "Source field to check"
+            })
             .on_event(Msg::FieldFormConditionSource)
             .build();
             let source_panel = Element::panel(source_input).title("Source Field").build();
@@ -610,7 +747,8 @@ fn render_field_modal(
             let cond_indicator = Element::styled_text(Line::from(vec![
                 Span::styled("Condition: ", Style::default().fg(theme.text_tertiary)),
                 Span::styled(cond_label, Style::default().fg(theme.accent_secondary)),
-            ])).build();
+            ]))
+            .build();
 
             // Condition value (only for equals/not equals)
             let cond_value_panel = if form.condition_type.needs_value() {
@@ -667,7 +805,11 @@ fn render_field_modal(
                 .spacing(1)
                 .build();
 
-            let height = if form.condition_type.needs_value() { 24 } else { 20 };
+            let height = if form.condition_type.needs_value() {
+                24
+            } else {
+                20
+            };
             (content, height)
         }
         TransformType::ValueMap => {
@@ -678,7 +820,11 @@ fn render_field_modal(
                 form.value_map_source.value.clone(),
                 &mut form.value_map_source.state,
             )
-            .placeholder(if fields_loading { "Loading..." } else { "Source field to map" })
+            .placeholder(if fields_loading {
+                "Loading..."
+            } else {
+                "Source field to map"
+            })
             .on_event(Msg::FieldFormValueMapSource)
             .build();
             let source_panel = Element::panel(source_input).title("Source Field").build();
@@ -688,7 +834,8 @@ fn render_field_modal(
             let fallback_indicator = Element::styled_text(Line::from(vec![
                 Span::styled("Fallback: ", Style::default().fg(theme.text_tertiary)),
                 Span::styled(fallback_label, Style::default().fg(theme.accent_secondary)),
-            ])).build();
+            ]))
+            .build();
 
             // Default value panel (only for Default fallback)
             let default_panel = if form.value_map_fallback == FallbackType::Default {
@@ -710,9 +857,14 @@ fn render_field_modal(
                 .on_press(Msg::FieldFormAddMapping)
                 .build();
             let mappings_header = RowBuilder::new()
-                .add(Element::styled_text(Line::from(vec![
-                    Span::styled("Mappings:", Style::default().fg(theme.text_secondary)),
-                ])).build(), LayoutConstraint::Fill(1))
+                .add(
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        "Mappings:",
+                        Style::default().fg(theme.text_secondary),
+                    )]))
+                    .build(),
+                    LayoutConstraint::Fill(1),
+                )
                 .add(add_btn, LayoutConstraint::Length(10))
                 .build();
 
@@ -732,19 +884,20 @@ fn render_field_modal(
                 .unwrap_or_default();
 
             // Helper to format value with label
-            let format_value = |value: &str, options: &[crate::api::metadata::OptionSetValue]| -> String {
-                if value.is_empty() {
-                    return "(click to set)".to_string();
-                }
-                if let Ok(v) = value.parse::<i64>() {
-                    if let Some(opt) = options.iter().find(|o| o.value == v) {
-                        if let Some(label) = &opt.label {
-                            return format!("{} ({})", v, label);
+            let format_value =
+                |value: &str, options: &[crate::api::metadata::OptionSetValue]| -> String {
+                    if value.is_empty() {
+                        return "(click to set)".to_string();
+                    }
+                    if let Ok(v) = value.parse::<i64>() {
+                        if let Some(opt) = options.iter().find(|o| o.value == v) {
+                            if let Some(label) = &opt.label {
+                                return format!("{} ({})", v, label);
+                            }
                         }
                     }
-                }
-                value.to_string()
-            };
+                    value.to_string()
+                };
 
             // Build mapping entries with a loop
             let mut mappings_col = ColumnBuilder::new();
@@ -805,7 +958,11 @@ fn render_field_modal(
                 .build();
 
             // Fixed modal height - scrollable fills remaining space
-            let height: u16 = if form.value_map_fallback == FallbackType::Default { 40 } else { 36 };
+            let height: u16 = if form.value_map_fallback == FallbackType::Default {
+                40
+            } else {
+                36
+            };
             (content, height)
         }
         TransformType::Format => {
@@ -825,13 +982,15 @@ fn render_field_modal(
             let null_indicator = Element::styled_text(Line::from(vec![
                 Span::styled("Null Handling: ", Style::default().fg(theme.text_tertiary)),
                 Span::styled(null_label, Style::default().fg(theme.accent_secondary)),
-            ])).build();
+            ]))
+            .build();
 
             // Help text
             let help_text = Element::styled_text(Line::from(vec![
                 Span::styled("Syntax: ", Style::default().fg(theme.text_tertiary)),
                 Span::raw("${field}, ${a + b}, ${cond ? then : else}, ${a ?? b}, ${val:,.2f}"),
-            ])).build();
+            ]))
+            .build();
 
             let content = ColumnBuilder::new()
                 .add(template_panel, LayoutConstraint::Length(3))
@@ -850,7 +1009,11 @@ fn render_field_modal(
                 form.replace_source.value.clone(),
                 &mut form.replace_source.state,
             )
-            .placeholder(if fields_loading { "Loading..." } else { "Source field" })
+            .placeholder(if fields_loading {
+                "Loading..."
+            } else {
+                "Source field"
+            })
             .on_event(Msg::FieldFormReplaceSource)
             .build();
             let source_panel = Element::panel(source_input).title("Source Field").build();
@@ -860,9 +1023,14 @@ fn render_field_modal(
                 .on_press(Msg::FieldFormAddReplace)
                 .build();
             let replacements_header = RowBuilder::new()
-                .add(Element::styled_text(Line::from(vec![
-                    Span::styled("Replacements:", Style::default().fg(theme.text_secondary)),
-                ])).build(), LayoutConstraint::Fill(1))
+                .add(
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        "Replacements:",
+                        Style::default().fg(theme.text_secondary),
+                    )]))
+                    .build(),
+                    LayoutConstraint::Fill(1),
+                )
                 .add(add_btn, LayoutConstraint::Length(10))
                 .build();
 
@@ -878,7 +1046,11 @@ fn render_field_modal(
                     &entry.pattern.value,
                     &mut entry.pattern.state,
                 )
-                .placeholder(if entry.is_regex { "Regex pattern" } else { "Pattern" })
+                .placeholder(if entry.is_regex {
+                    "Regex pattern"
+                } else {
+                    "Pattern"
+                })
                 .on_event(|e| Msg::FieldFormReplacePattern(0, e))
                 .build();
 
@@ -893,7 +1065,7 @@ fn render_field_modal(
 
                 let regex_btn = Element::button(
                     FocusId::new("replace-regex-0"),
-                    if entry.is_regex { ".*" } else { "Aa" }
+                    if entry.is_regex { ".*" } else { "Aa" },
                 )
                 .on_press(Msg::FieldFormToggleReplaceRegex(0))
                 .build();
@@ -920,7 +1092,11 @@ fn render_field_modal(
                     &entry.pattern.value,
                     &mut entry.pattern.state,
                 )
-                .placeholder(if entry.is_regex { "Regex pattern" } else { "Pattern" })
+                .placeholder(if entry.is_regex {
+                    "Regex pattern"
+                } else {
+                    "Pattern"
+                })
                 .on_event(|e| Msg::FieldFormReplacePattern(1, e))
                 .build();
 
@@ -935,7 +1111,7 @@ fn render_field_modal(
 
                 let regex_btn = Element::button(
                     FocusId::new("replace-regex-1"),
-                    if entry.is_regex { ".*" } else { "Aa" }
+                    if entry.is_regex { ".*" } else { "Aa" },
                 )
                 .on_press(Msg::FieldFormToggleReplaceRegex(1))
                 .build();
@@ -962,7 +1138,11 @@ fn render_field_modal(
                     &entry.pattern.value,
                     &mut entry.pattern.state,
                 )
-                .placeholder(if entry.is_regex { "Regex pattern" } else { "Pattern" })
+                .placeholder(if entry.is_regex {
+                    "Regex pattern"
+                } else {
+                    "Pattern"
+                })
                 .on_event(|e| Msg::FieldFormReplacePattern(2, e))
                 .build();
 
@@ -977,7 +1157,7 @@ fn render_field_modal(
 
                 let regex_btn = Element::button(
                     FocusId::new("replace-regex-2"),
-                    if entry.is_regex { ".*" } else { "Aa" }
+                    if entry.is_regex { ".*" } else { "Aa" },
                 )
                 .on_press(Msg::FieldFormToggleReplaceRegex(2))
                 .build();
@@ -1004,7 +1184,11 @@ fn render_field_modal(
                     &entry.pattern.value,
                     &mut entry.pattern.state,
                 )
-                .placeholder(if entry.is_regex { "Regex pattern" } else { "Pattern" })
+                .placeholder(if entry.is_regex {
+                    "Regex pattern"
+                } else {
+                    "Pattern"
+                })
                 .on_event(|e| Msg::FieldFormReplacePattern(3, e))
                 .build();
 
@@ -1019,7 +1203,7 @@ fn render_field_modal(
 
                 let regex_btn = Element::button(
                     FocusId::new("replace-regex-3"),
-                    if entry.is_regex { ".*" } else { "Aa" }
+                    if entry.is_regex { ".*" } else { "Aa" },
                 )
                 .on_press(Msg::FieldFormToggleReplaceRegex(3))
                 .build();
@@ -1041,9 +1225,11 @@ fn render_field_modal(
             if entries_len > 4 {
                 let more_text = format!("... and {} more", entries_len - 4);
                 entries_col = entries_col.add(
-                    Element::styled_text(Line::from(vec![
-                        Span::styled(more_text, Style::default().fg(theme.text_tertiary)),
-                    ])).build(),
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        more_text,
+                        Style::default().fg(theme.text_tertiary),
+                    )]))
+                    .build(),
                     LayoutConstraint::Length(1),
                 );
             }
@@ -1067,15 +1253,21 @@ fn render_field_modal(
 
     // Validation message (show error or warning)
     let validation_msg = if let Some(err) = validation.first_error() {
-        Some(Element::styled_text(Line::from(vec![
-            Span::styled("Error: ", Style::default().fg(theme.accent_error)),
-            Span::styled(err.to_string(), Style::default().fg(theme.accent_error)),
-        ])).build())
+        Some(
+            Element::styled_text(Line::from(vec![
+                Span::styled("Error: ", Style::default().fg(theme.accent_error)),
+                Span::styled(err.to_string(), Style::default().fg(theme.accent_error)),
+            ]))
+            .build(),
+        )
     } else if let Some(warn) = validation.first_warning() {
-        Some(Element::styled_text(Line::from(vec![
-            Span::styled("Warning: ", Style::default().fg(theme.accent_warning)),
-            Span::styled(warn.to_string(), Style::default().fg(theme.text_secondary)),
-        ])).build())
+        Some(
+            Element::styled_text(Line::from(vec![
+                Span::styled("Warning: ", Style::default().fg(theme.accent_warning)),
+                Span::styled(warn.to_string(), Style::default().fg(theme.text_secondary)),
+            ]))
+            .build(),
+        )
     } else {
         None
     };
@@ -1137,7 +1329,11 @@ fn render_resolver_modal(
     fields_loading: bool,
     theme: &Theme,
 ) -> Element<Msg> {
-    let title = if is_edit { "Edit Resolver" } else { "Add Resolver" };
+    let title = if is_edit {
+        "Edit Resolver"
+    } else {
+        "Add Resolver"
+    };
 
     // Name input
     let name_input = Element::text_input(
@@ -1160,13 +1356,21 @@ fn render_resolver_modal(
     .placeholder("Type to search entities...")
     .on_event(Msg::ResolverFormSourceEntity)
     .build();
-    let entity_panel = Element::panel(entity_input).title("Source Entity (to search in target)").build();
+    let entity_panel = Element::panel(entity_input)
+        .title("Source Entity (to search in target)")
+        .build();
 
     // Match field inputs - always show source_path → target_field
-    let match_options: Vec<String> = match_fields.iter().map(|f| f.logical_name.clone()).collect();
+    let match_options: Vec<String> = match_fields
+        .iter()
+        .map(|f| f.logical_name.clone())
+        .collect();
 
     // Build source options including nested paths from related entities
-    let mut source_options: Vec<String> = source_fields.iter().map(|f| f.logical_name.clone()).collect();
+    let mut source_options: Vec<String> = source_fields
+        .iter()
+        .map(|f| f.logical_name.clone())
+        .collect();
     for (lookup_field, resource) in resolver_related_fields {
         if let Resource::Success(related_fields) = resource {
             for f in related_fields {
@@ -1189,7 +1393,11 @@ fn render_resolver_modal(
             row.source_path.value.clone(),
             &mut row.source_path.state,
         )
-        .placeholder(if fields_loading { "Loading..." } else { "e.g., cgk_userid.cgk_email" })
+        .placeholder(if fields_loading {
+            "Loading..."
+        } else {
+            "e.g., cgk_userid.cgk_email"
+        })
         .on_event(|e| Msg::ResolverSourcePath(0, e))
         .build();
 
@@ -1200,7 +1408,11 @@ fn render_resolver_modal(
             row.target_field.value.clone(),
             &mut row.target_field.state,
         )
-        .placeholder(if fields_loading { "Loading..." } else { "e.g., emailaddress1" })
+        .placeholder(if fields_loading {
+            "Loading..."
+        } else {
+            "e.g., emailaddress1"
+        })
         .on_event(|e| Msg::ResolverMatchField(0, e))
         .build();
 
@@ -1210,10 +1422,27 @@ fn render_resolver_modal(
 
         // Header labels
         let header = RowBuilder::new()
-            .add(Element::styled_text(Line::from(Span::styled("Source Path (from transfer source)", Style::default().fg(theme.text_secondary)))).build(), LayoutConstraint::Fill(1))
+            .add(
+                Element::styled_text(Line::from(Span::styled(
+                    "Source Path (from transfer source)",
+                    Style::default().fg(theme.text_secondary),
+                )))
+                .build(),
+                LayoutConstraint::Fill(1),
+            )
             .add(Element::text("  "), LayoutConstraint::Length(2))
-            .add(Element::styled_text(Line::from(Span::styled("Target Field (on resolver entity)", Style::default().fg(theme.text_secondary)))).build(), LayoutConstraint::Fill(1))
-            .add(Element::text("                "), LayoutConstraint::Length(16))
+            .add(
+                Element::styled_text(Line::from(Span::styled(
+                    "Target Field (on resolver entity)",
+                    Style::default().fg(theme.text_secondary),
+                )))
+                .build(),
+                LayoutConstraint::Fill(1),
+            )
+            .add(
+                Element::text("                "),
+                LayoutConstraint::Length(16),
+            )
             .build();
 
         let input_row = RowBuilder::new()
@@ -1237,9 +1466,23 @@ fn render_resolver_modal(
         // Header row
         let header = RowBuilder::new()
             .add(Element::text("   "), LayoutConstraint::Length(3))
-            .add(Element::styled_text(Line::from(Span::styled("Source Path", Style::default().fg(theme.text_secondary)))).build(), LayoutConstraint::Fill(1))
+            .add(
+                Element::styled_text(Line::from(Span::styled(
+                    "Source Path",
+                    Style::default().fg(theme.text_secondary),
+                )))
+                .build(),
+                LayoutConstraint::Fill(1),
+            )
             .add(Element::text("  "), LayoutConstraint::Length(2))
-            .add(Element::styled_text(Line::from(Span::styled("Target Field", Style::default().fg(theme.text_secondary)))).build(), LayoutConstraint::Fill(1))
+            .add(
+                Element::styled_text(Line::from(Span::styled(
+                    "Target Field",
+                    Style::default().fg(theme.text_secondary),
+                )))
+                .build(),
+                LayoutConstraint::Fill(1),
+            )
             .add(Element::text("     "), LayoutConstraint::Length(5))
             .build();
         match_rows_col = match_rows_col.add(header, LayoutConstraint::Length(1));
@@ -1263,7 +1506,11 @@ fn render_resolver_modal(
                 row.target_field.value.clone(),
                 &mut row.target_field.state,
             )
-            .placeholder(if fields_loading { "Loading..." } else { "Target field" })
+            .placeholder(if fields_loading {
+                "Loading..."
+            } else {
+                "Target field"
+            })
             .on_event(|e| Msg::ResolverMatchField(0, e))
             .build();
 
@@ -1300,7 +1547,11 @@ fn render_resolver_modal(
                 row.target_field.value.clone(),
                 &mut row.target_field.state,
             )
-            .placeholder(if fields_loading { "Loading..." } else { "Target field" })
+            .placeholder(if fields_loading {
+                "Loading..."
+            } else {
+                "Target field"
+            })
             .on_event(|e| Msg::ResolverMatchField(1, e))
             .build();
 
@@ -1337,7 +1588,11 @@ fn render_resolver_modal(
                 row.target_field.value.clone(),
                 &mut row.target_field.state,
             )
-            .placeholder(if fields_loading { "Loading..." } else { "Target field" })
+            .placeholder(if fields_loading {
+                "Loading..."
+            } else {
+                "Target field"
+            })
             .on_event(|e| Msg::ResolverMatchField(2, e))
             .build();
 
@@ -1374,7 +1629,11 @@ fn render_resolver_modal(
                 row.target_field.value.clone(),
                 &mut row.target_field.state,
             )
-            .placeholder(if fields_loading { "Loading..." } else { "Target field" })
+            .placeholder(if fields_loading {
+                "Loading..."
+            } else {
+                "Target field"
+            })
             .on_event(|e| Msg::ResolverMatchField(3, e))
             .build();
 
@@ -1395,9 +1654,10 @@ fn render_resolver_modal(
         if rows_len > 4 {
             let more_text = format!("... and {} more", rows_len - 4);
             match_rows_col = match_rows_col.add(
-                Element::styled_text(Line::from(vec![
-                    Span::styled(more_text, Style::default().fg(theme.text_tertiary)),
-                ]))
+                Element::styled_text(Line::from(vec![Span::styled(
+                    more_text,
+                    Style::default().fg(theme.text_tertiary),
+                )]))
                 .build(),
                 LayoutConstraint::Length(1),
             );
@@ -1409,7 +1669,9 @@ fn render_resolver_modal(
             .build();
         match_rows_col = match_rows_col.add(add_btn, LayoutConstraint::Length(3));
 
-        Element::panel(match_rows_col.build()).title("Match Fields (compound key)").build()
+        Element::panel(match_rows_col.build())
+            .title("Match Fields (compound key)")
+            .build()
     };
 
     // Fallback button (cycle between Error/Null/Default)
@@ -1427,7 +1689,9 @@ fn render_resolver_modal(
     .placeholder("Optional GUID - uses this if no match found")
     .on_event(Msg::ResolverFormDefaultGuid)
     .build();
-    let default_guid_panel = Element::panel(default_guid_input).title("Default GUID (optional)").build();
+    let default_guid_panel = Element::panel(default_guid_input)
+        .title("Default GUID (optional)")
+        .build();
 
     // Help text
     let help_text = Element::styled_text(Line::from(vec![
@@ -1459,13 +1723,24 @@ fn render_resolver_modal(
 
     // Calculate height based on number of match field rows
     let base_height: u16 = 28; // Base modal height for single field
-    let extra_rows = if rows_len > 1 { (rows_len - 1).min(3) * 4 } else { 0 };
+    let extra_rows = if rows_len > 1 {
+        (rows_len - 1).min(3) * 4
+    } else {
+        0
+    };
     let modal_height = base_height + extra_rows as u16;
 
     let form_content = ColumnBuilder::new()
         .add(name_panel, LayoutConstraint::Length(3))
         .add(entity_panel, LayoutConstraint::Length(3))
-        .add(match_field_content, LayoutConstraint::Length(if rows_len == 1 { 5 } else { 4 + rows_len.min(4) as u16 * 3 + 3 }))
+        .add(
+            match_field_content,
+            LayoutConstraint::Length(if rows_len == 1 {
+                5
+            } else {
+                4 + rows_len.min(4) as u16 * 3 + 3
+            }),
+        )
         .add(fallback_btn, LayoutConstraint::Length(3))
         .add(default_guid_panel, LayoutConstraint::Length(3))
         .add(help_text, LayoutConstraint::Length(2))
@@ -1489,7 +1764,12 @@ struct QuickFieldItem {
 impl ListItem for QuickFieldItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, is_multi_selected: bool, _is_hovered: bool) -> Element<Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Msg> {
         let theme = &crate::global_runtime_config().theme;
 
         // Checkbox based on multi-selection
@@ -1512,14 +1792,21 @@ impl ListItem for QuickFieldItem {
         };
 
         // Related entity for lookups
-        let related = self.field_match.source.related_entity.as_ref().map(|e| format!(" -> {}", e)).unwrap_or_default();
+        let related = self
+            .field_match
+            .source
+            .related_entity
+            .as_ref()
+            .map(|e| format!(" -> {}", e))
+            .unwrap_or_default();
 
         // Show target field name if different from source
-        let target_info = if self.field_match.source.logical_name != self.field_match.target_logical_name {
-            format!(" => {}", self.field_match.target_logical_name)
-        } else {
-            String::new()
-        };
+        let target_info =
+            if self.field_match.source.logical_name != self.field_match.target_logical_name {
+                format!(" => {}", self.field_match.target_logical_name)
+            } else {
+                String::new()
+            };
 
         // Build the line
         let base_style = if is_selected {
@@ -1537,8 +1824,14 @@ impl ListItem for QuickFieldItem {
         Element::styled_text(Line::from(vec![
             Span::styled(checkbox, checkbox_style),
             Span::styled(" ", base_style),
-            Span::styled(format!("{:<30}", self.field_match.source.logical_name), base_style.fg(theme.text_primary)),
-            Span::styled(format!("{:<12}", field_type), base_style.fg(theme.text_secondary)),
+            Span::styled(
+                format!("{:<30}", self.field_match.source.logical_name),
+                base_style.fg(theme.text_primary),
+            ),
+            Span::styled(
+                format!("{:<12}", field_type),
+                base_style.fg(theme.text_secondary),
+            ),
             Span::styled(target_info, base_style.fg(theme.accent_primary)),
             Span::styled(related, base_style.fg(theme.accent_secondary)),
         ]))
@@ -1601,18 +1894,18 @@ fn render_quick_fields_modal(
     // Build field list items
     let items: Vec<QuickFieldItem> = available
         .iter()
-        .map(|f| QuickFieldItem { field_match: f.clone() })
+        .map(|f| QuickFieldItem {
+            field_match: f.clone(),
+        })
         .collect();
 
     let selected_count = list_state.total_selection_count();
 
     let list_element = if items.is_empty() {
-        Element::styled_text(Line::from(vec![
-            Span::styled(
-                "No matching fields (try adjusting prefixes)",
-                Style::default().fg(theme.text_tertiary),
-            ),
-        ]))
+        Element::styled_text(Line::from(vec![Span::styled(
+            "No matching fields (try adjusting prefixes)",
+            Style::default().fg(theme.text_tertiary),
+        )]))
         .build()
     } else {
         Element::list(FocusId::new("quick-fields-list"), &items, list_state, theme)
@@ -1621,12 +1914,14 @@ fn render_quick_fields_modal(
     };
 
     // Footer showing count
-    let footer = Element::styled_text(Line::from(vec![
-        Span::styled(
-            format!("{} field(s) selected", selected_count),
-            Style::default().fg(if selected_count == 0 { theme.text_tertiary } else { theme.accent_primary }),
-        ),
-    ]))
+    let footer = Element::styled_text(Line::from(vec![Span::styled(
+        format!("{} field(s) selected", selected_count),
+        Style::default().fg(if selected_count == 0 {
+            theme.text_tertiary
+        } else {
+            theme.accent_primary
+        }),
+    )]))
     .build();
 
     // Buttons
@@ -1635,9 +1930,12 @@ fn render_quick_fields_modal(
         .build();
 
     let save_btn = if selected_count > 0 {
-        Element::button(FocusId::new("quick-fields-save"), &format!("Add {} Fields", selected_count))
-            .on_press(Msg::SaveQuickFields)
-            .build()
+        Element::button(
+            FocusId::new("quick-fields-save"),
+            &format!("Add {} Fields", selected_count),
+        )
+        .on_press(Msg::SaveQuickFields)
+        .build()
     } else {
         Element::button(FocusId::new("quick-fields-save"), "Add Fields").build()
     };
@@ -1675,60 +1973,159 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
     let mut subs = vec![];
 
     if state.show_delete_confirm {
-        subs.push(Subscription::keyboard(KeyCode::Enter, "Confirm", Msg::ConfirmDelete));
-        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CancelDelete));
+        subs.push(Subscription::keyboard(
+            KeyCode::Enter,
+            "Confirm",
+            Msg::ConfirmDelete,
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Esc,
+            "Cancel",
+            Msg::CancelDelete,
+        ));
     } else if state.show_entity_modal {
-        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseEntityModal));
-        subs.push(Subscription::keyboard(KeyCode::Enter, "Save", Msg::SaveEntity));
+        subs.push(Subscription::keyboard(
+            KeyCode::Esc,
+            "Cancel",
+            Msg::CloseEntityModal,
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Enter,
+            "Save",
+            Msg::SaveEntity,
+        ));
     } else if state.show_field_modal {
-        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseFieldModal));
-        subs.push(Subscription::keyboard(KeyCode::Enter, "Save", Msg::SaveField));
-        subs.push(Subscription::ctrl_key(KeyCode::Char('t'), "Cycle transform type", Msg::FieldFormToggleType));
+        subs.push(Subscription::keyboard(
+            KeyCode::Esc,
+            "Cancel",
+            Msg::CloseFieldModal,
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Enter,
+            "Save",
+            Msg::SaveField,
+        ));
+        subs.push(Subscription::ctrl_key(
+            KeyCode::Char('t'),
+            "Cycle transform type",
+            Msg::FieldFormToggleType,
+        ));
 
         // Transform-specific shortcuts
         match state.field_form.transform_type {
             TransformType::Copy => {
-                subs.push(Subscription::ctrl_key(KeyCode::Char('r'), "Cycle resolver", Msg::FieldFormCycleResolver));
+                subs.push(Subscription::ctrl_key(
+                    KeyCode::Char('r'),
+                    "Cycle resolver",
+                    Msg::FieldFormCycleResolver,
+                ));
             }
             TransformType::Conditional => {
-                subs.push(Subscription::ctrl_key(KeyCode::Char('c'), "Cycle condition", Msg::FieldFormToggleConditionType));
+                subs.push(Subscription::ctrl_key(
+                    KeyCode::Char('c'),
+                    "Cycle condition",
+                    Msg::FieldFormToggleConditionType,
+                ));
             }
             TransformType::ValueMap => {
-                subs.push(Subscription::ctrl_key(KeyCode::Char('f'), "Cycle fallback", Msg::FieldFormToggleFallback));
-                subs.push(Subscription::ctrl_key(KeyCode::Char('a'), "Add mapping", Msg::FieldFormAddMapping));
+                subs.push(Subscription::ctrl_key(
+                    KeyCode::Char('f'),
+                    "Cycle fallback",
+                    Msg::FieldFormToggleFallback,
+                ));
+                subs.push(Subscription::ctrl_key(
+                    KeyCode::Char('a'),
+                    "Add mapping",
+                    Msg::FieldFormAddMapping,
+                ));
             }
             TransformType::Format => {
-                subs.push(Subscription::ctrl_key(KeyCode::Char('n'), "Cycle null handling", Msg::FieldFormToggleNullHandling));
+                subs.push(Subscription::ctrl_key(
+                    KeyCode::Char('n'),
+                    "Cycle null handling",
+                    Msg::FieldFormToggleNullHandling,
+                ));
             }
             TransformType::Replace => {
-                subs.push(Subscription::ctrl_key(KeyCode::Char('a'), "Add replacement", Msg::FieldFormAddReplace));
+                subs.push(Subscription::ctrl_key(
+                    KeyCode::Char('a'),
+                    "Add replacement",
+                    Msg::FieldFormAddReplace,
+                ));
             }
             _ => {}
         }
     } else if state.show_resolver_modal {
-        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseResolverModal));
-        subs.push(Subscription::keyboard(KeyCode::Enter, "Save", Msg::SaveResolver));
-        subs.push(Subscription::ctrl_key(KeyCode::Char('f'), "Cycle fallback", Msg::ResolverFormCycleFallback));
-        subs.push(Subscription::ctrl_key(KeyCode::Char('a'), "Add match field", Msg::ResolverAddMatchFieldRow));
+        subs.push(Subscription::keyboard(
+            KeyCode::Esc,
+            "Cancel",
+            Msg::CloseResolverModal,
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Enter,
+            "Save",
+            Msg::SaveResolver,
+        ));
+        subs.push(Subscription::ctrl_key(
+            KeyCode::Char('f'),
+            "Cycle fallback",
+            Msg::ResolverFormCycleFallback,
+        ));
+        subs.push(Subscription::ctrl_key(
+            KeyCode::Char('a'),
+            "Add match field",
+            Msg::ResolverAddMatchFieldRow,
+        ));
         if state.resolver_form.match_field_rows.len() > 1 {
-            subs.push(Subscription::ctrl_key(KeyCode::Char('d'), "Remove field", Msg::ResolverRemoveMatchFieldRow));
+            subs.push(Subscription::ctrl_key(
+                KeyCode::Char('d'),
+                "Remove field",
+                Msg::ResolverRemoveMatchFieldRow,
+            ));
         }
     } else if state.show_quick_fields_modal {
-        subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel", Msg::CloseQuickFields));
-        subs.push(Subscription::keyboard(KeyCode::Enter, "Add selected", Msg::SaveQuickFields));
-        subs.push(Subscription::keyboard(KeyCode::Char(' '), "Toggle", Msg::QuickFieldsEvent(ListEvent::ToggleMultiSelect)));
-        subs.push(Subscription::ctrl_key(KeyCode::Char('a'), "Select all", Msg::QuickFieldsEvent(ListEvent::SelectAll)));
-        subs.push(Subscription::ctrl_key(KeyCode::Char('d'), "Clear all", Msg::QuickFieldsEvent(ListEvent::ClearMultiSelection)));
+        subs.push(Subscription::keyboard(
+            KeyCode::Esc,
+            "Cancel",
+            Msg::CloseQuickFields,
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Enter,
+            "Add selected",
+            Msg::SaveQuickFields,
+        ));
+        subs.push(Subscription::keyboard(
+            KeyCode::Char(' '),
+            "Toggle",
+            Msg::QuickFieldsEvent(ListEvent::ToggleMultiSelect),
+        ));
+        subs.push(Subscription::ctrl_key(
+            KeyCode::Char('a'),
+            "Select all",
+            Msg::QuickFieldsEvent(ListEvent::SelectAll),
+        ));
+        subs.push(Subscription::ctrl_key(
+            KeyCode::Char('d'),
+            "Clear all",
+            Msg::QuickFieldsEvent(ListEvent::ClearMultiSelection),
+        ));
     } else {
         // Main view subscriptions
-        subs.push(Subscription::keyboard(KeyCode::Char('a'), "Add entity", Msg::AddEntity));
+        subs.push(Subscription::keyboard(
+            KeyCode::Char('a'),
+            "Add entity",
+            Msg::AddEntity,
+        ));
         subs.push(Subscription::keyboard(KeyCode::Esc, "Back", Msg::Back));
 
         // Context-sensitive actions based on selection
         if let Resource::Success(_config) = &state.config {
             if let Some(selected) = state.tree_state.selected() {
                 if selected.starts_with("entity_") {
-                    if let Some(idx) = selected.strip_prefix("entity_").and_then(|s| s.parse::<usize>().ok()) {
+                    if let Some(idx) = selected
+                        .strip_prefix("entity_")
+                        .and_then(|s| s.parse::<usize>().ok())
+                    {
                         subs.push(Subscription::keyboard(
                             KeyCode::Char('e'),
                             "Edit entity",
@@ -1764,9 +2161,15 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                         }
                     }
                 } else if selected.starts_with("field_") {
-                    let parts: Vec<&str> = selected.strip_prefix("field_").unwrap_or("").split('_').collect();
+                    let parts: Vec<&str> = selected
+                        .strip_prefix("field_")
+                        .unwrap_or("")
+                        .split('_')
+                        .collect();
                     if parts.len() == 2 {
-                        if let (Ok(entity_idx), Ok(field_idx)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
+                        if let (Ok(entity_idx), Ok(field_idx)) =
+                            (parts[0].parse::<usize>(), parts[1].parse::<usize>())
+                        {
                             subs.push(Subscription::keyboard(
                                 KeyCode::Char('e'),
                                 "Edit field",
@@ -1811,9 +2214,15 @@ pub fn subscriptions(state: &State) -> Vec<Subscription<Msg>> {
                     }
                 } else if selected.starts_with("resolver_") {
                     // Format: resolver_<entity_idx>_<resolver_idx>
-                    let parts: Vec<&str> = selected.strip_prefix("resolver_").unwrap_or("").split('_').collect();
+                    let parts: Vec<&str> = selected
+                        .strip_prefix("resolver_")
+                        .unwrap_or("")
+                        .split('_')
+                        .collect();
                     if parts.len() == 2 {
-                        if let (Ok(entity_idx), Ok(resolver_idx)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
+                        if let (Ok(entity_idx), Ok(resolver_idx)) =
+                            (parts[0].parse::<usize>(), parts[1].parse::<usize>())
+                        {
                             subs.push(Subscription::keyboard(
                                 KeyCode::Char('e'),
                                 "Edit resolver",

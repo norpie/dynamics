@@ -1,6 +1,6 @@
+use crate::tui::{Element, Theme};
 use crossterm::event::KeyCode;
 use std::collections::HashSet;
-use crate::tui::{Element, Theme};
 
 /// Trait for items that can be displayed in a list
 pub trait ListItem {
@@ -10,7 +10,12 @@ pub trait ListItem {
     /// is_selected: whether this item is the primary/anchor selection (cursor position)
     /// is_multi_selected: whether this item is in the multi-selection set
     /// is_hovered: whether the mouse is hovering over this item
-    fn to_element(&self, is_selected: bool, is_multi_selected: bool, is_hovered: bool) -> Element<Self::Msg>;
+    fn to_element(
+        &self,
+        is_selected: bool,
+        is_multi_selected: bool,
+        is_hovered: bool,
+    ) -> Element<Self::Msg>;
 
     /// Optional: height in lines (default 1)
     fn height(&self) -> u16 {
@@ -28,7 +33,7 @@ pub struct ListState {
     viewport_height: Option<usize>, // Last known viewport height from renderer
 
     // Multi-selection support
-    multi_selected: HashSet<usize>, // Additional selected indices
+    multi_selected: HashSet<usize>,  // Additional selected indices
     anchor_selection: Option<usize>, // Anchor for range selection (Shift+Arrow)
 }
 
@@ -382,7 +387,11 @@ impl ListState {
 
     /// Create a windowed copy of multi-selection state, mapping global indices to windowed indices
     /// global_start is the start index of the window in the full list
-    pub fn windowed_multi_selection(&self, global_start: usize, window_size: usize) -> HashSet<usize> {
+    pub fn windowed_multi_selection(
+        &self,
+        global_start: usize,
+        window_size: usize,
+    ) -> HashSet<usize> {
         self.multi_selected
             .iter()
             .filter_map(|&global_idx| {
@@ -399,7 +408,12 @@ impl ListState {
 
     /// Handle list event (unified event pattern)
     /// Returns Some(selected_index) on Select event, None otherwise
-    pub fn handle_event(&mut self, event: crate::tui::widgets::events::ListEvent, item_count: usize, visible_height: usize) -> Option<usize> {
+    pub fn handle_event(
+        &mut self,
+        event: crate::tui::widgets::events::ListEvent,
+        item_count: usize,
+        visible_height: usize,
+    ) -> Option<usize> {
         use crate::tui::widgets::events::ListEvent;
 
         match event {

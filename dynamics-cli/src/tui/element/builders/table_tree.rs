@@ -1,6 +1,6 @@
 use crate::tui::Element;
 use crate::tui::element::FocusId;
-use crate::tui::widgets::{TreeEvent, FlatTableNode};
+use crate::tui::widgets::{FlatTableNode, TreeEvent};
 use ratatui::layout::Constraint;
 
 /// Builder for table tree elements

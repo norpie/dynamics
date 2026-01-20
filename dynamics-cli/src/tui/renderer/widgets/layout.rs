@@ -1,7 +1,10 @@
-use ratatui::{Frame, layout::{Constraint, Direction, Layout, Rect}};
-use crate::tui::{Element, Theme, LayoutConstraint};
 use crate::tui::element::FocusId;
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, DropdownRegistry};
+use crate::tui::renderer::{DropdownRegistry, FocusRegistry, InteractionRegistry};
+use crate::tui::{Element, LayoutConstraint, Theme};
+use ratatui::{
+    Frame,
+    layout::{Constraint, Direction, Layout, Rect},
+};
 
 /// Calculate ratatui Constraints from our LayoutConstraints
 pub fn calculate_constraints<Msg>(
@@ -32,7 +35,8 @@ pub fn calculate_constraints<Msg>(
             LayoutConstraint::Fill(weight) => {
                 if fill_total_weight > 0 {
                     // Calculate proportional space
-                    let space = (remaining as u32 * *weight as u32 / fill_total_weight as u32) as u16;
+                    let space =
+                        (remaining as u32 * *weight as u32 / fill_total_weight as u32) as u16;
                     Constraint::Length(space)
                 } else {
                     Constraint::Length(0)
@@ -45,7 +49,7 @@ pub fn calculate_constraints<Msg>(
 /// Render Column element
 pub fn render_column<Msg: Clone + Send + 'static>(
     frame: &mut Frame,
-    
+
     registry: &mut InteractionRegistry<Msg>,
     focus_registry: &mut FocusRegistry<Msg>,
     dropdown_registry: &mut DropdownRegistry<Msg>,
@@ -54,7 +58,16 @@ pub fn render_column<Msg: Clone + Send + 'static>(
     spacing: u16,
     area: Rect,
     inside_panel: bool,
-    render_fn: impl Fn(&mut Frame, &mut InteractionRegistry<Msg>, &mut FocusRegistry<Msg>, &mut DropdownRegistry<Msg>, Option<&FocusId>, &Element<Msg>, Rect, bool),
+    render_fn: impl Fn(
+        &mut Frame,
+        &mut InteractionRegistry<Msg>,
+        &mut FocusRegistry<Msg>,
+        &mut DropdownRegistry<Msg>,
+        Option<&FocusId>,
+        &Element<Msg>,
+        Rect,
+        bool,
+    ),
 ) {
     if items.is_empty() {
         return;
@@ -70,14 +83,23 @@ pub fn render_column<Msg: Clone + Send + 'static>(
 
     // Render each child
     for ((_, child), chunk) in items.iter().zip(chunks.iter()) {
-        render_fn(frame, registry, focus_registry, dropdown_registry, focused_id, child, *chunk, inside_panel);
+        render_fn(
+            frame,
+            registry,
+            focus_registry,
+            dropdown_registry,
+            focused_id,
+            child,
+            *chunk,
+            inside_panel,
+        );
     }
 }
 
 /// Render Row element
 pub fn render_row<Msg: Clone + Send + 'static>(
     frame: &mut Frame,
-    
+
     registry: &mut InteractionRegistry<Msg>,
     focus_registry: &mut FocusRegistry<Msg>,
     dropdown_registry: &mut DropdownRegistry<Msg>,
@@ -86,7 +108,16 @@ pub fn render_row<Msg: Clone + Send + 'static>(
     spacing: u16,
     area: Rect,
     inside_panel: bool,
-    render_fn: impl Fn(&mut Frame, &mut InteractionRegistry<Msg>, &mut FocusRegistry<Msg>, &mut DropdownRegistry<Msg>, Option<&FocusId>, &Element<Msg>, Rect, bool),
+    render_fn: impl Fn(
+        &mut Frame,
+        &mut InteractionRegistry<Msg>,
+        &mut FocusRegistry<Msg>,
+        &mut DropdownRegistry<Msg>,
+        Option<&FocusId>,
+        &Element<Msg>,
+        Rect,
+        bool,
+    ),
 ) {
     if items.is_empty() {
         return;
@@ -102,14 +133,23 @@ pub fn render_row<Msg: Clone + Send + 'static>(
 
     // Render each child
     for ((_, child), chunk) in items.iter().zip(chunks.iter()) {
-        render_fn(frame, registry, focus_registry, dropdown_registry, focused_id, child, *chunk, inside_panel);
+        render_fn(
+            frame,
+            registry,
+            focus_registry,
+            dropdown_registry,
+            focused_id,
+            child,
+            *chunk,
+            inside_panel,
+        );
     }
 }
 
 /// Render Container element
 pub fn render_container<Msg: Clone + Send + 'static>(
     frame: &mut Frame,
-    
+
     registry: &mut InteractionRegistry<Msg>,
     focus_registry: &mut FocusRegistry<Msg>,
     dropdown_registry: &mut DropdownRegistry<Msg>,
@@ -118,7 +158,16 @@ pub fn render_container<Msg: Clone + Send + 'static>(
     padding: u16,
     area: Rect,
     inside_panel: bool,
-    render_fn: impl Fn(&mut Frame, &mut InteractionRegistry<Msg>, &mut FocusRegistry<Msg>, &mut DropdownRegistry<Msg>, Option<&FocusId>, &Element<Msg>, Rect, bool),
+    render_fn: impl Fn(
+        &mut Frame,
+        &mut InteractionRegistry<Msg>,
+        &mut FocusRegistry<Msg>,
+        &mut DropdownRegistry<Msg>,
+        Option<&FocusId>,
+        &Element<Msg>,
+        Rect,
+        bool,
+    ),
 ) {
     // Apply padding by shrinking the area
     let padded_area = Rect {
@@ -127,5 +176,14 @@ pub fn render_container<Msg: Clone + Send + 'static>(
         width: area.width.saturating_sub(padding * 2),
         height: area.height.saturating_sub(padding * 2),
     };
-    render_fn(frame, registry, focus_registry, dropdown_registry, focused_id, child, padded_area, inside_panel);
+    render_fn(
+        frame,
+        registry,
+        focus_registry,
+        dropdown_registry,
+        focused_id,
+        child,
+        padded_area,
+        inside_panel,
+    );
 }

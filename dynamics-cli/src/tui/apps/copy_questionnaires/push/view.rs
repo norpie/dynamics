@@ -1,10 +1,10 @@
-use super::models::{State, PushState, CopyProgress, CopyResult, CopyError, CopyPhase, EntityType};
-use crate::tui::{Element, renderer::LayeredView, LayoutConstraint};
+use super::models::{CopyError, CopyPhase, CopyProgress, CopyResult, EntityType, PushState, State};
+use crate::tui::{Element, LayoutConstraint, renderer::LayeredView};
 use crate::{button_row, col, spacer, use_constraints};
 use ratatui::{
-    text::{Line, Span},
-    style::Style,
     prelude::Stylize,
+    style::Style,
+    text::{Line, Span},
 };
 
 pub fn render_view(state: &State) -> LayeredView<super::models::Msg> {
@@ -17,9 +17,7 @@ pub fn render_view(state: &State) -> LayeredView<super::models::Msg> {
         PushState::Failed(error) => render_failure_screen(state, error, theme),
     };
 
-    let panel = Element::panel(content)
-        .title("Push Questionnaire")
-        .build();
+    let panel = Element::panel(content).title("Push Questionnaire").build();
 
     let mut view = LayeredView::new(panel);
 
@@ -43,25 +41,35 @@ fn render_confirmation_screen(
     let total_entities = state.questionnaire.total_entities();
     let pages_count = state.questionnaire.pages.len();
     let page_lines_count = state.questionnaire.page_lines.len();
-    let groups_count: usize = state.questionnaire.pages.iter().map(|p| p.groups.len()).sum();
+    let groups_count: usize = state
+        .questionnaire
+        .pages
+        .iter()
+        .map(|p| p.groups.len())
+        .sum();
     let group_lines_count = state.questionnaire.group_lines.len();
-    let questions_count: usize = state.questionnaire.pages.iter()
+    let questions_count: usize = state
+        .questionnaire
+        .pages
+        .iter()
         .flat_map(|p| &p.groups)
         .map(|g| g.questions.len())
         .sum();
     let template_lines_count = state.questionnaire.template_lines.len();
     let conditions_count = state.questionnaire.conditions.len();
-    let condition_actions_count: usize = state.questionnaire.conditions.iter()
+    let condition_actions_count: usize = state
+        .questionnaire
+        .conditions
+        .iter()
         .map(|c| c.actions.len())
         .sum();
-    let classifications_count =
-        state.questionnaire.classifications.categories.len() +
-        state.questionnaire.classifications.domains.len() +
-        state.questionnaire.classifications.funds.len() +
-        state.questionnaire.classifications.supports.len() +
-        state.questionnaire.classifications.types.len() +
-        state.questionnaire.classifications.subcategories.len() +
-        state.questionnaire.classifications.flemish_shares.len();
+    let classifications_count = state.questionnaire.classifications.categories.len()
+        + state.questionnaire.classifications.domains.len()
+        + state.questionnaire.classifications.funds.len()
+        + state.questionnaire.classifications.supports.len()
+        + state.questionnaire.classifications.types.len()
+        + state.questionnaire.classifications.subcategories.len()
+        + state.questionnaire.classifications.flemish_shares.len();
 
     col![
         Element::column(vec![
@@ -167,58 +175,110 @@ fn render_progress_screen(
     Element::column(vec![
         Element::styled_text(Line::from(vec![
             Span::styled("Step ", Style::default().fg(theme.text_secondary)),
-            Span::styled(format!("{}/11", progress.step), Style::default().fg(theme.accent_info).bold()),
+            Span::styled(
+                format!("{}/11", progress.step),
+                Style::default().fg(theme.accent_info).bold(),
+            ),
             Span::styled(": ", Style::default().fg(theme.text_secondary)),
-            Span::styled(progress.phase.name(), Style::default().fg(theme.text_primary).bold()),
-        ])).build(),
-
+            Span::styled(
+                progress.phase.name(),
+                Style::default().fg(theme.text_primary).bold(),
+            ),
+        ]))
+        .build(),
         spacer!(),
-
         // Overall progress bar
-        Element::progress_bar(progress.total_created, progress.total_entities)
-            .build(),
-
+        Element::progress_bar(progress.total_created, progress.total_entities).build(),
         spacer!(),
-
-        Element::styled_text(Line::from(vec![
-            Span::styled("Progress Detail:", Style::default().fg(theme.text_primary).bold()),
-        ])).build(),
-
+        Element::styled_text(Line::from(vec![Span::styled(
+            "Progress Detail:",
+            Style::default().fg(theme.text_primary).bold(),
+        )]))
+        .build(),
         spacer!(),
-
         // Individual entity progress lines
-        render_entity_progress("Questionnaire", progress.get(EntityType::Questionnaire), theme, matches!(progress.phase, CopyPhase::CreatingQuestionnaire)),
-        render_entity_progress("Pages", progress.get(EntityType::Pages), theme, matches!(progress.phase, CopyPhase::CreatingPages)),
-        render_entity_progress("Page Lines", progress.get(EntityType::PageLines), theme, matches!(progress.phase, CopyPhase::CreatingPageLines)),
-        render_entity_progress("Groups", progress.get(EntityType::Groups), theme, matches!(progress.phase, CopyPhase::CreatingGroups)),
-        render_entity_progress("Group Lines", progress.get(EntityType::GroupLines), theme, matches!(progress.phase, CopyPhase::CreatingGroupLines)),
-        render_entity_progress("Questions", progress.get(EntityType::Questions), theme, matches!(progress.phase, CopyPhase::CreatingQuestions)),
-        render_entity_progress("Template Lines", progress.get(EntityType::TemplateLines), theme, matches!(progress.phase, CopyPhase::CreatingTemplateLines)),
-        render_entity_progress("Conditions", progress.get(EntityType::Conditions), theme, matches!(progress.phase, CopyPhase::CreatingConditions)),
-        render_entity_progress("Condition Actions", progress.get(EntityType::ConditionActions), theme, matches!(progress.phase, CopyPhase::CreatingConditionActions)),
-        render_entity_progress("Classifications", progress.get(EntityType::Classifications), theme, matches!(progress.phase, CopyPhase::CreatingClassifications)),
-
+        render_entity_progress(
+            "Questionnaire",
+            progress.get(EntityType::Questionnaire),
+            theme,
+            matches!(progress.phase, CopyPhase::CreatingQuestionnaire),
+        ),
+        render_entity_progress(
+            "Pages",
+            progress.get(EntityType::Pages),
+            theme,
+            matches!(progress.phase, CopyPhase::CreatingPages),
+        ),
+        render_entity_progress(
+            "Page Lines",
+            progress.get(EntityType::PageLines),
+            theme,
+            matches!(progress.phase, CopyPhase::CreatingPageLines),
+        ),
+        render_entity_progress(
+            "Groups",
+            progress.get(EntityType::Groups),
+            theme,
+            matches!(progress.phase, CopyPhase::CreatingGroups),
+        ),
+        render_entity_progress(
+            "Group Lines",
+            progress.get(EntityType::GroupLines),
+            theme,
+            matches!(progress.phase, CopyPhase::CreatingGroupLines),
+        ),
+        render_entity_progress(
+            "Questions",
+            progress.get(EntityType::Questions),
+            theme,
+            matches!(progress.phase, CopyPhase::CreatingQuestions),
+        ),
+        render_entity_progress(
+            "Template Lines",
+            progress.get(EntityType::TemplateLines),
+            theme,
+            matches!(progress.phase, CopyPhase::CreatingTemplateLines),
+        ),
+        render_entity_progress(
+            "Conditions",
+            progress.get(EntityType::Conditions),
+            theme,
+            matches!(progress.phase, CopyPhase::CreatingConditions),
+        ),
+        render_entity_progress(
+            "Condition Actions",
+            progress.get(EntityType::ConditionActions),
+            theme,
+            matches!(progress.phase, CopyPhase::CreatingConditionActions),
+        ),
+        render_entity_progress(
+            "Classifications",
+            progress.get(EntityType::Classifications),
+            theme,
+            matches!(progress.phase, CopyPhase::CreatingClassifications),
+        ),
         spacer!(),
-
         Element::styled_text(Line::from(vec![
             Span::styled("Overall: ", Style::default().fg(theme.text_secondary)),
             Span::styled(
-                format!("{}/{} entities created ({}%)",
+                format!(
+                    "{}/{} entities created ({}%)",
                     progress.total_created,
                     progress.total_entities,
                     progress.percentage()
                 ),
-                Style::default().fg(theme.text_primary)
+                Style::default().fg(theme.text_primary),
             ),
-        ])).build(),
-
+        ]))
+        .build(),
         spacer!(),
-
-        Element::styled_text(Line::from(vec![
-            Span::styled("⚠ This may take 10-30 seconds for large questionnaires",
-                Style::default().fg(theme.accent_warning)),
-        ])).build(),
-    ]).build()
+        Element::styled_text(Line::from(vec![Span::styled(
+            "⚠ This may take 10-30 seconds for large questionnaires",
+            Style::default().fg(theme.accent_warning),
+        )]))
+        .build(),
+    ])
+    .build()
 }
 
 /// Helper to render a single entity progress line
@@ -240,9 +300,16 @@ fn render_entity_progress(
 
     Element::styled_text(Line::from(vec![
         Span::styled(format!("{} ", status), Style::default().fg(color).bold()),
-        Span::styled(format!("{:<30}", label), Style::default().fg(theme.text_primary)),
-        Span::styled(format!("{:>6}", format!("{}/{}", done, total)), Style::default().fg(theme.text_secondary)),
-    ])).build()
+        Span::styled(
+            format!("{:<30}", label),
+            Style::default().fg(theme.text_primary),
+        ),
+        Span::styled(
+            format!("{:>6}", format!("{}/{}", done, total)),
+            Style::default().fg(theme.text_secondary),
+        ),
+    ]))
+    .build()
 }
 
 /// Screen 3a: Success - show results
@@ -482,92 +549,80 @@ pub fn render_status(state: &State) -> Option<Line<'static>> {
     let theme = &crate::global_runtime_config().theme;
 
     match &state.push_state {
-        PushState::Confirming => {
-            Some(Line::from(vec![
-                Span::styled(
-                    format!("Ready to copy: {}", state.copy_name),
-                    Style::default().fg(theme.text_primary),
-                ),
-            ]))
-        }
-        PushState::Copying(progress) => {
-            Some(Line::from(vec![
-                Span::styled(
-                    format!("Copying... {}% ({}/{})",
-                        progress.percentage(),
-                        progress.total_created,
-                        progress.total_entities
-                    ),
-                    Style::default().fg(theme.accent_info),
-                ),
-            ]))
-        }
-        PushState::Success(_) => {
-            Some(Line::from(vec![
-                Span::styled(
-                    "✓ Copy complete",
-                    Style::default().fg(theme.accent_success),
-                ),
-            ]))
-        }
-        PushState::Failed(_) => {
-            Some(Line::from(vec![
-                Span::styled(
-                    "✗ Copy failed",
-                    Style::default().fg(theme.accent_error),
-                ),
-            ]))
-        }
+        PushState::Confirming => Some(Line::from(vec![Span::styled(
+            format!("Ready to copy: {}", state.copy_name),
+            Style::default().fg(theme.text_primary),
+        )])),
+        PushState::Copying(progress) => Some(Line::from(vec![Span::styled(
+            format!(
+                "Copying... {}% ({}/{})",
+                progress.percentage(),
+                progress.total_created,
+                progress.total_entities
+            ),
+            Style::default().fg(theme.accent_info),
+        )])),
+        PushState::Success(_) => Some(Line::from(vec![Span::styled(
+            "✓ Copy complete",
+            Style::default().fg(theme.accent_success),
+        )])),
+        PushState::Failed(_) => Some(Line::from(vec![Span::styled(
+            "✗ Copy failed",
+            Style::default().fg(theme.accent_error),
+        )])),
     }
 }
 
 /// Render undo confirmation modal
 fn render_undo_confirmation_modal(theme: &crate::tui::Theme) -> Element<super::models::Msg> {
     let content = Element::column(vec![
-        Element::styled_text(Line::from(vec![
-            Span::styled("⚠ CONFIRM UNDO", Style::default().fg(theme.accent_error).bold()),
-        ])).build(),
-
+        Element::styled_text(Line::from(vec![Span::styled(
+            "⚠ CONFIRM UNDO",
+            Style::default().fg(theme.accent_error).bold(),
+        )]))
+        .build(),
         spacer!(),
-
-        Element::styled_text(Line::from(vec![
-            Span::styled("This will DELETE all entities that were created during the copy:", Style::default().fg(theme.text_primary)),
-        ])).build(),
-
+        Element::styled_text(Line::from(vec![Span::styled(
+            "This will DELETE all entities that were created during the copy:",
+            Style::default().fg(theme.text_primary),
+        )]))
+        .build(),
         spacer!(),
-
-        Element::styled_text(Line::from(vec![
-            Span::styled("• The new questionnaire", Style::default().fg(theme.text_primary)),
-        ])).build(),
-
-        Element::styled_text(Line::from(vec![
-            Span::styled("• All pages, groups, and questions", Style::default().fg(theme.text_primary)),
-        ])).build(),
-
-        Element::styled_text(Line::from(vec![
-            Span::styled("• All conditions and classifications", Style::default().fg(theme.text_primary)),
-        ])).build(),
-
+        Element::styled_text(Line::from(vec![Span::styled(
+            "• The new questionnaire",
+            Style::default().fg(theme.text_primary),
+        )]))
+        .build(),
+        Element::styled_text(Line::from(vec![Span::styled(
+            "• All pages, groups, and questions",
+            Style::default().fg(theme.text_primary),
+        )]))
+        .build(),
+        Element::styled_text(Line::from(vec![Span::styled(
+            "• All conditions and classifications",
+            Style::default().fg(theme.text_primary),
+        )]))
+        .build(),
         spacer!(),
-
-        Element::styled_text(Line::from(vec![
-            Span::styled("This action CANNOT be undone!", Style::default().fg(theme.accent_error).bold()),
-        ])).build(),
-
+        Element::styled_text(Line::from(vec![Span::styled(
+            "This action CANNOT be undone!",
+            Style::default().fg(theme.accent_error).bold(),
+        )]))
+        .build(),
         spacer!(),
-
-        Element::styled_text(Line::from(vec![
-            Span::styled("Are you sure you want to delete everything?", Style::default().fg(theme.text_primary)),
-        ])).build(),
-
+        Element::styled_text(Line::from(vec![Span::styled(
+            "Are you sure you want to delete everything?",
+            Style::default().fg(theme.text_primary),
+        )]))
+        .build(),
         spacer!(),
+        Element::styled_text(Line::from(vec![Span::styled(
+            "[Y] Yes, delete all    [N] No, keep it    [Esc] Cancel",
+            Style::default().fg(theme.text_secondary),
+        )]))
+        .build(),
+    ])
+    .build();
 
-        Element::styled_text(Line::from(vec![
-            Span::styled("[Y] Yes, delete all    [N] No, keep it    [Esc] Cancel", Style::default().fg(theme.text_secondary)),
-        ])).build(),
-    ]).build();
-
-    Element::panel(content)
-        .title("Confirm Undo")
-        .build()
+    Element::panel(content).title("Confirm Undo").build()
 }

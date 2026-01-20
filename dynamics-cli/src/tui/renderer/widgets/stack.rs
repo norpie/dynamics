@@ -1,7 +1,7 @@
-use ratatui::{Frame, style::Style, layout::Rect};
-use crate::tui::{Element, Theme, Layer, Alignment as LayerAlignment};
 use crate::tui::element::FocusId;
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, DropdownRegistry};
+use crate::tui::renderer::{DropdownRegistry, FocusRegistry, InteractionRegistry};
+use crate::tui::{Alignment as LayerAlignment, Element, Layer, Theme};
+use ratatui::{Frame, layout::Rect, style::Style};
 
 /// Render a semi-transparent dim overlay
 pub fn render_dim_overlay(frame: &mut Frame, area: Rect) {
@@ -11,8 +11,7 @@ pub fn render_dim_overlay(frame: &mut Frame, area: Rect) {
     // Render dim overlay using Paragraph for reliable background fill
     // Paragraph properly fills the entire area with the background color,
     // unlike Block which doesn't reliably fill without borders
-    let dim_overlay = Paragraph::new("")
-        .style(Style::default().bg(theme.bg_surface));
+    let dim_overlay = Paragraph::new("").style(Style::default().bg(theme.bg_surface));
     frame.render_widget(dim_overlay, area);
 }
 
@@ -75,7 +74,7 @@ pub fn calculate_layer_position<Msg>(
 /// Render Stack element
 pub fn render_stack<Msg: Clone + Send + 'static>(
     frame: &mut Frame,
-    
+
     registry: &mut InteractionRegistry<Msg>,
     focus_registry: &mut FocusRegistry<Msg>,
     dropdown_registry: &mut DropdownRegistry<Msg>,
@@ -83,7 +82,16 @@ pub fn render_stack<Msg: Clone + Send + 'static>(
     layers: &[Layer<Msg>],
     area: Rect,
     inside_panel: bool,
-    render_fn: impl Fn(&mut Frame, &mut InteractionRegistry<Msg>, &mut FocusRegistry<Msg>, &mut DropdownRegistry<Msg>, Option<&FocusId>, &Element<Msg>, Rect, bool),
+    render_fn: impl Fn(
+        &mut Frame,
+        &mut InteractionRegistry<Msg>,
+        &mut FocusRegistry<Msg>,
+        &mut DropdownRegistry<Msg>,
+        Option<&FocusId>,
+        &Element<Msg>,
+        Rect,
+        bool,
+    ),
     estimate_fn: impl Fn(&Element<Msg>, Rect) -> (u16, u16),
 ) {
     log::debug!("Stack::render_stack - rendering {} layers", layers.len());
@@ -97,37 +105,69 @@ pub fn render_stack<Msg: Clone + Send + 'static>(
         }
 
         // Calculate position based on alignment
-        let layer_area = calculate_layer_position(&layer.element, layer.alignment, area, &estimate_fn);
+        let layer_area =
+            calculate_layer_position(&layer.element, layer.alignment, area, &estimate_fn);
 
         // Push focus layer context for this stack layer
         focus_registry.push_layer(layer_idx);
 
         // Render the layer element
-        render_fn(frame, registry, focus_registry, dropdown_registry, focused_id, &layer.element, layer_area, inside_panel);
+        render_fn(
+            frame,
+            registry,
+            focus_registry,
+            dropdown_registry,
+            focused_id,
+            &layer.element,
+            layer_area,
+            inside_panel,
+        );
 
         // Pop focus layer context
         focus_registry.pop_layer();
     }
 
-    log::debug!("Stack: all layers rendered visually, now clearing registries to re-render topmost only");
+    log::debug!(
+        "Stack: all layers rendered visually, now clearing registries to re-render topmost only"
+    );
     // Clear all interactions and focus, then re-render topmost layer to register only its interactions/focus
     registry.clear();
     log::debug!("Stack: calling focus_registry.clear() to reset for topmost layer");
     focus_registry.clear();
     if let Some(last_layer) = layers.last() {
         let layer_idx = layers.len() - 1;
-        log::debug!("Stack: re-rendering topmost layer {} for interaction/focus registration", layer_idx);
-        let layer_area = calculate_layer_position(&last_layer.element, last_layer.alignment, area, &estimate_fn);
+        log::debug!(
+            "Stack: re-rendering topmost layer {} for interaction/focus registration",
+            layer_idx
+        );
+        let layer_area = calculate_layer_position(
+            &last_layer.element,
+            last_layer.alignment,
+            area,
+            &estimate_fn,
+        );
 
         // Re-push the topmost layer context
         focus_registry.push_layer(layer_idx);
-        render_fn(frame, registry, focus_registry, dropdown_registry, focused_id, &last_layer.element, layer_area, inside_panel);
+        render_fn(
+            frame,
+            registry,
+            focus_registry,
+            dropdown_registry,
+            focused_id,
+            &last_layer.element,
+            layer_area,
+            inside_panel,
+        );
         // Keep the layer pushed so focusables remain in active layer
 
         // Debug: Log focus registry state
         if let Some(layer) = focus_registry.active_layer() {
-            log::debug!("Stack: focus registry after re-render - layer {} has {} focusables",
-                       layer.layer_index, layer.focusables.len());
+            log::debug!(
+                "Stack: focus registry after re-render - layer {} has {} focusables",
+                layer.layer_index,
+                layer.focusables.len()
+            );
             for focusable in &layer.focusables {
                 log::debug!("    Focusable: {:?} at {:?}", focusable.id, focusable.rect);
             }

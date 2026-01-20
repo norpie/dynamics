@@ -1,15 +1,15 @@
-use crossterm::event::KeyCode;
-use crate::tui::{App, AppId, Command, Element, Subscription, Theme, FocusId, Resource};
+use crate::config::SavedMigration;
+use crate::tui::apps::migration::MigrationSelectParams;
+use crate::tui::apps::screens::{ErrorScreenParams, LoadingScreenParams};
 use crate::tui::renderer::LayeredView;
 use crate::tui::widgets::list::{ListItem, ListState};
-use crate::tui::widgets::{TextInputField, SelectField, TextInputEvent, SelectEvent};
-use crate::tui::apps::screens::{ErrorScreenParams, LoadingScreenParams};
-use crate::tui::apps::migration::MigrationSelectParams;
-use crate::config::SavedMigration;
-use ratatui::text::{Line, Span};
-use ratatui::style::{Style, Stylize};
-use crate::{col, row, spacer, button_row, use_constraints};
+use crate::tui::widgets::{SelectEvent, SelectField, TextInputEvent, TextInputField};
+use crate::tui::{App, AppId, Command, Element, FocusId, Resource, Subscription, Theme};
+use crate::{button_row, col, row, spacer, use_constraints};
+use crossterm::event::KeyCode;
 use dynamics_lib_macros::Validate;
+use ratatui::style::{Style, Stylize};
+use ratatui::text::{Line, Span};
 
 pub struct MigrationEnvironmentApp;
 
@@ -23,20 +23,29 @@ pub struct MigrationEnvironment {
 impl ListItem for MigrationEnvironment {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Msg> {
-        use ratatui::text::{Line, Span};
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Msg> {
         use ratatui::style::Style;
+        use ratatui::text::{Line, Span};
 
         let theme = &crate::global_runtime_config().theme;
         let (fg_color, bg_style) = if is_selected {
-            (theme.accent_primary, Some(Style::default().bg(theme.bg_surface)))
+            (
+                theme.accent_primary,
+                Some(Style::default().bg(theme.bg_surface)),
+            )
         } else {
             (theme.text_primary, None)
         };
 
-        let mut builder = Element::styled_text(Line::from(vec![
-            Span::styled(format!("  {}", self.name), Style::default().fg(fg_color)),
-        ]));
+        let mut builder = Element::styled_text(Line::from(vec![Span::styled(
+            format!("  {}", self.name),
+            Style::default().fg(fg_color),
+        )]));
 
         if let Some(bg) = bg_style {
             builder = builder.background(bg);
@@ -73,7 +82,11 @@ pub struct CreateMigrationForm {
     #[validate(required, message = "Source environment is required")]
     source: SelectField,
 
-    #[validate(required, custom = "validate_target_different", message = "Target must differ from source")]
+    #[validate(
+        required,
+        custom = "validate_target_different",
+        message = "Target must differ from source"
+    )]
     target: SelectField,
 
     validation_error: Option<String>,
@@ -131,10 +144,9 @@ impl App for MigrationEnvironmentApp {
         let cmd = Command::perform(
             async {
                 let config = crate::global_config();
-                config.list_migrations().await
-                    .map_err(|e| e.to_string())
+                config.list_migrations().await.map_err(|e| e.to_string())
             },
-            Msg::MigrationsLoaded
+            Msg::MigrationsLoaded,
         );
         (state, cmd)
     }
@@ -142,11 +154,14 @@ impl App for MigrationEnvironmentApp {
     fn update(state: &mut State, msg: Msg) -> Command<Msg> {
         match msg {
             Msg::MigrationsLoaded(Ok(migrations)) => {
-                state.environments = migrations.into_iter().map(|m| MigrationEnvironment {
-                    name: m.name,
-                    source: m.source_env,
-                    target: m.target_env,
-                }).collect();
+                state.environments = migrations
+                    .into_iter()
+                    .map(|m| MigrationEnvironment {
+                        name: m.name,
+                        source: m.source_env,
+                        target: m.target_env,
+                    })
+                    .collect();
                 Command::set_focus(FocusId::new("migration-list"))
             }
             Msg::MigrationsLoaded(Err(err)) => {
@@ -156,7 +171,7 @@ impl App for MigrationEnvironmentApp {
                     ErrorScreenParams {
                         message: format!("Failed to load migrations: {}", err),
                         target: Some(AppId::MigrationEnvironment),
-                    }
+                    },
                 )
             }
             Msg::SelectEnvironment(idx) => {
@@ -169,7 +184,7 @@ impl App for MigrationEnvironmentApp {
                                 migration_name: migration.name.clone(),
                                 source_env: migration.source.clone(),
                                 target_env: migration.target.clone(),
-                            }
+                            },
                         ),
                         Command::quit_self(),
                     ])
@@ -179,7 +194,9 @@ impl App for MigrationEnvironmentApp {
             }
             Msg::ListNavigate(key) => {
                 let visible_height = 20;
-                state.list_state.handle_key(key, state.environments.len(), visible_height);
+                state
+                    .list_state
+                    .handle_key(key, state.environments.len(), visible_height);
                 Command::None
             }
             Msg::OpenCreateModal => {
@@ -189,10 +206,9 @@ impl App for MigrationEnvironmentApp {
                 Command::perform(
                     async {
                         let config = crate::global_config();
-                        config.list_environments().await
-                            .map_err(|e| e.to_string())
+                        config.list_environments().await.map_err(|e| e.to_string())
                     },
-                    Msg::EnvironmentsLoaded
+                    Msg::EnvironmentsLoaded,
                 )
             }
             Msg::EnvironmentsLoaded(Ok(envs)) => {
@@ -209,13 +225,25 @@ impl App for MigrationEnvironmentApp {
                 Command::None
             }
             Msg::CreateFormSourceEvent(event) => {
-                let filtered_envs = get_filtered_source_envs(&state.available_environments, state.create_form.target.value());
-                state.create_form.source.handle_event::<Msg>(event, &filtered_envs);
+                let filtered_envs = get_filtered_source_envs(
+                    &state.available_environments,
+                    state.create_form.target.value(),
+                );
+                state
+                    .create_form
+                    .source
+                    .handle_event::<Msg>(event, &filtered_envs);
                 Command::None
             }
             Msg::CreateFormTargetEvent(event) => {
-                let filtered_envs = get_filtered_target_envs(&state.available_environments, state.create_form.source.value());
-                state.create_form.target.handle_event::<Msg>(event, &filtered_envs);
+                let filtered_envs = get_filtered_target_envs(
+                    &state.available_environments,
+                    state.create_form.source.value(),
+                );
+                state
+                    .create_form
+                    .target
+                    .handle_event::<Msg>(event, &filtered_envs);
                 Command::None
             }
             Msg::CreateFormSubmit => {
@@ -239,10 +267,12 @@ impl App for MigrationEnvironmentApp {
                                     created_at: chrono::Utc::now(),
                                     last_used: chrono::Utc::now(),
                                 };
-                                config.add_migration(migration).await
+                                config
+                                    .add_migration(migration)
+                                    .await
                                     .map_err(|e| e.to_string())
                             },
-                            Msg::MigrationCreated
+                            Msg::MigrationCreated,
                         )
                     }
                     Err(validation_error) => {
@@ -269,9 +299,12 @@ impl App for MigrationEnvironmentApp {
                     Command::perform(
                         async move {
                             let config = crate::global_config();
-                            config.delete_migration(&name).await.map_err(|e| e.to_string())
+                            config
+                                .delete_migration(&name)
+                                .await
+                                .map_err(|e| e.to_string())
                         },
-                        Msg::MigrationDeleted
+                        Msg::MigrationDeleted,
                     )
                 } else {
                     Command::None
@@ -281,18 +314,16 @@ impl App for MigrationEnvironmentApp {
                 state.close_delete_modal();
                 Command::None
             }
-            Msg::MigrationDeleted(result) => {
-                match result {
-                    Ok(_) => {
-                        state.close_delete_modal();
-                        reload_migrations()
-                    }
-                    Err(e) => {
-                        log::error!("Failed to delete migration: {}", e);
-                        Command::None
-                    }
+            Msg::MigrationDeleted(result) => match result {
+                Ok(_) => {
+                    state.close_delete_modal();
+                    reload_migrations()
                 }
-            }
+                Err(e) => {
+                    log::error!("Failed to delete migration: {}", e);
+                    Command::None
+                }
+            },
             Msg::RequestRename => {
                 if let Some(selected_idx) = state.list_state.selected() {
                     if let Some(migration) = state.environments.get(selected_idx) {
@@ -320,12 +351,16 @@ impl App for MigrationEnvironmentApp {
                     async move {
                         let config = crate::global_config();
                         // Get existing migration
-                        let migration = config.get_migration(&old_name).await
+                        let migration = config
+                            .get_migration(&old_name)
+                            .await
                             .map_err(|e| e.to_string())?
                             .ok_or_else(|| "Migration not found".to_string())?;
 
                         // Delete old
-                        config.delete_migration(&old_name).await
+                        config
+                            .delete_migration(&old_name)
+                            .await
                             .map_err(|e| e.to_string())?;
 
                         // Insert with new name
@@ -336,28 +371,28 @@ impl App for MigrationEnvironmentApp {
                             created_at: migration.created_at,
                             last_used: chrono::Utc::now(),
                         };
-                        config.add_migration(renamed).await
+                        config
+                            .add_migration(renamed)
+                            .await
                             .map_err(|e| e.to_string())
                     },
-                    Msg::MigrationRenamed
+                    Msg::MigrationRenamed,
                 )
             }
             Msg::RenameFormCancel => {
                 state.close_rename_modal();
                 Command::None
             }
-            Msg::MigrationRenamed(result) => {
-                match result {
-                    Ok(_) => {
-                        state.close_rename_modal();
-                        reload_migrations()
-                    }
-                    Err(e) => {
-                        log::error!("Failed to rename migration: {}", e);
-                        Command::None
-                    }
+            Msg::MigrationRenamed(result) => match result {
+                Ok(_) => {
+                    state.close_rename_modal();
+                    reload_migrations()
                 }
-            }
+                Err(e) => {
+                    log::error!("Failed to rename migration: {}", e);
+                    Command::None
+                }
+            },
             Msg::MigrationCreated(Ok(())) => reload_migrations(),
             Msg::MigrationCreated(Err(err)) => {
                 log::error!("Failed to create migration: {}", err);
@@ -367,7 +402,7 @@ impl App for MigrationEnvironmentApp {
                     ErrorScreenParams {
                         message: format!("Failed to create migration: {}", err),
                         target: Some(AppId::MigrationEnvironment),
-                    }
+                    },
                 )
             }
         }
@@ -377,11 +412,16 @@ impl App for MigrationEnvironmentApp {
         use_constraints!();
         let theme = &crate::global_runtime_config().theme;
 
-        let list = Element::list("migration-list", &state.environments, &state.list_state, theme)
-            .on_select(Msg::SelectEnvironment)
-            .on_activate(Msg::SelectEnvironment)
-            .on_navigate(Msg::ListNavigate)
-            .build();
+        let list = Element::list(
+            "migration-list",
+            &state.environments,
+            &state.list_state,
+            theme,
+        )
+        .on_select(Msg::SelectEnvironment)
+        .on_activate(Msg::SelectEnvironment)
+        .on_navigate(Msg::ListNavigate)
+        .build();
 
         let main_ui = Element::panel(list)
             .title("Select Migration Environment")
@@ -432,11 +472,11 @@ impl App for MigrationEnvironmentApp {
                 Element::text_input(
                     "rename-name-input",
                     state.rename_form.new_name.value(),
-                    &state.rename_form.new_name.state
+                    &state.rename_form.new_name.state,
                 )
                 .placeholder("Migration name")
                 .on_event(Msg::RenameFormNameEvent)
-                .build()
+                .build(),
             )
             .title("New Name")
             .build();
@@ -449,15 +489,13 @@ impl App for MigrationEnvironmentApp {
 
             // Modal content
             let modal_content = Element::panel(
-                Element::container(
-                    col![
-                        name_input => Length(3),
-                        spacer!() => Length(1),
-                        buttons => Length(3),
-                    ]
-                )
+                Element::container(col![
+                    name_input => Length(3),
+                    spacer!() => Length(1),
+                    buttons => Length(3),
+                ])
                 .padding(2)
-                .build()
+                .build(),
             )
             .title("Rename Migration")
             .width(60)
@@ -470,33 +508,38 @@ impl App for MigrationEnvironmentApp {
             if state.available_environments.is_empty() {
                 let loading_content = Element::panel(
                     Element::container(
-                        Element::column(vec![
-                            Element::text("Loading environments..."),
-                        ]).build()
+                        Element::column(vec![Element::text("Loading environments...")]).build(),
                     )
                     .padding(2)
-                    .build()
+                    .build(),
                 )
                 .title("Create New Migration")
                 .build();
 
-                return LayeredView::new(main_ui).with_app_modal(loading_content, crate::tui::Alignment::Center);
+                return LayeredView::new(main_ui)
+                    .with_app_modal(loading_content, crate::tui::Alignment::Center);
             }
 
             // Get filtered environment options
-            let source_options = get_filtered_source_envs(&state.available_environments, state.create_form.target.value());
-            let target_options = get_filtered_target_envs(&state.available_environments, state.create_form.source.value());
+            let source_options = get_filtered_source_envs(
+                &state.available_environments,
+                state.create_form.target.value(),
+            );
+            let target_options = get_filtered_target_envs(
+                &state.available_environments,
+                state.create_form.source.value(),
+            );
 
             // Name input
             let name_input = Element::panel(
                 Element::text_input(
                     "create-name-input",
                     state.create_form.name.value(),
-                    &state.create_form.name.state
+                    &state.create_form.name.state,
                 )
                 .placeholder("Migration name")
                 .on_event(Msg::CreateFormNameEvent)
-                .build()
+                .build(),
             )
             .title("Name")
             .build();
@@ -506,10 +549,10 @@ impl App for MigrationEnvironmentApp {
                 Element::select(
                     "create-source-select",
                     source_options,
-                    &mut state.create_form.source.state
+                    &mut state.create_form.source.state,
                 )
                 .on_event(Msg::CreateFormSourceEvent)
-                .build()
+                .build(),
             )
             .title("Source Environment")
             .build();
@@ -519,10 +562,10 @@ impl App for MigrationEnvironmentApp {
                 Element::select(
                     "create-target-select",
                     target_options,
-                    &mut state.create_form.target.state
+                    &mut state.create_form.target.state,
                 )
                 .on_event(Msg::CreateFormTargetEvent)
-                .build()
+                .build(),
             )
             .title("Target Environment")
             .build();
@@ -557,15 +600,15 @@ impl App for MigrationEnvironmentApp {
                 ]
             };
 
-            let modal_content = Element::panel(
-                Element::container(modal_body)
-                .padding(2)
-                .build()
-            )
-            .title("Create New Migration")
-            .width(80)
-            .height(if state.create_form.validation_error.is_some() { 23 } else { 21 })
-            .build();
+            let modal_content = Element::panel(Element::container(modal_body).padding(2).build())
+                .title("Create New Migration")
+                .width(80)
+                .height(if state.create_form.validation_error.is_some() {
+                    23
+                } else {
+                    21
+                })
+                .build();
 
             LayeredView::new(main_ui).with_app_modal(modal_content, crate::tui::Alignment::Center)
         } else {
@@ -577,15 +620,39 @@ impl App for MigrationEnvironmentApp {
         let mut subs = vec![];
 
         if !state.show_create_modal && !state.show_delete_confirm && !state.show_rename_modal {
-            subs.push(Subscription::keyboard(crate::global_runtime_config().get_keybind("migration_env.create"), "Create new migration", Msg::OpenCreateModal));
-            subs.push(Subscription::keyboard(crate::global_runtime_config().get_keybind("migration_env.delete"), "Delete migration", Msg::RequestDelete));
-            subs.push(Subscription::keyboard(crate::global_runtime_config().get_keybind("migration_env.rename"), "Rename migration", Msg::RequestRename));
+            subs.push(Subscription::keyboard(
+                crate::global_runtime_config().get_keybind("migration_env.create"),
+                "Create new migration",
+                Msg::OpenCreateModal,
+            ));
+            subs.push(Subscription::keyboard(
+                crate::global_runtime_config().get_keybind("migration_env.delete"),
+                "Delete migration",
+                Msg::RequestDelete,
+            ));
+            subs.push(Subscription::keyboard(
+                crate::global_runtime_config().get_keybind("migration_env.rename"),
+                "Rename migration",
+                Msg::RequestRename,
+            ));
         } else if state.show_create_modal {
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CreateFormCancel));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Close modal",
+                Msg::CreateFormCancel,
+            ));
         } else if state.show_delete_confirm {
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel delete", Msg::CancelDelete));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Cancel delete",
+                Msg::CancelDelete,
+            ));
         } else if state.show_rename_modal {
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::RenameFormCancel));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Close modal",
+                Msg::RenameFormCancel,
+            ));
         }
 
         subs
@@ -648,12 +715,13 @@ fn reload_migrations() -> Command<Msg> {
             let config = crate::global_config();
             config.list_migrations().await.map_err(|e| e.to_string())
         },
-        Msg::MigrationsLoaded
+        Msg::MigrationsLoaded,
     )
 }
 
 fn get_filtered_source_envs(all_envs: &[String], exclude: Option<&str>) -> Vec<String> {
-    all_envs.iter()
+    all_envs
+        .iter()
         .filter(|e| {
             if let Some(target) = exclude {
                 e.as_str() != target
@@ -666,7 +734,8 @@ fn get_filtered_source_envs(all_envs: &[String], exclude: Option<&str>) -> Vec<S
 }
 
 fn get_filtered_target_envs(all_envs: &[String], exclude: Option<&str>) -> Vec<String> {
-    all_envs.iter()
+    all_envs
+        .iter()
         .filter(|e| {
             if let Some(source) = exclude {
                 e.as_str() != source

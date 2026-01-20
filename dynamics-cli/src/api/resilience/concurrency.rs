@@ -5,8 +5,8 @@
 
 use super::config::ConcurrencyConfig;
 use log::debug;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// Semaphore-based concurrency limiter for controlling concurrent API requests
@@ -87,8 +87,7 @@ impl ConcurrencyLimiter {
             Err(_) => {
                 debug!(
                     "Concurrency limiter: no permits available ({}/{} in use)",
-                    self.config.max_concurrent_requests,
-                    self.config.max_concurrent_requests
+                    self.config.max_concurrent_requests, self.config.max_concurrent_requests
                 );
                 None
             }
@@ -169,7 +168,8 @@ impl ConcurrencyStats {
         if !self.enabled {
             return 0;
         }
-        self.max_concurrent_requests.saturating_sub(self.available_permits)
+        self.max_concurrent_requests
+            .saturating_sub(self.available_permits)
     }
 }
 
@@ -269,11 +269,7 @@ mod tests {
         drop(permit);
 
         // The waiting task should complete
-        let result = tokio::time::timeout(
-            tokio::time::Duration::from_millis(100),
-            handle,
-        )
-        .await;
+        let result = tokio::time::timeout(tokio::time::Duration::from_millis(100), handle).await;
 
         assert!(result.is_ok());
     }

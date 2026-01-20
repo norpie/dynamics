@@ -26,7 +26,10 @@ pub fn apply_transform(
     resolver_ctx: Option<&ResolverContext>,
 ) -> TransformResult {
     match transform {
-        Transform::Copy { source_path, resolver } => {
+        Transform::Copy {
+            source_path,
+            resolver,
+        } => {
             // If a resolver is specified, resolve using the resolver
             if let Some(resolver_name) = resolver {
                 match resolver_ctx {
@@ -52,10 +55,12 @@ pub fn apply_transform(
                             ctx.resolve_composite_to_value(resolver_name, &pairs)
                         } else {
                             // Compound key: use resolver's match_fields to get values
-                            let mut pairs: Vec<(&str, serde_json::Value)> = Vec::with_capacity(match_fields.len());
+                            let mut pairs: Vec<(&str, serde_json::Value)> =
+                                Vec::with_capacity(match_fields.len());
 
                             // Log source record keys once for debugging
-                            static LOGGED_KEYS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                            static LOGGED_KEYS: std::sync::atomic::AtomicBool =
+                                std::sync::atomic::AtomicBool::new(false);
                             if !LOGGED_KEYS.swap(true, std::sync::atomic::Ordering::Relaxed) {
                                 if let Some(obj) = record.as_object() {
                                     let keys: Vec<_> = obj.keys().collect();
@@ -79,10 +84,8 @@ pub fn apply_transform(
                             }
 
                             // Build reference pairs for the resolver
-                            let ref_pairs: Vec<(&str, &serde_json::Value)> = pairs
-                                .iter()
-                                .map(|(k, v)| (*k, v))
-                                .collect();
+                            let ref_pairs: Vec<(&str, &serde_json::Value)> =
+                                pairs.iter().map(|(k, v)| (*k, v)).collect();
 
                             ctx.resolve_composite_to_value(resolver_name, &ref_pairs)
                         }
@@ -98,9 +101,7 @@ pub fn apply_transform(
             }
         }
 
-        Transform::Constant { value } => {
-            resolve_dynamic(value)
-        }
+        Transform::Constant { value } => resolve_dynamic(value),
 
         Transform::Conditional {
             source_path,
@@ -143,7 +144,10 @@ pub fn apply_transform(
             Ok(Value::String(result))
         }
 
-        Transform::Replace { source_path, replacements } => {
+        Transform::Replace {
+            source_path,
+            replacements,
+        } => {
             let source_value = resolve_path(record, source_path);
             match source_value {
                 Value::String(s) => {
@@ -152,10 +156,15 @@ pub fn apply_transform(
                         if r.is_regex {
                             match regex::Regex::new(&r.pattern) {
                                 Ok(re) => {
-                                    result = re.replace_all(&result, r.replacement.as_str()).into_owned();
+                                    result = re
+                                        .replace_all(&result, r.replacement.as_str())
+                                        .into_owned();
                                 }
                                 Err(e) => {
-                                    return Err(format!("Invalid regex pattern '{}': {}", r.pattern, e));
+                                    return Err(format!(
+                                        "Invalid regex pattern '{}': {}",
+                                        r.pattern, e
+                                    ));
                                 }
                             }
                         } else {
@@ -203,9 +212,7 @@ fn values_equal(a: &Value, b: &Value) -> bool {
 /// Apply fallback behavior when no value map entry matches
 fn apply_fallback(fallback: &Fallback, source_value: Value) -> TransformResult {
     match fallback {
-        Fallback::Error => {
-            Err(format!("No mapping found for value: {}", source_value))
-        }
+        Fallback::Error => Err(format!("No mapping found for value: {}", source_value)),
         Fallback::Default { value } => resolve_dynamic(value),
         Fallback::PassThrough => Ok(source_value),
         Fallback::Null => Ok(Value::Null),
@@ -268,7 +275,9 @@ mod tests {
         let record = json!({"statecode": 0});
         let transform = Transform::Conditional {
             source_path: FieldPath::simple("statecode"),
-            condition: Condition::Equals { value: Value::Int(0) },
+            condition: Condition::Equals {
+                value: Value::Int(0),
+            },
             then_value: Value::String("Active".into()),
             else_value: Value::String("Inactive".into()),
         };
@@ -282,7 +291,9 @@ mod tests {
         let record = json!({"statecode": 1});
         let transform = Transform::Conditional {
             source_path: FieldPath::simple("statecode"),
-            condition: Condition::Equals { value: Value::Int(0) },
+            condition: Condition::Equals {
+                value: Value::Int(0),
+            },
             then_value: Value::String("Active".into()),
             else_value: Value::String("Inactive".into()),
         };
@@ -330,7 +341,9 @@ mod tests {
                 (Value::Int(1), Value::Int(100)),
                 (Value::Int(2), Value::Int(200)),
             ],
-            fallback: Fallback::Default { value: Value::Int(0) },
+            fallback: Fallback::Default {
+                value: Value::Int(0),
+            },
         };
 
         let result = apply_transform(&transform, &record, None).unwrap();
@@ -342,9 +355,7 @@ mod tests {
         let record = json!({"gendercode": 99});
         let transform = Transform::ValueMap {
             source_path: FieldPath::simple("gendercode"),
-            mappings: vec![
-                (Value::Int(1), Value::Int(100)),
-            ],
+            mappings: vec![(Value::Int(1), Value::Int(100))],
             fallback: Fallback::PassThrough,
         };
 
@@ -357,9 +368,7 @@ mod tests {
         let record = json!({"gendercode": 99});
         let transform = Transform::ValueMap {
             source_path: FieldPath::simple("gendercode"),
-            mappings: vec![
-                (Value::Int(1), Value::Int(100)),
-            ],
+            mappings: vec![(Value::Int(1), Value::Int(100))],
             fallback: Fallback::Error,
         };
 
@@ -386,8 +395,8 @@ mod tests {
         let transform = Transform::Replace {
             source_path: FieldPath::simple("name"),
             replacements: vec![
-                Replacement::literal("foo", "bar"),  // "bar bar baz"
-                Replacement::literal("bar", "qux"),  // "qux qux baz"
+                Replacement::literal("foo", "bar"), // "bar bar baz"
+                Replacement::literal("bar", "qux"), // "qux qux baz"
             ],
         };
         let result = apply_transform(&transform, &record, None).unwrap();

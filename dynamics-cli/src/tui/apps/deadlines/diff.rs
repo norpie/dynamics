@@ -8,8 +8,8 @@
 use std::collections::HashSet;
 
 use super::models::{
-    DeadlineLookupKey, DeadlineLookupMap, DeadlineMode, ExistingAssociations,
-    ExistingDeadline, TransformedDeadline,
+    DeadlineLookupKey, DeadlineLookupMap, DeadlineMode, ExistingAssociations, ExistingDeadline,
+    TransformedDeadline,
 };
 
 /// Result of matching and diffing a single record
@@ -148,16 +148,19 @@ pub fn match_deadline(
     );
 
     // Extract description from transformed record
-    let description = transformed.direct_fields
+    let description = transformed
+        .direct_fields
         .get("nrq_description")
         .or_else(|| transformed.direct_fields.get("cgk_info"))
         .map(|s| s.trim().to_lowercase());
 
     // Path 1: Try matching by description
     if let Some(ref desc) = description {
-        let desc_matches: Vec<_> = candidates.iter()
+        let desc_matches: Vec<_> = candidates
+            .iter()
             .filter(|c| {
-                let existing_desc = c.fields
+                let existing_desc = c
+                    .fields
                     .get("nrq_description")
                     .or_else(|| c.fields.get("cgk_info"))
                     .and_then(|v| v.as_str())
@@ -177,15 +180,19 @@ pub fn match_deadline(
     }
 
     // Path 2: Try matching by support checkboxes (for NRQ: custom_junction_records, for CGK: checkbox_relationships)
-    let transformed_support_ids: std::collections::HashSet<_> = transformed.custom_junction_records
+    let transformed_support_ids: std::collections::HashSet<_> = transformed
+        .custom_junction_records
         .iter()
         .map(|r| r.related_id.to_lowercase())
         .collect();
 
     if !transformed_support_ids.is_empty() {
-        let support_matches: Vec<_> = candidates.iter()
+        let support_matches: Vec<_> = candidates
+            .iter()
             .filter(|c| {
-                let existing_support_ids: std::collections::HashSet<_> = c.associations.support_ids
+                let existing_support_ids: std::collections::HashSet<_> = c
+                    .associations
+                    .support_ids
                     .iter()
                     .map(|s| s.to_lowercase())
                     .collect();
@@ -214,7 +221,9 @@ pub fn match_deadline(
     MatchResult {
         mode: DeadlineMode::Error(format!(
             "Multiple existing deadlines ({}) match (name={}, date={})",
-            candidates.len(), name, date
+            candidates.len(),
+            name,
+            date
         )),
         existing_guid: None,
         existing_fields: None,
@@ -308,15 +317,23 @@ fn diff_fields(
 
     // Non-editable fields that we skip in diff
     let non_editable: HashSet<&str> = if is_cgk {
-        ["cgk_deadlinename", "cgk_date", "cgk_datumcommissievergadering"]
-            .iter()
-            .copied()
-            .collect()
+        [
+            "cgk_deadlinename",
+            "cgk_date",
+            "cgk_datumcommissievergadering",
+        ]
+        .iter()
+        .copied()
+        .collect()
     } else {
-        ["nrq_deadlinename", "nrq_deadlinedate", "nrq_committeemeetingdate"]
-            .iter()
-            .copied()
-            .collect()
+        [
+            "nrq_deadlinename",
+            "nrq_deadlinedate",
+            "nrq_committeemeetingdate",
+        ]
+        .iter()
+        .copied()
+        .collect()
     };
 
     // Check direct fields
@@ -569,7 +586,9 @@ mod tests {
         } else {
             "nrq_deadlinename"
         };
-        transformed.direct_fields.insert(name_field.to_string(), name.to_string());
+        transformed
+            .direct_fields
+            .insert(name_field.to_string(), name.to_string());
         transformed.deadline_date = Some(date);
         transformed
     }
@@ -586,7 +605,11 @@ mod tests {
 
     #[test]
     fn test_match_not_found_returns_create() {
-        let transformed = make_transformed("New Deadline", NaiveDate::from_ymd_opt(2026, 1, 15).unwrap(), "cgk_deadline");
+        let transformed = make_transformed(
+            "New Deadline",
+            NaiveDate::from_ymd_opt(2026, 1, 15).unwrap(),
+            "cgk_deadline",
+        );
         let lookup_map = DeadlineLookupMap::new();
 
         let result = match_deadline(&transformed, &lookup_map, "cgk_deadline");

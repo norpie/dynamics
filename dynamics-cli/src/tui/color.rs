@@ -111,15 +111,15 @@ pub fn hex_to_color(hex: &str) -> Result<Color> {
     let hex = hex.trim_start_matches('#');
 
     if hex.len() != 6 {
-        anyhow::bail!("Invalid hex color format: expected 6 characters, got {}", hex.len());
+        anyhow::bail!(
+            "Invalid hex color format: expected 6 characters, got {}",
+            hex.len()
+        );
     }
 
-    let r = u8::from_str_radix(&hex[0..2], 16)
-        .context("Failed to parse red component")?;
-    let g = u8::from_str_radix(&hex[2..4], 16)
-        .context("Failed to parse green component")?;
-    let b = u8::from_str_radix(&hex[4..6], 16)
-        .context("Failed to parse blue component")?;
+    let r = u8::from_str_radix(&hex[0..2], 16).context("Failed to parse red component")?;
+    let g = u8::from_str_radix(&hex[2..4], 16).context("Failed to parse green component")?;
+    let b = u8::from_str_radix(&hex[4..6], 16).context("Failed to parse blue component")?;
 
     Ok(Color::Rgb(r, g, b))
 }

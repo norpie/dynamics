@@ -7,10 +7,10 @@
 //! - Database-backed persistence
 
 pub mod builder;
+pub mod registrations;
 pub mod registry;
 pub mod store;
 pub mod types;
-pub mod registrations;
 
 pub use builder::OptionDefBuilder;
 pub use registry::OptionsRegistry;

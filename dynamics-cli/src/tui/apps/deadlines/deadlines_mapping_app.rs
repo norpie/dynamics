@@ -1,25 +1,27 @@
-use crossterm::event::KeyCode;
-use std::path::PathBuf;
-use std::collections::HashMap;
-use crate::tui::{App, AppId, Command, Element, Subscription, Theme, LayeredView, Resource, FocusId};
 use crate::tui::element::LayoutConstraint::*;
-use crate::tui::widgets::{SelectField, SelectEvent, ListState};
+use crate::tui::widgets::{ListState, SelectEvent, SelectField};
+use crate::tui::{
+    App, AppId, Command, Element, FocusId, LayeredView, Resource, Subscription, Theme,
+};
 use crate::{col, spacer};
-use ratatui::text::{Line, Span};
+use calamine::{Reader, Xlsx, open_workbook};
+use crossterm::event::KeyCode;
 use ratatui::style::{Style, Stylize};
-use calamine::{Reader, open_workbook, Xlsx};
+use ratatui::text::{Line, Span};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
-use super::field_mappings;
-use super::models::{TransformedDeadline, DeadlineLookupMap, DeadlineMode};
-use super::existing_deadlines::fetch_existing_deadlines;
 use super::diff::match_all_deadlines;
+use super::existing_deadlines::fetch_existing_deadlines;
+use super::field_mappings;
+use super::models::{DeadlineLookupMap, DeadlineMode, TransformedDeadline};
 
 /// Extract the primary ID field from a record
 fn extract_id_from_record(record: &serde_json::Value, entity_name: &str) -> Option<String> {
     // Try common ID field patterns
     let id_fields = vec![
-        format!("{}id", entity_name),  // e.g., cgk_deadlineid
-        "systemuserid".to_string(),    // Special case for systemuser
+        format!("{}id", entity_name), // e.g., cgk_deadlineid
+        "systemuserid".to_string(),   // Special case for systemuser
         format!("{}_id", entity_name),
     ];
 
@@ -43,9 +45,13 @@ fn resolve_lookup(
     excel_column: &str,
 ) -> Option<String> {
     // Special case: Board meeting (date-based lookup)
-    if excel_column.to_lowercase().contains("raad") && excel_column.to_lowercase().contains("bestuur") {
+    if excel_column.to_lowercase().contains("raad")
+        && excel_column.to_lowercase().contains("bestuur")
+    {
         if let Ok(date) = parse_excel_date(cell_value) {
-            return board_meeting_lookup.get(&date).map(|(id, _name)| id.clone());
+            return board_meeting_lookup
+                .get(&date)
+                .map(|(id, _name)| id.clone());
         }
         return None;
     }
@@ -85,7 +91,12 @@ fn truncate_field_value(value: &str, field_name: &str) -> String {
     };
 
     if value.len() > max_len {
-        log::warn!("Truncating field '{}' from {} to {} chars", field_name, value.len(), max_len);
+        log::warn!(
+            "Truncating field '{}' from {} to {} chars",
+            field_name,
+            value.len(),
+            max_len
+        );
         value.chars().take(max_len).collect()
     } else {
         value.to_string()
@@ -108,12 +119,7 @@ fn parse_time(value: &str) -> Result<chrono::NaiveTime, String> {
     }
 
     // Try parsing as time string (HH:MM or HH:MM:SS)
-    let formats = vec![
-        "%H:%M",
-        "%H:%M:%S",
-        "%I:%M %p",
-        "%I:%M:%S %p",
-    ];
+    let formats = vec!["%H:%M", "%H:%M:%S", "%I:%M %p", "%I:%M:%S %p"];
 
     for format in formats {
         if let Ok(time) = chrono::NaiveTime::parse_from_str(value, format) {
@@ -130,16 +136,37 @@ fn get_checkbox_relationship_names(entity_type: &str) -> HashMap<String, String>
     let mut map = HashMap::new();
 
     if entity_type == "cgk_deadline" {
-        map.insert("cgk_support".to_string(), "cgk_deadline_cgk_support".to_string());
-        map.insert("cgk_category".to_string(), "cgk_deadline_cgk_category".to_string());
-        map.insert("cgk_length".to_string(), "cgk_deadline_cgk_length".to_string());
-        map.insert("cgk_flemishshare".to_string(), "cgk_deadline_cgk_flemishshare".to_string());
+        map.insert(
+            "cgk_support".to_string(),
+            "cgk_deadline_cgk_support".to_string(),
+        );
+        map.insert(
+            "cgk_category".to_string(),
+            "cgk_deadline_cgk_category".to_string(),
+        );
+        map.insert(
+            "cgk_length".to_string(),
+            "cgk_deadline_cgk_length".to_string(),
+        );
+        map.insert(
+            "cgk_flemishshare".to_string(),
+            "cgk_deadline_cgk_flemishshare".to_string(),
+        );
     } else if entity_type == "nrq_deadline" {
         // NOTE: nrq_support is NOT here - it uses a custom junction entity (nrq_deadlinesupport)
         // and is handled separately via resolve_custom_junction_checkboxes()
-        map.insert("nrq_category".to_string(), "nrq_deadline_nrq_category".to_string());
-        map.insert("nrq_subcategory".to_string(), "nrq_deadline_nrq_subcategory".to_string());
-        map.insert("nrq_flemishshare".to_string(), "nrq_deadline_nrq_flemishshare".to_string());
+        map.insert(
+            "nrq_category".to_string(),
+            "nrq_deadline_nrq_category".to_string(),
+        );
+        map.insert(
+            "nrq_subcategory".to_string(),
+            "nrq_deadline_nrq_subcategory".to_string(),
+        );
+        map.insert(
+            "nrq_flemishshare".to_string(),
+            "nrq_deadline_nrq_flemishshare".to_string(),
+        );
     }
 
     map
@@ -185,7 +212,11 @@ fn resolve_checkboxes(
     rvb_idx: usize,
 ) -> HashMap<String, Vec<String>> {
     let mut result: HashMap<String, Vec<String>> = HashMap::new();
-    let entity_prefix = if entity_type == "cgk_deadline" { "cgk_" } else { "nrq_" };
+    let entity_prefix = if entity_type == "cgk_deadline" {
+        "cgk_"
+    } else {
+        "nrq_"
+    };
 
     // Get relationship name mappings
     let relationship_map = get_checkbox_relationship_names(entity_type);
@@ -220,15 +251,22 @@ fn resolve_checkboxes(
             let cell_value = cell.to_string().trim().to_lowercase();
 
             // Check if checkbox is checked
-            if cell_value == "x" || cell_value == "1" || cell_value == "true" || cell_value == "yes" {
+            if cell_value == "x" || cell_value == "1" || cell_value == "true" || cell_value == "yes"
+            {
                 // Try to find matching entity record and extract its ID
                 let mut found = false;
                 for entity_name in &checkbox_entities {
                     if let Some(id) = find_checkbox_id(cache, entity_name, header) {
                         // Get the relationship name for this entity type
                         if let Some(relationship_name) = relationship_map.get(entity_name) {
-                            log::debug!("Checkbox '{}' matched to {} (id={})", header, entity_name, id);
-                            result.entry(relationship_name.clone())
+                            log::debug!(
+                                "Checkbox '{}' matched to {} (id={})",
+                                header,
+                                entity_name,
+                                id
+                            );
+                            result
+                                .entry(relationship_name.clone())
                                 .or_insert_with(Vec::new)
                                 .push(id);
                         }
@@ -237,7 +275,10 @@ fn resolve_checkboxes(
                     }
                 }
                 if !found {
-                    log::warn!("Checkbox column '{}' (checked) not matched to any entity", header);
+                    log::warn!(
+                        "Checkbox column '{}' (checked) not matched to any entity",
+                        header
+                    );
                 }
             }
         }
@@ -276,9 +317,12 @@ fn resolve_custom_junction_checkboxes(
             let cell_value = cell.to_string().trim().to_lowercase();
 
             // Check if checkbox is checked
-            if cell_value == "x" || cell_value == "1" || cell_value == "true" || cell_value == "yes" {
+            if cell_value == "x" || cell_value == "1" || cell_value == "true" || cell_value == "yes"
+            {
                 // Try to find matching nrq_support record
-                if let Some((id, matched_name)) = find_checkbox_id_and_name(cache, "nrq_support", header) {
+                if let Some((id, matched_name)) =
+                    find_checkbox_id_and_name(cache, "nrq_support", header)
+                {
                     result.push(CustomJunctionRecord {
                         junction_entity: "nrq_deadlinesupport".to_string(),
                         main_entity_field: "nrq_DeadlineId".to_string(),
@@ -296,21 +340,28 @@ fn resolve_custom_junction_checkboxes(
 }
 
 /// Fetch entity data from cache or API
-async fn fetch_entity_data(
-    entity_name: &str,
-) -> Result<Vec<serde_json::Value>, String> {
+async fn fetch_entity_data(entity_name: &str) -> Result<Vec<serde_json::Value>, String> {
     let config = crate::global_config();
     let manager = crate::client_manager();
 
     // Get current environment
-    let environment_name = manager.get_current_environment_name().await
+    let environment_name = manager
+        .get_current_environment_name()
+        .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "No environment selected".to_string())?;
 
     // Try cache first (24 hours) - but force refresh if cache has 0 records
-    match config.get_entity_data_cache(&environment_name, entity_name, 24).await {
+    match config
+        .get_entity_data_cache(&environment_name, entity_name, 24)
+        .await
+    {
         Ok(Some(cached)) if !cached.is_empty() => {
-            log::debug!("Using cached data for {} ({} records)", entity_name, cached.len());
+            log::debug!(
+                "Using cached data for {} ({} records)",
+                entity_name,
+                cached.len()
+            );
             return Ok(cached);
         }
         Ok(Some(cached)) => {
@@ -348,20 +399,23 @@ async fn fetch_entity_data(
         .await
         .map_err(|e| format!("Failed to fetch {}: {}", entity_name, e))?;
 
-    let records = result.records()
-        .cloned()
-        .unwrap_or_default();
+    let records = result.records().cloned().unwrap_or_default();
 
     log::debug!("Fetched {} records for {}", records.len(), entity_name);
 
     if records.is_empty() {
-        log::warn!("Entity {} returned 0 records - entity might be empty or query might need adjustment", entity_name);
+        log::warn!(
+            "Entity {} returned 0 records - entity might be empty or query might need adjustment",
+            entity_name
+        );
     } else if let Some(first) = records.first() {
         log::debug!("First record from {}: {:?}", entity_name, first);
     }
 
     // Cache for future use
-    let _ = config.set_entity_data_cache(&environment_name, entity_name, &records).await;
+    let _ = config
+        .set_entity_data_cache(&environment_name, entity_name, &records)
+        .await;
 
     Ok(records)
 }
@@ -397,9 +451,9 @@ fn build_board_meeting_lookup(state: &mut State, entity_type: &str) {
 
             // Normalize whitespace - replace all whitespace variants (including non-breaking spaces) with regular spaces
             let name_normalized = name_lower
-                .replace('\u{00A0}', " ")  // non-breaking space
-                .replace('\u{2009}', " ")  // thin space
-                .replace('\u{202F}', " ")  // narrow no-break space
+                .replace('\u{00A0}', " ") // non-breaking space
+                .replace('\u{2009}', " ") // thin space
+                .replace('\u{202F}', " ") // narrow no-break space
                 .trim()
                 .to_string();
 
@@ -417,7 +471,8 @@ fn build_board_meeting_lookup(state: &mut State, entity_type: &str) {
 
             if is_bestuur {
                 // Extract the date part from normalized name
-                let date_start = if name_normalized.starts_with("bestuur + algemene vergadering - ") {
+                let date_start = if name_normalized.starts_with("bestuur + algemene vergadering - ")
+                {
                     "bestuur + algemene vergadering - ".len()
                 } else if name_normalized.starts_with("raad van bestuur - ") {
                     "raad van bestuur - ".len()
@@ -425,7 +480,10 @@ fn build_board_meeting_lookup(state: &mut State, entity_type: &str) {
                     "bestuur - ".len()
                 };
 
-                let date_part = name_normalized[date_start..].split_whitespace().next().unwrap_or("");
+                let date_part = name_normalized[date_start..]
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("");
 
                 // Try to parse the date
                 if let Ok(date) = parse_board_meeting_date(date_part) {
@@ -461,7 +519,10 @@ fn build_board_meeting_lookup(state: &mut State, entity_type: &str) {
         if !first_bestuur_sample.is_empty() {
             log::debug!("  Sample bestuur matches: {:?}", first_bestuur_sample);
         }
-        log::debug!("  Final lookup size: {}", state.board_meeting_date_lookup.len());
+        log::debug!(
+            "  Final lookup size: {}",
+            state.board_meeting_date_lookup.len()
+        );
     } else {
         log::warn!("Board entity '{}' not found in cache", board_entity);
     }
@@ -471,10 +532,10 @@ fn build_board_meeting_lookup(state: &mut State, entity_type: &str) {
 fn parse_board_meeting_date(date_str: &str) -> Result<chrono::NaiveDate, String> {
     // Try various date formats that might appear in entity names
     let formats = vec![
-        "%-d/%-m/%Y",  // 3/2/2025
-        "%-d/%m/%Y",   // 3/02/2025
-        "%d/%-m/%Y",   // 03/2/2025
-        "%d/%m/%Y",    // 03/02/2025
+        "%-d/%-m/%Y", // 3/2/2025
+        "%-d/%m/%Y",  // 3/02/2025
+        "%d/%-m/%Y",  // 03/2/2025
+        "%d/%m/%Y",   // 03/02/2025
     ];
 
     for format in formats {
@@ -508,7 +569,9 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
     let mut workbook: Xlsx<_> = match open_workbook(&file_path) {
         Ok(wb) => wb,
         Err(e) => {
-            state.warnings.push(Warning(format!("Failed to open Excel file: {}", e)));
+            state
+                .warnings
+                .push(Warning(format!("Failed to open Excel file: {}", e)));
             return Command::None;
         }
     };
@@ -517,7 +580,10 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
     let range = match workbook.worksheet_range(&sheet_name) {
         Ok(range) => range,
         Err(e) => {
-            state.warnings.push(Warning(format!("Failed to read sheet '{}': {}", sheet_name, e)));
+            state.warnings.push(Warning(format!(
+                "Failed to read sheet '{}': {}",
+                sheet_name, e
+            )));
             return Command::None;
         }
     };
@@ -538,7 +604,9 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
     }
 
     if header_row_idx.is_none() {
-        state.warnings.push(Warning("Could not find header row (looking for 'Domein*' in first column)".to_string()));
+        state.warnings.push(Warning(
+            "Could not find header row (looking for 'Domein*' in first column)".to_string(),
+        ));
         return Command::None;
     }
 
@@ -550,7 +618,9 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
     let type_idx = headers.iter().position(|h| h.to_uppercase() == "TYPE");
 
     if type_idx.is_none() {
-        state.warnings.push(Warning("Could not find 'Type' column to determine checkbox boundary".to_string()));
+        state.warnings.push(Warning(
+            "Could not find 'Type' column to determine checkbox boundary".to_string(),
+        ));
         return Command::None;
     }
 
@@ -558,7 +628,8 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
     log::debug!("Found 'Type' at column index {}", type_idx);
 
     // All columns after "Type" are checkbox columns, except "OPM" and "IGNORE"
-    let checkbox_columns: Vec<String> = headers.iter()
+    let checkbox_columns: Vec<String> = headers
+        .iter()
         .skip(type_idx + 1)
         .filter(|h| {
             let h_upper = h.to_uppercase();
@@ -570,23 +641,39 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
     log::debug!("Checkbox columns: {:?}", checkbox_columns);
 
     // Get the entity type to determine which entity prefix to use
-    let entity_type = state.detected_entity.as_ref()
+    let entity_type = state
+        .detected_entity
+        .as_ref()
         .or(state.manual_override.as_ref());
 
     if entity_type.is_none() {
-        state.warnings.push(Warning("No entity type selected".to_string()));
+        state
+            .warnings
+            .push(Warning("No entity type selected".to_string()));
         return Command::None;
     }
 
     let entity_type = entity_type.unwrap();
-    let entity_prefix = if entity_type == "cgk_deadline" { "cgk_" } else { "nrq_" };
+    let entity_prefix = if entity_type == "cgk_deadline" {
+        "cgk_"
+    } else {
+        "nrq_"
+    };
 
     // Debug: log what's in the entity data cache
-    log::debug!("Entity data cache keys: {:?}", state.entity_data_cache.keys().collect::<Vec<_>>());
+    log::debug!(
+        "Entity data cache keys: {:?}",
+        state.entity_data_cache.keys().collect::<Vec<_>>()
+    );
     for (entity_name, records) in &state.entity_data_cache {
         log::debug!("Entity '{}' has {} records", entity_name, records.len());
         if let Some(first_record) = records.first() {
-            log::debug!("First record keys: {:?}", first_record.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+            log::debug!(
+                "First record keys: {:?}",
+                first_record
+                    .as_object()
+                    .map(|o| o.keys().collect::<Vec<_>>())
+            );
         }
     }
 
@@ -599,24 +686,42 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
         let checkbox_entity_names = vec![
             format!("{}support", entity_prefix),
             format!("{}category", entity_prefix),
-            if entity_prefix == "cgk_" { "cgk_length".to_string() } else { "nrq_subcategory".to_string() },
+            if entity_prefix == "cgk_" {
+                "cgk_length".to_string()
+            } else {
+                "nrq_subcategory".to_string()
+            },
             format!("{}flemishshare", entity_prefix),
         ];
 
-        log::debug!("Checking checkbox column '{}' against entities: {:?}", checkbox_col, checkbox_entity_names);
+        log::debug!(
+            "Checking checkbox column '{}' against entities: {:?}",
+            checkbox_col,
+            checkbox_entity_names
+        );
 
         for entity_name in checkbox_entity_names {
             if let Some(records) = state.entity_data_cache.get(&entity_name) {
-                log::debug!("Checking {} records in entity '{}'", records.len(), entity_name);
+                log::debug!(
+                    "Checking {} records in entity '{}'",
+                    records.len(),
+                    entity_name
+                );
                 // Check if any record's name matches the checkbox column header
                 for (idx, record) in records.iter().enumerate() {
-                    if let Some(name_value) = extract_name_from_record_with_entity(record, Some(&entity_name)) {
+                    if let Some(name_value) =
+                        extract_name_from_record_with_entity(record, Some(&entity_name))
+                    {
                         if idx < 3 {
                             log::debug!("Record {} name: '{}'", idx, name_value);
                         }
                         if name_value.trim().to_lowercase() == checkbox_col.trim().to_lowercase() {
                             found = true;
-                            log::debug!("✓ Matched checkbox column '{}' to entity '{}'", checkbox_col, entity_name);
+                            log::debug!(
+                                "✓ Matched checkbox column '{}' to entity '{}'",
+                                checkbox_col,
+                                entity_name
+                            );
                             break;
                         }
                     } else if idx < 3 {
@@ -632,11 +737,17 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
         }
 
         if !found {
-            state.warnings.push(Warning(format!("Checkbox column '{}' not found in entity data", checkbox_col)));
+            state.warnings.push(Warning(format!(
+                "Checkbox column '{}' not found in entity data",
+                checkbox_col
+            )));
         }
     }
 
-    log::debug!("Checkbox validation complete. Found {} warnings", state.warnings.len());
+    log::debug!(
+        "Checkbox validation complete. Found {} warnings",
+        state.warnings.len()
+    );
 
     // Clone entity type before mutating state
     let entity_type_owned = entity_type.to_string();
@@ -668,7 +779,11 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
             if let Some(cell) = row.get(ignore_idx) {
                 let cell_value = cell.to_string().trim().to_string();
                 if !cell_value.is_empty() {
-                    log::debug!("Ignoring row {} due to IGNORE column: '{}'", excel_row_number, cell_value);
+                    log::debug!(
+                        "Ignoring row {} due to IGNORE column: '{}'",
+                        excel_row_number,
+                        cell_value
+                    );
                     state.ignored_rows.push((excel_row_number, cell_value));
                     continue;
                 }
@@ -679,12 +794,17 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
 
         // Add OPM notes to warnings list
         if let Some(ref notes) = transformed.notes {
-            state.warnings.push(Warning(format!("Row {} [OPM]: {}", excel_row_number, notes)));
+            state.warnings.push(Warning(format!(
+                "Row {} [OPM]: {}",
+                excel_row_number, notes
+            )));
         }
 
         // Add row-level warnings to global warnings list
         for warning in &transformed.warnings {
-            state.warnings.push(Warning(format!("Row {}: {}", excel_row_number, warning)));
+            state
+                .warnings
+                .push(Warning(format!("Row {}: {}", excel_row_number, warning)));
         }
 
         state.transformed_records.push(transformed);
@@ -692,17 +812,24 @@ fn process_excel_file(state: &mut State) -> Command<Msg> {
 
     // Add ignored rows to warnings list
     for (row_num, reason) in &state.ignored_rows {
-        state.warnings.push(Warning(format!("Row {} [IGNORED]: {}", row_num, reason)));
+        state
+            .warnings
+            .push(Warning(format!("Row {} [IGNORED]: {}", row_num, reason)));
     }
 
     // Update summary stats
     state.total_rows = state.transformed_records.len();
-    state.rows_with_warnings = state.transformed_records.iter()
+    state.rows_with_warnings = state
+        .transformed_records
+        .iter()
         .filter(|r| r.has_warnings())
         .count();
 
-    log::debug!("Transformation complete. {} rows, {} with warnings",
-        state.total_rows, state.rows_with_warnings);
+    log::debug!(
+        "Transformation complete. {} rows, {} with warnings",
+        state.total_rows,
+        state.rows_with_warnings
+    );
 
     Command::set_focus(FocusId::new("continue-button"))
 }
@@ -731,8 +858,16 @@ fn process_row(
     let mappings = field_mappings::get_mappings_for_entity(entity_type);
 
     // Determine field name prefixes
-    let date_field = if entity_type == "cgk_deadline" { "cgk_date" } else { "nrq_deadlinedate" };
-    let commission_date_field = if entity_type == "cgk_deadline" { "cgk_datumcommissievergadering" } else { "nrq_committeemeetingdate" };
+    let date_field = if entity_type == "cgk_deadline" {
+        "cgk_date"
+    } else {
+        "nrq_deadlinedate"
+    };
+    let commission_date_field = if entity_type == "cgk_deadline" {
+        "cgk_datumcommissievergadering"
+    } else {
+        "nrq_committeemeetingdate"
+    };
 
     // Process each mapped field
     for mapping in mappings {
@@ -756,7 +891,10 @@ fn process_row(
                 match &mapping.field_type {
                     field_mappings::FieldType::Lookup { target_entity } => {
                         // Skip if this field was already populated (for fallback mappings)
-                        if transformed.lookup_fields.contains_key(&mapping.dynamics_field) {
+                        if transformed
+                            .lookup_fields
+                            .contains_key(&mapping.dynamics_field)
+                        {
                             continue;
                         }
 
@@ -768,7 +906,10 @@ fn process_row(
                             &cell_value,
                             &mapping.excel_column,
                         ) {
-                            transformed.lookup_fields.insert(mapping.dynamics_field.clone(), (id, target_entity.clone()));
+                            transformed.lookup_fields.insert(
+                                mapping.dynamics_field.clone(),
+                                (id, target_entity.clone()),
+                            );
                         } else {
                             transformed.warnings.push(format!(
                                 "Lookup '{}' not found: '{}'",
@@ -818,11 +959,11 @@ fn process_row(
                     field_mappings::FieldType::Direct => {
                         // Direct field - sanitize and truncate value
                         let sanitized_value = sanitize_field_value(&cell_value);
-                        let truncated_value = truncate_field_value(&sanitized_value, &mapping.dynamics_field);
-                        transformed.direct_fields.insert(
-                            mapping.dynamics_field.clone(),
-                            truncated_value
-                        );
+                        let truncated_value =
+                            truncate_field_value(&sanitized_value, &mapping.dynamics_field);
+                        transformed
+                            .direct_fields
+                            .insert(mapping.dynamics_field.clone(), truncated_value);
                     }
                     field_mappings::FieldType::Picklist { options } => {
                         // Picklist field - validate and map label to integer value
@@ -830,10 +971,9 @@ fn process_row(
 
                         if let Some(&picklist_value) = options.get(trimmed_value) {
                             // Valid picklist value - store it
-                            transformed.picklist_fields.insert(
-                                mapping.dynamics_field.clone(),
-                                picklist_value
-                            );
+                            transformed
+                                .picklist_fields
+                                .insert(mapping.dynamics_field.clone(), picklist_value);
                         } else {
                             // Invalid or unknown picklist value
                             // Check if it's the third invalid option (GUID label)
@@ -844,7 +984,8 @@ fn process_row(
                                 ));
                             } else {
                                 // Generate a helpful warning with expected values
-                                let expected_values: Vec<String> = options.keys().cloned().collect();
+                                let expected_values: Vec<String> =
+                                    options.keys().cloned().collect();
                                 transformed.warnings.push(format!(
                                     "Invalid value in '{}': '{}'. Expected one of: {}",
                                     mapping.excel_column,
@@ -854,20 +995,21 @@ fn process_row(
                             }
                         }
                     }
-                    field_mappings::FieldType::Boolean { true_value, false_value } => {
+                    field_mappings::FieldType::Boolean {
+                        true_value,
+                        false_value,
+                    } => {
                         // Boolean field - map string to true/false
                         let trimmed_value = cell_value.trim();
 
                         if trimmed_value.eq_ignore_ascii_case(true_value) {
-                            transformed.boolean_fields.insert(
-                                mapping.dynamics_field.clone(),
-                                true
-                            );
+                            transformed
+                                .boolean_fields
+                                .insert(mapping.dynamics_field.clone(), true);
                         } else if trimmed_value.eq_ignore_ascii_case(false_value) {
-                            transformed.boolean_fields.insert(
-                                mapping.dynamics_field.clone(),
-                                false
-                            );
+                            transformed
+                                .boolean_fields
+                                .insert(mapping.dynamics_field.clone(), false);
                         } else if !trimmed_value.is_empty() {
                             transformed.warnings.push(format!(
                                 "Invalid boolean value in '{}': '{}'. Expected '{}' or '{}'",
@@ -903,18 +1045,13 @@ fn process_row(
     }
 
     // Process checkbox columns (after "Raad van Bestuur")
-    let rvb_idx = headers.iter().position(|h|
-        h.to_lowercase().contains("raad") && h.to_lowercase().contains("bestuur")
-    );
+    let rvb_idx = headers
+        .iter()
+        .position(|h| h.to_lowercase().contains("raad") && h.to_lowercase().contains("bestuur"));
 
     if let Some(rvb_idx) = rvb_idx {
-        let checkbox_relationships = resolve_checkboxes(
-            &state.entity_data_cache,
-            entity_type,
-            headers,
-            row,
-            rvb_idx,
-        );
+        let checkbox_relationships =
+            resolve_checkboxes(&state.entity_data_cache, entity_type, headers, row, rvb_idx);
         transformed.checkbox_relationships = checkbox_relationships;
 
         // Resolve custom junction checkboxes (e.g., nrq_deadlinesupport for NRQ)
@@ -929,12 +1066,20 @@ fn process_row(
     }
 
     // Validate required fields
-    let name_field = if entity_type == "cgk_deadline" { "cgk_deadlinename" } else { "nrq_deadlinename" };
+    let name_field = if entity_type == "cgk_deadline" {
+        "cgk_deadlinename"
+    } else {
+        "nrq_deadlinename"
+    };
     if !transformed.direct_fields.contains_key(name_field) {
-        transformed.warnings.push("Missing required field: Deadline Name".to_string());
+        transformed
+            .warnings
+            .push("Missing required field: Deadline Name".to_string());
     }
     if transformed.deadline_date.is_none() {
-        transformed.warnings.push("Missing required field: Deadline Date".to_string());
+        transformed
+            .warnings
+            .push("Missing required field: Deadline Date".to_string());
     }
 
     transformed
@@ -966,12 +1111,7 @@ fn parse_excel_date(value: &str) -> Result<chrono::NaiveDate, String> {
 
     // Try parsing as date string (various formats with both / and - separators)
     let formats = vec![
-        "%Y-%m-%d",
-        "%d/%m/%Y",
-        "%m/%d/%Y",
-        "%d-%m-%Y",
-        "%m-%d-%Y",
-        "%Y/%m/%d",
+        "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y", "%Y/%m/%d",
     ];
 
     for format in formats {
@@ -989,7 +1129,10 @@ fn extract_name_from_record(record: &serde_json::Value) -> Option<String> {
 }
 
 /// Extract name field from a record with entity-specific field knowledge
-fn extract_name_from_record_with_entity(record: &serde_json::Value, entity_name: Option<&str>) -> Option<String> {
+fn extract_name_from_record_with_entity(
+    record: &serde_json::Value,
+    entity_name: Option<&str>,
+) -> Option<String> {
     // Special case: systemuser uses domainname (email) field
     if entity_name == Some("systemuser") {
         if let Some(value) = record.get("domainname") {
@@ -1044,12 +1187,9 @@ fn start_entity_data_loading(state: &mut State, entity_type: &str) -> Command<Ms
     for (_index, entity_name) in cache_entities.iter().enumerate() {
         let entity_name_clone = entity_name.clone();
 
-        builder = builder.add_task(
-            format!("Loading {} records", entity_name),
-            async move {
-                fetch_entity_data(&entity_name_clone).await
-            }
-        );
+        builder = builder.add_task(format!("Loading {} records", entity_name), async move {
+            fetch_entity_data(&entity_name_clone).await
+        });
     }
 
     builder
@@ -1057,7 +1197,8 @@ fn start_entity_data_loading(state: &mut State, entity_type: &str) -> Command<Ms
         .on_complete(AppId::DeadlinesMapping)
         .cancellable(false)
         .build(move |task_index, result| {
-            let typed_result = result.downcast::<Result<Vec<serde_json::Value>, String>>()
+            let typed_result = result
+                .downcast::<Result<Vec<serde_json::Value>, String>>()
                 .map(|boxed| *boxed)
                 .unwrap_or_else(|_| Err("Type mismatch in task result".to_string()));
             Msg::EntityDataLoaded(task_index, typed_result)
@@ -1070,10 +1211,8 @@ fn start_existing_deadlines_loading(state: &mut State, entity_type: &str) -> Com
     let entity_type_owned = entity_type.to_string();
 
     Command::perform(
-        async move {
-            fetch_existing_deadlines(&entity_type_owned).await
-        },
-        Msg::ExistingDeadlinesLoaded
+        async move { fetch_existing_deadlines(&entity_type_owned).await },
+        Msg::ExistingDeadlinesLoaded,
     )
 }
 
@@ -1096,7 +1235,11 @@ fn try_run_matching(state: &mut State) -> bool {
     }
 
     // Get entity type
-    let entity_type = match state.detected_entity.as_ref().or(state.manual_override.as_ref()) {
+    let entity_type = match state
+        .detected_entity
+        .as_ref()
+        .or(state.manual_override.as_ref())
+    {
         Some(et) => et.clone(),
         None => return false,
     };
@@ -1118,10 +1261,26 @@ fn try_run_matching(state: &mut State) -> bool {
     }
 
     // Update mode counts
-    state.create_count = state.transformed_records.iter().filter(|r| r.is_create()).count();
-    state.update_count = state.transformed_records.iter().filter(|r| r.is_update()).count();
-    state.unchanged_count = state.transformed_records.iter().filter(|r| r.is_unchanged()).count();
-    state.error_count = state.transformed_records.iter().filter(|r| r.is_error()).count();
+    state.create_count = state
+        .transformed_records
+        .iter()
+        .filter(|r| r.is_create())
+        .count();
+    state.update_count = state
+        .transformed_records
+        .iter()
+        .filter(|r| r.is_update())
+        .count();
+    state.unchanged_count = state
+        .transformed_records
+        .iter()
+        .filter(|r| r.is_unchanged())
+        .count();
+    state.error_count = state
+        .transformed_records
+        .iter()
+        .filter(|r| r.is_error())
+        .count();
 
     log::info!(
         "Matching complete: {} create, {} update, {} unchanged, {} error",
@@ -1144,10 +1303,18 @@ struct Warning(String);
 impl crate::tui::widgets::ListItem for Warning {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Msg> {
         let theme = &crate::global_runtime_config().theme;
         let (fg_color, bg_style) = if is_selected {
-            (theme.accent_primary, Some(Style::default().bg(theme.bg_surface)))
+            (
+                theme.accent_primary,
+                Some(Style::default().bg(theme.bg_surface)),
+            )
         } else {
             (theme.text_primary, None)
         };
@@ -1266,10 +1433,7 @@ impl App for DeadlinesMappingApp {
     type InitParams = super::models::MappingParams;
 
     fn init(params: Self::InitParams) -> (State, Command<Msg>) {
-        let mut state = State::new(
-            params.file_path,
-            params.sheet_name,
-        );
+        let mut state = State::new(params.file_path, params.sheet_name);
         state.entities = Resource::Loading;
 
         // Load entities and current environment
@@ -1277,22 +1441,20 @@ impl App for DeadlinesMappingApp {
             Command::perform(
                 async {
                     let manager = crate::client_manager();
-                    manager.get_current_environment_name().await
-                        .ok()
-                        .flatten()
+                    manager.get_current_environment_name().await.ok().flatten()
                 },
-                Msg::EnvironmentLoaded
+                Msg::EnvironmentLoaded,
             ),
             Command::perform_parallel()
-            .add_task(
-                "Loading entities".to_string(),
-                async move {
+                .add_task("Loading entities".to_string(), async move {
                     use crate::api::metadata::parse_entity_list;
                     let config = crate::global_config();
                     let manager = crate::client_manager();
 
                     // Get current environment
-                    let environment_name = manager.get_current_environment_name().await
+                    let environment_name = manager
+                        .get_current_environment_name()
+                        .await
                         .map_err(|e| e.to_string())?
                         .ok_or_else(|| "No environment selected".to_string())?;
 
@@ -1305,26 +1467,30 @@ impl App for DeadlinesMappingApp {
                                 .get_current_client()
                                 .await
                                 .map_err(|e| e.to_string())?;
-                            let metadata_xml = client.fetch_metadata().await.map_err(|e| e.to_string())?;
-                            let entities = parse_entity_list(&metadata_xml).map_err(|e| e.to_string())?;
+                            let metadata_xml =
+                                client.fetch_metadata().await.map_err(|e| e.to_string())?;
+                            let entities =
+                                parse_entity_list(&metadata_xml).map_err(|e| e.to_string())?;
 
                             // Cache for future use
-                            let _ = config.set_entity_cache(&environment_name, entities.clone()).await;
+                            let _ = config
+                                .set_entity_cache(&environment_name, entities.clone())
+                                .await;
 
                             Ok(entities)
                         }
                     }
-                }
-            )
-            .with_title("Loading entities")
-            .on_complete(AppId::DeadlinesMapping)
-            .cancellable(false)
-            .build(move |_task_index, result| {
-                let typed_result = result.downcast::<Result<Vec<String>, String>>()
-                    .map(|boxed| *boxed)
-                    .unwrap_or_else(|_| Err("Type mismatch in task result".to_string()));
-                Msg::EntitiesLoaded(typed_result)
-            })
+                })
+                .with_title("Loading entities")
+                .on_complete(AppId::DeadlinesMapping)
+                .cancellable(false)
+                .build(move |_task_index, result| {
+                    let typed_result = result
+                        .downcast::<Result<Vec<String>, String>>()
+                        .map(|boxed| *boxed)
+                        .unwrap_or_else(|_| Err("Type mismatch in task result".to_string()));
+                    Msg::EntitiesLoaded(typed_result)
+                }),
         ]);
 
         (state, cmd)
@@ -1346,7 +1512,10 @@ impl App for DeadlinesMappingApp {
                     // If no detection, initialize selector with cgk/nrq options
                     if state.detected_entity.is_none() {
                         let options = vec!["cgk_deadline".to_string(), "nrq_deadline".to_string()];
-                        state.entity_selector.state.update_option_count(options.len());
+                        state
+                            .entity_selector
+                            .state
+                            .update_option_count(options.len());
                         state.entity_selector.state.select(0);
                         state.entity_selector.set_value(Some(options[0].clone()));
                         state.manual_override = Some(options[0].clone());
@@ -1361,13 +1530,16 @@ impl App for DeadlinesMappingApp {
                 Command::None
             }
             Msg::StartDataLoading => {
-                let entity_type = state.detected_entity.clone()
+                let entity_type = state
+                    .detected_entity
+                    .clone()
                     .or_else(|| state.manual_override.clone());
 
                 if let Some(entity_type) = entity_type {
                     // Start both entity data loading and existing deadlines loading in parallel
                     let entity_data_cmd = start_entity_data_loading(state, &entity_type);
-                    let existing_deadlines_cmd = start_existing_deadlines_loading(state, &entity_type);
+                    let existing_deadlines_cmd =
+                        start_existing_deadlines_loading(state, &entity_type);
                     Command::batch(vec![entity_data_cmd, existing_deadlines_cmd])
                 } else {
                     Command::None
@@ -1400,7 +1572,9 @@ impl App for DeadlinesMappingApp {
                         log::debug!("Loaded {} records for task {}", records.len(), task_index);
 
                         // Store the entity data in cache
-                        let entity_type = state.detected_entity.as_ref()
+                        let entity_type = state
+                            .detected_entity
+                            .as_ref()
                             .or(state.manual_override.as_ref());
                         if let Some(entity_type) = entity_type {
                             let cache_entities = field_mappings::get_cache_entities(entity_type);
@@ -1411,7 +1585,9 @@ impl App for DeadlinesMappingApp {
                         }
                     }
                     Err(err) => {
-                        state.warnings.push(Warning(format!("Failed to load entity data: {}", err)));
+                        state
+                            .warnings
+                            .push(Warning(format!("Failed to load entity data: {}", err)));
                     }
                 }
 
@@ -1423,7 +1599,9 @@ impl App for DeadlinesMappingApp {
                     if !state.excel_processed {
                         // Add temporary loading item to warnings list
                         state.warnings.clear();
-                        state.warnings.push(Warning("Loading... Processing Excel file and validating data...".to_string()));
+                        state.warnings.push(Warning(
+                            "Loading... Processing Excel file and validating data...".to_string(),
+                        ));
                         let cmd = process_excel_file(state);
 
                         // Try to run matching (if existing deadlines are already loaded)
@@ -1466,20 +1644,20 @@ impl App for DeadlinesMappingApp {
                 Command::navigate_to(AppId::DeadlinesFileSelect),
                 Command::quit_self(),
             ]),
-            Msg::Continue => {
-                Command::batch(vec![
-                    Command::start_app(
-                        AppId::DeadlinesInspection,
-                        super::models::InspectionParams {
-                            entity_type: state.detected_entity.clone()
-                                .or_else(|| state.manual_override.clone())
-                                .unwrap_or_default(),
-                            transformed_records: state.transformed_records.clone(),
-                        },
-                    ),
-                    Command::quit_self(),
-                ])
-            }
+            Msg::Continue => Command::batch(vec![
+                Command::start_app(
+                    AppId::DeadlinesInspection,
+                    super::models::InspectionParams {
+                        entity_type: state
+                            .detected_entity
+                            .clone()
+                            .or_else(|| state.manual_override.clone())
+                            .unwrap_or_default(),
+                        transformed_records: state.transformed_records.clone(),
+                    },
+                ),
+                Command::quit_self(),
+            ]),
         }
     }
 
@@ -1487,11 +1665,13 @@ impl App for DeadlinesMappingApp {
         let theme = &crate::global_runtime_config().theme;
         let content = match &state.entities {
             Resource::NotAsked => {
-                col![Element::styled_text(Line::from(vec![Span::styled(
-                    "Waiting...",
-                    Style::default().fg(theme.text_tertiary)
-                )]))
-                .build()]
+                col![
+                    Element::styled_text(Line::from(vec![Span::styled(
+                        "Waiting...",
+                        Style::default().fg(theme.text_tertiary)
+                    )]))
+                    .build()
+                ]
             }
             Resource::Loading => {
                 // Loading screen is shown by the runtime
@@ -1522,76 +1702,100 @@ impl App for DeadlinesMappingApp {
 
                 // Top section: info lines
                 if let Some(ref env) = state.current_environment {
-                    builder = builder.add(Element::styled_text(Line::from(vec![
-                        Span::styled("Environment: ", Style::default().fg(theme.text_tertiary)),
-                        Span::styled(
-                            env.clone(),
-                            Style::default().fg(theme.accent_primary)
-                        ),
-                    ]))
-                    .build(), Length(1));
+                    builder = builder.add(
+                        Element::styled_text(Line::from(vec![
+                            Span::styled("Environment: ", Style::default().fg(theme.text_tertiary)),
+                            Span::styled(env.clone(), Style::default().fg(theme.accent_primary)),
+                        ]))
+                        .build(),
+                        Length(1),
+                    );
                 }
 
-                builder = builder.add(Element::styled_text(Line::from(vec![
-                    Span::styled("File: ", Style::default().fg(theme.text_tertiary)),
-                    Span::styled(
-                        state.file_path.file_name().unwrap().to_string_lossy().to_string(),
-                        Style::default().fg(theme.text_primary)
-                    ),
-                ]))
-                .build(), Length(1));
+                builder = builder.add(
+                    Element::styled_text(Line::from(vec![
+                        Span::styled("File: ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(
+                            state
+                                .file_path
+                                .file_name()
+                                .unwrap()
+                                .to_string_lossy()
+                                .to_string(),
+                            Style::default().fg(theme.text_primary),
+                        ),
+                    ]))
+                    .build(),
+                    Length(1),
+                );
 
-                builder = builder.add(Element::styled_text(Line::from(vec![
-                    Span::styled("Sheet: ", Style::default().fg(theme.text_tertiary)),
-                    Span::styled(state.sheet_name.clone(), Style::default().fg(theme.text_primary)),
-                ]))
-                .build(), Length(1));
+                builder = builder.add(
+                    Element::styled_text(Line::from(vec![
+                        Span::styled("Sheet: ", Style::default().fg(theme.text_tertiary)),
+                        Span::styled(
+                            state.sheet_name.clone(),
+                            Style::default().fg(theme.text_primary),
+                        ),
+                    ]))
+                    .build(),
+                    Length(1),
+                );
 
                 builder = builder.add(spacer!(), Length(1));
 
                 // Mapping info based on detected entity or manual override
-                let selected_entity = state.detected_entity.as_ref()
+                let selected_entity = state
+                    .detected_entity
+                    .as_ref()
                     .or(state.manual_override.as_ref());
 
                 match selected_entity {
                     Some(entity_type) => {
-                        let mapping_count = field_mappings::get_mappings_for_entity(entity_type).len();
+                        let mapping_count =
+                            field_mappings::get_mappings_for_entity(entity_type).len();
 
                         if state.detected_entity.is_some() {
-                            builder = builder.add(Element::styled_text(Line::from(vec![
-                                Span::styled("✓ ", Style::default().fg(theme.accent_success)),
-                                Span::styled(
-                                    format!("Detected entity: "),
-                                    Style::default().fg(theme.text_tertiary)
-                                ),
-                                Span::styled(
-                                    entity_type.clone(),
-                                    Style::default().fg(theme.accent_primary).bold()
-                                ),
-                            ]))
-                            .build(), Length(1));
+                            builder = builder.add(
+                                Element::styled_text(Line::from(vec![
+                                    Span::styled("✓ ", Style::default().fg(theme.accent_success)),
+                                    Span::styled(
+                                        format!("Detected entity: "),
+                                        Style::default().fg(theme.text_tertiary),
+                                    ),
+                                    Span::styled(
+                                        entity_type.clone(),
+                                        Style::default().fg(theme.accent_primary).bold(),
+                                    ),
+                                ]))
+                                .build(),
+                                Length(1),
+                            );
                         } else {
-                            builder = builder.add(Element::styled_text(Line::from(vec![
-                                Span::styled("⚠ ", Style::default().fg(theme.accent_warning)),
-                                Span::styled(
-                                    "Could not auto-detect entity. Using manual selection: ",
-                                    Style::default().fg(theme.accent_warning)
-                                ),
-                                Span::styled(
-                                    entity_type.clone(),
-                                    Style::default().fg(theme.accent_primary).bold()
-                                ),
-                            ]))
-                            .build(), Length(1));
+                            builder = builder.add(
+                                Element::styled_text(Line::from(vec![
+                                    Span::styled("⚠ ", Style::default().fg(theme.accent_warning)),
+                                    Span::styled(
+                                        "Could not auto-detect entity. Using manual selection: ",
+                                        Style::default().fg(theme.accent_warning),
+                                    ),
+                                    Span::styled(
+                                        entity_type.clone(),
+                                        Style::default().fg(theme.accent_primary).bold(),
+                                    ),
+                                ]))
+                                .build(),
+                                Length(1),
+                            );
                         }
 
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled(
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![Span::styled(
                                 format!("Will use {} static field mappings", mapping_count),
-                                Style::default().fg(theme.text_primary)
-                            ),
-                        ]))
-                        .build(), Length(1));
+                                Style::default().fg(theme.text_primary),
+                            )]))
+                            .build(),
+                            Length(1),
+                        );
                         builder = builder.add(Element::styled_text(Line::from(vec![
                             Span::styled(
                                 "Checkbox columns will be detected dynamically from entity metadata",
@@ -1601,25 +1805,31 @@ impl App for DeadlinesMappingApp {
                         .build(), Length(1));
                     }
                     None => {
-                        builder = builder.add(Element::styled_text(Line::from(vec![
-                            Span::styled("⚠ ", Style::default().fg(theme.accent_warning)),
-                            Span::styled(
-                                "Could not detect cgk_deadline or nrq_deadline entity",
-                                Style::default().fg(theme.accent_warning)
-                            ),
-                        ]))
-                        .build(), Length(1));
+                        builder = builder.add(
+                            Element::styled_text(Line::from(vec![
+                                Span::styled("⚠ ", Style::default().fg(theme.accent_warning)),
+                                Span::styled(
+                                    "Could not detect cgk_deadline or nrq_deadline entity",
+                                    Style::default().fg(theme.accent_warning),
+                                ),
+                            ]))
+                            .build(),
+                            Length(1),
+                        );
                         builder = builder.add(spacer!(), Length(1));
 
                         // Add manual entity selector
                         let options = vec!["cgk_deadline".to_string(), "nrq_deadline".to_string()];
-                        let selector = Element::select("entity-selector", options, &mut state.entity_selector.state)
-                            .on_event(Msg::EntitySelectorEvent)
-                            .build();
+                        let selector = Element::select(
+                            "entity-selector",
+                            options,
+                            &mut state.entity_selector.state,
+                        )
+                        .on_event(Msg::EntitySelectorEvent)
+                        .build();
 
-                        let selector_panel = Element::panel(selector)
-                            .title("Select Entity Type")
-                            .build();
+                        let selector_panel =
+                            Element::panel(selector).title("Select Entity Type").build();
 
                         builder = builder.add(selector_panel, Length(5));
                     }
@@ -1630,35 +1840,50 @@ impl App for DeadlinesMappingApp {
                 // Show warnings list if data is loaded and processed, or instruction text
                 if state.excel_processed {
                     // Show warnings list after processing
-                    let warnings_list = Element::list("warnings-list", &state.warnings, &state.warnings_list_state, theme)
-                        .build();
+                    let warnings_list = Element::list(
+                        "warnings-list",
+                        &state.warnings,
+                        &state.warnings_list_state,
+                        theme,
+                    )
+                    .build();
 
                     let panel_title = if state.ignored_rows.is_empty() {
                         "Warnings & Notes".to_string()
                     } else {
-                        format!("Warnings & Notes ({} rows ignored)", state.ignored_rows.len())
+                        format!(
+                            "Warnings & Notes ({} rows ignored)",
+                            state.ignored_rows.len()
+                        )
                     };
 
-                    let warnings_panel = Element::panel(warnings_list)
-                        .title(&panel_title)
-                        .build();
+                    let warnings_panel = Element::panel(warnings_list).title(&panel_title).build();
 
                     builder = builder.add(warnings_panel, Fill(1));
                 } else if state.entity_data_loading {
                     // Show loading status
-                    builder = builder.add(Element::styled_text(Line::from(vec![Span::styled(
-                        format!("Loading entity data... ({}/{})", state.entity_data_loaded_count, state.entity_data_total_count),
-                        Style::default().fg(theme.accent_warning)
-                    )]))
-                    .build(), Length(1));
+                    builder = builder.add(
+                        Element::styled_text(Line::from(vec![Span::styled(
+                            format!(
+                                "Loading entity data... ({}/{})",
+                                state.entity_data_loaded_count, state.entity_data_total_count
+                            ),
+                            Style::default().fg(theme.accent_warning),
+                        )]))
+                        .build(),
+                        Length(1),
+                    );
                     builder = builder.add(spacer!(), Fill(1));
                 } else {
                     // Show instruction to load data
-                    builder = builder.add(Element::styled_text(Line::from(vec![Span::styled(
-                        "Click 'Load Data' to fetch entity records for validation",
-                        Style::default().fg(theme.text_tertiary).italic()
-                    )]))
-                    .build(), Length(1));
+                    builder = builder.add(
+                        Element::styled_text(Line::from(vec![Span::styled(
+                            "Click 'Load Data' to fetch entity records for validation",
+                            Style::default().fg(theme.text_tertiary).italic(),
+                        )]))
+                        .build(),
+                        Length(1),
+                    );
                     builder = builder.add(spacer!(), Fill(1));
                 }
 
@@ -1670,8 +1895,7 @@ impl App for DeadlinesMappingApp {
                         .build()
                 } else if state.excel_processed || state.existing_deadlines_loading {
                     // Show loading indicator while processing
-                    Element::button("loading-button", "Loading...")
-                        .build()
+                    Element::button("loading-button", "Loading...").build()
                 } else {
                     // Show Load Data button before data is loaded
                     Element::button("load-data-button", "Load Data")
@@ -1679,13 +1903,16 @@ impl App for DeadlinesMappingApp {
                         .build()
                 };
 
-                builder = builder.add(crate::row![
-                    Element::button("back-button", "Back")
-                        .on_press(Msg::Back)
-                        .build(),
-                    spacer!(),
-                    right_button,
-                ], Length(3));
+                builder = builder.add(
+                    crate::row![
+                        Element::button("back-button", "Back")
+                            .on_press(Msg::Back)
+                            .build(),
+                        spacer!(),
+                        right_button,
+                    ],
+                    Length(3),
+                );
 
                 builder.build()
             }
@@ -1708,13 +1935,10 @@ impl App for DeadlinesMappingApp {
 
     fn status(state: &State) -> Option<Line<'static>> {
         state.current_environment.as_ref().map(|env| {
-        let theme = &crate::global_runtime_config().theme;
+            let theme = &crate::global_runtime_config().theme;
             Line::from(vec![
                 Span::styled("Environment: ", Style::default().fg(theme.text_tertiary)),
-                Span::styled(
-                    env.clone(),
-                    Style::default().fg(theme.accent_primary),
-                ),
+                Span::styled(env.clone(), Style::default().fg(theme.accent_primary)),
             ])
         })
     }

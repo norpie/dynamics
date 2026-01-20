@@ -55,7 +55,8 @@ impl Operations {
         key_value: impl Into<String>,
         data: Value,
     ) -> Self {
-        self.operations.push(Operation::upsert(entity, key_field, key_value, data));
+        self.operations
+            .push(Operation::upsert(entity, key_field, key_value, data));
         self
     }
 
@@ -86,7 +87,8 @@ impl Operations {
 
     /// Create a new Operations containing only items NOT at the specified indices
     pub fn without_indices(&self, succeeded_indices: &[usize]) -> Self {
-        let ops: Vec<Operation> = self.operations
+        let ops: Vec<Operation> = self
+            .operations
             .iter()
             .enumerate()
             .filter(|(idx, _)| !succeeded_indices.contains(idx))
@@ -104,12 +106,20 @@ impl Operations {
     /// Execute operations with smart strategy selection
     /// - Single operation: execute individually
     /// - Multiple operations: execute as batch
-    pub async fn execute(&self, client: &crate::api::DynamicsClient, resilience: &crate::api::ResilienceConfig) -> anyhow::Result<Vec<OperationResult>> {
+    pub async fn execute(
+        &self,
+        client: &crate::api::DynamicsClient,
+        resilience: &crate::api::ResilienceConfig,
+    ) -> anyhow::Result<Vec<OperationResult>> {
         client.execute_batch(&self.operations, resilience).await
     }
 
     /// Force individual execution (each operation as separate HTTP request)
-    pub async fn execute_individual(&self, client: &crate::api::DynamicsClient, resilience: &crate::api::ResilienceConfig) -> anyhow::Result<Vec<OperationResult>> {
+    pub async fn execute_individual(
+        &self,
+        client: &crate::api::DynamicsClient,
+        resilience: &crate::api::ResilienceConfig,
+    ) -> anyhow::Result<Vec<OperationResult>> {
         let mut results = Vec::with_capacity(self.operations.len());
 
         for operation in &self.operations {
@@ -121,12 +131,20 @@ impl Operations {
     }
 
     /// Force batch execution (all operations in single HTTP request)
-    pub async fn execute_batch(&self, client: &crate::api::DynamicsClient, resilience: &crate::api::ResilienceConfig) -> anyhow::Result<Vec<OperationResult>> {
+    pub async fn execute_batch(
+        &self,
+        client: &crate::api::DynamicsClient,
+        resilience: &crate::api::ResilienceConfig,
+    ) -> anyhow::Result<Vec<OperationResult>> {
         client.execute_batch(&self.operations, resilience).await
     }
 
     /// Execute operations in parallel (each operation as separate concurrent HTTP request)
-    pub async fn execute_parallel(&self, client: &crate::api::DynamicsClient, resilience: &crate::api::ResilienceConfig) -> anyhow::Result<Vec<OperationResult>> {
+    pub async fn execute_parallel(
+        &self,
+        client: &crate::api::DynamicsClient,
+        resilience: &crate::api::ResilienceConfig,
+    ) -> anyhow::Result<Vec<OperationResult>> {
         if self.operations.is_empty() {
             return Ok(Vec::new());
         }
@@ -139,9 +157,10 @@ impl Operations {
             let client_clone = client.clone(); // Assuming DynamicsClient implements Clone
 
             let resilience_clone = resilience.clone();
-            let handle = tokio::spawn(async move {
-                op_clone.execute(&client_clone, &resilience_clone).await
-            });
+            let handle =
+                tokio::spawn(
+                    async move { op_clone.execute(&client_clone, &resilience_clone).await },
+                );
             handles.push(handle);
         }
 

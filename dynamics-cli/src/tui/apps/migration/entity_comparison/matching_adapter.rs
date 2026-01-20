@@ -5,8 +5,8 @@
 //! - Service provides core matching logic (Manual, Import, Exact, Prefix)
 //! - Adapter augments with UI-specific features (example value matching)
 
-use crate::api::metadata::FieldMetadata;
 use crate::api::EntityMetadata;
+use crate::api::metadata::FieldMetadata;
 use crate::services::matching::{self, MatchingContext, MatchingMappings};
 use std::collections::{HashMap, HashSet};
 
@@ -37,7 +37,8 @@ fn find_example_value_match(
         || source_value == "true"
         || source_value == "false"
         || source_value == "0"
-        || source_value == "1" {
+        || source_value == "1"
+    {
         return None;
     }
 
@@ -47,7 +48,9 @@ fn find_example_value_match(
             continue;
         }
 
-        if let Some(target_value) = examples.get_field_value(&target_field.logical_name, false, target_entity) {
+        if let Some(target_value) =
+            examples.get_field_value(&target_field.logical_name, false, target_entity)
+        {
             if target_value == source_value {
                 return Some(target_field.logical_name.clone());
             }
@@ -71,11 +74,11 @@ pub fn recompute_all_matches(
     target_entity: &str,
     negative_matches: &HashSet<String>,
 ) -> (
-    HashMap<String, MatchInfo>,  // field_matches
-    HashMap<String, MatchInfo>,  // relationship_matches
-    HashMap<String, MatchInfo>,  // entity_matches
-    Vec<(String, usize)>,        // source_entities
-    Vec<(String, usize)>,        // target_entities
+    HashMap<String, MatchInfo>, // field_matches
+    HashMap<String, MatchInfo>, // relationship_matches
+    HashMap<String, MatchInfo>, // entity_matches
+    Vec<(String, usize)>,       // source_entities
+    Vec<(String, usize)>,       // target_entities
 ) {
     // Create context for service
     let context = MatchingContext {
@@ -157,11 +160,11 @@ pub fn recompute_all_matches_multi(
     examples: &super::ExamplesState,
     negative_matches: &HashSet<String>,
 ) -> (
-    HashMap<String, MatchInfo>,  // field_matches (qualified keys)
-    HashMap<String, MatchInfo>,  // relationship_matches (qualified keys)
-    HashMap<String, MatchInfo>,  // entity_matches (qualified keys)
-    Vec<(String, usize)>,        // source_related_entities
-    Vec<(String, usize)>,        // target_related_entities
+    HashMap<String, MatchInfo>, // field_matches (qualified keys)
+    HashMap<String, MatchInfo>, // relationship_matches (qualified keys)
+    HashMap<String, MatchInfo>, // entity_matches (qualified keys)
+    Vec<(String, usize)>,       // source_related_entities
+    Vec<(String, usize)>,       // target_related_entities
 ) {
     let mut all_field_matches = HashMap::new();
     let mut all_relationship_matches = HashMap::new();
@@ -183,10 +186,14 @@ pub fn recompute_all_matches_multi(
             };
 
             // Filter mappings to this entity pair only
-            let filtered_field_mappings = filter_mappings_for_entities(field_mappings, source_entity, target_entity);
-            let filtered_imported_mappings = filter_mappings_for_entities(imported_mappings, source_entity, target_entity);
-            let filtered_prefix_mappings = filter_mappings_for_entities(prefix_mappings, source_entity, target_entity);
-            let filtered_negative_matches = filter_negative_matches(negative_matches, source_entity, target_entity);
+            let filtered_field_mappings =
+                filter_mappings_for_entities(field_mappings, source_entity, target_entity);
+            let filtered_imported_mappings =
+                filter_mappings_for_entities(imported_mappings, source_entity, target_entity);
+            let filtered_prefix_mappings =
+                filter_mappings_for_entities(prefix_mappings, source_entity, target_entity);
+            let filtered_negative_matches =
+                filter_negative_matches(negative_matches, source_entity, target_entity);
 
             // Compute matches for this pair
             let (field_matches, relationship_matches, entity_matches, source_ents, target_ents) =
@@ -205,45 +212,63 @@ pub fn recompute_all_matches_multi(
             // Qualify and merge field matches
             for (source_field, match_info) in field_matches {
                 let qualified_source = format!("{}.{}", source_entity, source_field);
-                let qualified_targets: Vec<String> = match_info.target_fields.iter()
+                let qualified_targets: Vec<String> = match_info
+                    .target_fields
+                    .iter()
                     .map(|t| format!("{}.{}", target_entity, t))
                     .collect();
 
-                let qualified_match_types: HashMap<String, MatchType> = match_info.match_types.iter()
+                let qualified_match_types: HashMap<String, MatchType> = match_info
+                    .match_types
+                    .iter()
                     .map(|(t, mt)| (format!("{}.{}", target_entity, t), mt.clone()))
                     .collect();
 
-                let qualified_confidences: HashMap<String, f64> = match_info.confidences.iter()
+                let qualified_confidences: HashMap<String, f64> = match_info
+                    .confidences
+                    .iter()
                     .map(|(t, c)| (format!("{}.{}", target_entity, t), *c))
                     .collect();
 
-                all_field_matches.insert(qualified_source, MatchInfo {
-                    target_fields: qualified_targets,
-                    match_types: qualified_match_types,
-                    confidences: qualified_confidences,
-                });
+                all_field_matches.insert(
+                    qualified_source,
+                    MatchInfo {
+                        target_fields: qualified_targets,
+                        match_types: qualified_match_types,
+                        confidences: qualified_confidences,
+                    },
+                );
             }
 
             // Qualify and merge relationship matches
             for (source_rel, match_info) in relationship_matches {
                 let qualified_source = format!("{}.{}", source_entity, source_rel);
-                let qualified_targets: Vec<String> = match_info.target_fields.iter()
+                let qualified_targets: Vec<String> = match_info
+                    .target_fields
+                    .iter()
                     .map(|t| format!("{}.{}", target_entity, t))
                     .collect();
 
-                let qualified_match_types: HashMap<String, MatchType> = match_info.match_types.iter()
+                let qualified_match_types: HashMap<String, MatchType> = match_info
+                    .match_types
+                    .iter()
                     .map(|(t, mt)| (format!("{}.{}", target_entity, t), mt.clone()))
                     .collect();
 
-                let qualified_confidences: HashMap<String, f64> = match_info.confidences.iter()
+                let qualified_confidences: HashMap<String, f64> = match_info
+                    .confidences
+                    .iter()
                     .map(|(t, c)| (format!("{}.{}", target_entity, t), *c))
                     .collect();
 
-                all_relationship_matches.insert(qualified_source, MatchInfo {
-                    target_fields: qualified_targets,
-                    match_types: qualified_match_types,
-                    confidences: qualified_confidences,
-                });
+                all_relationship_matches.insert(
+                    qualified_source,
+                    MatchInfo {
+                        target_fields: qualified_targets,
+                        match_types: qualified_match_types,
+                        confidences: qualified_confidences,
+                    },
+                );
             }
 
             // Merge entity matches (no qualification needed - entity names are already unique)
@@ -284,7 +309,8 @@ fn filter_mappings_for_entities(
         // Check if source matches this entity
         if let Some(source_field) = source_qualified.strip_prefix(&source_prefix) {
             // Filter targets to only this target entity and strip prefix
-            let filtered_targets: Vec<String> = targets_qualified.iter()
+            let filtered_targets: Vec<String> = targets_qualified
+                .iter()
                 .filter_map(|t| t.strip_prefix(&target_prefix).map(|s| s.to_string()))
                 .collect();
 

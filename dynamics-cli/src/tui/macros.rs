@@ -17,9 +17,16 @@ macro_rules! spacer {
     };
     ($height:expr) => {{
         let items: Vec<_> = (0..$height)
-            .map(|_| ($crate::tui::LayoutConstraint::Length(1), $crate::tui::Element::text("")))
+            .map(|_| {
+                (
+                    $crate::tui::LayoutConstraint::Length(1),
+                    $crate::tui::Element::text(""),
+                )
+            })
             .collect();
-        $crate::tui::element::ColumnBuilder::from_items(items).spacing(0).build()
+        $crate::tui::element::ColumnBuilder::from_items(items)
+            .spacing(0)
+            .build()
     }};
 }
 

@@ -2,13 +2,16 @@ use crate::config::repository::transfer::{get_transfer_config, save_transfer_con
 use crate::transfer::{ResolverFallback, TransferConfig};
 use crate::tui::element::FocusId;
 use crate::tui::resource::Resource;
-use crate::tui::widgets::{TreeState, ListState, ScrollableState, TextInputField};
+use crate::tui::widgets::{ListState, ScrollableState, TextInputField, TreeState};
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
-use crate::api::{FieldMetadata, FieldType};
-use super::state::{DeleteTarget, EditorParams, EntityMappingForm, FieldMappingForm, ResolverForm, Msg, State, TransformType};
 use super::super::preview::PreviewParams;
+use super::state::{
+    DeleteTarget, EditorParams, EntityMappingForm, FieldMappingForm, Msg, ResolverForm, State,
+    TransformType,
+};
 use super::view;
+use crate::api::{FieldMetadata, FieldType};
 
 pub struct MappingEditorApp;
 
@@ -60,10 +63,7 @@ impl App for MappingEditorApp {
         };
 
         // Load config first (fast, local DB), then load entities with loading screen
-        let cmd = Command::perform(
-            load_config(params.config_name),
-            Msg::ConfigLoaded,
-        );
+        let cmd = Command::perform(load_config(params.config_name), Msg::ConfigLoaded);
 
         (state, cmd)
     }
@@ -92,7 +92,8 @@ impl App for MappingEditorApp {
                             .with_title("Loading Entity Metadata")
                             .on_complete(AppId::TransferMappingEditor)
                             .build(|task_idx, result| {
-                                let data = result.downcast::<Result<Vec<String>, String>>().unwrap();
+                                let data =
+                                    result.downcast::<Result<Vec<String>, String>>().unwrap();
                                 match task_idx {
                                     0 => Msg::SourceEntitiesLoaded(*data),
                                     _ => Msg::TargetEntitiesLoaded(*data),
@@ -148,12 +149,14 @@ impl App for MappingEditorApp {
                     Ok(fields) => {
                         // Cache fields for this entity (for showing types in tree)
                         if let Some(entity_idx) = state.current_field_entity_idx {
-                            state.entity_target_fields_cache.insert(entity_idx, fields.clone());
+                            state
+                                .entity_target_fields_cache
+                                .insert(entity_idx, fields.clone());
                             // Invalidate tree cache so field types show up
                             state.tree_state.invalidate_cache();
                         }
                         Resource::Success(fields)
-                    },
+                    }
                     Err(e) => Resource::Failure(e),
                 };
                 // Check if we should open the field modal now
@@ -277,11 +280,16 @@ impl App for MappingEditorApp {
                 // Check if this is a selection event that should trigger field loading
                 let should_load_fields = matches!(
                     &event,
-                    crate::tui::widgets::AutocompleteEvent::Select(_) |
-                    crate::tui::widgets::AutocompleteEvent::Navigate(crossterm::event::KeyCode::Enter)
+                    crate::tui::widgets::AutocompleteEvent::Select(_)
+                        | crate::tui::widgets::AutocompleteEvent::Navigate(
+                            crossterm::event::KeyCode::Enter
+                        )
                 );
 
-                state.entity_form.source_entity.handle_event::<Msg>(event, &options);
+                state
+                    .entity_form
+                    .source_entity
+                    .handle_event::<Msg>(event, &options);
 
                 // Load source entity fields for filter autocomplete when entity is selected
                 if should_load_fields {
@@ -310,11 +318,16 @@ impl App for MappingEditorApp {
                 // Check if this is a selection event that should trigger field loading
                 let should_load_fields = matches!(
                     &event,
-                    crate::tui::widgets::AutocompleteEvent::Select(_) |
-                    crate::tui::widgets::AutocompleteEvent::Navigate(crossterm::event::KeyCode::Enter)
+                    crate::tui::widgets::AutocompleteEvent::Select(_)
+                        | crate::tui::widgets::AutocompleteEvent::Navigate(
+                            crossterm::event::KeyCode::Enter
+                        )
                 );
 
-                state.entity_form.target_entity.handle_event::<Msg>(event, &options);
+                state
+                    .entity_form
+                    .target_entity
+                    .handle_event::<Msg>(event, &options);
 
                 // Load target entity fields for target filter autocomplete when entity is selected
                 if should_load_fields {
@@ -367,20 +380,29 @@ impl App for MappingEditorApp {
 
             Msg::EntityFormFilterField(event) => {
                 let options = match &state.source_fields {
-                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
+                    Resource::Success(fields) => {
+                        fields.iter().map(|f| f.logical_name.clone()).collect()
+                    }
                     _ => vec![],
                 };
-                state.entity_form.filter_field.handle_event::<Msg>(event, &options);
+                state
+                    .entity_form
+                    .filter_field
+                    .handle_event::<Msg>(event, &options);
                 Command::None
             }
 
             Msg::EntityFormToggleFilterCondition => {
-                state.entity_form.filter_condition_type = state.entity_form.filter_condition_type.next();
+                state.entity_form.filter_condition_type =
+                    state.entity_form.filter_condition_type.next();
                 Command::None
             }
 
             Msg::EntityFormFilterValue(event) => {
-                state.entity_form.filter_value.handle_event(event, Some(200));
+                state
+                    .entity_form
+                    .filter_value
+                    .handle_event(event, Some(200));
                 Command::None
             }
 
@@ -392,20 +414,29 @@ impl App for MappingEditorApp {
 
             Msg::EntityFormTargetFilterField(event) => {
                 let options = match &state.target_fields {
-                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
+                    Resource::Success(fields) => {
+                        fields.iter().map(|f| f.logical_name.clone()).collect()
+                    }
                     _ => vec![],
                 };
-                state.entity_form.target_filter_field.handle_event::<Msg>(event, &options);
+                state
+                    .entity_form
+                    .target_filter_field
+                    .handle_event::<Msg>(event, &options);
                 Command::None
             }
 
             Msg::EntityFormToggleTargetFilterCondition => {
-                state.entity_form.target_filter_condition_type = state.entity_form.target_filter_condition_type.next();
+                state.entity_form.target_filter_condition_type =
+                    state.entity_form.target_filter_condition_type.next();
                 Command::None
             }
 
             Msg::EntityFormTargetFilterValue(event) => {
-                state.entity_form.target_filter_value.handle_event(event, Some(200));
+                state
+                    .entity_form
+                    .target_filter_value
+                    .handle_event(event, Some(200));
                 Command::None
             }
 
@@ -413,15 +444,28 @@ impl App for MappingEditorApp {
             Msg::EntityModalScroll(key) => {
                 let content_height = state.entity_modal_scroll.content_height().unwrap_or(50);
                 let viewport_height = state.entity_modal_scroll.viewport_height().unwrap_or(25);
-                state.entity_modal_scroll.handle_key(key, content_height, viewport_height);
+                state
+                    .entity_modal_scroll
+                    .handle_key(key, content_height, viewport_height);
                 Command::None
             }
 
-            Msg::EntityModalViewport(viewport_height, content_height, viewport_width, content_width) => {
-                state.entity_modal_scroll.set_viewport_height(viewport_height);
-                state.entity_modal_scroll.update_scroll(viewport_height, content_height);
+            Msg::EntityModalViewport(
+                viewport_height,
+                content_height,
+                viewport_width,
+                content_width,
+            ) => {
+                state
+                    .entity_modal_scroll
+                    .set_viewport_height(viewport_height);
+                state
+                    .entity_modal_scroll
+                    .update_scroll(viewport_height, content_height);
                 state.entity_modal_scroll.set_viewport_width(viewport_width);
-                state.entity_modal_scroll.update_horizontal_scroll(viewport_width, content_width);
+                state
+                    .entity_modal_scroll
+                    .update_horizontal_scroll(viewport_width, content_width);
                 Command::None
             }
 
@@ -464,17 +508,25 @@ impl App for MappingEditorApp {
                     // Use "source"/"target" prefix to ensure unique task names even when same entity/env
                     return Command::perform_parallel()
                         .add_task(
-                            format!("Loading source fields for {} ({})", source_entity, source_env),
+                            format!(
+                                "Loading source fields for {} ({})",
+                                source_entity, source_env
+                            ),
                             load_entity_fields(source_env.clone(), source_entity),
                         )
                         .add_task(
-                            format!("Loading target fields for {} ({})", target_entity, target_env),
+                            format!(
+                                "Loading target fields for {} ({})",
+                                target_entity, target_env
+                            ),
                             load_entity_fields(target_env.clone(), target_entity),
                         )
                         .with_title("Loading Field Metadata")
                         .on_complete(AppId::TransferMappingEditor)
                         .build(|task_idx, result| {
-                            let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                            let data = result
+                                .downcast::<Result<Vec<FieldMetadata>, String>>()
+                                .unwrap();
                             match task_idx {
                                 0 => Msg::SourceFieldsLoaded(*data),
                                 _ => Msg::TargetFieldsLoaded(*data),
@@ -529,17 +581,25 @@ impl App for MappingEditorApp {
                     // Use "source"/"target" prefix to ensure unique task names even when same entity/env
                     return Command::perform_parallel()
                         .add_task(
-                            format!("Loading source fields for {} ({})", source_entity, source_env),
+                            format!(
+                                "Loading source fields for {} ({})",
+                                source_entity, source_env
+                            ),
                             load_entity_fields(source_env.clone(), source_entity),
                         )
                         .add_task(
-                            format!("Loading target fields for {} ({})", target_entity, target_env),
+                            format!(
+                                "Loading target fields for {} ({})",
+                                target_entity, target_env
+                            ),
                             load_entity_fields(target_env.clone(), target_entity),
                         )
                         .with_title("Loading Field Metadata")
                         .on_complete(AppId::TransferMappingEditor)
                         .build(|task_idx, result| {
-                            let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                            let data = result
+                                .downcast::<Result<Vec<FieldMetadata>, String>>()
+                                .unwrap();
                             match task_idx {
                                 0 => Msg::SourceFieldsLoaded(*data),
                                 _ => Msg::TargetFieldsLoaded(*data),
@@ -560,7 +620,10 @@ impl App for MappingEditorApp {
                     if let Some(entity) = config.entity_mappings.get(entity_idx) {
                         if let Some(field_mapping) = entity.field_mappings.get(field_idx) {
                             state.clipboard = Some(field_mapping.clone());
-                            log::info!("Copied field mapping '{}' to clipboard", field_mapping.target_field);
+                            log::info!(
+                                "Copied field mapping '{}' to clipboard",
+                                field_mapping.target_field
+                            );
                         }
                     }
                 }
@@ -575,7 +638,11 @@ impl App for MappingEditorApp {
                 if let Resource::Success(config) = &mut state.config {
                     if let Some(entity) = config.entity_mappings.get_mut(entity_idx) {
                         entity.field_mappings.push(field_mapping.clone());
-                        log::info!("Pasted field mapping '{}' to entity '{}'", field_mapping.target_field, entity.target_entity);
+                        log::info!(
+                            "Pasted field mapping '{}' to entity '{}'",
+                            field_mapping.target_field,
+                            entity.target_entity
+                        );
                         state.tree_state.invalidate_cache();
 
                         // Auto-save
@@ -632,22 +699,33 @@ impl App for MappingEditorApp {
 
             Msg::FieldFormTarget(event) => {
                 let options: Vec<String> = match &state.target_fields {
-                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
+                    Resource::Success(fields) => {
+                        fields.iter().map(|f| f.logical_name.clone()).collect()
+                    }
                     _ => vec![],
                 };
-                state.field_form.target_field.handle_event::<Msg>(event, &options);
+                state
+                    .field_form
+                    .target_field
+                    .handle_event::<Msg>(event, &options);
                 Command::None
             }
 
             Msg::FieldFormSourcePath(event) => {
                 let options = get_source_options(state);
-                state.field_form.source_path.handle_event::<Msg>(event, &options);
+                state
+                    .field_form
+                    .source_path
+                    .handle_event::<Msg>(event, &options);
                 // Check if we need to load related entity fields
                 check_for_nested_lookup(state, &state.field_form.source_path.value.clone())
             }
 
             Msg::FieldFormConstant(event) => {
-                state.field_form.constant_value.handle_event(event, Some(500));
+                state
+                    .field_form
+                    .constant_value
+                    .handle_event(event, Some(500));
                 Command::None
             }
 
@@ -662,7 +740,8 @@ impl App for MappingEditorApp {
                     if state.field_form.value_map_source.value.is_empty()
                         && !state.field_form.source_path.value.is_empty()
                     {
-                        state.field_form.value_map_source.value = state.field_form.source_path.value.clone();
+                        state.field_form.value_map_source.value =
+                            state.field_form.source_path.value.clone();
                     }
 
                     // Try to prefill from source field option values
@@ -670,8 +749,12 @@ impl App for MappingEditorApp {
                     if !source_path.is_empty() {
                         let base_field = source_path.split('.').next().unwrap_or(&source_path);
                         if let Resource::Success(fields) = &state.source_fields {
-                            if let Some(source_field) = fields.iter().find(|f| f.logical_name == base_field) {
-                                state.field_form.prefill_valuemap_from_optionset(source_field);
+                            if let Some(source_field) =
+                                fields.iter().find(|f| f.logical_name == base_field)
+                            {
+                                state
+                                    .field_form
+                                    .prefill_valuemap_from_optionset(source_field);
                             }
                         }
                     }
@@ -683,8 +766,11 @@ impl App for MappingEditorApp {
             Msg::FieldFormCycleResolver => {
                 // Cycle through: None -> resolver1 -> resolver2 -> ... -> None
                 // Get resolvers from the current entity being edited
-                if let (Resource::Success(config), Some((entity_idx, _))) = (&state.config, state.editing_field) {
-                    let resolver_names: Vec<&str> = config.entity_mappings
+                if let (Resource::Success(config), Some((entity_idx, _))) =
+                    (&state.config, state.editing_field)
+                {
+                    let resolver_names: Vec<&str> = config
+                        .entity_mappings
                         .get(entity_idx)
                         .map(|em| em.resolvers.iter().map(|r| r.name.as_str()).collect())
                         .unwrap_or_default();
@@ -692,7 +778,10 @@ impl App for MappingEditorApp {
                     if resolver_names.is_empty() {
                         state.field_form.resolver_name = None;
                     } else {
-                        let current_idx = state.field_form.resolver_name.as_ref()
+                        let current_idx = state
+                            .field_form
+                            .resolver_name
+                            .as_ref()
                             .and_then(|name| resolver_names.iter().position(|r| r == name));
 
                         let next_idx = match current_idx {
@@ -701,7 +790,8 @@ impl App for MappingEditorApp {
                             Some(_) => None, // last resolver -> None
                         };
 
-                        state.field_form.resolver_name = next_idx.map(|i| resolver_names[i].to_string());
+                        state.field_form.resolver_name =
+                            next_idx.map(|i| resolver_names[i].to_string());
                     }
                 }
                 Command::None
@@ -710,7 +800,10 @@ impl App for MappingEditorApp {
             // Conditional transform fields
             Msg::FieldFormConditionSource(event) => {
                 let options = get_source_options(state);
-                state.field_form.condition_source.handle_event::<Msg>(event, &options);
+                state
+                    .field_form
+                    .condition_source
+                    .handle_event::<Msg>(event, &options);
                 // Check if we need to load related entity fields
                 check_for_nested_lookup(state, &state.field_form.condition_source.value.clone())
             }
@@ -721,7 +814,10 @@ impl App for MappingEditorApp {
             }
 
             Msg::FieldFormConditionValue(event) => {
-                state.field_form.condition_value.handle_event(event, Some(100));
+                state
+                    .field_form
+                    .condition_value
+                    .handle_event(event, Some(100));
                 Command::None
             }
 
@@ -738,16 +834,23 @@ impl App for MappingEditorApp {
             // ValueMap transform fields
             Msg::FieldFormValueMapSource(event) => {
                 let options = get_source_options(state);
-                state.field_form.value_map_source.handle_event::<Msg>(event, &options);
+                state
+                    .field_form
+                    .value_map_source
+                    .handle_event::<Msg>(event, &options);
 
                 // Auto-prefill when source field is selected and is OptionSet
                 let current_value = state.field_form.value_map_source.value.trim().to_string();
                 if !current_value.is_empty() {
                     let base_field = current_value.split('.').next().unwrap_or(&current_value);
                     if let Resource::Success(fields) = &state.source_fields {
-                        if let Some(source_field) = fields.iter().find(|f| f.logical_name == base_field) {
+                        if let Some(source_field) =
+                            fields.iter().find(|f| f.logical_name == base_field)
+                        {
                             // Only prefill if entries are empty (don't override user's work)
-                            state.field_form.prefill_valuemap_from_optionset(source_field);
+                            state
+                                .field_form
+                                .prefill_valuemap_from_optionset(source_field);
                         }
                     }
                 }
@@ -762,7 +865,10 @@ impl App for MappingEditorApp {
             }
 
             Msg::FieldFormValueMapDefault(event) => {
-                state.field_form.value_map_default.handle_event(event, Some(100));
+                state
+                    .field_form
+                    .value_map_default
+                    .handle_event(event, Some(100));
                 Command::None
             }
 
@@ -793,8 +899,10 @@ impl App for MappingEditorApp {
             Msg::FieldFormCycleSourceOption(idx, backwards) => {
                 // Get source field's option values
                 let source_field_name = state.field_form.value_map_source.value.trim();
-                let source_options: Vec<_> = if let Resource::Success(fields) = &state.source_fields {
-                    fields.iter()
+                let source_options: Vec<_> = if let Resource::Success(fields) = &state.source_fields
+                {
+                    fields
+                        .iter()
                         .find(|f| f.logical_name == source_field_name)
                         .map(|f| f.option_values.clone())
                         .unwrap_or_default()
@@ -806,16 +914,24 @@ impl App for MappingEditorApp {
                     if let Some(entry) = state.field_form.value_map_entries.get_mut(idx) {
                         let current_value = entry.source_value.value.trim();
 
-                        let current_idx = source_options.iter().position(|opt| {
-                            opt.value.to_string() == current_value
-                        });
+                        let current_idx = source_options
+                            .iter()
+                            .position(|opt| opt.value.to_string() == current_value);
 
                         let next_idx = match current_idx {
                             Some(i) if backwards => {
-                                if i == 0 { source_options.len() - 1 } else { i - 1 }
+                                if i == 0 {
+                                    source_options.len() - 1
+                                } else {
+                                    i - 1
+                                }
                             }
                             Some(i) => {
-                                if i + 1 >= source_options.len() { 0 } else { i + 1 }
+                                if i + 1 >= source_options.len() {
+                                    0
+                                } else {
+                                    i + 1
+                                }
                             }
                             None => 0,
                         };
@@ -829,8 +945,10 @@ impl App for MappingEditorApp {
             Msg::FieldFormCycleTargetOption(idx, backwards) => {
                 // Get target field's option values
                 let target_field_name = state.field_form.target_field.value.trim();
-                let target_options: Vec<_> = if let Resource::Success(fields) = &state.target_fields {
-                    fields.iter()
+                let target_options: Vec<_> = if let Resource::Success(fields) = &state.target_fields
+                {
+                    fields
+                        .iter()
                         .find(|f| f.logical_name == target_field_name)
                         .map(|f| f.option_values.clone())
                         .unwrap_or_default()
@@ -849,9 +967,9 @@ impl App for MappingEditorApp {
                         let current_idx = if is_null {
                             None // null is "after" all options
                         } else {
-                            target_options.iter().position(|opt| {
-                                opt.value.to_string() == current_value
-                            })
+                            target_options
+                                .iter()
+                                .position(|opt| opt.value.to_string() == current_value)
                         };
 
                         // null is at the end, after all options
@@ -859,7 +977,11 @@ impl App for MappingEditorApp {
 
                         let next_idx = match current_idx {
                             Some(i) if backwards => {
-                                if i == 0 { null_idx } else { i - 1 }
+                                if i == 0 {
+                                    null_idx
+                                } else {
+                                    i - 1
+                                }
                             }
                             Some(i) => {
                                 i + 1 // might be null_idx
@@ -885,9 +1007,20 @@ impl App for MappingEditorApp {
             }
 
             Msg::FieldFormValueMapScroll(key) => {
-                let viewport_height = state.field_form.value_map_scroll.viewport_height().unwrap_or(12);
-                let content_height = state.field_form.value_map_scroll.content_height().unwrap_or(12);
-                state.field_form.value_map_scroll.handle_key(key, content_height, viewport_height);
+                let viewport_height = state
+                    .field_form
+                    .value_map_scroll
+                    .viewport_height()
+                    .unwrap_or(12);
+                let content_height = state
+                    .field_form
+                    .value_map_scroll
+                    .content_height()
+                    .unwrap_or(12);
+                state
+                    .field_form
+                    .value_map_scroll
+                    .handle_key(key, content_height, viewport_height);
                 Command::None
             }
 
@@ -899,19 +1032,26 @@ impl App for MappingEditorApp {
 
             // Format transform fields
             Msg::FieldFormFormatTemplate(event) => {
-                state.field_form.format_template.handle_event(event, Some(500));
+                state
+                    .field_form
+                    .format_template
+                    .handle_event(event, Some(500));
                 Command::None
             }
 
             Msg::FieldFormToggleNullHandling => {
-                state.field_form.format_null_handling = state.field_form.format_null_handling.next();
+                state.field_form.format_null_handling =
+                    state.field_form.format_null_handling.next();
                 Command::None
             }
 
             // Replace transform fields
             Msg::FieldFormReplaceSource(event) => {
                 let options = get_source_options(state);
-                state.field_form.replace_source.handle_event::<Msg>(event, &options);
+                state
+                    .field_form
+                    .replace_source
+                    .handle_event::<Msg>(event, &options);
                 // Check if we need to load related entity fields
                 check_for_nested_lookup(state, &state.field_form.replace_source.value.clone())
             }
@@ -1032,7 +1172,9 @@ impl App for MappingEditorApp {
                     return Command::None;
                 }
 
-                if let (Resource::Success(config), Some(entity_idx)) = (&mut state.config, state.editing_resolver_for_entity) {
+                if let (Resource::Success(config), Some(entity_idx)) =
+                    (&mut state.config, state.editing_resolver_for_entity)
+                {
                     if let Some(entity_mapping) = config.entity_mappings.get_mut(entity_idx) {
                         let mut new_resolver = state.resolver_form.to_resolver();
 
@@ -1079,7 +1221,10 @@ impl App for MappingEditorApp {
                     Resource::Success(entities) => entities.clone(),
                     _ => vec![],
                 };
-                state.resolver_form.source_entity.handle_event::<Msg>(event, &options);
+                state
+                    .resolver_form
+                    .source_entity
+                    .handle_event::<Msg>(event, &options);
 
                 // When entity changes, load its fields for match_field autocomplete
                 check_resolver_entity_selection(state)
@@ -1098,7 +1243,9 @@ impl App for MappingEditorApp {
             Msg::ResolverMatchField(idx, event) => {
                 state.resolver_form.focused_row = idx;
                 let options: Vec<String> = match &state.resolver_match_fields {
-                    Resource::Success(fields) => fields.iter().map(|f| f.logical_name.clone()).collect(),
+                    Resource::Success(fields) => {
+                        fields.iter().map(|f| f.logical_name.clone()).collect()
+                    }
                     _ => vec![],
                 };
                 if let Some(row) = state.resolver_form.match_field_rows.get_mut(idx) {
@@ -1147,13 +1294,16 @@ impl App for MappingEditorApp {
                 Command::None
             }
 
-            Msg::ResolverRelatedFieldsLoaded { lookup_field, result } => {
+            Msg::ResolverRelatedFieldsLoaded {
+                lookup_field,
+                result,
+            } => {
                 state.resolver_related_fields.insert(
                     lookup_field,
                     match result {
                         Ok(fields) => Resource::Success(fields),
                         Err(e) => Resource::Failure(e),
-                    }
+                    },
                 );
                 // Restore focus to the source path field
                 Command::set_focus(FocusId::new("resolver-source-0"))
@@ -1213,13 +1363,16 @@ impl App for MappingEditorApp {
                 Command::None
             }
 
-            Msg::RelatedFieldsLoaded { lookup_field, result } => {
+            Msg::RelatedFieldsLoaded {
+                lookup_field,
+                result,
+            } => {
                 state.related_fields.insert(
                     lookup_field,
                     match result {
                         Ok(fields) => Resource::Success(fields),
                         Err(e) => Resource::Failure(e),
-                    }
+                    },
                 );
 
                 // Restore focus to the appropriate source field based on transform type
@@ -1240,9 +1393,13 @@ impl App for MappingEditorApp {
                     if let Some(idx_str) = s.strip_prefix("entity_") {
                         idx_str.parse::<usize>().ok()
                     } else if let Some(rest) = s.strip_prefix("field_") {
-                        rest.split('_').next().and_then(|idx| idx.parse::<usize>().ok())
+                        rest.split('_')
+                            .next()
+                            .and_then(|idx| idx.parse::<usize>().ok())
                     } else if let Some(rest) = s.strip_prefix("resolver_") {
-                        rest.split('_').next().and_then(|idx| idx.parse::<usize>().ok())
+                        rest.split('_')
+                            .next()
+                            .and_then(|idx| idx.parse::<usize>().ok())
                     } else {
                         None
                     }
@@ -1290,17 +1447,25 @@ impl App for MappingEditorApp {
 
                     return Command::perform_parallel()
                         .add_task(
-                            format!("Loading source fields for {} ({})", source_entity, source_env),
+                            format!(
+                                "Loading source fields for {} ({})",
+                                source_entity, source_env
+                            ),
                             load_entity_fields(source_env.clone(), source_entity),
                         )
                         .add_task(
-                            format!("Loading target fields for {} ({})", target_entity, target_env),
+                            format!(
+                                "Loading target fields for {} ({})",
+                                target_entity, target_env
+                            ),
                             load_entity_fields(target_env.clone(), target_entity),
                         )
                         .with_title("Loading Field Metadata")
                         .on_complete(AppId::TransferMappingEditor)
                         .build(|task_idx, result| {
-                            let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                            let data = result
+                                .downcast::<Result<Vec<FieldMetadata>, String>>()
+                                .unwrap();
                             match task_idx {
                                 0 => Msg::SourceFieldsLoaded(*data),
                                 _ => Msg::TargetFieldsLoaded(*data),
@@ -1318,12 +1483,16 @@ impl App for MappingEditorApp {
 
             Msg::QuickFieldsEvent(event) => {
                 let item_count = state.quick_fields_available.len();
-                state.quick_fields_list_state.handle_event(event, item_count, 15);
+                state
+                    .quick_fields_list_state
+                    .handle_event(event, item_count, 15);
                 Command::None
             }
 
             Msg::QuickFieldsSourcePrefix(event) => {
-                state.quick_fields_source_prefix.handle_event(event, Some(50));
+                state
+                    .quick_fields_source_prefix
+                    .handle_event(event, Some(50));
                 if let Some(idx) = state.quick_fields_entity_idx {
                     state.quick_fields_available = state.compute_quick_fields(
                         idx,
@@ -1336,7 +1505,9 @@ impl App for MappingEditorApp {
             }
 
             Msg::QuickFieldsTargetPrefix(event) => {
-                state.quick_fields_target_prefix.handle_event(event, Some(50));
+                state
+                    .quick_fields_target_prefix
+                    .handle_event(event, Some(50));
                 if let Some(idx) = state.quick_fields_entity_idx {
                     state.quick_fields_available = state.compute_quick_fields(
                         idx,
@@ -1368,7 +1539,7 @@ impl App for MappingEditorApp {
                 // Create Copy mappings for all selected fields
                 if let Resource::Success(config) = &mut state.config {
                     if let Some(entity) = config.entity_mappings.get_mut(entity_idx) {
-                        use crate::transfer::{FieldMapping, Transform, FieldPath};
+                        use crate::transfer::{FieldMapping, FieldPath, Transform};
 
                         for idx in selected_indices {
                             if let Some(field_match) = state.quick_fields_available.get(idx) {
@@ -1376,7 +1547,9 @@ impl App for MappingEditorApp {
                                     id: None,
                                     target_field: field_match.target_logical_name.clone(),
                                     transform: Transform::Copy {
-                                        source_path: FieldPath::simple(&field_match.source.logical_name),
+                                        source_path: FieldPath::simple(
+                                            &field_match.source.logical_name,
+                                        ),
                                         resolver: None,
                                     },
                                 };
@@ -1403,9 +1576,7 @@ impl App for MappingEditorApp {
             }
 
             // Navigation
-            Msg::Back => {
-                Command::navigate_to(AppId::TransferConfigList)
-            }
+            Msg::Back => Command::navigate_to(AppId::TransferConfigList),
 
             Msg::Preview => {
                 // Navigate to preview app with current config info
@@ -1456,7 +1627,13 @@ async fn save_config(config: TransferConfig) -> Result<(), String> {
 
 fn next_priority(state: &State) -> u32 {
     if let Resource::Success(config) = &state.config {
-        config.entity_mappings.iter().map(|e| e.priority).max().unwrap_or(0) + 1
+        config
+            .entity_mappings
+            .iter()
+            .map(|e| e.priority)
+            .max()
+            .unwrap_or(0)
+            + 1
     } else {
         1
     }
@@ -1547,16 +1724,30 @@ fn try_open_pending_field_modal(state: &mut State) -> Command<Msg> {
 }
 
 /// Load field metadata for a specific entity (with caching)
-async fn load_entity_fields(env_name: String, entity_name: String) -> Result<Vec<FieldMetadata>, String> {
-    log::info!("Loading fields for entity '{}' from env '{}'", entity_name, env_name);
+async fn load_entity_fields(
+    env_name: String,
+    entity_name: String,
+) -> Result<Vec<FieldMetadata>, String> {
+    log::info!(
+        "Loading fields for entity '{}' from env '{}'",
+        entity_name,
+        env_name
+    );
 
     let config = crate::global_config();
     let manager = crate::client_manager();
 
     // Try cache first (24 hours)
-    match config.get_entity_metadata_cache(&env_name, &entity_name, 24).await {
+    match config
+        .get_entity_metadata_cache(&env_name, &entity_name, 24)
+        .await
+    {
         Ok(Some(cached)) => {
-            log::info!("Cache hit: {} fields for '{}'", cached.fields.len(), entity_name);
+            log::info!(
+                "Cache hit: {} fields for '{}'",
+                cached.fields.len(),
+                entity_name
+            );
             return Ok(cached.fields);
         }
         _ => {
@@ -1565,13 +1756,10 @@ async fn load_entity_fields(env_name: String, entity_name: String) -> Result<Vec
     }
 
     // Cache miss - fetch from API
-    let client = manager
-        .get_client(&env_name)
-        .await
-        .map_err(|e| {
-            log::error!("Failed to get client for {}: {}", env_name, e);
-            format!("Failed to get client for {}: {}", env_name, e)
-        })?;
+    let client = manager.get_client(&env_name).await.map_err(|e| {
+        log::error!("Failed to get client for {}: {}", env_name, e);
+        format!("Failed to get client for {}: {}", env_name, e)
+    })?;
 
     // Use fetch_entity_fields_alt which uses EntityDefinitions API
     // This properly populates related_entity for lookup fields (needed for nested autocomplete)
@@ -1590,7 +1778,9 @@ async fn load_entity_fields(env_name: String, entity_name: String) -> Result<Vec
         fields: fields.clone(),
         ..Default::default()
     };
-    let _ = config.set_entity_metadata_cache(&env_name, &entity_name, &metadata).await;
+    let _ = config
+        .set_entity_metadata_cache(&env_name, &entity_name, &metadata)
+        .await;
 
     Ok(fields)
 }
@@ -1660,10 +1850,15 @@ fn check_for_nested_lookup(state: &mut State, current_value: &str) -> Command<Ms
             // First level: look in source_fields
             if let Resource::Success(fields) = &state.source_fields {
                 if let Some(field) = fields.iter().find(|f| f.logical_name == field_to_check) {
-                    log::debug!("  Found field '{}' with type {:?}, related_entity: {:?}",
-                        field.logical_name, field.field_type, field.related_entity);
+                    log::debug!(
+                        "  Found field '{}' with type {:?}, related_entity: {:?}",
+                        field.logical_name,
+                        field.field_type,
+                        field.related_entity
+                    );
                 }
-                fields.iter()
+                fields
+                    .iter()
                     .find(|f| f.logical_name == field_to_check && f.field_type == FieldType::Lookup)
                     .and_then(|f| f.related_entity.clone().map(|e| (path_prefix.clone(), e)))
             } else {
@@ -1674,7 +1869,8 @@ fn check_for_nested_lookup(state: &mut State, current_value: &str) -> Command<Ms
             // Deeper levels: look in previously loaded related fields
             let parent_prefix = segments[..depth].join(".");
             if let Some(Resource::Success(fields)) = state.related_fields.get(&parent_prefix) {
-                fields.iter()
+                fields
+                    .iter()
                     .find(|f| f.logical_name == field_to_check && f.field_type == FieldType::Lookup)
                     .and_then(|f| f.related_entity.clone().map(|e| (path_prefix.clone(), e)))
             } else {
@@ -1691,7 +1887,9 @@ fn check_for_nested_lookup(state: &mut State, current_value: &str) -> Command<Ms
                 return Command::None;
             };
 
-            state.related_fields.insert(path_prefix.clone(), Resource::Loading);
+            state
+                .related_fields
+                .insert(path_prefix.clone(), Resource::Loading);
 
             // Use loading screen for fetch
             return Command::perform_parallel()
@@ -1702,7 +1900,9 @@ fn check_for_nested_lookup(state: &mut State, current_value: &str) -> Command<Ms
                 .with_title("Loading Related Entity")
                 .on_complete(AppId::TransferMappingEditor)
                 .build(move |_task_idx, result| {
-                    let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                    let data = result
+                        .downcast::<Result<Vec<FieldMetadata>, String>>()
+                        .unwrap();
                     Msg::RelatedFieldsLoaded {
                         lookup_field: path_prefix.clone(),
                         result: *data,
@@ -1809,7 +2009,8 @@ fn check_resolver_nested_lookup(state: &mut State, current_value: &str) -> Comma
         let lookup_info = if depth == 0 {
             // First level: look in resolver_source_fields
             if let Resource::Success(fields) = &state.resolver_source_fields {
-                fields.iter()
+                fields
+                    .iter()
                     .find(|f| f.logical_name == field_to_check && f.field_type == FieldType::Lookup)
                     .and_then(|f| f.related_entity.clone().map(|e| (path_prefix.clone(), e)))
             } else {
@@ -1818,8 +2019,11 @@ fn check_resolver_nested_lookup(state: &mut State, current_value: &str) -> Comma
         } else {
             // Deeper levels: look in previously loaded related fields
             let parent_prefix = segments[..depth].join(".");
-            if let Some(Resource::Success(fields)) = state.resolver_related_fields.get(&parent_prefix) {
-                fields.iter()
+            if let Some(Resource::Success(fields)) =
+                state.resolver_related_fields.get(&parent_prefix)
+            {
+                fields
+                    .iter()
                     .find(|f| f.logical_name == field_to_check && f.field_type == FieldType::Lookup)
                     .and_then(|f| f.related_entity.clone().map(|e| (path_prefix.clone(), e)))
             } else {
@@ -1836,7 +2040,9 @@ fn check_resolver_nested_lookup(state: &mut State, current_value: &str) -> Comma
                 return Command::None;
             };
 
-            state.resolver_related_fields.insert(path_prefix.clone(), Resource::Loading);
+            state
+                .resolver_related_fields
+                .insert(path_prefix.clone(), Resource::Loading);
 
             // Use loading screen for fetch
             return Command::perform_parallel()
@@ -1847,7 +2053,9 @@ fn check_resolver_nested_lookup(state: &mut State, current_value: &str) -> Comma
                 .with_title("Loading Related Entity")
                 .on_complete(AppId::TransferMappingEditor)
                 .build(move |_task_idx, result| {
-                    let data = result.downcast::<Result<Vec<FieldMetadata>, String>>().unwrap();
+                    let data = result
+                        .downcast::<Result<Vec<FieldMetadata>, String>>()
+                        .unwrap();
                     Msg::ResolverRelatedFieldsLoaded {
                         lookup_field: path_prefix.clone(),
                         result: *data,

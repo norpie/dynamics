@@ -71,7 +71,9 @@ pub fn find_junction_candidates(
 
     // Sort by number of connections (most connections first), then by name
     candidates.sort_by(|a, b| {
-        b.connects.len().cmp(&a.connects.len())
+        b.connects
+            .len()
+            .cmp(&a.connects.len())
             .then_with(|| a.logical_name.cmp(&b.logical_name))
     });
 
@@ -84,19 +86,10 @@ pub fn find_junction_candidates(
 /// - Has primarily lookup fields (more than 50% lookups)
 /// - Has few non-system fields total
 /// - Name contains common junction patterns
-pub fn is_likely_junction(
-    entity_name: &str,
-    fields: &[FieldMetadata],
-) -> bool {
+pub fn is_likely_junction(entity_name: &str, fields: &[FieldMetadata]) -> bool {
     // Name-based heuristics
     let name_lower = entity_name.to_lowercase();
-    let junction_patterns = [
-        "_connection",
-        "_association",
-        "_link",
-        "_member",
-        "_x_",
-    ];
+    let junction_patterns = ["_connection", "_association", "_link", "_member", "_x_"];
 
     if junction_patterns.iter().any(|p| name_lower.contains(p)) {
         return true;
@@ -185,22 +178,33 @@ mod tests {
 
     #[test]
     fn test_find_junction_basic() {
-        let selected: HashSet<_> = ["account", "contact"].iter().map(|s| s.to_string()).collect();
+        let selected: HashSet<_> = ["account", "contact"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         let all_entities = vec![
             // Selected entities (should be ignored)
             ("account".to_string(), None, vec![make_string_field("name")]),
             ("contact".to_string(), None, vec![make_string_field("name")]),
             // Junction candidate
-            ("account_contact".to_string(), Some("Account Contact".to_string()), vec![
-                make_lookup("accountid", "account"),
-                make_lookup("contactid", "contact"),
-            ]),
+            (
+                "account_contact".to_string(),
+                Some("Account Contact".to_string()),
+                vec![
+                    make_lookup("accountid", "account"),
+                    make_lookup("contactid", "contact"),
+                ],
+            ),
             // Not a junction - only 1 connection
-            ("opportunity".to_string(), None, vec![
-                make_lookup("accountid", "account"),
-                make_string_field("name"),
-            ]),
+            (
+                "opportunity".to_string(),
+                None,
+                vec![
+                    make_lookup("accountid", "account"),
+                    make_string_field("name"),
+                ],
+            ),
         ];
 
         let candidates = find_junction_candidates(&selected, &all_entities);
@@ -221,10 +225,14 @@ mod tests {
             ("account".to_string(), None, vec![make_string_field("name")]),
             ("contact".to_string(), None, vec![make_string_field("name")]),
             // Already selected - should NOT appear as candidate
-            ("account_contact".to_string(), None, vec![
-                make_lookup("accountid", "account"),
-                make_lookup("contactid", "contact"),
-            ]),
+            (
+                "account_contact".to_string(),
+                None,
+                vec![
+                    make_lookup("accountid", "account"),
+                    make_lookup("contactid", "contact"),
+                ],
+            ),
         ];
 
         let candidates = find_junction_candidates(&selected, &all_entities);
@@ -234,16 +242,23 @@ mod tests {
 
     #[test]
     fn test_find_junction_external_lookups_ignored() {
-        let selected: HashSet<_> = ["account", "contact"].iter().map(|s| s.to_string()).collect();
+        let selected: HashSet<_> = ["account", "contact"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         let all_entities = vec![
             ("account".to_string(), None, vec![make_string_field("name")]),
             ("contact".to_string(), None, vec![make_string_field("name")]),
             // Has lookups but only 1 to selected entities
-            ("some_entity".to_string(), None, vec![
-                make_lookup("accountid", "account"),
-                make_lookup("systemuserid", "systemuser"), // External
-            ]),
+            (
+                "some_entity".to_string(),
+                None,
+                vec![
+                    make_lookup("accountid", "account"),
+                    make_lookup("systemuserid", "systemuser"), // External
+                ],
+            ),
         ];
 
         let candidates = find_junction_candidates(&selected, &all_entities);
@@ -304,7 +319,10 @@ mod tests {
             make_lookup("systemuserid", "systemuser"),
         ];
 
-        let filter: HashSet<_> = ["account", "contact"].iter().map(|s| s.to_string()).collect();
+        let filter: HashSet<_> = ["account", "contact"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         let connections = get_junction_connections(&fields, Some(&filter));
 
         assert_eq!(connections.len(), 2);

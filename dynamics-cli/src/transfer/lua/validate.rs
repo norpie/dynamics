@@ -147,7 +147,9 @@ pub fn validate_script(script: &str) -> ValidationResult {
 
     // Check for at least one source entity
     if declaration.source.is_empty() {
-        result.warnings.push("No source entities declared - script will receive empty source data".to_string());
+        result.warnings.push(
+            "No source entities declared - script will receive empty source data".to_string(),
+        );
     }
 
     // Validate each entity declaration
@@ -195,9 +197,9 @@ pub fn validate_script(script: &str) -> ValidationResult {
 fn parse_lua_error(error: &str) -> ValidationError {
     // Lua errors often look like: "[string \"...\"]:5: error message"
     // or "runtime error: [string \"...\"]:5: error message"
-    
+
     let line_regex = regex::Regex::new(r":(\d+):").ok();
-    
+
     if let Some(re) = line_regex {
         if let Some(captures) = re.captures(error) {
             if let Some(line_match) = captures.get(1) {
@@ -207,14 +209,14 @@ fn parse_lua_error(error: &str) -> ValidationError {
             }
         }
     }
-    
+
     ValidationError::new(error.to_string())
 }
 
 /// Basic validation of OData filter syntax
 fn validate_odata_filter(filter: &str) -> Result<(), String> {
     let filter = filter.trim();
-    
+
     if filter.is_empty() {
         return Ok(());
     }
@@ -250,15 +252,24 @@ fn validate_odata_filter(filter: &str) -> Result<(), String> {
 
     // Check for common OData operators (basic sanity check)
     let valid_operators = [
-        " eq ", " ne ", " gt ", " ge ", " lt ", " le ",
-        " and ", " or ", " not ",
-        " contains(", " startswith(", " endswith(",
+        " eq ",
+        " ne ",
+        " gt ",
+        " ge ",
+        " lt ",
+        " le ",
+        " and ",
+        " or ",
+        " not ",
+        " contains(",
+        " startswith(",
+        " endswith(",
     ];
-    
-    let has_operator = valid_operators.iter().any(|op| 
-        filter.to_lowercase().contains(op)
-    );
-    
+
+    let has_operator = valid_operators
+        .iter()
+        .any(|op| filter.to_lowercase().contains(op));
+
     // If there's no operator, it might be a simple value or invalid
     if !has_operator && !filter.contains('(') {
         // Check if it looks like a comparison without spaces
@@ -275,7 +286,7 @@ fn validate_odata_filter(filter: &str) -> Result<(), String> {
 /// (dry run to catch runtime errors in the script structure)
 pub fn validate_script_execution(script: &str) -> ValidationResult {
     let basic_result = validate_script(script);
-    
+
     if !basic_result.is_valid {
         return basic_result;
     }
@@ -325,7 +336,7 @@ mod tests {
             function M.transform(source, target) return {} end
             return M
         "#;
-        
+
         let result = validate_script(script);
         assert!(result.is_valid);
         assert!(result.errors.is_empty());
@@ -339,7 +350,7 @@ mod tests {
             function M.transform(source, target) return {} end
             return M
         "#;
-        
+
         let result = validate_script(script);
         assert!(!result.is_valid);
         assert!(!result.errors.is_empty());
@@ -352,7 +363,7 @@ mod tests {
             function M.transform(source, target) return {} end
             return M
         "#;
-        
+
         let result = validate_script(script);
         assert!(!result.is_valid);
     }
@@ -364,7 +375,7 @@ mod tests {
             function M.declare() return { source = {}, target = {} } end
             return M
         "#;
-        
+
         let result = validate_script(script);
         assert!(!result.is_valid);
     }
@@ -387,7 +398,7 @@ mod tests {
             function M.transform(source, target) return {} end
             return M
         "#;
-        
+
         let result = validate_script(script);
         assert!(result.is_valid);
     }
@@ -410,7 +421,7 @@ mod tests {
             function M.transform(source, target) return {} end
             return M
         "#;
-        
+
         let result = validate_script(script);
         // Should have error about invalid filter
         assert!(!result.is_valid || !result.errors.is_empty());
@@ -449,7 +460,7 @@ mod tests {
             function M.transform(source, target) return {} end
             return M
         "#;
-        
+
         let result = validate_script(script);
         assert!(result.is_valid);
         assert!(!result.warnings.is_empty());

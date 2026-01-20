@@ -1,7 +1,7 @@
 //! Spinner component for showing progress during long-running operations
 
 use std::io::{self, Write};
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{Arc, atomic::AtomicBool};
 use std::time::Duration;
 use tokio::sync::oneshot;
 

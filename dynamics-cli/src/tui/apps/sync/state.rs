@@ -3,13 +3,13 @@
 //! This module contains the main application state and step-specific
 //! state types used throughout the sync wizard flow.
 
-use std::collections::HashSet;
 use crate::api::models::Environment as ApiEnvironment;
 use crate::tui::app::AppState;
 use crate::tui::resource::Resource;
 use crate::tui::widgets::{ListState, SelectState, TextInputState};
+use std::collections::HashSet;
 
-use super::types::{SyncStep, SyncPlan, EntitySyncPlan};
+use super::types::{EntitySyncPlan, SyncPlan, SyncStep};
 
 /// Main application state for the Entity Sync App
 #[derive(Debug, Default)]
@@ -74,9 +74,7 @@ pub struct EnvironmentSelectState {
 impl EnvironmentSelectState {
     /// Check if we can proceed to the next step
     pub fn can_proceed(&self) -> bool {
-        self.origin_env.is_some()
-            && self.target_env.is_some()
-            && self.origin_env != self.target_env
+        self.origin_env.is_some() && self.target_env.is_some() && self.origin_env != self.target_env
     }
 
     /// Get validation error message
@@ -175,18 +173,15 @@ impl EntitySelectState {
         };
 
         // Build a set of available entity names for quick lookup
-        let available_set: HashSet<&str> = available.iter()
-            .map(|e| e.logical_name.as_str())
-            .collect();
+        let available_set: HashSet<&str> =
+            available.iter().map(|e| e.logical_name.as_str()).collect();
 
         // Track which junction candidates we've already found
         let mut found_junctions: HashSet<String> = HashSet::new();
         let mut new_candidates: Vec<JunctionCandidate> = Vec::new();
 
         // Get selected entities as a vec for iteration
-        let selected: Vec<&str> = self.selected_entities.iter()
-            .map(|s| s.as_str())
-            .collect();
+        let selected: Vec<&str> = self.selected_entities.iter().map(|s| s.as_str()).collect();
 
         // For each pair of selected entities, check for junction patterns
         for (i, entity_a) in selected.iter().enumerate() {
@@ -203,7 +198,8 @@ impl EntitySelectState {
                         found_junctions.insert(pattern.clone());
 
                         // Get display name if available
-                        let display_name = available.iter()
+                        let display_name = available
+                            .iter()
                             .find(|e| e.logical_name == *pattern)
                             .and_then(|e| e.display_name.clone());
 
@@ -221,10 +217,13 @@ impl EntitySelectState {
         self.junction_candidates = new_candidates;
 
         // Remove any included junctions that are no longer candidates
-        let candidate_names: HashSet<&str> = self.junction_candidates.iter()
+        let candidate_names: HashSet<&str> = self
+            .junction_candidates
+            .iter()
             .map(|j| j.logical_name.as_str())
             .collect();
-        self.included_junctions.retain(|j| candidate_names.contains(j.as_str()));
+        self.included_junctions
+            .retain(|j| candidate_names.contains(j.as_str()));
 
         // Auto-show junction panel if we found candidates
         if !self.junction_candidates.is_empty() {
@@ -384,12 +383,12 @@ impl DiffReviewState {
 pub enum ExecutionPhase {
     #[default]
     NotStarted,
-    Deleting,           // Junction entities only
-    Deactivating,       // Regular entities, target-only records
+    Deleting,     // Junction entities only
+    Deactivating, // Regular entities, target-only records
     AddingFields,
     Publishing,
-    Updating,           // Regular entities, records in both
-    Inserting,          // Regular entities, origin-only records
+    Updating,  // Regular entities, records in both
+    Inserting, // Regular entities, origin-only records
     InsertingJunctions,
     Complete,
     Failed,
@@ -489,7 +488,12 @@ impl ConfirmState {
             }
             _ => {
                 if self.total_batches > 0 {
-                    format!("{} (batch {}/{})", self.phase.label(), self.current_batch, self.total_batches)
+                    format!(
+                        "{} (batch {}/{})",
+                        self.phase.label(),
+                        self.current_batch,
+                        self.total_batches
+                    )
                 } else {
                     self.phase.label().to_string()
                 }

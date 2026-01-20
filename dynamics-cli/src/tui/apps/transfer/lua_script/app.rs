@@ -5,11 +5,11 @@ use std::path::PathBuf;
 use crossterm::event::KeyCode;
 
 use crate::config::repository::transfer::{get_transfer_config, save_transfer_config};
-use crate::transfer::lua::{validate_script, ValidationResult};
 use crate::transfer::TransferConfig;
+use crate::transfer::lua::{ValidationResult, validate_script};
 use crate::tui::element::FocusId;
 use crate::tui::resource::Resource;
-use crate::tui::widgets::{FileBrowserEvent, FileBrowserAction};
+use crate::tui::widgets::{FileBrowserAction, FileBrowserEvent};
 use crate::tui::{App, AppId, Command, LayeredView, Subscription};
 
 use super::state::{LuaScriptParams, Msg, State, StatusMessage};
@@ -45,7 +45,9 @@ impl App for LuaScriptApp {
                         state.config = Resource::Success(config);
                         if should_validate {
                             state.validation = Resource::Loading;
-                            let script = state.config.to_option()
+                            let script = state
+                                .config
+                                .to_option()
                                 .and_then(|c| c.lua_script.clone())
                                 .unwrap_or_default();
                             return Command::perform(
@@ -64,7 +66,9 @@ impl App for LuaScriptApp {
             Msg::OpenFileBrowser => {
                 state.show_file_browser = true;
                 // Auto-select first Lua file
-                state.file_browser.select_first_matching(|e| e.name.to_lowercase().ends_with(".lua"));
+                state
+                    .file_browser
+                    .select_first_matching(|e| e.name.to_lowercase().ends_with(".lua"));
                 Command::set_focus(FocusId::new("file-browser"))
             }
 
@@ -85,7 +89,9 @@ impl App for LuaScriptApp {
                         state.file_browser.handle_navigation_key(key);
                     }
                     KeyCode::Enter => {
-                        if let Some(action) = state.file_browser.handle_event(FileBrowserEvent::Activate) {
+                        if let Some(action) =
+                            state.file_browser.handle_event(FileBrowserEvent::Activate)
+                        {
                             match action {
                                 FileBrowserAction::FileSelected(path) => {
                                     return Command::perform(
@@ -114,22 +120,21 @@ impl App for LuaScriptApp {
             Msg::FileSelected(path) => {
                 state.show_file_browser = false;
                 let path_str = path.to_string_lossy().to_string();
-                
+
                 // Update config with script path
                 if let Resource::Success(config) = &mut state.config {
                     config.lua_script_path = Some(path_str);
                 }
-                
+
                 // Load the script file
-                Command::perform(
-                    load_script_file(path),
-                    Msg::ScriptLoaded,
-                )
+                Command::perform(load_script_file(path), Msg::ScriptLoaded)
             }
 
             Msg::DirectoryEntered(_path) => {
                 // Auto-select first Lua file after entering directory
-                state.file_browser.select_first_matching(|e| e.name.to_lowercase().ends_with(".lua"));
+                state
+                    .file_browser
+                    .select_first_matching(|e| e.name.to_lowercase().ends_with(".lua"));
                 Command::None
             }
 
@@ -149,15 +154,16 @@ impl App for LuaScriptApp {
                             config.lua_script = Some(content.clone());
                             // Save the config
                             let config_clone = config.clone();
-                            state.status_message = Some(StatusMessage::info("Script loaded, saving..."));
-                            return Command::perform(
-                                save_config(config_clone),
-                                Msg::ScriptSaved,
-                            );
+                            state.status_message =
+                                Some(StatusMessage::info("Script loaded, saving..."));
+                            return Command::perform(save_config(config_clone), Msg::ScriptSaved);
                         }
                     }
                     Err(e) => {
-                        state.status_message = Some(StatusMessage::error(format!("Failed to load script: {}", e)));
+                        state.status_message = Some(StatusMessage::error(format!(
+                            "Failed to load script: {}",
+                            e
+                        )));
                     }
                 }
                 Command::None
@@ -166,10 +172,13 @@ impl App for LuaScriptApp {
             Msg::ScriptSaved(result) => {
                 match result {
                     Ok(()) => {
-                        state.status_message = Some(StatusMessage::info("Script saved. Validating..."));
+                        state.status_message =
+                            Some(StatusMessage::info("Script saved. Validating..."));
                         // Auto-validate after saving
                         state.validation = Resource::Loading;
-                        let script = state.config.to_option()
+                        let script = state
+                            .config
+                            .to_option()
                             .and_then(|c| c.lua_script.clone())
                             .unwrap_or_default();
                         return Command::perform(
@@ -178,7 +187,8 @@ impl App for LuaScriptApp {
                         );
                     }
                     Err(e) => {
-                        state.status_message = Some(StatusMessage::error(format!("Failed to save: {}", e)));
+                        state.status_message =
+                            Some(StatusMessage::error(format!("Failed to save: {}", e)));
                     }
                 }
                 Command::None
@@ -213,7 +223,8 @@ impl App for LuaScriptApp {
                     }
                     Err(e) => {
                         state.validation = Resource::Failure(e.clone());
-                        state.status_message = Some(StatusMessage::error(format!("Validation error: {}", e)));
+                        state.status_message =
+                            Some(StatusMessage::error(format!("Validation error: {}", e)));
                     }
                 }
                 Command::None
@@ -223,11 +234,14 @@ impl App for LuaScriptApp {
                 // Check if valid first
                 if let Resource::Success(validation) = &state.validation {
                     if !validation.is_valid {
-                        state.status_message = Some(StatusMessage::error("Cannot preview: script has validation errors"));
+                        state.status_message = Some(StatusMessage::error(
+                            "Cannot preview: script has validation errors",
+                        ));
                         return Command::None;
                     }
                 } else {
-                    state.status_message = Some(StatusMessage::error("Please validate the script first"));
+                    state.status_message =
+                        Some(StatusMessage::error("Please validate the script first"));
                     return Command::None;
                 }
 
@@ -246,9 +260,7 @@ impl App for LuaScriptApp {
                 Command::None
             }
 
-            Msg::GoBack => {
-                Command::navigate_to(AppId::TransferConfigList)
-            }
+            Msg::GoBack => Command::navigate_to(AppId::TransferConfigList),
         }
     }
 
@@ -286,17 +298,14 @@ async fn save_config(config: TransferConfig) -> Result<(), String> {
 
 async fn load_script_file(path: PathBuf) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        std::fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read file: {}", e))
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {}", e))
     })
     .await
     .map_err(|e| format!("Task failed: {}", e))?
 }
 
 async fn validate_script_async(script: String) -> Result<ValidationResult, String> {
-    tokio::task::spawn_blocking(move || {
-        Ok(validate_script(&script))
-    })
-    .await
-    .map_err(|e| format!("Validation task failed: {}", e))?
+    tokio::task::spawn_blocking(move || Ok(validate_script(&script)))
+        .await
+        .map_err(|e| format!("Validation task failed: {}", e))?
 }

@@ -1,12 +1,12 @@
-use crossterm::event::KeyCode;
-use crate::tui::{App, AppId, Command, Element, Subscription, Theme, FocusId, Resource};
-use crate::tui::renderer::LayeredView;
-use crate::tui::widgets::{SelectField, SelectEvent, TextInputField, TextInputEvent};
+use crate::api::models::{CredentialSet, Environment as ApiEnvironment};
 use crate::tui::apps::screens::ErrorScreenParams;
-use crate::api::models::{Environment as ApiEnvironment, CredentialSet};
-use ratatui::text::{Line, Span};
-use ratatui::style::{Style, Stylize};
+use crate::tui::renderer::LayeredView;
+use crate::tui::widgets::{SelectEvent, SelectField, TextInputEvent, TextInputField};
+use crate::tui::{App, AppId, Command, Element, FocusId, Resource, Subscription, Theme};
 use crate::{col, row, spacer, use_constraints};
+use crossterm::event::KeyCode;
+use ratatui::style::{Style, Stylize};
+use ratatui::text::{Line, Span};
 use_constraints!();
 
 pub struct EnvironmentSelectorApp;
@@ -97,7 +97,8 @@ impl State {
     }
 
     fn get_selected_environment(&self) -> Option<&ApiEnvironment> {
-        self.env_selector.value()
+        self.env_selector
+            .value()
             .and_then(|name| self.environments.iter().find(|e| e.name == name))
     }
 
@@ -209,7 +210,9 @@ impl App for EnvironmentSelectorApp {
                     let config = crate::global_config();
                     let manager = crate::client_manager();
 
-                    let envs_result = config.list_environments().await
+                    let envs_result = config
+                        .list_environments()
+                        .await
                         .map_err(|e| e.to_string())?;
 
                     let mut environments = Vec::new();
@@ -219,10 +222,11 @@ impl App for EnvironmentSelectorApp {
                         }
                     }
 
-                    let credentials = config.list_credentials().await
-                        .map_err(|e| e.to_string())?;
+                    let credentials = config.list_credentials().await.map_err(|e| e.to_string())?;
 
-                    let current = manager.get_current_environment_name().await
+                    let current = manager
+                        .get_current_environment_name()
+                        .await
                         .map_err(|e| e.to_string())?;
 
                     Ok(LoadedData {
@@ -231,7 +235,7 @@ impl App for EnvironmentSelectorApp {
                         current_env: current,
                     })
                 },
-                Msg::DataLoaded
+                Msg::DataLoaded,
             ),
             Command::set_focus(FocusId::new("env-selector")),
         ]);
@@ -250,7 +254,10 @@ impl App for EnvironmentSelectorApp {
                 if !state.environments.is_empty() {
                     let env_to_select = if let Some(ref saved_name) = state.recently_saved_env {
                         // Try to find the recently saved environment
-                        state.environments.iter().find(|e| &e.name == saved_name)
+                        state
+                            .environments
+                            .iter()
+                            .find(|e| &e.name == saved_name)
                             .or_else(|| state.environments.first())
                     } else {
                         // No recent save, select first
@@ -258,13 +265,16 @@ impl App for EnvironmentSelectorApp {
                     };
 
                     if let Some(env) = env_to_select {
-                        let env_names: Vec<String> = state.environments.iter()
-                            .map(|e| e.name.clone())
-                            .collect();
-                        state.env_selector.set_value_with_options(Some(env.name.clone()), &env_names);
+                        let env_names: Vec<String> =
+                            state.environments.iter().map(|e| e.name.clone()).collect();
+                        state
+                            .env_selector
+                            .set_value_with_options(Some(env.name.clone()), &env_names);
                         state.env_name_field.set_value(env.name.clone());
                         state.env_host_field.set_value(env.host.clone());
-                        state.env_creds_selector.set_value(Some(env.credentials_ref.clone()));
+                        state
+                            .env_creds_selector
+                            .set_value(Some(env.credentials_ref.clone()));
                         state.env_panel_dirty = false;
                     }
 
@@ -274,17 +284,21 @@ impl App for EnvironmentSelectorApp {
 
                 // Set active environment selector with proper index
                 if let Some(ref current) = state.current_environment {
-                    let env_names: Vec<String> = state.environments.iter()
-                        .map(|e| e.name.clone())
-                        .collect();
-                    state.active_env_selector.set_value_with_options(Some(current.clone()), &env_names);
+                    let env_names: Vec<String> =
+                        state.environments.iter().map(|e| e.name.clone()).collect();
+                    state
+                        .active_env_selector
+                        .set_value_with_options(Some(current.clone()), &env_names);
                 }
 
                 // Select recently saved credential, or first one if none saved recently
                 if !state.credentials.is_empty() {
                     let cred_to_select = if let Some(ref saved_name) = state.recently_saved_cred {
                         // Try to find the recently saved credential
-                        state.credentials.iter().find(|c| c == &saved_name)
+                        state
+                            .credentials
+                            .iter()
+                            .find(|c| c == &saved_name)
                             .or_else(|| state.credentials.first())
                     } else {
                         // No recent save, select first
@@ -293,7 +307,9 @@ impl App for EnvironmentSelectorApp {
 
                     if let Some(cred_name) = cred_to_select {
                         let cred_name = cred_name.clone();
-                        state.cred_selector.set_value_with_options(Some(cred_name.clone()), &state.credentials);
+                        state
+                            .cred_selector
+                            .set_value_with_options(Some(cred_name.clone()), &state.credentials);
                         state.cred_name_field.set_value(cred_name.clone());
 
                         // Clear the recently saved flag after using it
@@ -303,11 +319,13 @@ impl App for EnvironmentSelectorApp {
                             async move {
                                 let config = crate::global_config();
                                 log::debug!("Auto-loading credential: {}", cred_name);
-                                config.get_credentials(&cred_name).await
+                                config
+                                    .get_credentials(&cred_name)
+                                    .await
                                     .map_err(|e| e.to_string())?
                                     .ok_or_else(|| "Credential not found".to_string())
                             },
-                            Msg::CredentialDataLoaded
+                            Msg::CredentialDataLoaded,
                         );
                     }
                 }
@@ -322,14 +340,13 @@ impl App for EnvironmentSelectorApp {
                     ErrorScreenParams {
                         message: format!("Failed to load configuration: {}", err),
                         target: Some(AppId::EnvironmentSelector),
-                    }
+                    },
                 )
             }
 
             Msg::EnvSelectorEvent(event) => {
-                let env_names: Vec<String> = state.environments.iter()
-                    .map(|e| e.name.clone())
-                    .collect();
+                let env_names: Vec<String> =
+                    state.environments.iter().map(|e| e.name.clone()).collect();
 
                 let (cmd, selection) = state.env_selector.handle_event(event, &env_names);
 
@@ -338,7 +355,9 @@ impl App for EnvironmentSelectorApp {
                         // Populate environment form fields inline
                         state.env_name_field.set_value(env.name.clone());
                         state.env_host_field.set_value(env.host.clone());
-                        state.env_creds_selector.set_value(Some(env.credentials_ref.clone()));
+                        state
+                            .env_creds_selector
+                            .set_value(Some(env.credentials_ref.clone()));
                         state.env_panel_dirty = false;
                     }
                 }
@@ -351,7 +370,9 @@ impl App for EnvironmentSelectorApp {
                 if let Some(env) = state.environments.iter().find(|e| e.name == name) {
                     state.env_name_field.set_value(env.name.clone());
                     state.env_host_field.set_value(env.host.clone());
-                    state.env_creds_selector.set_value(Some(env.credentials_ref.clone()));
+                    state
+                        .env_creds_selector
+                        .set_value(Some(env.credentials_ref.clone()));
                     state.env_panel_dirty = false;
                 }
                 Command::None
@@ -370,7 +391,9 @@ impl App for EnvironmentSelectorApp {
             }
 
             Msg::EnvCredsEvent(event) => {
-                let (cmd, selection) = state.env_creds_selector.handle_event(event, &state.credentials);
+                let (cmd, selection) = state
+                    .env_creds_selector
+                    .handle_event(event, &state.credentials);
                 if selection.is_some() {
                     state.env_panel_dirty = true;
                 }
@@ -378,9 +401,8 @@ impl App for EnvironmentSelectorApp {
             }
 
             Msg::ActiveEnvEvent(event) => {
-                let env_names: Vec<String> = state.environments.iter()
-                    .map(|e| e.name.clone())
-                    .collect();
+                let env_names: Vec<String> =
+                    state.environments.iter().map(|e| e.name.clone()).collect();
 
                 let (cmd, selection) = state.active_env_selector.handle_event(event, &env_names);
 
@@ -392,10 +414,12 @@ impl App for EnvironmentSelectorApp {
                         return Command::perform(
                             async move {
                                 let manager = crate::client_manager();
-                                manager.set_current_environment_in_config(env_name).await
+                                manager
+                                    .set_current_environment_in_config(env_name)
+                                    .await
                                     .map_err(|e| e.to_string())
                             },
-                            Msg::CurrentEnvironmentSet
+                            Msg::CurrentEnvironmentSet,
                         );
                     }
                 }
@@ -415,12 +439,15 @@ impl App for EnvironmentSelectorApp {
             Msg::SaveEnvironment => {
                 let name = state.env_name_field.value().to_string();
                 let host = state.env_host_field.value().to_string();
-                let creds_ref = state.env_creds_selector.value()
+                let creds_ref = state
+                    .env_creds_selector
+                    .value()
                     .map(|s| s.to_string())
                     .unwrap_or_default();
 
                 if name.is_empty() || host.is_empty() || creds_ref.is_empty() {
-                    state.env_save_state = Resource::Failure("Name, Host, and Credentials are required".to_string());
+                    state.env_save_state =
+                        Resource::Failure("Name, Host, and Credentials are required".to_string());
                     return Command::None;
                 }
 
@@ -436,10 +463,9 @@ impl App for EnvironmentSelectorApp {
                             host,
                             credentials_ref: creds_ref,
                         };
-                        config.add_environment(env).await
-                            .map_err(|e| e.to_string())
+                        config.add_environment(env).await.map_err(|e| e.to_string())
                     },
-                    Msg::EnvironmentSaved
+                    Msg::EnvironmentSaved,
                 )
             }
 
@@ -455,7 +481,9 @@ impl App for EnvironmentSelectorApp {
                         let config = crate::global_config();
                         let manager = crate::client_manager();
 
-                        let envs_result = config.list_environments().await
+                        let envs_result = config
+                            .list_environments()
+                            .await
                             .map_err(|e| e.to_string())?;
 
                         let mut environments = Vec::new();
@@ -465,10 +493,12 @@ impl App for EnvironmentSelectorApp {
                             }
                         }
 
-                        let credentials = config.list_credentials().await
-                            .map_err(|e| e.to_string())?;
+                        let credentials =
+                            config.list_credentials().await.map_err(|e| e.to_string())?;
 
-                        let current = manager.get_current_environment_name().await
+                        let current = manager
+                            .get_current_environment_name()
+                            .await
                             .map_err(|e| e.to_string())?;
 
                         Ok(LoadedData {
@@ -477,7 +507,7 @@ impl App for EnvironmentSelectorApp {
                             current_env: current,
                         })
                     },
-                    Msg::DataLoaded
+                    Msg::DataLoaded,
                 )
             }
 
@@ -496,10 +526,12 @@ impl App for EnvironmentSelectorApp {
                     Command::perform(
                         async move {
                             let config = crate::global_config();
-                            config.delete_environment(&env_name).await
+                            config
+                                .delete_environment(&env_name)
+                                .await
                                 .map_err(|e| e.to_string())
                         },
-                        Msg::EnvironmentDeleted
+                        Msg::EnvironmentDeleted,
                     )
                 } else {
                     Command::None
@@ -520,7 +552,9 @@ impl App for EnvironmentSelectorApp {
                         let config = crate::global_config();
                         let manager = crate::client_manager();
 
-                        let envs_result = config.list_environments().await
+                        let envs_result = config
+                            .list_environments()
+                            .await
                             .map_err(|e| e.to_string())?;
 
                         let mut environments = Vec::new();
@@ -530,10 +564,12 @@ impl App for EnvironmentSelectorApp {
                             }
                         }
 
-                        let credentials = config.list_credentials().await
-                            .map_err(|e| e.to_string())?;
+                        let credentials =
+                            config.list_credentials().await.map_err(|e| e.to_string())?;
 
-                        let current = manager.get_current_environment_name().await
+                        let current = manager
+                            .get_current_environment_name()
+                            .await
                             .map_err(|e| e.to_string())?;
 
                         Ok(LoadedData {
@@ -542,7 +578,7 @@ impl App for EnvironmentSelectorApp {
                             current_env: current,
                         })
                     },
-                    Msg::DataLoaded
+                    Msg::DataLoaded,
                 )
             }
 
@@ -566,11 +602,13 @@ impl App for EnvironmentSelectorApp {
                             async move {
                                 let config = crate::global_config();
                                 log::debug!("Fetching credential from config: {}", cred_name);
-                                config.get_credentials(&cred_name).await
+                                config
+                                    .get_credentials(&cred_name)
+                                    .await
                                     .map_err(|e| e.to_string())?
                                     .ok_or_else(|| "Credential not found".to_string())
                             },
-                            Msg::CredentialDataLoaded
+                            Msg::CredentialDataLoaded,
                         );
                     }
                 }
@@ -585,11 +623,13 @@ impl App for EnvironmentSelectorApp {
                 Command::perform(
                     async move {
                         let config = crate::global_config();
-                        config.get_credentials(&name).await
+                        config
+                            .get_credentials(&name)
+                            .await
                             .map_err(|e| e.to_string())?
                             .ok_or_else(|| "Credential not found".to_string())
                     },
-                    Msg::CredentialDataLoaded
+                    Msg::CredentialDataLoaded,
                 )
             }
 
@@ -600,9 +640,19 @@ impl App for EnvironmentSelectorApp {
                 state.cred_type_selector.set_value(Some(type_str.clone()));
 
                 match cred {
-                    CredentialSet::UsernamePassword { username, password, client_id, client_secret } => {
-                        log::debug!("Setting Username/Password fields - username: {}, has_password: {}, client_id: {}, has_client_secret: {}",
-                            username, !password.is_empty(), client_id, !client_secret.is_empty());
+                    CredentialSet::UsernamePassword {
+                        username,
+                        password,
+                        client_id,
+                        client_secret,
+                    } => {
+                        log::debug!(
+                            "Setting Username/Password fields - username: {}, has_password: {}, client_id: {}, has_client_secret: {}",
+                            username,
+                            !password.is_empty(),
+                            client_id,
+                            !client_secret.is_empty()
+                        );
                         state.cred_username_field.set_value(username);
                         state.cred_password_field.set_value(password);
                         state.cred_client_id_field.set_value(client_id);
@@ -610,7 +660,11 @@ impl App for EnvironmentSelectorApp {
                         state.cred_tenant_id_field.set_value(String::new());
                         state.cred_cert_path_field.set_value(String::new());
                     }
-                    CredentialSet::ClientCredentials { client_id, client_secret, tenant_id } => {
+                    CredentialSet::ClientCredentials {
+                        client_id,
+                        client_secret,
+                        tenant_id,
+                    } => {
                         state.cred_username_field.set_value(String::new());
                         state.cred_password_field.set_value(String::new());
                         state.cred_client_id_field.set_value(client_id);
@@ -618,7 +672,10 @@ impl App for EnvironmentSelectorApp {
                         state.cred_tenant_id_field.set_value(tenant_id);
                         state.cred_cert_path_field.set_value(String::new());
                     }
-                    CredentialSet::DeviceCode { client_id, tenant_id } => {
+                    CredentialSet::DeviceCode {
+                        client_id,
+                        tenant_id,
+                    } => {
                         state.cred_username_field.set_value(String::new());
                         state.cred_password_field.set_value(String::new());
                         state.cred_client_id_field.set_value(client_id);
@@ -626,7 +683,11 @@ impl App for EnvironmentSelectorApp {
                         state.cred_tenant_id_field.set_value(tenant_id);
                         state.cred_cert_path_field.set_value(String::new());
                     }
-                    CredentialSet::Certificate { client_id, tenant_id, cert_path } => {
+                    CredentialSet::Certificate {
+                        client_id,
+                        tenant_id,
+                        cert_path,
+                    } => {
                         state.cred_username_field.set_value(String::new());
                         state.cred_password_field.set_value(String::new());
                         state.cred_client_id_field.set_value(client_id);
@@ -655,7 +716,7 @@ impl App for EnvironmentSelectorApp {
                     ErrorScreenParams {
                         message: format!("Failed to load credential: {}", err),
                         target: Some(AppId::EnvironmentSelector),
-                    }
+                    },
                 )
             }
 
@@ -713,7 +774,9 @@ impl App for EnvironmentSelectorApp {
             Msg::NewCredential => {
                 state.cred_selector.set_value(None);
                 state.cred_name_field.set_value(String::new());
-                state.cred_type_selector.set_value(Some("Username/Password".to_string()));
+                state
+                    .cred_type_selector
+                    .set_value(Some("Username/Password".to_string()));
                 state.cred_username_field.set_value(String::new());
                 state.cred_password_field.set_value(String::new());
                 state.cred_client_id_field.set_value(String::new());
@@ -726,10 +789,14 @@ impl App for EnvironmentSelectorApp {
 
             Msg::SaveCredential => {
                 let name = state.cred_name_field.value().to_string();
-                let type_str = state.cred_type_selector.value().unwrap_or("Username/Password");
+                let type_str = state
+                    .cred_type_selector
+                    .value()
+                    .unwrap_or("Username/Password");
 
                 if name.is_empty() {
-                    state.cred_save_state = Resource::Failure("Credential name is required".to_string());
+                    state.cred_save_state =
+                        Resource::Failure("Credential name is required".to_string());
                     return Command::None;
                 }
 
@@ -737,36 +804,29 @@ impl App for EnvironmentSelectorApp {
                 state.recently_saved_cred = Some(name.clone());
 
                 let cred_set = match type_str {
-                    "Username/Password" => {
-                        CredentialSet::UsernamePassword {
-                            username: state.cred_username_field.value().to_string(),
-                            password: state.cred_password_field.value().to_string(),
-                            client_id: state.cred_client_id_field.value().to_string(),
-                            client_secret: state.cred_client_secret_field.value().to_string(),
-                        }
-                    }
-                    "Client Credentials" => {
-                        CredentialSet::ClientCredentials {
-                            client_id: state.cred_client_id_field.value().to_string(),
-                            client_secret: state.cred_client_secret_field.value().to_string(),
-                            tenant_id: state.cred_tenant_id_field.value().to_string(),
-                        }
-                    }
-                    "Device Code" => {
-                        CredentialSet::DeviceCode {
-                            client_id: state.cred_client_id_field.value().to_string(),
-                            tenant_id: state.cred_tenant_id_field.value().to_string(),
-                        }
-                    }
-                    "Certificate" => {
-                        CredentialSet::Certificate {
-                            client_id: state.cred_client_id_field.value().to_string(),
-                            tenant_id: state.cred_tenant_id_field.value().to_string(),
-                            cert_path: state.cred_cert_path_field.value().to_string(),
-                        }
-                    }
+                    "Username/Password" => CredentialSet::UsernamePassword {
+                        username: state.cred_username_field.value().to_string(),
+                        password: state.cred_password_field.value().to_string(),
+                        client_id: state.cred_client_id_field.value().to_string(),
+                        client_secret: state.cred_client_secret_field.value().to_string(),
+                    },
+                    "Client Credentials" => CredentialSet::ClientCredentials {
+                        client_id: state.cred_client_id_field.value().to_string(),
+                        client_secret: state.cred_client_secret_field.value().to_string(),
+                        tenant_id: state.cred_tenant_id_field.value().to_string(),
+                    },
+                    "Device Code" => CredentialSet::DeviceCode {
+                        client_id: state.cred_client_id_field.value().to_string(),
+                        tenant_id: state.cred_tenant_id_field.value().to_string(),
+                    },
+                    "Certificate" => CredentialSet::Certificate {
+                        client_id: state.cred_client_id_field.value().to_string(),
+                        tenant_id: state.cred_tenant_id_field.value().to_string(),
+                        cert_path: state.cred_cert_path_field.value().to_string(),
+                    },
                     _ => {
-                        state.cred_save_state = Resource::Failure("Invalid credential type".to_string());
+                        state.cred_save_state =
+                            Resource::Failure("Invalid credential type".to_string());
                         return Command::None;
                     }
                 };
@@ -776,10 +836,12 @@ impl App for EnvironmentSelectorApp {
                 Command::perform(
                     async move {
                         let config = crate::global_config();
-                        config.add_credentials(name, cred_set).await
+                        config
+                            .add_credentials(name, cred_set)
+                            .await
                             .map_err(|e| e.to_string())
                     },
-                    Msg::CredentialSaved
+                    Msg::CredentialSaved,
                 )
             }
 
@@ -795,7 +857,9 @@ impl App for EnvironmentSelectorApp {
                         let config = crate::global_config();
                         let manager = crate::client_manager();
 
-                        let envs_result = config.list_environments().await
+                        let envs_result = config
+                            .list_environments()
+                            .await
                             .map_err(|e| e.to_string())?;
 
                         let mut environments = Vec::new();
@@ -805,10 +869,12 @@ impl App for EnvironmentSelectorApp {
                             }
                         }
 
-                        let credentials = config.list_credentials().await
-                            .map_err(|e| e.to_string())?;
+                        let credentials =
+                            config.list_credentials().await.map_err(|e| e.to_string())?;
 
-                        let current = manager.get_current_environment_name().await
+                        let current = manager
+                            .get_current_environment_name()
+                            .await
                             .map_err(|e| e.to_string())?;
 
                         Ok(LoadedData {
@@ -817,7 +883,7 @@ impl App for EnvironmentSelectorApp {
                             current_env: current,
                         })
                     },
-                    Msg::DataLoaded
+                    Msg::DataLoaded,
                 )
             }
 
@@ -836,10 +902,12 @@ impl App for EnvironmentSelectorApp {
                     Command::perform(
                         async move {
                             let config = crate::global_config();
-                            config.delete_credentials(&cred_name).await
+                            config
+                                .delete_credentials(&cred_name)
+                                .await
                                 .map_err(|e| e.to_string())
                         },
-                        Msg::CredentialDeleted
+                        Msg::CredentialDeleted,
                     )
                 } else {
                     Command::None
@@ -850,7 +918,9 @@ impl App for EnvironmentSelectorApp {
                 state.cred_delete_state = Resource::Success(());
                 state.cred_selector.set_value(None);
                 state.cred_name_field.set_value(String::new());
-                state.cred_type_selector.set_value(Some("Username/Password".to_string()));
+                state
+                    .cred_type_selector
+                    .set_value(Some("Username/Password".to_string()));
                 state.cred_username_field.set_value(String::new());
                 state.cred_password_field.set_value(String::new());
                 state.cred_client_id_field.set_value(String::new());
@@ -865,7 +935,9 @@ impl App for EnvironmentSelectorApp {
                         let config = crate::global_config();
                         let manager = crate::client_manager();
 
-                        let envs_result = config.list_environments().await
+                        let envs_result = config
+                            .list_environments()
+                            .await
                             .map_err(|e| e.to_string())?;
 
                         let mut environments = Vec::new();
@@ -875,10 +947,12 @@ impl App for EnvironmentSelectorApp {
                             }
                         }
 
-                        let credentials = config.list_credentials().await
-                            .map_err(|e| e.to_string())?;
+                        let credentials =
+                            config.list_credentials().await.map_err(|e| e.to_string())?;
 
-                        let current = manager.get_current_environment_name().await
+                        let current = manager
+                            .get_current_environment_name()
+                            .await
                             .map_err(|e| e.to_string())?;
 
                         Ok(LoadedData {
@@ -887,7 +961,7 @@ impl App for EnvironmentSelectorApp {
                             current_env: current,
                         })
                     },
-                    Msg::DataLoaded
+                    Msg::DataLoaded,
                 )
             }
 
@@ -905,10 +979,12 @@ impl App for EnvironmentSelectorApp {
                     Command::perform(
                         async move {
                             let manager = crate::client_manager();
-                            manager.set_current_environment_in_config(env_name).await
+                            manager
+                                .set_current_environment_in_config(env_name)
+                                .await
                                 .map_err(|e| e.to_string())
                         },
-                        Msg::CurrentEnvironmentSet
+                        Msg::CurrentEnvironmentSet,
                     )
                 } else {
                     Command::None
@@ -924,7 +1000,9 @@ impl App for EnvironmentSelectorApp {
                         let config = crate::global_config();
                         let manager = crate::client_manager();
 
-                        let envs_result = config.list_environments().await
+                        let envs_result = config
+                            .list_environments()
+                            .await
                             .map_err(|e| e.to_string())?;
 
                         let mut environments = Vec::new();
@@ -934,10 +1012,12 @@ impl App for EnvironmentSelectorApp {
                             }
                         }
 
-                        let credentials = config.list_credentials().await
-                            .map_err(|e| e.to_string())?;
+                        let credentials =
+                            config.list_credentials().await.map_err(|e| e.to_string())?;
 
-                        let current = manager.get_current_environment_name().await
+                        let current = manager
+                            .get_current_environment_name()
+                            .await
                             .map_err(|e| e.to_string())?;
 
                         Ok(LoadedData {
@@ -946,7 +1026,7 @@ impl App for EnvironmentSelectorApp {
                             current_env: current,
                         })
                     },
-                    Msg::DataLoaded
+                    Msg::DataLoaded,
                 )
             }
 
@@ -961,7 +1041,9 @@ impl App for EnvironmentSelectorApp {
     fn view(state: &mut State) -> LayeredView<Msg> {
         // Environment names for selector
         let theme = &crate::global_runtime_config().theme;
-        let env_names: Vec<String> = state.environments.iter()
+        let env_names: Vec<String> = state
+            .environments
+            .iter()
             .map(|e| {
                 let mut name = e.name.clone();
                 // Add indicator for current environment
@@ -997,7 +1079,7 @@ impl App for EnvironmentSelectorApp {
 
     fn status(state: &State) -> Option<Line<'static>> {
         state.current_environment.as_ref().map(|env| {
-        let theme = &crate::global_runtime_config().theme;
+            let theme = &crate::global_runtime_config().theme;
             Line::from(vec![
                 Span::styled("Current: ", Style::default().fg(theme.text_tertiary)),
                 Span::styled(env.clone(), Style::default().fg(theme.accent_success)),
@@ -1031,7 +1113,7 @@ where
     let env_select = Element::select(
         "env-selector",
         env_select_options,
-        &mut state.env_selector.state
+        &mut state.env_selector.state,
     )
     .on_event(|e| AppMsg::EnvSelectorEvent(e).into())
     .build();
@@ -1041,24 +1123,20 @@ where
     let name_input = Element::text_input(
         "env-name",
         state.env_name_field.value(),
-        &state.env_name_field.state
+        &state.env_name_field.state,
     )
     .on_event(|e| AppMsg::EnvNameChanged(e).into())
     .build();
-    let name_panel = Element::panel(name_input)
-        .title("Name")
-        .build();
+    let name_panel = Element::panel(name_input).title("Name").build();
 
     let host_input = Element::text_input(
         "env-host",
         state.env_host_field.value(),
-        &state.env_host_field.state
+        &state.env_host_field.state,
     )
     .on_event(|e| AppMsg::EnvHostChanged(e).into())
     .build();
-    let host_panel = Element::panel(host_input)
-        .title("Host")
-        .build();
+    let host_panel = Element::panel(host_input).title("Host").build();
 
     // Only show credentials options if a value is selected
     let creds_select_options = if state.env_creds_selector.value().is_some() {
@@ -1069,13 +1147,11 @@ where
     let creds_select = Element::select(
         "env-creds",
         creds_select_options,
-        &mut state.env_creds_selector.state
+        &mut state.env_creds_selector.state,
     )
     .on_event(|e| AppMsg::EnvCredsEvent(e).into())
     .build();
-    let creds_panel = Element::panel(creds_select)
-        .title("Credentials")
-        .build();
+    let creds_panel = Element::panel(creds_select).title("Credentials").build();
 
     // Action buttons
     let save_btn = if state.env_panel_dirty {
@@ -1119,14 +1195,12 @@ where
         .build();
 
     // Active environment selector
-    let env_names: Vec<String> = state.environments.iter()
-        .map(|e| e.name.clone())
-        .collect();
+    let env_names: Vec<String> = state.environments.iter().map(|e| e.name.clone()).collect();
 
     let active_env_select = Element::select(
         "active-env-selector",
         env_names,
-        &mut state.active_env_selector.state
+        &mut state.active_env_selector.state,
     )
     .on_event(|e| AppMsg::ActiveEnvEvent(e).into())
     .build();
@@ -1142,9 +1216,7 @@ where
     ]
 }
 
-fn build_credential_panel<Msg: Clone + Send + 'static>(
-    state: &mut State,
-) -> Element<Msg>
+fn build_credential_panel<Msg: Clone + Send + 'static>(state: &mut State) -> Element<Msg>
 where
     Msg: From<crate::tui::apps::environment_selector_app::Msg>,
 {
@@ -1163,7 +1235,7 @@ where
     let cred_select = Element::select(
         "cred-selector",
         cred_select_options,
-        &mut state.cred_selector.state
+        &mut state.cred_selector.state,
     )
     .on_event(|e| AppMsg::CredSelectorEvent(e).into())
     .build();
@@ -1173,24 +1245,20 @@ where
     let name_input = Element::text_input(
         "cred-name",
         state.cred_name_field.value(),
-        &state.cred_name_field.state
+        &state.cred_name_field.state,
     )
     .on_event(|e| AppMsg::CredNameChanged(e).into())
     .build();
-    let name_panel = Element::panel(name_input)
-        .title("Name")
-        .build();
+    let name_panel = Element::panel(name_input).title("Name").build();
 
     let type_select = Element::select(
         "cred-type",
         State::get_credential_type_options(),
-        &mut state.cred_type_selector.state
+        &mut state.cred_type_selector.state,
     )
     .on_event(|e| AppMsg::CredTypeEvent(e).into())
     .build();
-    let type_panel = Element::panel(type_select)
-        .title("Type")
-        .build();
+    let type_panel = Element::panel(type_select).title("Type").build();
 
     // Build fields using ColumnBuilder to allow dynamic composition
     let mut builder = ColumnBuilder::new()
@@ -1198,48 +1266,45 @@ where
         .add(name_panel, Length(3))
         .add(type_panel, Length(3));
 
-    let selected_type = state.cred_type_selector.value().unwrap_or("Username/Password");
+    let selected_type = state
+        .cred_type_selector
+        .value()
+        .unwrap_or("Username/Password");
 
     match selected_type {
         "Username/Password" => {
             let username_input = Element::text_input(
                 "cred-username",
                 state.cred_username_field.value(),
-                &state.cred_username_field.state
+                &state.cred_username_field.state,
             )
             .on_event(|e| AppMsg::CredUsernameChanged(e).into())
             .build();
-            let username_panel = Element::panel(username_input)
-                .title("Username")
-                .build();
+            let username_panel = Element::panel(username_input).title("Username").build();
 
             let password_input = Element::text_input(
                 "cred-password",
                 state.cred_password_field.value(),
-                &state.cred_password_field.state
+                &state.cred_password_field.state,
             )
             .masked(true)
             .on_event(|e| AppMsg::CredPasswordChanged(e).into())
             .build();
-            let password_panel = Element::panel(password_input)
-                .title("Password")
-                .build();
+            let password_panel = Element::panel(password_input).title("Password").build();
 
             let client_id_input = Element::text_input(
                 "cred-client-id",
                 state.cred_client_id_field.value(),
-                &state.cred_client_id_field.state
+                &state.cred_client_id_field.state,
             )
             .on_event(|e| AppMsg::CredClientIdChanged(e).into())
             .build();
-            let client_id_panel = Element::panel(client_id_input)
-                .title("Client ID")
-                .build();
+            let client_id_panel = Element::panel(client_id_input).title("Client ID").build();
 
             let client_secret_input = Element::text_input(
                 "cred-client-secret",
                 state.cred_client_secret_field.value(),
-                &state.cred_client_secret_field.state
+                &state.cred_client_secret_field.state,
             )
             .masked(true)
             .on_event(|e| AppMsg::CredClientSecretChanged(e).into())
@@ -1258,24 +1323,20 @@ where
             let client_id_input = Element::text_input(
                 "cred-client-id",
                 state.cred_client_id_field.value(),
-                &state.cred_client_id_field.state
+                &state.cred_client_id_field.state,
             )
             .on_event(|e| AppMsg::CredClientIdChanged(e).into())
             .build();
-            let client_id_panel = Element::panel(client_id_input)
-                .title("Client ID")
-                .build();
+            let client_id_panel = Element::panel(client_id_input).title("Client ID").build();
 
             let tenant_id_input = Element::text_input(
                 "cred-tenant-id",
                 state.cred_tenant_id_field.value(),
-                &state.cred_tenant_id_field.state
+                &state.cred_tenant_id_field.state,
             )
             .on_event(|e| AppMsg::CredTenantIdChanged(e).into())
             .build();
-            let tenant_id_panel = Element::panel(tenant_id_input)
-                .title("Tenant ID")
-                .build();
+            let tenant_id_panel = Element::panel(tenant_id_input).title("Tenant ID").build();
 
             builder = builder
                 .add(client_id_panel, Length(3))
@@ -1285,7 +1346,7 @@ where
                 let client_secret_input = Element::text_input(
                     "cred-client-secret",
                     state.cred_client_secret_field.value(),
-                    &state.cred_client_secret_field.state
+                    &state.cred_client_secret_field.state,
                 )
                 .masked(true)
                 .on_event(|e| AppMsg::CredClientSecretChanged(e).into())
@@ -1294,37 +1355,32 @@ where
                     .title("Client Secret")
                     .build();
 
-                builder = builder
-                    .add(client_secret_panel, Length(3));
+                builder = builder.add(client_secret_panel, Length(3));
             }
         }
         "Certificate" => {
             let client_id_input = Element::text_input(
                 "cred-client-id",
                 state.cred_client_id_field.value(),
-                &state.cred_client_id_field.state
+                &state.cred_client_id_field.state,
             )
             .on_event(|e| AppMsg::CredClientIdChanged(e).into())
             .build();
-            let client_id_panel = Element::panel(client_id_input)
-                .title("Client ID")
-                .build();
+            let client_id_panel = Element::panel(client_id_input).title("Client ID").build();
 
             let tenant_id_input = Element::text_input(
                 "cred-tenant-id",
                 state.cred_tenant_id_field.value(),
-                &state.cred_tenant_id_field.state
+                &state.cred_tenant_id_field.state,
             )
             .on_event(|e| AppMsg::CredTenantIdChanged(e).into())
             .build();
-            let tenant_id_panel = Element::panel(tenant_id_input)
-                .title("Tenant ID")
-                .build();
+            let tenant_id_panel = Element::panel(tenant_id_input).title("Tenant ID").build();
 
             let cert_path_input = Element::text_input(
                 "cred-cert-path",
                 state.cred_cert_path_field.value(),
-                &state.cred_cert_path_field.state
+                &state.cred_cert_path_field.state,
             )
             .on_event(|e| AppMsg::CredCertPathChanged(e).into())
             .build();
@@ -1369,8 +1425,7 @@ where
         new_btn => Length(10)
     ];
 
-    builder = builder
-        .add(button_row, Length(3));
+    builder = builder.add(button_row, Length(3));
 
     let details_panel = Element::panel(builder.build())
         .title("Credential Details")

@@ -31,17 +31,15 @@ impl KeyBinding {
         match code {
             // Add SHIFT modifier to uppercase letters
             // This is necessary because crossterm sends Char('C') WITH SHIFT modifier
-            KeyCode::Char(c) if c.is_ascii_uppercase() => {
-                Self {
-                    code,
-                    modifiers: KeyModifiers::SHIFT,
-                }
-            }
+            KeyCode::Char(c) if c.is_ascii_uppercase() => Self {
+                code,
+                modifiers: KeyModifiers::SHIFT,
+            },
             // Everything else: no modifiers
             _ => Self {
                 code,
                 modifiers: KeyModifiers::empty(),
-            }
+            },
         }
     }
 
@@ -183,8 +181,7 @@ impl std::str::FromStr for KeyBinding {
             "right" => KeyCode::Right,
             // F keys
             s if s.starts_with('f') || s.starts_with('F') => {
-                let num = s[1..].parse::<u8>()
-                    .context("Invalid F-key number")?;
+                let num = s[1..].parse::<u8>().context("Invalid F-key number")?;
                 KeyCode::F(num)
             }
             // Single character
@@ -207,9 +204,7 @@ impl From<KeyCode> for KeyBinding {
         match code {
             // Add SHIFT modifier to uppercase letters (keep them uppercase)
             // This is necessary because crossterm sends Char('M') WITH SHIFT modifier
-            KeyCode::Char(c) if c.is_ascii_uppercase() => {
-                Self::shift(KeyCode::Char(c))
-            }
+            KeyCode::Char(c) if c.is_ascii_uppercase() => Self::shift(KeyCode::Char(c)),
             // Everything else: no modifiers
             _ => Self::new(code),
         }

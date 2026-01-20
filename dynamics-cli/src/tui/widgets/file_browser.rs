@@ -1,12 +1,12 @@
-use std::path::{Path, PathBuf};
-use std::fs;
-use anyhow::Result;
-use ratatui::text::{Line, Span};
-use ratatui::style::Style;
-use ratatui::prelude::Stylize;
-use crate::tui::{Element, Theme};
-use super::list::ListState;
 use super::events::FileBrowserEvent;
+use super::list::ListState;
+use crate::tui::{Element, Theme};
+use anyhow::Result;
+use ratatui::prelude::Stylize;
+use ratatui::style::Style;
+use ratatui::text::{Line, Span};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// Represents a file or directory entry in the file browser
 #[derive(Debug, Clone)]
@@ -21,7 +21,10 @@ impl FileBrowserEntry {
     pub fn to_element<Msg>(&self, is_selected: bool) -> Element<Msg> {
         let theme = &crate::global_runtime_config().theme;
         let (fg_color, bg_style) = if is_selected {
-            (theme.accent_primary, Some(Style::default().bg(theme.bg_surface)))
+            (
+                theme.accent_primary,
+                Some(Style::default().bg(theme.bg_surface)),
+            )
         } else {
             (theme.text_primary, None)
         };
@@ -32,11 +35,16 @@ impl FileBrowserEntry {
             self.name.clone()
         };
 
-        let color = if self.is_dir { theme.accent_secondary } else { fg_color };
+        let color = if self.is_dir {
+            theme.accent_secondary
+        } else {
+            fg_color
+        };
 
-        let mut builder = Element::styled_text(Line::from(vec![
-            Span::styled(format!("  {}", display_name), Style::default().fg(color)),
-        ]));
+        let mut builder = Element::styled_text(Line::from(vec![Span::styled(
+            format!("  {}", display_name),
+            Style::default().fg(color),
+        )]));
 
         if let Some(bg) = bg_style {
             builder = builder.background(bg);
@@ -96,7 +104,8 @@ impl FileBrowserState {
 
     /// Get currently selected entry
     pub fn selected_entry(&self) -> Option<&FileBrowserEntry> {
-        self.list_state.selected()
+        self.list_state
+            .selected()
             .and_then(|idx| self.entries.get(idx))
     }
 
@@ -135,12 +144,14 @@ impl FileBrowserState {
 
     /// Navigate selection up
     pub fn navigate_up(&mut self) {
-        self.list_state.handle_key(crossterm::event::KeyCode::Up, self.entries.len(), 20);
+        self.list_state
+            .handle_key(crossterm::event::KeyCode::Up, self.entries.len(), 20);
     }
 
     /// Navigate selection down
     pub fn navigate_down(&mut self) {
-        self.list_state.handle_key(crossterm::event::KeyCode::Down, self.entries.len(), 20);
+        self.list_state
+            .handle_key(crossterm::event::KeyCode::Down, self.entries.len(), 20);
     }
 
     /// Handle navigation key (for PageUp/PageDown/Home/End)
@@ -202,7 +213,9 @@ impl FileBrowserState {
                     let entry = entry.clone(); // Clone to avoid borrow issues
                     if entry.is_dir {
                         if let Ok(()) = self.enter_directory(&entry.name) {
-                            Some(FileBrowserAction::DirectoryEntered(self.current_path.clone()))
+                            Some(FileBrowserAction::DirectoryEntered(
+                                self.current_path.clone(),
+                            ))
                         } else {
                             None
                         }
@@ -215,21 +228,28 @@ impl FileBrowserState {
             }
             FileBrowserEvent::GoUp => {
                 if let Ok(()) = self.go_to_parent() {
-                    Some(FileBrowserAction::DirectoryChanged(self.current_path.clone()))
+                    Some(FileBrowserAction::DirectoryChanged(
+                        self.current_path.clone(),
+                    ))
                 } else {
                     None
                 }
             }
             FileBrowserEvent::Refresh => {
                 let _ = self.refresh();
-                Some(FileBrowserAction::DirectoryChanged(self.current_path.clone()))
+                Some(FileBrowserAction::DirectoryChanged(
+                    self.current_path.clone(),
+                ))
             }
         }
     }
 }
 
 /// Read directory entries and sort them (directories first, then files)
-fn read_directory(path: &Path, filter: Option<fn(&FileBrowserEntry) -> bool>) -> Result<Vec<FileBrowserEntry>> {
+fn read_directory(
+    path: &Path,
+    filter: Option<fn(&FileBrowserEntry) -> bool>,
+) -> Result<Vec<FileBrowserEntry>> {
     let mut entries = Vec::new();
 
     // Add parent directory entry if not at root

@@ -48,7 +48,8 @@ impl OrderByClause {
         if self.clauses.is_empty() {
             None
         } else {
-            let order_strings: Vec<String> = self.clauses.iter().map(|o| o.to_odata_string()).collect();
+            let order_strings: Vec<String> =
+                self.clauses.iter().map(|o| o.to_odata_string()).collect();
             Some(order_strings.join(", "))
         }
     }
@@ -67,7 +68,10 @@ mod tests {
     #[test]
     fn test_single_orderby() {
         assert_eq!(OrderBy::asc("firstname").to_odata_string(), "firstname asc");
-        assert_eq!(OrderBy::desc("createdon").to_odata_string(), "createdon desc");
+        assert_eq!(
+            OrderBy::desc("createdon").to_odata_string(),
+            "createdon desc"
+        );
     }
 
     #[test]
@@ -76,7 +80,10 @@ mod tests {
             .add(OrderBy::asc("lastname"))
             .add(OrderBy::desc("createdon"));
 
-        assert_eq!(clause.to_odata_string(), Some("lastname asc, createdon desc".to_string()));
+        assert_eq!(
+            clause.to_odata_string(),
+            Some("lastname asc, createdon desc".to_string())
+        );
     }
 
     #[test]

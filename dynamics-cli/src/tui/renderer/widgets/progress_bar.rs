@@ -1,5 +1,12 @@
-use ratatui::{Frame, layout::Rect, text::{Line, Span}, widgets::Paragraph, style::Style, prelude::Stylize};
 use crate::tui::{Element, Theme};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    prelude::Stylize,
+    style::Style,
+    text::{Line, Span},
+    widgets::Paragraph,
+};
 
 /// Render a progress bar widget
 pub fn render_progress_bar<Msg: Clone + Send + 'static>(
@@ -16,7 +23,14 @@ pub fn render_progress_bar<Msg: Clone + Send + 'static>(
             show_percentage,
             show_count,
             width,
-        } => (*current, *total, label, *show_percentage, *show_count, *width),
+        } => (
+            *current,
+            *total,
+            label,
+            *show_percentage,
+            *show_count,
+            *width,
+        ),
         _ => unreachable!("render_progress_bar called with non-ProgressBar element"),
     };
 

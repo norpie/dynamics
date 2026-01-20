@@ -1,8 +1,8 @@
 mod app;
 mod state;
-mod view;
 mod tree;
 mod validation;
+mod view;
 
 pub use app::MappingEditorApp;
-pub use state::{State, Msg, EditorParams};
+pub use state::{EditorParams, Msg, State};

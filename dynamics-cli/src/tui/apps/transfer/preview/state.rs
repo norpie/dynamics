@@ -6,9 +6,9 @@ use std::path::PathBuf;
 use crossterm::event::KeyCode;
 
 use crate::api::metadata::FieldMetadata;
-use crate::transfer::{LookupBindingContext, ResolvedTransfer, RecordAction, Value};
+use crate::transfer::{LookupBindingContext, RecordAction, ResolvedTransfer, Value};
 use crate::tui::resource::Resource;
-use crate::tui::widgets::{FileBrowserState, ListState, TextInputField, TextInputEvent};
+use crate::tui::widgets::{FileBrowserState, ListState, TextInputEvent, TextInputField};
 
 /// Lookup metadata for a single entity
 #[derive(Debug, Clone)]
@@ -110,24 +110,29 @@ fn parse_value_from_string(s: &str, original: &Value) -> Value {
             Value::String(trimmed.to_string())
         }
         Value::String(_) => Value::String(trimmed.to_string()),
-        Value::Int(_) => trimmed.parse::<i64>().map(Value::Int).unwrap_or(Value::String(trimmed.to_string())),
-        Value::Float(_) => trimmed.parse::<f64>().map(Value::Float).unwrap_or(Value::String(trimmed.to_string())),
+        Value::Int(_) => trimmed
+            .parse::<i64>()
+            .map(Value::Int)
+            .unwrap_or(Value::String(trimmed.to_string())),
+        Value::Float(_) => trimmed
+            .parse::<f64>()
+            .map(Value::Float)
+            .unwrap_or(Value::String(trimmed.to_string())),
         Value::Bool(_) => match trimmed.to_lowercase().as_str() {
             "true" | "1" | "yes" => Value::Bool(true),
             "false" | "0" | "no" => Value::Bool(false),
             _ => Value::String(trimmed.to_string()),
         },
-        Value::DateTime(_) => {
-            chrono::DateTime::parse_from_rfc3339(trimmed)
-                .map(|dt| Value::DateTime(dt.with_timezone(&chrono::Utc)))
-                .unwrap_or(Value::String(trimmed.to_string()))
-        }
-        Value::Guid(_) => {
-            uuid::Uuid::parse_str(trimmed)
-                .map(Value::Guid)
-                .unwrap_or(Value::String(trimmed.to_string()))
-        }
-        Value::OptionSet(_) => trimmed.parse::<i32>().map(Value::OptionSet).unwrap_or(Value::String(trimmed.to_string())),
+        Value::DateTime(_) => chrono::DateTime::parse_from_rfc3339(trimmed)
+            .map(|dt| Value::DateTime(dt.with_timezone(&chrono::Utc)))
+            .unwrap_or(Value::String(trimmed.to_string())),
+        Value::Guid(_) => uuid::Uuid::parse_str(trimmed)
+            .map(Value::Guid)
+            .unwrap_or(Value::String(trimmed.to_string())),
+        Value::OptionSet(_) => trimmed
+            .parse::<i32>()
+            .map(Value::OptionSet)
+            .unwrap_or(Value::String(trimmed.to_string())),
         Value::Dynamic(_) => Value::String(trimmed.to_string()), // Can't edit dynamics
     }
 }
@@ -446,7 +451,10 @@ pub enum PreviewModal {
     /// Import from Excel file browser
     ImportExcel,
     /// Confirm import with edit conflicts
-    ImportConfirm { path: String, conflicts: Vec<String> },
+    ImportConfirm {
+        path: String,
+        conflicts: Vec<String>,
+    },
     /// Confirm sending to queue
     SendToQueue,
 }
@@ -460,7 +468,7 @@ pub enum Msg {
     TargetMetadataResult(Result<(String, Vec<FieldMetadata>, String, String), String>), // (entity_name, fields, entity_set_name, primary_id_attribute) - for target lookup detection
     RelatedMetadataResult(Result<(String, Vec<FieldMetadata>, String), String>), // (entity_name, fields, primary_id_attribute) - for lookup traversal entities
     FetchRelatedMetadata, // Triggered when related entity metadata needs to be fetched
-    FetchRecords, // Triggered after both source and target metadata are loaded
+    FetchRecords,         // Triggered after both source and target metadata are loaded
     FetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
     MetadataResult(Result<(String, Vec<FieldMetadata>, String, String), String>), // (entity_name, fields, entity_set_name, primary_id_attribute)
     RunTransform, // Triggered after loading screen returns
@@ -471,7 +479,15 @@ pub enum Msg {
     LuaFetchRecords, // Triggered after Lua metadata is loaded
     LuaFetchResult(Result<(String, bool, Vec<serde_json::Value>), String>), // (entity_name, is_source, records)
     RunLuaTransform, // Triggered after Lua data is loaded
-    LuaTransformComplete(Result<(Vec<crate::transfer::lua::LuaOperation>, Vec<crate::transfer::lua::LogMessage>), String>), // (operations, logs)
+    LuaTransformComplete(
+        Result<
+            (
+                Vec<crate::transfer::lua::LuaOperation>,
+                Vec<crate::transfer::lua::LogMessage>,
+            ),
+            String,
+        >,
+    ), // (operations, logs)
 
     // Navigation
     ListEvent(crate::tui::widgets::ListEvent),
@@ -502,10 +518,10 @@ pub enum Msg {
     DetailFieldsSetViewportHeight(usize),
     DetailErrorsListNavigate(crossterm::event::KeyCode),
     DetailErrorsSetViewportHeight(usize),
-    StartFieldEdit,              // Enter on a field to start editing
+    StartFieldEdit,                    // Enter on a field to start editing
     FocusedFieldInput(TextInputEvent), // Input events for the focused field
-    FinishFieldEdit,             // Enter/Tab to finish editing field
-    CancelFieldEdit,             // Esc while editing a field
+    FinishFieldEdit,                   // Enter/Tab to finish editing field
+    CancelFieldEdit,                   // Esc while editing a field
     SaveRecordEdits,
     CancelRecordEdits,
 
@@ -582,9 +598,9 @@ impl BulkAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BulkActionScope {
     #[default]
-    Filtered,   // Apply to all filtered records
-    All,        // Apply to all records in entity
-    Selected,   // Apply to multi-selected records only
+    Filtered, // Apply to all filtered records
+    All,      // Apply to all records in entity
+    Selected, // Apply to multi-selected records only
 }
 
 impl BulkActionScope {
@@ -607,8 +623,11 @@ pub const FIXED_COLUMNS_WIDTH: usize = 58;
 
 /// Calculate column widths based on field names and values (free function to avoid borrow issues)
 pub fn calculate_column_widths(entity: &crate::transfer::ResolvedEntity) -> Vec<usize> {
-    log::debug!("calculate_column_widths: starting for entity with {} fields, {} records",
-        entity.field_names.len(), entity.records.len());
+    log::debug!(
+        "calculate_column_widths: starting for entity with {} fields, {} records",
+        entity.field_names.len(),
+        entity.records.len()
+    );
 
     let mut widths: Vec<usize> = Vec::with_capacity(entity.field_names.len());
 
@@ -629,7 +648,11 @@ pub fn calculate_column_widths(entity: &crate::transfer::ResolvedEntity) -> Vec<
         widths.push(width);
     }
 
-    log::debug!("calculate_column_widths: calculated {} widths: {:?}", widths.len(), widths);
+    log::debug!(
+        "calculate_column_widths: calculated {} widths: {:?}",
+        widths.len(),
+        widths
+    );
     widths
 }
 

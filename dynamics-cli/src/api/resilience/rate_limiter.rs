@@ -4,10 +4,10 @@
 //! the token bucket algorithm for controlling request rates to Dynamics 365.
 
 use super::config::RateLimitConfig;
+use log::{debug, warn};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
-use log::{debug, warn};
 
 /// Token bucket rate limiter for controlling API request rates
 #[derive(Debug, Clone)]
@@ -61,11 +61,17 @@ impl RateLimiter {
                 if inner.tokens >= 1.0 {
                     inner.tokens -= 1.0;
                     inner.requests_made += 1;
-                    debug!("Rate limiter: Request approved, {} tokens remaining", inner.tokens);
+                    debug!(
+                        "Rate limiter: Request approved, {} tokens remaining",
+                        inner.tokens
+                    );
                     false // Don't wait
                 } else {
                     inner.requests_rejected += 1;
-                    debug!("Rate limiter: Request needs to wait, {} tokens available", inner.tokens);
+                    debug!(
+                        "Rate limiter: Request needs to wait, {} tokens available",
+                        inner.tokens
+                    );
                     true // Need to wait
                 }
             };
@@ -96,11 +102,17 @@ impl RateLimiter {
         if inner.tokens >= 1.0 {
             inner.tokens -= 1.0;
             inner.requests_made += 1;
-            debug!("Rate limiter: Request approved (try_acquire), {} tokens remaining", inner.tokens);
+            debug!(
+                "Rate limiter: Request approved (try_acquire), {} tokens remaining",
+                inner.tokens
+            );
             true
         } else {
             inner.requests_rejected += 1;
-            debug!("Rate limiter: Request rejected (try_acquire), {} tokens available", inner.tokens);
+            debug!(
+                "Rate limiter: Request rejected (try_acquire), {} tokens available",
+                inner.tokens
+            );
             false
         }
     }
@@ -147,7 +159,10 @@ impl RateLimiter {
         if tokens_to_add > 0.0 {
             inner.tokens = (inner.tokens + tokens_to_add).min(self.config.burst_capacity as f64);
             inner.last_refill = now;
-            debug!("Rate limiter: Added {:.2} tokens, now have {:.2}", tokens_to_add, inner.tokens);
+            debug!(
+                "Rate limiter: Added {:.2} tokens, now have {:.2}",
+                tokens_to_add, inner.tokens
+            );
         }
     }
 
@@ -200,7 +215,7 @@ impl RateLimiterStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::{sleep, Duration};
+    use tokio::time::{Duration, sleep};
 
     #[tokio::test]
     async fn test_rate_limiter_disabled() {

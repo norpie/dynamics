@@ -1,8 +1,7 @@
 /// Helper functions for data transformation and field manipulation
-
 use super::entity_sets;
 use super::field_specs::{FieldSpec, FieldType};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 
 /// Get list of shared entity field names (not copied, referenced from existing entities)
@@ -53,8 +52,11 @@ pub fn build_payload(
                             // Orphaned values like 170590008 should default to 1 (Draft)
                             let is_valid = num == 1 || (num >= 875810001 && num <= 875810016);
                             if !is_valid {
-                                log::warn!("Field {} has invalid option set value {}, defaulting to 1 (Draft)",
-                                    spec.field_name, num);
+                                log::warn!(
+                                    "Field {} has invalid option set value {}, defaulting to 1 (Draft)",
+                                    spec.field_name,
+                                    num
+                                );
                                 json!(1)
                             } else {
                                 value.clone()
@@ -69,11 +71,13 @@ pub fn build_payload(
                     payload[spec.field_name] = final_value;
                 }
                 FieldType::Lookup { target_entity } => {
-                    let guid = value.as_str()
-                        .ok_or_else(|| format!("Lookup field {} is not a string", spec.source_name))?;
+                    let guid = value.as_str().ok_or_else(|| {
+                        format!("Lookup field {} is not a string", spec.source_name)
+                    })?;
 
                     // Check if this is a shared entity (don't remap)
-                    let is_shared = shared_entities.iter()
+                    let is_shared = shared_entities
+                        .iter()
                         .any(|&entity| spec.field_name.contains(entity));
 
                     // Remap if not shared and mapping exists
@@ -124,7 +128,7 @@ pub fn entity_set_to_friendly_name(entity_set: &str) -> &str {
         entity_sets::TEMPLATE_LINES => "template_lines",
         entity_sets::CONDITIONS => "conditions",
         entity_sets::CONDITION_ACTIONS => "condition_actions",
-        _ => entity_set,  // Fallback for classifications and unknown types
+        _ => entity_set, // Fallback for classifications and unknown types
     }
 }
 
@@ -146,15 +150,20 @@ pub fn remap_lookup_fields(
             if key.starts_with('_') && key.ends_with("_value") {
                 if let Some(guid) = value.as_str() {
                     let field_name = key.trim_start_matches('_').trim_end_matches("_value");
-                    let is_shared = shared_entities.iter().any(|&entity_field| field_name.contains(entity_field));
+                    let is_shared = shared_entities
+                        .iter()
+                        .any(|&entity_field| field_name.contains(entity_field));
 
                     let final_guid = if is_shared {
                         guid.to_string()
                     } else {
                         // No fallback - error if mapping not found
-                        id_map.get(guid)
-                            .cloned()
-                            .ok_or_else(|| format!("ID mapping not found for GUID {} in field {}", guid, field_name))?
+                        id_map.get(guid).cloned().ok_or_else(|| {
+                            format!(
+                                "ID mapping not found for GUID {} in field {}",
+                                guid, field_name
+                            )
+                        })?
                     };
 
                     let entity_set = infer_entity_set_from_field(field_name)?;
@@ -209,7 +218,10 @@ fn infer_entity_set_from_field(field_name: &str) -> Result<String, String> {
     } else if field_name.contains("flemishshareid") {
         Ok(entity_sets::FLEMISH_SHARES.to_string())
     } else {
-        Err(format!("Unknown entity field: {} - please add explicit mapping", field_name))
+        Err(format!(
+            "Unknown entity field: {} - please add explicit mapping",
+            field_name
+        ))
     }
 }
 
@@ -223,8 +235,12 @@ pub fn remap_condition_json(
 
     // Remap root questionId - REQUIRED
     if let Some(question_id) = json.get("questionId").and_then(|v| v.as_str()) {
-        let new_id = id_map.get(question_id)
-            .ok_or_else(|| format!("Question ID {} not found in mapping (root questionId)", question_id))?;
+        let new_id = id_map.get(question_id).ok_or_else(|| {
+            format!(
+                "Question ID {} not found in mapping (root questionId)",
+                question_id
+            )
+        })?;
         json["questionId"] = json!(new_id);
     }
 
@@ -232,19 +248,24 @@ pub fn remap_condition_json(
     if let Some(questions) = json.get_mut("questions").and_then(|v| v.as_array_mut()) {
         for (idx, q) in questions.iter_mut().enumerate() {
             if let Some(question_id) = q.get("questionId").and_then(|v| v.as_str()) {
-                let new_id = id_map.get(question_id)
-                    .ok_or_else(|| format!("Question ID {} not found in mapping (questions[{}])", question_id, idx))?;
+                let new_id = id_map.get(question_id).ok_or_else(|| {
+                    format!(
+                        "Question ID {} not found in mapping (questions[{}])",
+                        question_id, idx
+                    )
+                })?;
                 q["questionId"] = json!(new_id);
             }
         }
     }
 
-    serde_json::to_string(&json)
-        .map_err(|e| format!("Failed to serialize condition JSON: {}", e))
+    serde_json::to_string(&json).map_err(|e| format!("Failed to serialize condition JSON: {}", e))
 }
 
 /// Extract entity ID from OData-EntityId header or response body
-pub fn extract_entity_id(result: &crate::api::operations::OperationResult) -> Result<String, String> {
+pub fn extract_entity_id(
+    result: &crate::api::operations::OperationResult,
+) -> Result<String, String> {
     // Primary method: Extract from OData-EntityId or Location header
     for (key, value) in &result.headers {
         if key.eq_ignore_ascii_case("odata-entityid") || key.eq_ignore_ascii_case("location") {
@@ -263,7 +284,8 @@ pub fn extract_entity_id(result: &crate::api::operations::OperationResult) -> Re
     // Fallback: Try response body (when Prefer: return=representation is used)
     if let Some(ref data) = result.data {
         // Try common questionnaire entity ID fields
-        if let Some(id_value) = data.get("nrq_questionnaireid")
+        if let Some(id_value) = data
+            .get("nrq_questionnaireid")
             .or_else(|| data.get("nrq_questionnairepageid"))
             .or_else(|| data.get("nrq_questionnairepagelineid"))
             .or_else(|| data.get("nrq_questiongroupid"))

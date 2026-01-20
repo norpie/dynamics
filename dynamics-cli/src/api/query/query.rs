@@ -38,7 +38,6 @@ impl Query {
         self
     }
 
-
     pub fn with_filter(mut self, filter: Filter) -> Self {
         self.filter = Some(filter);
         self
@@ -55,7 +54,10 @@ impl Query {
         }
 
         if let Some(filter) = &self.filter {
-            params.push(format!("$filter={}", urlencoding::encode(&filter.to_odata_string())));
+            params.push(format!(
+                "$filter={}",
+                urlencoding::encode(&filter.to_odata_string())
+            ));
         }
 
         if let Some(orderby) = self.orderby.to_odata_string() {
@@ -163,15 +165,17 @@ mod tests {
 
         let params = query.to_query_params();
 
-        assert_eq!(params.get("$select"), Some(&"firstname,lastname".to_string()));
+        assert_eq!(
+            params.get("$select"),
+            Some(&"firstname,lastname".to_string())
+        );
         assert_eq!(params.get("$filter"), Some(&"statecode eq 0".to_string()));
         assert_eq!(params.get("$top"), Some(&"10".to_string()));
     }
 
     #[test]
     fn test_query_with_modifications() {
-        let base_query = Query::new("contacts")
-            .with_filter(Filter::eq("statecode", 0));
+        let base_query = Query::new("contacts").with_filter(Filter::eq("statecode", 0));
 
         let query_with_top = base_query.clone().with_top(10);
         let query_with_filter = base_query.with_filter(Filter::contains("firstname", "Test"));

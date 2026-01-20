@@ -5,7 +5,7 @@ use sqlx::{Row, SqlitePool};
 
 use crate::transfer::{
     EntityMapping, FieldMapping, MatchField, OperationFilter, Resolver, ResolverFallback,
-    SourceFilter, Transform, TransferConfig, TransferMode,
+    SourceFilter, TransferConfig, TransferMode, Transform,
 };
 
 /// Summary of a transfer config (for listing)
@@ -138,8 +138,8 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
         let mut field_mappings = Vec::new();
         for field_row in field_rows {
             let transform_json: String = field_row.try_get("transform_json")?;
-            let transform: Transform = serde_json::from_str(&transform_json)
-                .context("Failed to deserialize transform")?;
+            let transform: Transform =
+                serde_json::from_str(&transform_json).context("Failed to deserialize transform")?;
 
             field_mappings.push(FieldMapping {
                 id: Some(field_row.try_get("id")?),
@@ -187,8 +187,8 @@ pub async fn get_transfer_config(pool: &SqlitePool, name: &str) -> Result<Option
 
             // Parse match_fields_json
             let match_fields_json: String = row.try_get("match_fields_json")?;
-            let match_fields = serde_json::from_str::<Vec<MatchField>>(&match_fields_json)
-                .unwrap_or_default();
+            let match_fields =
+                serde_json::from_str::<Vec<MatchField>>(&match_fields_json).unwrap_or_default();
 
             resolvers.push(Resolver {
                 id: Some(row.try_get("id")?),
@@ -317,10 +317,26 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
         .bind(&entity.source_entity)
         .bind(&entity.target_entity)
         .bind(entity.priority as i64)
-        .bind(if entity.operation_filter.creates { 1i64 } else { 0i64 })
-        .bind(if entity.operation_filter.updates { 1i64 } else { 0i64 })
-        .bind(if entity.operation_filter.deletes { 1i64 } else { 0i64 })
-        .bind(if entity.operation_filter.deactivates { 1i64 } else { 0i64 })
+        .bind(if entity.operation_filter.creates {
+            1i64
+        } else {
+            0i64
+        })
+        .bind(if entity.operation_filter.updates {
+            1i64
+        } else {
+            0i64
+        })
+        .bind(if entity.operation_filter.deletes {
+            1i64
+        } else {
+            0i64
+        })
+        .bind(if entity.operation_filter.deactivates {
+            1i64
+        } else {
+            0i64
+        })
         .bind(&source_filter_json)
         .bind(&target_filter_json)
         .execute(&mut *tx)
@@ -331,8 +347,8 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
 
         // Insert field mappings
         for field in &entity.field_mappings {
-            let transform_json = serde_json::to_string(&field.transform)
-                .context("Failed to serialize transform")?;
+            let transform_json =
+                serde_json::to_string(&field.transform).context("Failed to serialize transform")?;
 
             sqlx::query(
                 r#"
@@ -357,8 +373,8 @@ pub async fn save_transfer_config(pool: &SqlitePool, config: &TransferConfig) ->
             };
 
             // Serialize match_fields as JSON
-            let match_fields_json = serde_json::to_string(&resolver.match_fields)
-                .unwrap_or_else(|_| "[]".to_string());
+            let match_fields_json =
+                serde_json::to_string(&resolver.match_fields).unwrap_or_else(|_| "[]".to_string());
 
             sqlx::query(
                 r#"
@@ -395,12 +411,11 @@ pub async fn delete_transfer_config(pool: &SqlitePool, name: &str) -> Result<boo
 
 /// Check if a transfer config exists
 pub async fn transfer_config_exists(pool: &SqlitePool, name: &str) -> Result<bool> {
-    let row: Option<(i64,)> =
-        sqlx::query_as("SELECT 1 FROM transfer_configs WHERE name = ?")
-            .bind(name)
-            .fetch_optional(pool)
-            .await
-            .context("Failed to check transfer config existence")?;
+    let row: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM transfer_configs WHERE name = ?")
+        .bind(name)
+        .fetch_optional(pool)
+        .await
+        .context("Failed to check transfer config existence")?;
 
     Ok(row.is_some())
 }

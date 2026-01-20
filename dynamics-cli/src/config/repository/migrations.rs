@@ -1,8 +1,8 @@
 //! Repository for migration operations
 
+use crate::config::models::{DbComparison, DbMigration};
 use anyhow::{Context, Result};
 use sqlx::SqlitePool;
-use crate::config::models::{DbMigration, DbComparison};
 
 /// Represents a migration with its comparisons
 #[derive(Debug, Clone)]
@@ -20,11 +20,11 @@ pub struct SavedComparison {
     pub id: i64,
     pub migration_name: String,
     pub name: String,
-    pub source_entity: String,              // Legacy: first source entity
-    pub target_entity: String,              // Legacy: first target entity
-    pub source_entities: Vec<String>,       // All source entities
-    pub target_entities: Vec<String>,       // All target entities
-    pub entity_comparison: Option<String>,  // JSON
+    pub source_entity: String,             // Legacy: first source entity
+    pub target_entity: String,             // Legacy: first target entity
+    pub source_entities: Vec<String>,      // All source entities
+    pub target_entities: Vec<String>,      // All target entities
+    pub entity_comparison: Option<String>, // JSON
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_used: chrono::DateTime<chrono::Utc>,
 }
@@ -76,13 +76,16 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<SavedMigration>> {
     .await
     .context("Failed to list migrations")?;
 
-    Ok(rows.into_iter().map(|r| SavedMigration {
-        name: r.name,
-        source_env: r.source_env,
-        target_env: r.target_env,
-        created_at: r.created_at,
-        last_used: r.last_used,
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| SavedMigration {
+            name: r.name,
+            source_env: r.source_env,
+            target_env: r.target_env,
+            created_at: r.created_at,
+            last_used: r.last_used,
+        })
+        .collect())
 }
 
 /// Delete migration by name (cascades to comparisons)
@@ -188,7 +191,10 @@ pub async fn get_comparison_by_id(pool: &SqlitePool, id: i64) -> Result<Option<S
 }
 
 /// Get comparisons for a migration
-pub async fn get_comparisons(pool: &SqlitePool, migration_name: &str) -> Result<Vec<SavedComparison>> {
+pub async fn get_comparisons(
+    pool: &SqlitePool,
+    migration_name: &str,
+) -> Result<Vec<SavedComparison>> {
     let rows: Vec<DbComparison> = sqlx::query_as(
         "SELECT id, migration_name, name, source_entity, target_entity, source_entities, target_entities, entity_comparison, created_at, last_used
          FROM comparisons WHERE migration_name = ? ORDER BY last_used DESC",
@@ -198,33 +204,36 @@ pub async fn get_comparisons(pool: &SqlitePool, migration_name: &str) -> Result<
     .await
     .with_context(|| format!("Failed to get comparisons for migration '{}'", migration_name))?;
 
-    Ok(rows.into_iter().map(|r| {
-        // Backwards compatibility: If source_entities is NULL, use legacy single entity
-        let source_entities = if let Some(json) = &r.source_entities {
-            serde_json::from_str(json).unwrap_or_else(|_| vec![r.source_entity.clone()])
-        } else {
-            vec![r.source_entity.clone()]
-        };
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            // Backwards compatibility: If source_entities is NULL, use legacy single entity
+            let source_entities = if let Some(json) = &r.source_entities {
+                serde_json::from_str(json).unwrap_or_else(|_| vec![r.source_entity.clone()])
+            } else {
+                vec![r.source_entity.clone()]
+            };
 
-        let target_entities = if let Some(json) = &r.target_entities {
-            serde_json::from_str(json).unwrap_or_else(|_| vec![r.target_entity.clone()])
-        } else {
-            vec![r.target_entity.clone()]
-        };
+            let target_entities = if let Some(json) = &r.target_entities {
+                serde_json::from_str(json).unwrap_or_else(|_| vec![r.target_entity.clone()])
+            } else {
+                vec![r.target_entity.clone()]
+            };
 
-        SavedComparison {
-            id: r.id,
-            migration_name: r.migration_name,
-            name: r.name,
-            source_entity: r.source_entity,
-            target_entity: r.target_entity,
-            source_entities,
-            target_entities,
-            entity_comparison: r.entity_comparison,
-            created_at: r.created_at,
-            last_used: r.last_used,
-        }
-    }).collect())
+            SavedComparison {
+                id: r.id,
+                migration_name: r.migration_name,
+                name: r.name,
+                source_entity: r.source_entity,
+                target_entity: r.target_entity,
+                source_entities,
+                target_entities,
+                entity_comparison: r.entity_comparison,
+                created_at: r.created_at,
+                last_used: r.last_used,
+            }
+        })
+        .collect())
 }
 
 /// Delete comparison by id
@@ -245,14 +254,13 @@ pub async fn delete_comparison(pool: &SqlitePool, id: i64) -> Result<()> {
 
 /// Rename comparison by id
 pub async fn rename_comparison(pool: &SqlitePool, id: i64, new_name: &str) -> Result<()> {
-    let result = sqlx::query(
-        "UPDATE comparisons SET name = ?, last_used = CURRENT_TIMESTAMP WHERE id = ?"
-    )
-    .bind(new_name)
-    .bind(id)
-    .execute(pool)
-    .await
-    .with_context(|| format!("Failed to rename comparison with id {}", id))?;
+    let result =
+        sqlx::query("UPDATE comparisons SET name = ?, last_used = CURRENT_TIMESTAMP WHERE id = ?")
+            .bind(new_name)
+            .bind(id)
+            .execute(pool)
+            .await
+            .with_context(|| format!("Failed to rename comparison with id {}", id))?;
 
     if result.rows_affected() == 0 {
         anyhow::bail!("Comparison with id {} not found", id);

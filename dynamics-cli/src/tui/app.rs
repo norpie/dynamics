@@ -1,5 +1,5 @@
-use crate::tui::{Command, Element, Subscription, Theme, LayeredView, QuitPolicy, SuspendPolicy};
 use crate::tui::element::FocusId;
+use crate::tui::{Command, Element, LayeredView, QuitPolicy, Subscription, SuspendPolicy, Theme};
 use ratatui::text::Line;
 use std::any::Any;
 
@@ -14,7 +14,7 @@ pub trait AppState {
     ///
     /// Returns true if handled, false if event should be passed to update()
     fn dispatch_widget_event(&mut self, _id: &FocusId, _event: &dyn Any) -> bool {
-        false  // Default: not handled
+        false // Default: not handled
     }
 }
 

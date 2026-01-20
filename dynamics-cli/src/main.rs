@@ -43,7 +43,10 @@ static OPTIONS_REGISTRY: OnceCell<Arc<config::options::OptionsRegistry>> = OnceC
 
 /// Get a reference to the global OptionsRegistry Arc
 pub fn options_registry() -> Arc<config::options::OptionsRegistry> {
-    OPTIONS_REGISTRY.get().expect("OptionsRegistry not initialized").clone()
+    OPTIONS_REGISTRY
+        .get()
+        .expect("OptionsRegistry not initialized")
+        .clone()
 }
 
 // Global RuntimeConfig instance (using ArcSwap for lock-free atomic updates)
@@ -111,12 +114,16 @@ async fn main() -> Result<()> {
     config::options::registrations::register_all(&registry)?;
     let registry_arc = Arc::new(registry);
     let count = registry_arc.count();
-    OPTIONS_REGISTRY.set(registry_arc).map_err(|_| anyhow::anyhow!("Failed to initialize global OptionsRegistry"))?;
+    OPTIONS_REGISTRY
+        .set(registry_arc)
+        .map_err(|_| anyhow::anyhow!("Failed to initialize global OptionsRegistry"))?;
     debug!("Initialized options registry with {} options", count);
 
     // Initialize global Config once
     let config = config::Config::load().await?;
-    CONFIG.set(config).map_err(|_| anyhow::anyhow!("Failed to initialize global Config"))?;
+    CONFIG
+        .set(config)
+        .map_err(|_| anyhow::anyhow!("Failed to initialize global Config"))?;
 
     // Initialize global RuntimeConfig from options
     let runtime_config = tui::state::RuntimeConfig::load_from_options().await?;
@@ -125,7 +132,9 @@ async fn main() -> Result<()> {
 
     // Initialize global ClientManager once
     let client_manager = api::ClientManager::new().await?;
-    CLIENT_MANAGER.set(client_manager).map_err(|_| anyhow::anyhow!("Failed to initialize global ClientManager"))?;
+    CLIENT_MANAGER
+        .set(client_manager)
+        .map_err(|_| anyhow::anyhow!("Failed to initialize global ClientManager"))?;
 
     // Handle commands
     use cli::app::Commands;

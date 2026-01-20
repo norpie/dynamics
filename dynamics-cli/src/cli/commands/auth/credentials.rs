@@ -1,12 +1,12 @@
 //! Credential management operations
 
-use anyhow::Result;
-use dialoguer::{Input, Password, Select, Confirm};
-use crate::api::models::CredentialSet;
-use crate::config::Config;
-use crate::cli::ui::with_spinner;
 use super::{CredentialCommands, CredentialType};
+use crate::api::models::CredentialSet;
+use crate::cli::ui::with_spinner;
+use crate::config::Config;
+use anyhow::Result;
 use colored::*;
+use dialoguer::{Confirm, Input, Password, Select};
 
 /// Handle non-interactive credential commands
 pub async fn handle_credential_command(cmd: CredentialCommands) -> Result<()> {
@@ -24,13 +24,19 @@ pub async fn handle_credential_command(cmd: CredentialCommands) -> Result<()> {
             cert_path,
         } => {
             add_credentials_noninteractive(
-                name, r#type, username, password, client_id, client_secret, tenant_id, cert_path,
-            ).await
+                name,
+                r#type,
+                username,
+                password,
+                client_id,
+                client_secret,
+                tenant_id,
+                cert_path,
+            )
+            .await
         }
         CredentialCommands::List => list_credentials_interactive().await,
-        CredentialCommands::Test { name, host } => {
-            test_credentials_by_name(&name, &host).await
-        }
+        CredentialCommands::Test { name, host } => test_credentials_by_name(&name, &host).await,
         CredentialCommands::Rename { old_name, new_name } => {
             rename_credentials_noninteractive(&old_name, new_name).await
         }
@@ -54,10 +60,14 @@ async fn add_credentials_noninteractive(
     let client_manager = crate::client_manager();
     let credentials = match cred_type {
         CredentialType::UsernamePassword => {
-            let username = username.ok_or_else(|| anyhow::anyhow!("--username required for username-password"))?;
-            let password = password.ok_or_else(|| anyhow::anyhow!("--password required for username-password"))?;
-            let client_id = client_id.ok_or_else(|| anyhow::anyhow!("--client-id required for username-password"))?;
-            let client_secret = client_secret.ok_or_else(|| anyhow::anyhow!("--client-secret required for username-password"))?;
+            let username = username
+                .ok_or_else(|| anyhow::anyhow!("--username required for username-password"))?;
+            let password = password
+                .ok_or_else(|| anyhow::anyhow!("--password required for username-password"))?;
+            let client_id = client_id
+                .ok_or_else(|| anyhow::anyhow!("--client-id required for username-password"))?;
+            let client_secret = client_secret
+                .ok_or_else(|| anyhow::anyhow!("--client-secret required for username-password"))?;
 
             CredentialSet::UsernamePassword {
                 username,
@@ -67,9 +77,13 @@ async fn add_credentials_noninteractive(
             }
         }
         CredentialType::ClientCredentials => {
-            let client_id = client_id.ok_or_else(|| anyhow::anyhow!("--client-id required for client-credentials"))?;
-            let client_secret = client_secret.ok_or_else(|| anyhow::anyhow!("--client-secret required for client-credentials"))?;
-            let tenant_id = tenant_id.ok_or_else(|| anyhow::anyhow!("--tenant-id required for client-credentials"))?;
+            let client_id = client_id
+                .ok_or_else(|| anyhow::anyhow!("--client-id required for client-credentials"))?;
+            let client_secret = client_secret.ok_or_else(|| {
+                anyhow::anyhow!("--client-secret required for client-credentials")
+            })?;
+            let tenant_id = tenant_id
+                .ok_or_else(|| anyhow::anyhow!("--tenant-id required for client-credentials"))?;
 
             CredentialSet::ClientCredentials {
                 client_id,
@@ -78,8 +92,10 @@ async fn add_credentials_noninteractive(
             }
         }
         CredentialType::DeviceCode => {
-            let client_id = client_id.ok_or_else(|| anyhow::anyhow!("--client-id required for device-code"))?;
-            let tenant_id = tenant_id.ok_or_else(|| anyhow::anyhow!("--tenant-id required for device-code"))?;
+            let client_id =
+                client_id.ok_or_else(|| anyhow::anyhow!("--client-id required for device-code"))?;
+            let tenant_id =
+                tenant_id.ok_or_else(|| anyhow::anyhow!("--tenant-id required for device-code"))?;
 
             CredentialSet::DeviceCode {
                 client_id,
@@ -87,9 +103,12 @@ async fn add_credentials_noninteractive(
             }
         }
         CredentialType::Certificate => {
-            let client_id = client_id.ok_or_else(|| anyhow::anyhow!("--client-id required for certificate"))?;
-            let tenant_id = tenant_id.ok_or_else(|| anyhow::anyhow!("--tenant-id required for certificate"))?;
-            let cert_path = cert_path.ok_or_else(|| anyhow::anyhow!("--cert-path required for certificate"))?;
+            let client_id =
+                client_id.ok_or_else(|| anyhow::anyhow!("--client-id required for certificate"))?;
+            let tenant_id =
+                tenant_id.ok_or_else(|| anyhow::anyhow!("--tenant-id required for certificate"))?;
+            let cert_path =
+                cert_path.ok_or_else(|| anyhow::anyhow!("--cert-path required for certificate"))?;
 
             CredentialSet::Certificate {
                 client_id,
@@ -99,8 +118,14 @@ async fn add_credentials_noninteractive(
         }
     };
 
-    client_manager.add_credentials(name.clone(), credentials).await?;
-    println!("{} Credentials '{}' added successfully", "✓".bright_green().bold(), name.bright_yellow().bold());
+    client_manager
+        .add_credentials(name.clone(), credentials)
+        .await?;
+    println!(
+        "{} Credentials '{}' added successfully",
+        "✓".bright_green().bold(),
+        name.bright_yellow().bold()
+    );
     Ok(())
 }
 
@@ -110,7 +135,10 @@ pub async fn list_credentials_interactive() -> Result<()> {
     let credentials = client_manager.list_credentials().await?;
 
     if credentials.is_empty() {
-        println!("  {}", "⚠️  No credentials configured".bright_yellow().bold());
+        println!(
+            "  {}",
+            "⚠️  No credentials configured".bright_yellow().bold()
+        );
         println!("  {}", "Add some credentials to get started.".dimmed());
         return Ok(());
     }
@@ -125,7 +153,12 @@ pub async fn list_credentials_interactive() -> Result<()> {
                 CredentialSet::DeviceCode { .. } => "Device Code".bright_blue(),
                 CredentialSet::Certificate { .. } => "Certificate".bright_blue(),
             };
-            println!("  {} {} ({})", "•".bright_green(), cred_name.bright_yellow().bold(), cred_type);
+            println!(
+                "  {} {} ({})",
+                "•".bright_green(),
+                cred_name.bright_yellow().bold(),
+                cred_type
+            );
         }
     }
     println!();
@@ -223,8 +256,14 @@ pub async fn add_credentials_interactive() -> Result<()> {
     };
 
     // Save credentials
-    client_manager.add_credentials(name.clone(), credentials).await?;
-    println!("{} Credentials '{}' saved successfully", "✓".bright_green().bold(), name.bright_yellow().bold());
+    client_manager
+        .add_credentials(name.clone(), credentials)
+        .await?;
+    println!(
+        "{} Credentials '{}' saved successfully",
+        "✓".bright_green().bold(),
+        name.bright_yellow().bold()
+    );
 
     Ok(())
 }
@@ -235,7 +274,12 @@ pub async fn test_credentials_interactive() -> Result<()> {
     let credentials = client_manager.list_credentials().await?;
 
     if credentials.is_empty() {
-        println!("  {}", "⚠️  No credentials configured to test".bright_yellow().bold());
+        println!(
+            "  {}",
+            "⚠️  No credentials configured to test"
+                .bright_yellow()
+                .bold()
+        );
         return Ok(());
     }
 
@@ -290,7 +334,9 @@ pub async fn test_credentials_interactive() -> Result<()> {
 /// Test specific credentials by name
 async fn test_credentials_by_name(name: &str, host: &str) -> Result<()> {
     let client_manager = crate::client_manager();
-    let credentials = client_manager.get_credentials(name).await?
+    let credentials = client_manager
+        .get_credentials(name)
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Credentials '{}' not found", name))?;
 
     let result = with_spinner("Testing authentication...", async {
@@ -307,14 +353,24 @@ async fn test_credentials_by_name(name: &str, host: &str) -> Result<()> {
                 Err(e)
             }
         }
-    }).await;
+    })
+    .await;
 
     match result {
         Ok(()) => {
-            println!("{} Authentication test successful for '{}'", "✓".bright_green().bold(), name.bright_yellow().bold());
+            println!(
+                "{} Authentication test successful for '{}'",
+                "✓".bright_green().bold(),
+                name.bright_yellow().bold()
+            );
         }
         Err(e) => {
-            println!("{} Authentication test failed for '{}': {}", "✗".bright_red().bold(), name.bright_yellow().bold(), e.to_string().red());
+            println!(
+                "{} Authentication test failed for '{}': {}",
+                "✗".bright_red().bold(),
+                name.bright_yellow().bold(),
+                e.to_string().red()
+            );
         }
     }
 
@@ -350,8 +406,15 @@ pub async fn rename_credentials_interactive() -> Result<()> {
 /// Rename credentials non-interactively
 async fn rename_credentials_noninteractive(old_name: &str, new_name: String) -> Result<()> {
     let client_manager = crate::client_manager();
-    client_manager.rename_credentials(old_name, new_name.clone()).await?;
-    println!("{} Credentials renamed from '{}' to '{}'", "✓".bright_green().bold(), old_name.bright_yellow(), new_name.bright_yellow().bold());
+    client_manager
+        .rename_credentials(old_name, new_name.clone())
+        .await?;
+    println!(
+        "{} Credentials renamed from '{}' to '{}'",
+        "✓".bright_green().bold(),
+        old_name.bright_yellow(),
+        new_name.bright_yellow().bold()
+    );
     Ok(())
 }
 
@@ -403,11 +466,18 @@ async fn remove_credentials_by_name(name: &str, force: bool) -> Result<()> {
     }
 
     if !using_environments.is_empty() {
-        println!("{} Cannot remove credentials '{}' - currently in use by environments:", "⚠️".bright_yellow().bold(), name.bright_yellow().bold());
+        println!(
+            "{} Cannot remove credentials '{}' - currently in use by environments:",
+            "⚠️".bright_yellow().bold(),
+            name.bright_yellow().bold()
+        );
         for env in &using_environments {
             println!("  {} {}", "•".bright_red(), env.white());
         }
-        println!("  {}", "Remove or change credentials for these environments first.".dimmed());
+        println!(
+            "  {}",
+            "Remove or change credentials for these environments first.".dimmed()
+        );
         return Ok(());
     }
 
@@ -424,6 +494,10 @@ async fn remove_credentials_by_name(name: &str, force: bool) -> Result<()> {
     }
 
     client_manager.remove_credentials(name).await?;
-    println!("{} Credentials '{}' removed successfully", "✓".bright_green().bold(), name.bright_yellow().bold());
+    println!(
+        "{} Credentials '{}' removed successfully",
+        "✓".bright_green().bold(),
+        name.bright_yellow().bold()
+    );
     Ok(())
 }

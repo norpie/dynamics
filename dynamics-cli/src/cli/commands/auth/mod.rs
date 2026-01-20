@@ -4,9 +4,9 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use is_terminal::IsTerminal;
 
-mod interactive;
 mod credentials;
 mod environments;
+mod interactive;
 mod status;
 
 #[derive(Args)]

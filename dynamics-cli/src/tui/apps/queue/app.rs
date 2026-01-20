@@ -1,27 +1,33 @@
 //! Operation Queue App
 
+use super::commands::{execute_next_if_available, execute_up_to_max, save_settings_command};
+use super::models::{
+    OperationStatus, QueueFilter, QueueItem, QueueMetadata, QueueResult, SortMode,
+};
+use super::tree_nodes::QueueTreeNode;
+use super::utils::estimate_remaining_time;
+use super::views::{
+    build_clear_confirm_modal, build_delete_confirm_modal, build_details_panel,
+    build_import_confirmation, build_import_file_browser, build_import_settings,
+    build_interruption_warning_modal,
+};
+use crate::api::resilience::ResilienceConfig;
+use crate::transfer::excel::{ParsedOperations, read_operations_excel};
 use crate::tui::{
+    ModalState,
     app::App,
     command::{AppId, Command},
-    element::{Element, LayoutConstraint, FocusId, Alignment},
-    subscription::Subscription,
-    state::theme::Theme,
+    element::{Alignment, Element, FocusId, LayoutConstraint},
     renderer::LayeredView,
-    widgets::{TreeState, TreeEvent, ScrollableState, FileBrowserState},
-    ModalState,
+    state::theme::Theme,
+    subscription::Subscription,
+    widgets::{FileBrowserState, ScrollableState, TreeEvent, TreeState},
 };
 use crate::{col, row, use_constraints};
-use crate::api::resilience::ResilienceConfig;
-use crate::transfer::excel::{read_operations_excel, ParsedOperations};
 use ratatui::text::Line;
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
-use super::models::{QueueItem, QueueFilter, SortMode, OperationStatus, QueueResult, QueueMetadata};
-use super::tree_nodes::QueueTreeNode;
-use super::commands::{save_settings_command, execute_next_if_available, execute_up_to_max};
-use super::utils::estimate_remaining_time;
-use super::views::{build_details_panel, build_clear_confirm_modal, build_delete_confirm_modal, build_interruption_warning_modal, build_import_file_browser, build_import_settings, build_import_confirmation};
 
 pub struct OperationQueueApp;
 
@@ -72,10 +78,19 @@ pub enum Msg {
 
     // Details panel scrolling
     DetailsScroll(crossterm::event::KeyCode),
-    DetailsSetDimensions(usize, usize, usize, usize),  // (viewport_height, content_height, viewport_width, content_width)
+    DetailsSetDimensions(usize, usize, usize, usize), // (viewport_height, content_height, viewport_width, content_width)
 
     // State loading and persistence
-    StateLoaded(Result<(Vec<QueueItem>, crate::config::repository::queue::QueueSettings, Vec<QueueItem>), String>),
+    StateLoaded(
+        Result<
+            (
+                Vec<QueueItem>,
+                crate::config::repository::queue::QueueSettings,
+                Vec<QueueItem>,
+            ),
+            String,
+        >,
+    ),
     PersistenceError(String),
 
     // Interruption warnings
@@ -113,7 +128,7 @@ pub struct State {
     // Execution state
     pub auto_play: bool,
     pub max_concurrent: usize,
-    pub max_failures: usize,         // 0 = unlimited, N = pause after N failures
+    pub max_failures: usize, // 0 = unlimited, N = pause after N failures
     pub session_failure_count: usize, // Reset when starting play
     pub currently_running: HashSet<String>,
 
@@ -273,15 +288,20 @@ impl App for OperationQueueApp {
                 let config = crate::global_config();
 
                 // Load queue items
-                let mut queue_items = config.list_queue_items().await
+                let mut queue_items = config
+                    .list_queue_items()
+                    .await
                     .map_err(|e| format!("Failed to load queue items: {}", e))?;
 
                 // Load settings (filter/sort from queue settings, max_concurrent from resilience)
-                let mut settings = config.get_queue_settings().await
+                let mut settings = config
+                    .get_queue_settings()
+                    .await
                     .map_err(|e| format!("Failed to load queue settings: {}", e))?;
 
                 // Override max_concurrent with centralized resilience config
-                let resilience = ResilienceConfig::load_from_options().await
+                let resilience = ResilienceConfig::load_from_options()
+                    .await
                     .unwrap_or_default();
                 settings.max_concurrent = resilience.concurrency.max_queue_items;
 
@@ -289,7 +309,10 @@ impl App for OperationQueueApp {
                 let mut interrupted_items = Vec::new();
                 let now = chrono::Utc::now();
 
-                log::info!("Checking for interrupted items. Total items loaded: {}", queue_items.len());
+                log::info!(
+                    "Checking for interrupted items. Total items loaded: {}",
+                    queue_items.len()
+                );
 
                 for item in &mut queue_items {
                     log::debug!("Item {} has status: {:?}", item.id, item.status);
@@ -305,9 +328,13 @@ impl App for OperationQueueApp {
                         interrupted_items.push(item.clone());
 
                         // Persist the changes
-                        config.update_queue_item_status(&item.id, OperationStatus::Pending).await
+                        config
+                            .update_queue_item_status(&item.id, OperationStatus::Pending)
+                            .await
                             .map_err(|e| format!("Failed to update status: {}", e))?;
-                        config.mark_queue_item_interrupted(&item.id, now).await
+                        config
+                            .mark_queue_item_interrupted(&item.id, now)
+                            .await
                             .map_err(|e| format!("Failed to mark interrupted: {}", e))?;
                     }
                 }
@@ -316,7 +343,7 @@ impl App for OperationQueueApp {
 
                 Ok((queue_items, settings, interrupted_items))
             },
-            Msg::StateLoaded
+            Msg::StateLoaded,
         );
 
         (State::default(), cmd)
@@ -337,12 +364,15 @@ impl App for OperationQueueApp {
 
                         // Auto-select first item if queue is not empty
                         if !state.queue_items.is_empty() && state.selected_item_id.is_none() {
-                            state.selected_item_id = state.queue_items.first().map(|item| item.id.clone());
+                            state.selected_item_id =
+                                state.queue_items.first().map(|item| item.id.clone());
                         }
 
                         // Show warning modal if there are interrupted items
                         if !interrupted_items.is_empty() {
-                            state.interruption_warning_modal.open_with(interrupted_items);
+                            state
+                                .interruption_warning_modal
+                                .open_with(interrupted_items);
                             Command::set_focus(FocusId::new("warning-close"))
                         } else {
                             Command::set_focus(FocusId::new("queue-tree"))
@@ -378,15 +408,15 @@ impl App for OperationQueueApp {
                     return Command::perform(
                         async move {
                             let config = crate::global_config();
-                            config.clear_queue_interruption_flag(&item_id).await
+                            config
+                                .clear_queue_interruption_flag(&item_id)
+                                .await
                                 .map_err(|e| format!("Failed to clear interruption flag: {}", e))
                         },
-                        |result| {
-                            match result {
-                                Err(err) => Msg::PersistenceError(err),
-                                Ok(_) => Msg::PersistenceError("".to_string()),
-                            }
-                        }
+                        |result| match result {
+                            Err(err) => Msg::PersistenceError(err),
+                            Ok(_) => Msg::PersistenceError("".to_string()),
+                        },
                     );
                 }
                 Command::None
@@ -452,11 +482,16 @@ impl App for OperationQueueApp {
 
                 // Check if selected item is Failed or PartiallyFailed - if so, retry it directly
                 if let Some(ref selected_id) = state.selected_item_id {
-                    let selected_status = state.queue_items.iter()
+                    let selected_status = state
+                        .queue_items
+                        .iter()
                         .find(|i| &i.id == selected_id)
                         .map(|i| i.status.clone());
 
-                    if matches!(selected_status, Some(OperationStatus::Failed) | Some(OperationStatus::PartiallyFailed)) {
+                    if matches!(
+                        selected_status,
+                        Some(OperationStatus::Failed) | Some(OperationStatus::PartiallyFailed)
+                    ) {
                         let id = selected_id.clone();
 
                         // Reset item for retry
@@ -471,7 +506,9 @@ impl App for OperationQueueApp {
                         let item_id = id.clone();
                         let persist_cmd = Command::perform(
                             async move {
-                                crate::global_config().update_queue_item_status(&item_id, OperationStatus::Pending).await
+                                crate::global_config()
+                                    .update_queue_item_status(&item_id, OperationStatus::Pending)
+                                    .await
                                     .map_err(|e| format!("Failed to update status: {}", e))
                             },
                             |result| {
@@ -480,7 +517,7 @@ impl App for OperationQueueApp {
                                 } else {
                                     Msg::PersistenceError("".to_string())
                                 }
-                            }
+                            },
                         );
 
                         // Execute this item directly
@@ -496,7 +533,11 @@ impl App for OperationQueueApp {
 
             Msg::IncreasePriority(id) => {
                 // First read current priority
-                let current = state.queue_items.iter().find(|i| i.id == id).map(|i| i.priority);
+                let current = state
+                    .queue_items
+                    .iter()
+                    .find(|i| i.id == id)
+                    .map(|i| i.priority);
                 let new_priority = if let Some(p) = current {
                     if p > 0 {
                         state.mutate_item(&id, |item| item.priority -= 1);
@@ -513,7 +554,9 @@ impl App for OperationQueueApp {
                     let item_id = id.clone();
                     return Command::perform(
                         async move {
-                            crate::global_config().update_queue_item_priority(&item_id, priority).await
+                            crate::global_config()
+                                .update_queue_item_priority(&item_id, priority)
+                                .await
                                 .map_err(|e| format!("Failed to update priority: {}", e))
                         },
                         |result| {
@@ -522,7 +565,7 @@ impl App for OperationQueueApp {
                             } else {
                                 Msg::PersistenceError("".to_string())
                             }
-                        }
+                        },
                     );
                 }
                 Command::None
@@ -530,7 +573,11 @@ impl App for OperationQueueApp {
 
             Msg::DecreasePriority(id) => {
                 // First read current priority
-                let current = state.queue_items.iter().find(|i| i.id == id).map(|i| i.priority);
+                let current = state
+                    .queue_items
+                    .iter()
+                    .find(|i| i.id == id)
+                    .map(|i| i.priority);
                 let new_priority = if let Some(p) = current {
                     if p < 255 {
                         state.mutate_item(&id, |item| item.priority += 1);
@@ -547,7 +594,9 @@ impl App for OperationQueueApp {
                     let item_id = id.clone();
                     return Command::perform(
                         async move {
-                            crate::global_config().update_queue_item_priority(&item_id, priority).await
+                            crate::global_config()
+                                .update_queue_item_priority(&item_id, priority)
+                                .await
                                 .map_err(|e| format!("Failed to update priority: {}", e))
                         },
                         |result| {
@@ -556,7 +605,7 @@ impl App for OperationQueueApp {
                             } else {
                                 Msg::PersistenceError("".to_string())
                             }
-                        }
+                        },
                     );
                 }
                 Command::None
@@ -564,7 +613,11 @@ impl App for OperationQueueApp {
 
             Msg::TogglePauseItem(id) => {
                 // Read current status
-                let current_status = state.queue_items.iter().find(|i| i.id == id).map(|i| i.status.clone());
+                let current_status = state
+                    .queue_items
+                    .iter()
+                    .find(|i| i.id == id)
+                    .map(|i| i.status.clone());
                 if let Some(status) = current_status {
                     let new_status = match status {
                         OperationStatus::Pending => OperationStatus::Paused,
@@ -577,7 +630,9 @@ impl App for OperationQueueApp {
                     let item_id = id.clone();
                     return Command::perform(
                         async move {
-                            crate::global_config().update_queue_item_status(&item_id, new_status).await
+                            crate::global_config()
+                                .update_queue_item_status(&item_id, new_status)
+                                .await
                                 .map_err(|e| format!("Failed to update status: {}", e))
                         },
                         |result| {
@@ -586,7 +641,7 @@ impl App for OperationQueueApp {
                             } else {
                                 Msg::PersistenceError("".to_string())
                             }
-                        }
+                        },
                     );
                 }
                 Command::None
@@ -599,7 +654,9 @@ impl App for OperationQueueApp {
 
                 Command::perform(
                     async move {
-                        crate::global_config().delete_queue_item(&id).await
+                        crate::global_config()
+                            .delete_queue_item(&id)
+                            .await
                             .map_err(|e| format!("Failed to delete queue item: {}", e))
                     },
                     |result| {
@@ -608,7 +665,7 @@ impl App for OperationQueueApp {
                         } else {
                             Msg::PersistenceError("".to_string())
                         }
-                    }
+                    },
                 )
             }
 
@@ -623,7 +680,9 @@ impl App for OperationQueueApp {
                     let item_id = id.clone();
                     let persist_cmd = Command::perform(
                         async move {
-                            crate::global_config().update_queue_item_status(&item_id, OperationStatus::Pending).await
+                            crate::global_config()
+                                .update_queue_item_status(&item_id, OperationStatus::Pending)
+                                .await
                                 .map_err(|e| format!("Failed to update status: {}", e))
                         },
                         |result| {
@@ -632,7 +691,7 @@ impl App for OperationQueueApp {
                             } else {
                                 Msg::PersistenceError("".to_string())
                             }
-                        }
+                        },
                     );
 
                     let exec_cmd = if state.auto_play {
@@ -660,10 +719,21 @@ impl App for OperationQueueApp {
                 let item_id_for_persist = id.clone();
                 let persist_cmd = Command::perform(
                     async move {
-                        log::info!("Persisting Running status for item: {}", item_id_for_persist);
-                        let result = crate::global_config().update_queue_item_status(&item_id_for_persist, OperationStatus::Running).await;
+                        log::info!(
+                            "Persisting Running status for item: {}",
+                            item_id_for_persist
+                        );
+                        let result = crate::global_config()
+                            .update_queue_item_status(
+                                &item_id_for_persist,
+                                OperationStatus::Running,
+                            )
+                            .await;
                         match &result {
-                            Ok(_) => log::info!("Successfully persisted Running status for item: {}", item_id_for_persist),
+                            Ok(_) => log::info!(
+                                "Successfully persisted Running status for item: {}",
+                                item_id_for_persist
+                            ),
                             Err(e) => log::error!("Failed to persist Running status: {}", e),
                         }
                         result.map_err(|e| format!("Failed to persist Running status: {}", e))
@@ -674,7 +744,7 @@ impl App for OperationQueueApp {
                         } else {
                             Msg::PersistenceError("".to_string())
                         }
-                    }
+                    },
                 );
 
                 // Get item for execution
@@ -700,20 +770,27 @@ impl App for OperationQueueApp {
                             let start = std::time::Instant::now();
 
                             // Get client for this environment from global client manager
-                            let client = match crate::client_manager().get_client(&item.metadata.environment_name).await {
+                            let client = match crate::client_manager()
+                                .get_client(&item.metadata.environment_name)
+                                .await
+                            {
                                 Ok(client) => client,
                                 Err(e) => {
                                     let duration_ms = start.elapsed().as_millis() as u64;
-                                    return (item.id.clone(), QueueResult {
-                                        success: false,
-                                        operation_results: vec![],
-                                        error: Some(format!("Failed to get client: {}", e)),
-                                        duration_ms,
-                                    });
+                                    return (
+                                        item.id.clone(),
+                                        QueueResult {
+                                            success: false,
+                                            operation_results: vec![],
+                                            error: Some(format!("Failed to get client: {}", e)),
+                                            duration_ms,
+                                        },
+                                    );
                                 }
                             };
 
-                            let resilience = ResilienceConfig::load_from_options().await
+                            let resilience = ResilienceConfig::load_from_options()
+                                .await
                                 .unwrap_or_default();
                             let result = ops_to_execute.execute(&client, &resilience).await;
                             let duration_ms = start.elapsed().as_millis() as u64;
@@ -753,14 +830,23 @@ impl App for OperationQueueApp {
 
                 // First, read the item to compute new state
                 let item_data = state.queue_items.iter().find(|i| i.id == id).map(|item| {
-                    let succeeded_count = result.operation_results.iter().filter(|r| r.success).count();
-                    let failed_count = result.operation_results.iter().filter(|r| !r.success).count();
+                    let succeeded_count = result
+                        .operation_results
+                        .iter()
+                        .filter(|r| r.success)
+                        .count();
+                    let failed_count = result
+                        .operation_results
+                        .iter()
+                        .filter(|r| !r.success)
+                        .count();
                     let total_count = result.operation_results.len();
 
                     let (new_status, new_succeeded_indices) = if result.success {
                         (OperationStatus::Done, vec![])
                     } else if succeeded_count > 0 && failed_count > 0 {
-                        let newly_succeeded: Vec<usize> = result.operation_results
+                        let newly_succeeded: Vec<usize> = result
+                            .operation_results
                             .iter()
                             .enumerate()
                             .filter(|(_, r)| r.success)
@@ -822,12 +908,23 @@ impl App for OperationQueueApp {
                     persist_cmd = Command::perform(
                         async move {
                             let config = crate::global_config();
-                            config.update_queue_item_status(&item_id, new_status).await
+                            config
+                                .update_queue_item_status(&item_id, new_status)
+                                .await
                                 .map_err(|e| format!("Failed to update status: {}", e))?;
-                            config.update_queue_item_result(&item_id, &result_for_persist).await
+                            config
+                                .update_queue_item_result(&item_id, &result_for_persist)
+                                .await
                                 .map_err(|e| format!("Failed to update result: {}", e))?;
-                            config.update_queue_item_succeeded_indices(&item_id, &new_succeeded_indices).await
-                                .map_err(|e| format!("Failed to update succeeded_indices: {}", e))?;
+                            config
+                                .update_queue_item_succeeded_indices(
+                                    &item_id,
+                                    &new_succeeded_indices,
+                                )
+                                .await
+                                .map_err(|e| {
+                                    format!("Failed to update succeeded_indices: {}", e)
+                                })?;
                             Ok(())
                         },
                         |result| {
@@ -836,7 +933,7 @@ impl App for OperationQueueApp {
                             } else {
                                 Msg::PersistenceError("".to_string())
                             }
-                        }
+                        },
                     );
 
                     // Track completion time for successful operations
@@ -872,7 +969,10 @@ impl App for OperationQueueApp {
                                     idx + 1,
                                     op_result.operation.operation_type(),
                                     op_result.operation.entity(),
-                                    op_result.status_code.map(|s| s.to_string()).unwrap_or_else(|| "unknown".to_string())
+                                    op_result
+                                        .status_code
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_else(|| "unknown".to_string())
                                 );
                                 if let Some(ref err) = op_result.error {
                                     log::error!("    Details: {}", err);
@@ -899,8 +999,11 @@ impl App for OperationQueueApp {
                     // max_failures of 0 means unlimited
                     if state.max_failures > 0 && state.session_failure_count >= state.max_failures {
                         state.auto_play = false;
-                        log::warn!("Queue paused after {} failure(s) (limit: {})",
-                            state.session_failure_count, state.max_failures);
+                        log::warn!(
+                            "Queue paused after {} failure(s) (limit: {})",
+                            state.session_failure_count,
+                            state.max_failures
+                        );
                     }
                 }
 
@@ -1021,7 +1124,9 @@ impl App for OperationQueueApp {
 
                     return Command::perform(
                         async move {
-                            crate::global_config().delete_queue_item(&item_id).await
+                            crate::global_config()
+                                .delete_queue_item(&item_id)
+                                .await
                                 .map_err(|e| format!("Failed to delete queue item: {}", e))
                         },
                         |result| {
@@ -1030,7 +1135,7 @@ impl App for OperationQueueApp {
                             } else {
                                 Msg::PersistenceError("".to_string())
                             }
-                        }
+                        },
                     );
                 }
                 Command::None
@@ -1055,7 +1160,9 @@ impl App for OperationQueueApp {
                         let item_id = id.clone();
                         let persist_cmd = Command::perform(
                             async move {
-                                crate::global_config().update_queue_item_status(&item_id, OperationStatus::Pending).await
+                                crate::global_config()
+                                    .update_queue_item_status(&item_id, OperationStatus::Pending)
+                                    .await
                                     .map_err(|e| format!("Failed to update status: {}", e))
                             },
                             |result| {
@@ -1064,7 +1171,7 @@ impl App for OperationQueueApp {
                                 } else {
                                     Msg::PersistenceError("".to_string())
                                 }
-                            }
+                            },
                         );
 
                         let exec_cmd = if state.auto_play {
@@ -1100,7 +1207,7 @@ impl App for OperationQueueApp {
                         } else {
                             Msg::PersistenceError("".to_string())
                         }
-                    }
+                    },
                 );
 
                 let arc_items: Vec<Arc<QueueItem>> = items.into_iter().map(Arc::new).collect();
@@ -1114,11 +1221,12 @@ impl App for OperationQueueApp {
                 }
 
                 // If in play mode and we have capacity, start executing
-                let exec_cmd = if state.auto_play && state.currently_running.len() < state.max_concurrent {
-                    execute_next_if_available(state)
-                } else {
-                    Command::None
-                };
+                let exec_cmd =
+                    if state.auto_play && state.currently_running.len() < state.max_concurrent {
+                        execute_next_if_available(state)
+                    } else {
+                        Command::None
+                    };
 
                 Command::Batch(vec![persist_cmd, exec_cmd])
             }
@@ -1138,7 +1246,9 @@ impl App for OperationQueueApp {
 
                 Command::perform(
                     async move {
-                        crate::global_config().clear_queue().await
+                        crate::global_config()
+                            .clear_queue()
+                            .await
                             .map_err(|e| format!("Failed to clear queue: {}", e))
                     },
                     |result| {
@@ -1147,7 +1257,7 @@ impl App for OperationQueueApp {
                         } else {
                             Msg::PersistenceError("".to_string())
                         }
-                    }
+                    },
                 )
             }
 
@@ -1161,16 +1271,31 @@ impl App for OperationQueueApp {
                 // Dimensions are tracked from last on_render call
                 let viewport_height = state.details_scroll_state.viewport_height().unwrap_or(20);
                 let content_height = state.details_scroll_state.content_height().unwrap_or(20);
-                state.details_scroll_state.handle_key(key, content_height, viewport_height);
+                state
+                    .details_scroll_state
+                    .handle_key(key, content_height, viewport_height);
                 Command::None
             }
 
-            Msg::DetailsSetDimensions(viewport_height, content_height, viewport_width, content_width) => {
+            Msg::DetailsSetDimensions(
+                viewport_height,
+                content_height,
+                viewport_width,
+                content_width,
+            ) => {
                 // Called every frame by renderer with actual dimensions
-                state.details_scroll_state.set_viewport_height(viewport_height);
-                state.details_scroll_state.update_scroll(viewport_height, content_height);
-                state.details_scroll_state.set_viewport_width(viewport_width);
-                state.details_scroll_state.update_horizontal_scroll(viewport_width, content_width);
+                state
+                    .details_scroll_state
+                    .set_viewport_height(viewport_height);
+                state
+                    .details_scroll_state
+                    .update_scroll(viewport_height, content_height);
+                state
+                    .details_scroll_state
+                    .set_viewport_width(viewport_width);
+                state
+                    .details_scroll_state
+                    .update_horizontal_scroll(viewport_width, content_width);
                 Command::None
             }
 
@@ -1197,7 +1322,9 @@ impl App for OperationQueueApp {
                 Command::perform(
                     async {
                         let config = crate::global_config();
-                        config.list_environments().await
+                        config
+                            .list_environments()
+                            .await
                             .map_err(|e| format!("Failed to load environments: {}", e))
                     },
                     Msg::EnvironmentsLoaded,
@@ -1214,8 +1341,8 @@ impl App for OperationQueueApp {
             }
 
             Msg::ImportFileNavigate(key) => {
-                use crossterm::event::KeyCode;
                 use crate::tui::widgets::FileBrowserAction;
+                use crossterm::event::KeyCode;
 
                 // Handle Escape to close modal
                 if key == KeyCode::Esc {
@@ -1225,10 +1352,12 @@ impl App for OperationQueueApp {
 
                 if let ImportModalState::FileBrowser(browser) = &mut state.import_modal {
                     let event = match key {
-                        KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown |
-                        KeyCode::Home | KeyCode::End => {
-                            crate::tui::widgets::FileBrowserEvent::Navigate(key)
-                        }
+                        KeyCode::Up
+                        | KeyCode::Down
+                        | KeyCode::PageUp
+                        | KeyCode::PageDown
+                        | KeyCode::Home
+                        | KeyCode::End => crate::tui::widgets::FileBrowserEvent::Navigate(key),
                         KeyCode::Enter => crate::tui::widgets::FileBrowserEvent::Activate,
                         KeyCode::Backspace => crate::tui::widgets::FileBrowserEvent::GoUp,
                         _ => return Command::None,
@@ -1239,8 +1368,8 @@ impl App for OperationQueueApp {
                             FileBrowserAction::FileSelected(path) => {
                                 return Self::update(state, Msg::ImportFileSelected(path));
                             }
-                            FileBrowserAction::DirectoryEntered(_) |
-                            FileBrowserAction::DirectoryChanged(_) => {}
+                            FileBrowserAction::DirectoryEntered(_)
+                            | FileBrowserAction::DirectoryChanged(_) => {}
                         }
                     }
                 }
@@ -1269,13 +1398,15 @@ impl App for OperationQueueApp {
                         }
 
                         // Get file path from browser state before transitioning
-                        let file_path = if let ImportModalState::FileBrowser(browser) = &state.import_modal {
-                            browser.selected_entry()
-                                .map(|e| e.path.clone())
-                                .unwrap_or_default()
-                        } else {
-                            PathBuf::new()
-                        };
+                        let file_path =
+                            if let ImportModalState::FileBrowser(browser) = &state.import_modal {
+                                browser
+                                    .selected_entry()
+                                    .map(|e| e.path.clone())
+                                    .unwrap_or_default()
+                            } else {
+                                PathBuf::new()
+                            };
 
                         // Load environments and move to settings
                         let parsed_clone = parsed;
@@ -1283,9 +1414,10 @@ impl App for OperationQueueApp {
                         Command::perform(
                             async {
                                 let config = crate::global_config();
-                                let envs = config.list_environments().await
-                                    .unwrap_or_default();
-                                let current = config.get_current_environment().await
+                                let envs = config.list_environments().await.unwrap_or_default();
+                                let current = config
+                                    .get_current_environment()
+                                    .await
                                     .ok()
                                     .flatten()
                                     .unwrap_or_default();
@@ -1375,7 +1507,8 @@ impl App for OperationQueueApp {
             Msg::ImportGoBack => {
                 // Go back from settings to file browser
                 if let ImportModalState::Settings(_) = &state.import_modal {
-                    let initial_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                    let initial_path =
+                        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
                     let mut browser = FileBrowserState::new(initial_path);
                     browser.set_filter(|entry| {
                         entry.is_dir || entry.name.to_lowercase().ends_with(".xlsx")
@@ -1424,9 +1557,7 @@ impl App for OperationQueueApp {
         ];
 
         // Left panel: just buttons
-        let controls_panel = Element::panel(buttons)
-            .title("Controls")
-            .build();
+        let controls_panel = Element::panel(buttons).title("Controls").build();
 
         // Middle panel: max failures before pause
         let fail_dec_btn = Element::button("fail-dec", "[-]")
@@ -1494,9 +1625,7 @@ impl App for OperationQueueApp {
         } else {
             format!("Queue ({})", state.filter.label())
         };
-        let tree = Element::panel(tree_widget)
-            .title(&queue_title)
-            .build();
+        let tree = Element::panel(tree_widget).title(&queue_title).build();
 
         // Build details panel for selected item
         let details_panel = build_details_panel(state, &state.details_scroll_state);
@@ -1566,25 +1695,72 @@ impl App for OperationQueueApp {
     }
 
     fn subscriptions(_state: &State) -> Vec<Subscription<Msg>> {
-        use crate::tui::{Subscription, KeyBinding};
+        use crate::tui::{KeyBinding, Subscription};
         use crossterm::event::KeyCode;
 
         vec![
             // Keyboard shortcuts
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('P')), "Toggle play/pause (queue)", Msg::TogglePlay),
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('p')), "Toggle pause (selected)", Msg::TogglePauseSelected),
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('s')), "Step one operation", Msg::StepOne),
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('C')), "Clear queue", Msg::RequestClearQueue),
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('P')),
+                "Toggle play/pause (queue)",
+                Msg::TogglePlay,
+            ),
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('p')),
+                "Toggle pause (selected)",
+                Msg::TogglePauseSelected,
+            ),
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('s')),
+                "Step one operation",
+                Msg::StepOne,
+            ),
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('C')),
+                "Clear queue",
+                Msg::RequestClearQueue,
+            ),
             Subscription::keyboard(KeyBinding::new(KeyCode::Esc), "Back to launcher", Msg::Back),
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('=')), "Increase priority (selected)", Msg::IncreasePrioritySelected),
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('+')), "Increase priority (selected)", Msg::IncreasePrioritySelected),
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('-')), "Decrease priority (selected)", Msg::DecreasePrioritySelected),
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('r')), "Retry (selected)", Msg::RetrySelected),
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('d')), "Delete (selected)", Msg::RequestDeleteSelected),
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('c')), "Clear interruption warning (selected)", Msg::ClearInterruptionFlagSelected),
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('f')), "Cycle filter", Msg::CycleFilter),
-            Subscription::keyboard(KeyBinding::new(KeyCode::Char('I')), "Import from Excel", Msg::OpenImportModal),
-
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('=')),
+                "Increase priority (selected)",
+                Msg::IncreasePrioritySelected,
+            ),
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('+')),
+                "Increase priority (selected)",
+                Msg::IncreasePrioritySelected,
+            ),
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('-')),
+                "Decrease priority (selected)",
+                Msg::DecreasePrioritySelected,
+            ),
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('r')),
+                "Retry (selected)",
+                Msg::RetrySelected,
+            ),
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('d')),
+                "Delete (selected)",
+                Msg::RequestDeleteSelected,
+            ),
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('c')),
+                "Clear interruption warning (selected)",
+                Msg::ClearInterruptionFlagSelected,
+            ),
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('f')),
+                "Cycle filter",
+                Msg::CycleFilter,
+            ),
+            Subscription::keyboard(
+                KeyBinding::new(KeyCode::Char('I')),
+                "Import from Excel",
+                Msg::OpenImportModal,
+            ),
             // Event subscriptions
             Subscription::subscribe("queue:add_items", |value| {
                 // Deserialize Vec<QueueItem> from JSON
@@ -1620,20 +1796,37 @@ impl App for OperationQueueApp {
         // Time estimate
         let est = estimate_remaining_time(state, 5).unwrap_or_else(|| "-".to_string());
 
-        let interrupted_count = state.queue_items.iter()
+        let interrupted_count = state
+            .queue_items
+            .iter()
             .filter(|item| item.was_interrupted)
             .count();
 
         let mut spans = vec![
-            Span::styled(format!("{}", state.queue_items.len()), Style::default().fg(theme.text_primary)),
+            Span::styled(
+                format!("{}", state.queue_items.len()),
+                Style::default().fg(theme.text_primary),
+            ),
             Span::styled(" total  ", Style::default().fg(theme.text_tertiary)),
-            Span::styled(format!("{}", pending), Style::default().fg(theme.text_primary)),
+            Span::styled(
+                format!("{}", pending),
+                Style::default().fg(theme.text_primary),
+            ),
             Span::styled(" pending  ", Style::default().fg(theme.text_tertiary)),
-            Span::styled(format!("{}", running), Style::default().fg(theme.accent_secondary)),
+            Span::styled(
+                format!("{}", running),
+                Style::default().fg(theme.accent_secondary),
+            ),
             Span::styled(" running  ", Style::default().fg(theme.text_tertiary)),
-            Span::styled(format!("{}", done), Style::default().fg(theme.accent_success)),
+            Span::styled(
+                format!("{}", done),
+                Style::default().fg(theme.accent_success),
+            ),
             Span::styled(" done  ", Style::default().fg(theme.text_tertiary)),
-            Span::styled(format!("{}", failed), Style::default().fg(theme.accent_error)),
+            Span::styled(
+                format!("{}", failed),
+                Style::default().fg(theme.accent_error),
+            ),
             Span::styled(" failed  ", Style::default().fg(theme.text_tertiary)),
             Span::styled("│ ", Style::default().fg(theme.border_primary)),
             Span::styled("⏱ ", Style::default().fg(theme.text_tertiary)),
@@ -1641,11 +1834,14 @@ impl App for OperationQueueApp {
         ];
 
         if interrupted_count > 0 {
-            spans.push(Span::styled("  │ ", Style::default().fg(theme.border_primary)));
+            spans.push(Span::styled(
+                "  │ ",
+                Style::default().fg(theme.border_primary),
+            ));
             spans.push(Span::styled("⚠ ", Style::default().fg(theme.accent_error)));
             spans.push(Span::styled(
                 format!("{} interrupted", interrupted_count),
-                Style::default().fg(theme.accent_warning)
+                Style::default().fg(theme.accent_warning),
             ));
         }
 
@@ -1663,7 +1859,8 @@ fn create_queue_items_from_import(settings: &ImportSettings) -> Vec<QueueItem> {
     use crate::api::operations::Operations;
 
     let mut queue_items = Vec::new();
-    let file_name = settings.file_path
+    let file_name = settings
+        .file_path
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "import".to_string());
@@ -1673,22 +1870,16 @@ fn create_queue_items_from_import(settings: &ImportSettings) -> Vec<QueueItem> {
         // Different operation types (sheets) are never mixed
         for (batch_idx, chunk) in sheet.operations.chunks(settings.batch_size).enumerate() {
             let batch_num = batch_idx + 1;
-            let total_batches = (sheet.operations.len() + settings.batch_size - 1) / settings.batch_size;
+            let total_batches =
+                (sheet.operations.len() + settings.batch_size - 1) / settings.batch_size;
 
             let description = if total_batches > 1 {
-                format!("{}: {} {} (batch {}/{})",
-                    file_name,
-                    sheet.operation_type,
-                    sheet.entity,
-                    batch_num,
-                    total_batches
+                format!(
+                    "{}: {} {} (batch {}/{})",
+                    file_name, sheet.operation_type, sheet.entity, batch_num, total_batches
                 )
             } else {
-                format!("{}: {} {}",
-                    file_name,
-                    sheet.operation_type,
-                    sheet.entity
-                )
+                format!("{}: {} {}", file_name, sheet.operation_type, sheet.entity)
             };
 
             let metadata = QueueMetadata {

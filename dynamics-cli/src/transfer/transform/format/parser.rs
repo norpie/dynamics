@@ -265,7 +265,7 @@ impl<'a> Lexer<'a> {
                             message: "unclosed string literal".to_string(),
                             position: pos + self.base_pos,
                             context: self.input[pos..].chars().take(20).collect(),
-                        })
+                        });
                     }
                 }
             }
@@ -282,10 +282,15 @@ impl<'a> Lexer<'a> {
                     self.chars.next();
                 } else if c == '.' && !has_dot {
                     // Look ahead to see if this is a decimal point or field separator
-                    let mut peek_chars = self.input[self.chars.peek().map(|(i, _)| *i).unwrap_or(0)..]
+                    let mut peek_chars = self.input
+                        [self.chars.peek().map(|(i, _)| *i).unwrap_or(0)..]
                         .chars()
                         .skip(1);
-                    if peek_chars.next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                    if peek_chars
+                        .next()
+                        .map(|c| c.is_ascii_digit())
+                        .unwrap_or(false)
+                    {
                         has_dot = true;
                         self.chars.next();
                     } else {
@@ -296,7 +301,11 @@ impl<'a> Lexer<'a> {
                 }
             }
 
-            let end = self.chars.peek().map(|(i, _)| *i).unwrap_or(self.input.len());
+            let end = self
+                .chars
+                .peek()
+                .map(|(i, _)| *i)
+                .unwrap_or(self.input.len());
             let num_str = &self.input[start..end];
 
             if has_dot {
@@ -326,7 +335,11 @@ impl<'a> Lexer<'a> {
                     break;
                 }
             }
-            let end = self.chars.peek().map(|(i, _)| *i).unwrap_or(self.input.len());
+            let end = self
+                .chars
+                .peek()
+                .map(|(i, _)| *i)
+                .unwrap_or(self.input.len());
             let ident = &self.input[start..end];
 
             // Check for keywords
@@ -622,7 +635,7 @@ impl<'a> Parser<'a> {
                         message: format!("unknown format type: {}", s),
                         position: self.lexer.current_pos(),
                         context: String::new(),
-                    })
+                    });
                 }
             };
             self.advance()?;
@@ -683,10 +696,7 @@ mod tests {
     fn test_parse_mixed_literal_and_expr() {
         let template = parse_template("Name: ${name}, Age: ${age}").unwrap();
         assert_eq!(template.parts.len(), 4);
-        assert_eq!(
-            template.parts[0],
-            FormatPart::Literal("Name: ".to_string())
-        );
+        assert_eq!(template.parts[0], FormatPart::Literal("Name: ".to_string()));
         assert!(matches!(template.parts[1], FormatPart::Expr(_)));
         assert_eq!(
             template.parts[2],
@@ -715,7 +725,13 @@ mod tests {
             assert!(matches!(left.as_ref(), FormatExpr::Field(_)));
             assert_eq!(*op, MathOp::Add);
             // right should be b * c
-            assert!(matches!(right.as_ref(), FormatExpr::Math { op: MathOp::Mul, .. }));
+            assert!(matches!(
+                right.as_ref(),
+                FormatExpr::Math {
+                    op: MathOp::Mul,
+                    ..
+                }
+            ));
         } else {
             panic!("expected math expression");
         }
@@ -727,7 +743,10 @@ mod tests {
         if let FormatPart::Expr(FormatExpr::Compare { left, op, right }) = &template.parts[0] {
             assert!(matches!(left.as_ref(), FormatExpr::Field(_)));
             assert_eq!(*op, CompareOp::Eq);
-            assert!(matches!(right.as_ref(), FormatExpr::Constant(Value::Int(0))));
+            assert!(matches!(
+                right.as_ref(),
+                FormatExpr::Constant(Value::Int(0))
+            ));
         } else {
             panic!("expected comparison expression");
         }
@@ -743,8 +762,14 @@ mod tests {
         }) = &template.parts[0]
         {
             assert!(matches!(condition.as_ref(), FormatExpr::Field(_)));
-            assert!(matches!(then_expr.as_ref(), FormatExpr::Constant(Value::String(_))));
-            assert!(matches!(else_expr.as_ref(), FormatExpr::Constant(Value::String(_))));
+            assert!(matches!(
+                then_expr.as_ref(),
+                FormatExpr::Constant(Value::String(_))
+            ));
+            assert!(matches!(
+                else_expr.as_ref(),
+                FormatExpr::Constant(Value::String(_))
+            ));
         } else {
             panic!("expected ternary expression");
         }
@@ -778,7 +803,13 @@ mod tests {
         // ${statecode == 0 ? 'Active' : 'Inactive'}
         let template = parse_template("${statecode == 0 ? 'Active' : 'Inactive'}").unwrap();
         if let FormatPart::Expr(FormatExpr::Ternary { condition, .. }) = &template.parts[0] {
-            assert!(matches!(condition.as_ref(), FormatExpr::Compare { op: CompareOp::Eq, .. }));
+            assert!(matches!(
+                condition.as_ref(),
+                FormatExpr::Compare {
+                    op: CompareOp::Eq,
+                    ..
+                }
+            ));
         } else {
             panic!("expected ternary with comparison condition");
         }
@@ -790,7 +821,13 @@ mod tests {
         if let FormatPart::Expr(FormatExpr::Math { left, op, right }) = &template.parts[0] {
             assert_eq!(*op, MathOp::Mul);
             // left should be (a + b)
-            assert!(matches!(left.as_ref(), FormatExpr::Math { op: MathOp::Add, .. }));
+            assert!(matches!(
+                left.as_ref(),
+                FormatExpr::Math {
+                    op: MathOp::Add,
+                    ..
+                }
+            ));
             assert!(matches!(right.as_ref(), FormatExpr::Field(_)));
         } else {
             panic!("expected math expression");

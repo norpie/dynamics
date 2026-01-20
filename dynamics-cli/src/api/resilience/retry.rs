@@ -2,10 +2,10 @@
 //!
 //! Provides intelligent retry logic for transient failures in Dynamics 365 API calls
 
-use std::time::Duration;
-use std::future::Future;
-use log::{debug, warn, info};
+use log::{debug, info, warn};
 use rand::Rng;
+use std::future::Future;
+use std::time::Duration;
 
 /// Configuration for retry behavior
 #[derive(Debug, Clone)]
@@ -135,7 +135,10 @@ impl RetryPolicy {
         let mut last_error = None;
 
         for attempt in 1..=self.config.max_attempts {
-            info!("Executing operation (attempt {}/{})", attempt, self.config.max_attempts);
+            info!(
+                "Executing operation (attempt {}/{})",
+                attempt, self.config.max_attempts
+            );
 
             match operation().await {
                 Ok(result) => {
@@ -149,12 +152,17 @@ impl RetryPolicy {
                     let should_retry = RetryableError::from_reqwest_error(&error).should_retry();
 
                     if !should_retry || attempt == self.config.max_attempts {
-                        warn!("Operation failed permanently on attempt {} (should_retry: {}): {}",
-                              attempt, should_retry, error);
+                        warn!(
+                            "Operation failed permanently on attempt {} (should_retry: {}): {}",
+                            attempt, should_retry, error
+                        );
                         return Err(error.into());
                     }
 
-                    warn!("Operation failed on attempt {} (retryable): {}", attempt, error);
+                    warn!(
+                        "Operation failed on attempt {} (retryable): {}",
+                        attempt, error
+                    );
                     last_error = Some(error);
 
                     // Calculate delay for next attempt
@@ -196,8 +204,8 @@ impl RetryPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     #[test]
     fn test_retryable_error_classification() {
@@ -215,12 +223,30 @@ mod tests {
 
     #[test]
     fn test_status_code_classification() {
-        assert_eq!(RetryableError::from_status_code(408), RetryableError::Timeout);
-        assert_eq!(RetryableError::from_status_code(429), RetryableError::RateLimited);
-        assert_eq!(RetryableError::from_status_code(400), RetryableError::ClientError(400));
-        assert_eq!(RetryableError::from_status_code(404), RetryableError::ClientError(404));
-        assert_eq!(RetryableError::from_status_code(500), RetryableError::ServerError(500));
-        assert_eq!(RetryableError::from_status_code(503), RetryableError::ServerError(503));
+        assert_eq!(
+            RetryableError::from_status_code(408),
+            RetryableError::Timeout
+        );
+        assert_eq!(
+            RetryableError::from_status_code(429),
+            RetryableError::RateLimited
+        );
+        assert_eq!(
+            RetryableError::from_status_code(400),
+            RetryableError::ClientError(400)
+        );
+        assert_eq!(
+            RetryableError::from_status_code(404),
+            RetryableError::ClientError(404)
+        );
+        assert_eq!(
+            RetryableError::from_status_code(500),
+            RetryableError::ServerError(500)
+        );
+        assert_eq!(
+            RetryableError::from_status_code(503),
+            RetryableError::ServerError(503)
+        );
     }
 
     #[test]
@@ -274,17 +300,26 @@ mod tests {
         let attempt_count_clone = attempt_count.clone();
 
         // Create a mock function that uses reqwest::Error
-        let result = policy.execute(|| {
-            let count = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
-            async move {
-                if count == 0 {
-                    // Create a mock reqwest error (timeout)
-                    Err(reqwest::Error::from(reqwest::Client::new().get("http://localhost:1").timeout(Duration::from_millis(1)).send().await.unwrap_err()))
-                } else {
-                    Ok("Success!")
+        let result = policy
+            .execute(|| {
+                let count = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if count == 0 {
+                        // Create a mock reqwest error (timeout)
+                        Err(reqwest::Error::from(
+                            reqwest::Client::new()
+                                .get("http://localhost:1")
+                                .timeout(Duration::from_millis(1))
+                                .send()
+                                .await
+                                .unwrap_err(),
+                        ))
+                    } else {
+                        Ok("Success!")
+                    }
                 }
-            }
-        }).await;
+            })
+            .await;
 
         // Note: This test may not work as expected due to the complexity of creating reqwest errors
         // Let's simplify for now

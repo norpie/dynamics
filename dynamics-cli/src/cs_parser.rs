@@ -3,8 +3,8 @@
 //! Extracts field mappings from C# Dynamics 365 migration mapping files.
 //! These files contain InternalMapping methods that map source fields to target fields.
 
-use std::collections::HashMap;
 use regex::Regex;
+use std::collections::HashMap;
 
 /// Parse C# field mappings from file content
 ///
@@ -38,7 +38,8 @@ pub fn parse_cs_field_mappings(content: &str) -> Result<HashMap<String, String>,
     let mut mappings = HashMap::new();
 
     // Find InternalMapping method signature
-    let method_start = content.find("InternalMapping")
+    let method_start = content
+        .find("InternalMapping")
         .ok_or("InternalMapping method not found in file")?;
 
     // Extract source parameter name from method signature
@@ -47,13 +48,16 @@ pub fn parse_cs_field_mappings(content: &str) -> Result<HashMap<String, String>,
     let source_var_name = if let Some(caps) = sig_pattern.captures(&content[method_start..]) {
         caps.get(1).unwrap().as_str()
     } else {
-        return Err("Could not extract source parameter name from InternalMapping signature".to_string());
+        return Err(
+            "Could not extract source parameter name from InternalMapping signature".to_string(),
+        );
     };
 
     log::debug!("Detected source variable name: {}", source_var_name);
 
     // Find object initializer - could be from "return new" or "var x = new"
-    let method_body_start = content[method_start..].find('{')
+    let method_body_start = content[method_start..]
+        .find('{')
         .ok_or("Method body not found")?;
     let method_body = &content[method_start + method_body_start..];
 
@@ -70,7 +74,8 @@ pub fn parse_cs_field_mappings(content: &str) -> Result<HashMap<String, String>,
     };
 
     // Find the opening brace of the initializer
-    let init_brace = method_body[init_start..].find('{')
+    let init_brace = method_body[init_start..]
+        .find('{')
         .ok_or("Object initializer brace not found")?;
     let init_body = &method_body[init_start + init_brace..];
 
@@ -91,7 +96,10 @@ pub fn parse_cs_field_mappings(content: &str) -> Result<HashMap<String, String>,
         };
 
         // Skip system fields
-        if target_field == "OverriddenCreatedOn" || target_field == "statecode" || target_field == "statuscode" {
+        if target_field == "OverriddenCreatedOn"
+            || target_field == "statecode"
+            || target_field == "statuscode"
+        {
             continue;
         }
 
@@ -126,7 +134,8 @@ pub fn parse_cs_field_mappings(content: &str) -> Result<HashMap<String, String>,
 /// Matches: targetField = ...
 fn extract_target_field(line: &str) -> Option<String> {
     let target_pattern = Regex::new(r"^\s*(\w+)\s*=").unwrap();
-    target_pattern.captures(line)
+    target_pattern
+        .captures(line)
         .and_then(|caps| caps.get(1))
         .map(|m| m.as_str().to_string())
 }
@@ -148,10 +157,8 @@ fn extract_source_fields(
 
     // Pattern to match source.field with various suffixes
     // Matches: sourceVar.fieldName followed by optional ?, ?., <T>, etc.
-    let source_pattern = Regex::new(&format!(
-        r"{}\.(\w+)",
-        regex::escape(source_var_name)
-    )).unwrap();
+    let source_pattern =
+        Regex::new(&format!(r"{}\.(\w+)", regex::escape(source_var_name))).unwrap();
 
     // Extract all matches of source.field in the line
     for capture in source_pattern.captures_iter(line) {
@@ -192,7 +199,10 @@ fn extract_source_fields(
 /// - EntityReference ref = null; ... ref = source.field;
 /// - var x = source.field1 ?? source.field2;
 /// - dictionary.TryGetValue(source.field, out var result)
-fn parse_variable_assignments(method_body: &str, source_var_name: &str) -> HashMap<String, Vec<String>> {
+fn parse_variable_assignments(
+    method_body: &str,
+    source_var_name: &str,
+) -> HashMap<String, Vec<String>> {
     let mut assignments = HashMap::new();
 
     // Pattern 1: var varName = ...source.field...
@@ -203,8 +213,10 @@ fn parse_variable_assignments(method_body: &str, source_var_name: &str) -> HashM
 
     // Helper to extract source fields from expression
     let extract_fields = |expr: &str| -> Vec<String> {
-        let source_pattern = Regex::new(&format!(r"{}\.(\w+)", regex::escape(source_var_name))).unwrap();
-        source_pattern.captures_iter(expr)
+        let source_pattern =
+            Regex::new(&format!(r"{}\.(\w+)", regex::escape(source_var_name))).unwrap();
+        source_pattern
+            .captures_iter(expr)
             .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
             .collect()
     };
@@ -215,7 +227,11 @@ fn parse_variable_assignments(method_body: &str, source_var_name: &str) -> HashM
             let var_name = var_name.as_str().to_string();
             let fields = extract_fields(expression.as_str());
             if !fields.is_empty() {
-                log::debug!("Variable {} assigned from source fields: {:?}", var_name, fields);
+                log::debug!(
+                    "Variable {} assigned from source fields: {:?}",
+                    var_name,
+                    fields
+                );
                 assignments.insert(var_name, fields);
             }
         }
@@ -227,7 +243,11 @@ fn parse_variable_assignments(method_body: &str, source_var_name: &str) -> HashM
             let var_name = var_name.as_str().to_string();
             let fields = extract_fields(expression.as_str());
             if !fields.is_empty() && !assignments.contains_key(&var_name) {
-                log::debug!("Variable {} reassigned from source fields: {:?}", var_name, fields);
+                log::debug!(
+                    "Variable {} reassigned from source fields: {:?}",
+                    var_name,
+                    fields
+                );
                 assignments.insert(var_name, fields);
             }
         }
@@ -235,13 +255,18 @@ fn parse_variable_assignments(method_body: &str, source_var_name: &str) -> HashM
 
     // Parse TryGetValue out parameters
     // Extract source fields from the TryGetValue call and associate with the out variable
-    let trygetvalue_full_pattern = Regex::new(r"TryGetValue\s*\(([^,]+),\s*out\s+(?:var\s+)?(\w+)\)").unwrap();
+    let trygetvalue_full_pattern =
+        Regex::new(r"TryGetValue\s*\(([^,]+),\s*out\s+(?:var\s+)?(\w+)\)").unwrap();
     for capture in trygetvalue_full_pattern.captures_iter(method_body) {
         if let (Some(first_arg), Some(var_name)) = (capture.get(1), capture.get(2)) {
             let var_name = var_name.as_str().to_string();
             let fields = extract_fields(first_arg.as_str());
             if !fields.is_empty() {
-                log::debug!("Variable {} from TryGetValue contains source fields: {:?}", var_name, fields);
+                log::debug!(
+                    "Variable {} from TryGetValue contains source fields: {:?}",
+                    var_name,
+                    fields
+                );
                 assignments.insert(var_name, fields);
             } else if !assignments.contains_key(&var_name) {
                 // Mark as exists even if no source fields detected
@@ -274,7 +299,10 @@ mod tests {
         let result = parse_cs_field_mappings(content).unwrap();
         assert_eq!(result.get("cgk_name"), Some(&"nrq_Name".to_string()));
         assert_eq!(result.get("cgk_date"), Some(&"nrq_Date".to_string()));
-        assert_eq!(result.get("cgk_commissionid"), Some(&"nrq_CommissionId".to_string()));
+        assert_eq!(
+            result.get("cgk_commissionid"),
+            Some(&"nrq_CommissionId".to_string())
+        );
     }
 
     #[test]
@@ -315,7 +343,10 @@ mod tests {
         let result = parse_cs_field_mappings(content).unwrap();
         assert_eq!(result.get("cgk_fundid"), Some(&"nrq_Fund".to_string()));
         assert_eq!(result.get("cgk_status"), Some(&"nrq_Status".to_string()));
-        assert_eq!(result.get("cgk_presidentid"), Some(&"nrq_President".to_string()));
+        assert_eq!(
+            result.get("cgk_presidentid"),
+            Some(&"nrq_President".to_string())
+        );
     }
 
     #[test]
@@ -361,7 +392,10 @@ mod tests {
 
         let result = parse_cs_field_mappings(content).unwrap();
         assert_eq!(result.get("cgk_fundid"), Some(&"nrq_Fund".to_string()));
-        assert_eq!(result.get("cgk_categoryid"), Some(&"nrq_Category".to_string()));
+        assert_eq!(
+            result.get("cgk_categoryid"),
+            Some(&"nrq_Category".to_string())
+        );
         assert_eq!(result.get("cgk_simple"), Some(&"nrq_Simple".to_string()));
         assert_eq!(result.len(), 3);
     }
@@ -384,7 +418,10 @@ mod tests {
 
         let result = parse_cs_field_mappings(content).unwrap();
         assert_eq!(result.get("cgk_status"), Some(&"nrq_Status".to_string()));
-        assert_eq!(result.get("cgk_projectid"), Some(&"nrq_Project".to_string()));
+        assert_eq!(
+            result.get("cgk_projectid"),
+            Some(&"nrq_Project".to_string())
+        );
         assert_eq!(result.get("cgk_review"), Some(&"nrq_Review".to_string()));
         assert_eq!(result.get("vaf_type"), Some(&"nrq_Type".to_string()));
         assert_eq!(result.len(), 4);
@@ -449,15 +486,40 @@ mod tests {
         let result = parse_cs_field_mappings(content).unwrap();
 
         // Verify key mappings are extracted correctly
-        assert!(result.len() >= 8, "Should have at least 8 mappings, got {}", result.len());
-        assert_eq!(result.get("cgk_accountid"), Some(&"nrq_AccountId".to_string()));
-        assert_eq!(result.get("vaf_adaptatie"), Some(&"nrq_Adaption".to_string()));
-        assert_eq!(result.get("cgk_amountofepisodes"), Some(&"nrq_Amountofepisodes".to_string()));
-        assert_eq!(result.get("cgk_categoryid"), Some(&"nrq_CategoryId".to_string()));
-        assert_eq!(result.get("cgk_commissiondecision"), Some(&"nrq_Commission".to_string()));
-        assert_eq!(result.get("cgk_folderid"), Some(&"nrq_ProjectId".to_string()));
+        assert!(
+            result.len() >= 8,
+            "Should have at least 8 mappings, got {}",
+            result.len()
+        );
+        assert_eq!(
+            result.get("cgk_accountid"),
+            Some(&"nrq_AccountId".to_string())
+        );
+        assert_eq!(
+            result.get("vaf_adaptatie"),
+            Some(&"nrq_Adaption".to_string())
+        );
+        assert_eq!(
+            result.get("cgk_amountofepisodes"),
+            Some(&"nrq_Amountofepisodes".to_string())
+        );
+        assert_eq!(
+            result.get("cgk_categoryid"),
+            Some(&"nrq_CategoryId".to_string())
+        );
+        assert_eq!(
+            result.get("cgk_commissiondecision"),
+            Some(&"nrq_Commission".to_string())
+        );
+        assert_eq!(
+            result.get("cgk_folderid"),
+            Some(&"nrq_ProjectId".to_string())
+        );
         assert_eq!(result.get("cgk_review"), Some(&"nrq_Review".to_string()));
-        assert_eq!(result.get("vaf_typeindiening"), Some(&"nrq_SubmissionType".to_string()));
+        assert_eq!(
+            result.get("vaf_typeindiening"),
+            Some(&"nrq_SubmissionType".to_string())
+        );
 
         // Should not include commented or system fields
         assert!(!result.contains_key("CreatedOn"));
@@ -486,8 +548,10 @@ mod tests {
         assert!(result.contains_key("cgk_name"));
 
         // Both should map to nrq_Amount (one will overwrite the other, but both are valid alternatives)
-        assert!(result.get("vaf_vrijgavebedrag") == Some(&"nrq_Amount".to_string()) ||
-                result.get("cgk_vrijgavebedrag") == Some(&"nrq_Amount".to_string()));
+        assert!(
+            result.get("vaf_vrijgavebedrag") == Some(&"nrq_Amount".to_string())
+                || result.get("cgk_vrijgavebedrag") == Some(&"nrq_Amount".to_string())
+        );
     }
 
     #[test]
@@ -506,7 +570,10 @@ mod tests {
         let result = parse_cs_field_mappings(content).unwrap();
 
         // Should extract source field from ternary operator (appears in both branches)
-        assert_eq!(result.get("EMailAddress1"), Some(&"EMailAddress1".to_string()));
+        assert_eq!(
+            result.get("EMailAddress1"),
+            Some(&"EMailAddress1".to_string())
+        );
         assert_eq!(result.get("cgk_other"), Some(&"nrq_Other".to_string()));
     }
 
@@ -565,7 +632,10 @@ mod tests {
         let result = parse_cs_field_mappings(content).unwrap();
 
         // Should extract field names ignoring ToString suffix
-        assert_eq!(result.get("vaf_Seasonseries"), Some(&"nrq_Seasonseries".to_string()));
+        assert_eq!(
+            result.get("vaf_Seasonseries"),
+            Some(&"nrq_Seasonseries".to_string())
+        );
         assert_eq!(result.get("cgk_other"), Some(&"nrq_Other".to_string()));
     }
 
@@ -587,7 +657,10 @@ mod tests {
         let result = parse_cs_field_mappings(content).unwrap();
 
         // Should resolve variable to source field
-        assert_eq!(result.get("vaf_availablein"), Some(&"nrq_Available".to_string()));
+        assert_eq!(
+            result.get("vaf_availablein"),
+            Some(&"nrq_Available".to_string())
+        );
         assert_eq!(result.get("cgk_name"), Some(&"nrq_Name".to_string()));
     }
 

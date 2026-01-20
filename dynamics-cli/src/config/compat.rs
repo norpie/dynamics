@@ -1,10 +1,10 @@
 //! TOML compatibility layer for export/import
 
 use anyhow::{Context, Result};
-use sqlx::SqlitePool;
-use std::path::Path;
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
+use std::collections::HashMap;
+use std::path::Path;
 
 /// Export SQLite database to TOML format
 pub async fn export_to_toml(pool: &SqlitePool, path: &Path) -> Result<()> {
@@ -20,13 +20,16 @@ pub async fn export_to_toml(pool: &SqlitePool, path: &Path) -> Result<()> {
     // Export environments and credentials
     let environments = get_all_environments_with_credentials(pool).await?;
     for (env_name, host, username, password, client_id, client_secret) in environments {
-        config.environments.insert(env_name, ExportAuthConfig {
-            host,
-            username,
-            password,
-            client_id,
-            client_secret,
-        });
+        config.environments.insert(
+            env_name,
+            ExportAuthConfig {
+                host,
+                username,
+                password,
+                client_id,
+                client_secret,
+            },
+        );
     }
 
     // Export entity mappings
@@ -42,8 +45,8 @@ pub async fn export_to_toml(pool: &SqlitePool, path: &Path) -> Result<()> {
     config.migrations = get_all_migrations(pool).await?;
 
     // Serialize to TOML
-    let toml_content = toml::to_string_pretty(&config)
-        .context("Failed to serialize config to TOML")?;
+    let toml_content =
+        toml::to_string_pretty(&config).context("Failed to serialize config to TOML")?;
 
     std::fs::write(path, toml_content)
         .with_context(|| format!("Failed to write TOML file: {:?}", path))?;
@@ -161,12 +164,11 @@ fn default_query_limit() -> u32 {
 // Helper functions for database queries
 
 async fn get_current_environment(pool: &SqlitePool) -> Result<Option<String>> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT name FROM environments WHERE is_current = TRUE LIMIT 1",
-    )
-    .fetch_optional(pool)
-    .await
-    .context("Failed to get current environment")?;
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT name FROM environments WHERE is_current = TRUE LIMIT 1")
+            .fetch_optional(pool)
+            .await
+            .context("Failed to get current environment")?;
 
     Ok(row.map(|(name,)| name))
 }
@@ -189,8 +191,8 @@ async fn get_all_environments_with_credentials(
 
     let mut result = Vec::new();
     for (env_name, host, credential_data) in rows {
-        let cred_data: crate::config::models::CredentialData = serde_json::from_str(&credential_data)
-            .context("Failed to parse credential data")?;
+        let cred_data: crate::config::models::CredentialData =
+            serde_json::from_str(&credential_data).context("Failed to parse credential data")?;
 
         if let crate::config::models::CredentialData::UsernamePassword {
             username,
@@ -218,21 +220,24 @@ async fn get_all_entity_mappings(pool: &SqlitePool) -> Result<HashMap<String, St
 }
 
 async fn get_default_query_limit(pool: &SqlitePool) -> Result<u32> {
-    let value: Option<(String,)> = sqlx::query_as(
-        "SELECT value FROM settings WHERE key = 'default_query_limit'",
-    )
-    .fetch_optional(pool)
-    .await
-    .context("Failed to get default query limit")?;
+    let value: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM settings WHERE key = 'default_query_limit'")
+            .fetch_optional(pool)
+            .await
+            .context("Failed to get default query limit")?;
 
     if let Some((value_str,)) = value {
-        value_str.parse().context("Invalid default query limit value")
+        value_str
+            .parse()
+            .context("Invalid default query limit value")
     } else {
         Ok(100) // default
     }
 }
 
-async fn get_all_field_mappings(pool: &SqlitePool) -> Result<HashMap<String, HashMap<String, String>>> {
+async fn get_all_field_mappings(
+    pool: &SqlitePool,
+) -> Result<HashMap<String, HashMap<String, String>>> {
     let rows: Vec<(String, String, String, String)> = sqlx::query_as(
         "SELECT source_entity, target_entity, source_field, target_field FROM field_mappings ORDER BY source_entity, target_entity",
     )
@@ -252,7 +257,9 @@ async fn get_all_field_mappings(pool: &SqlitePool) -> Result<HashMap<String, Has
     Ok(result)
 }
 
-async fn get_all_prefix_mappings(pool: &SqlitePool) -> Result<HashMap<String, HashMap<String, String>>> {
+async fn get_all_prefix_mappings(
+    pool: &SqlitePool,
+) -> Result<HashMap<String, HashMap<String, String>>> {
     let rows: Vec<(String, String, String, String)> = sqlx::query_as(
         "SELECT source_entity, target_entity, source_prefix, target_prefix FROM prefix_mappings ORDER BY source_entity, target_entity",
     )
@@ -283,22 +290,25 @@ async fn get_all_examples(pool: &SqlitePool) -> Result<HashMap<String, Vec<Expor
     let mut result: HashMap<String, Vec<ExportExamplePair>> = HashMap::new();
     for (source_entity, target_entity, id, source_uuid, target_uuid, label) in rows {
         let key = format!("{}:{}", source_entity, target_entity);
-        result
-            .entry(key)
-            .or_default()
-            .push(ExportExamplePair {
-                id,
-                source_uuid,
-                target_uuid,
-                label,
-            });
+        result.entry(key).or_default().push(ExportExamplePair {
+            id,
+            source_uuid,
+            target_uuid,
+            label,
+        });
     }
 
     Ok(result)
 }
 
 async fn get_all_migrations(pool: &SqlitePool) -> Result<HashMap<String, ExportMigration>> {
-    let migration_rows: Vec<(String, String, String, chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+    let migration_rows: Vec<(
+        String,
+        String,
+        String,
+        chrono::DateTime<chrono::Utc>,
+        chrono::DateTime<chrono::Utc>,
+    )> = sqlx::query_as(
         "SELECT name, source_env, target_env, created_at, last_used FROM migrations ORDER BY name",
     )
     .fetch_all(pool)
@@ -318,7 +328,16 @@ async fn get_all_migrations(pool: &SqlitePool) -> Result<HashMap<String, ExportM
         .context("Failed to get comparisons")?;
 
         let mut comparisons = Vec::new();
-        for (comp_id, comp_name, source_entity, target_entity, entity_comparison, comp_created_at, comp_last_used) in comparison_rows {
+        for (
+            comp_id,
+            comp_name,
+            source_entity,
+            target_entity,
+            entity_comparison,
+            comp_created_at,
+            comp_last_used,
+        ) in comparison_rows
+        {
             let entity_comp: ExportEntityComparison = if let Some(json_str) = entity_comparison {
                 serde_json::from_str(&json_str).unwrap_or_default()
             } else {
@@ -335,7 +354,9 @@ async fn get_all_migrations(pool: &SqlitePool) -> Result<HashMap<String, ExportM
             .context("Failed to get view comparisons")?;
 
             let mut view_comparisons = Vec::new();
-            for (source_view, target_view, col_map_json, filter_map_json, sort_map_json) in view_rows {
+            for (source_view, target_view, col_map_json, filter_map_json, sort_map_json) in
+                view_rows
+            {
                 let column_mappings = col_map_json
                     .map(|json| serde_json::from_str(&json).unwrap_or_default())
                     .unwrap_or_default();
@@ -366,14 +387,17 @@ async fn get_all_migrations(pool: &SqlitePool) -> Result<HashMap<String, ExportM
             });
         }
 
-        result.insert(name.clone(), ExportMigration {
-            name,
-            source_env,
-            target_env,
-            comparisons,
-            created_at: created_at.to_rfc3339(),
-            last_used: last_used.to_rfc3339(),
-        });
+        result.insert(
+            name.clone(),
+            ExportMigration {
+                name,
+                source_env,
+                target_env,
+                comparisons,
+                created_at: created_at.to_rfc3339(),
+                last_used: last_used.to_rfc3339(),
+            },
+        );
     }
 
     Ok(result)
@@ -383,26 +407,51 @@ async fn clear_database(pool: &SqlitePool) -> Result<()> {
     let mut tx = pool.begin().await.context("Failed to start transaction")?;
 
     // Clear in correct order to respect foreign keys
-    sqlx::query("DELETE FROM view_comparisons").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM comparisons").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM migrations").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM example_pairs").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM prefix_mappings").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM field_mappings").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM settings").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM entity_mappings").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM view_comparisons")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM comparisons")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM migrations")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM example_pairs")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM prefix_mappings")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM field_mappings")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM settings")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM entity_mappings")
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("DELETE FROM tokens").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM environments").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM credentials").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM environments")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM credentials")
+        .execute(&mut *tx)
+        .await?;
 
-    tx.commit().await.context("Failed to commit clear transaction")?;
+    tx.commit()
+        .await
+        .context("Failed to commit clear transaction")?;
 
     log::info!("Cleared database for import");
     Ok(())
 }
 
 async fn import_config_data(pool: &SqlitePool, config: ExportConfig) -> Result<()> {
-    let mut tx = pool.begin().await.context("Failed to start import transaction")?;
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to start import transaction")?;
 
     // Import credentials and environments
     for (env_name, auth_config) in &config.environments {
@@ -459,6 +508,8 @@ async fn import_config_data(pool: &SqlitePool, config: ExportConfig) -> Result<(
         .await
         .context("Failed to insert default_query_limit setting")?;
 
-    tx.commit().await.context("Failed to commit import transaction")?;
+    tx.commit()
+        .await
+        .context("Failed to commit import transaction")?;
     Ok(())
 }

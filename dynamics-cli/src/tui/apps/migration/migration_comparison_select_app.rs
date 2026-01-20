@@ -1,27 +1,30 @@
+use crate::config::repository::migrations::SavedComparison;
 use crate::tui::{
+    Resource,
     app::App,
     command::{AppId, Command},
     element::{ColumnBuilder, Element, FocusId, LayoutConstraint},
-    subscription::Subscription,
-    state::theme::Theme,
-    widgets::list::{ListItem, ListState},
-    widgets::{AutocompleteField, AutocompleteEvent, TextInputField, TextInputEvent, FileBrowserEvent, MultiSelectEvent, MultiSelectField},
-    widgets::file_browser::{FileBrowserState, FileBrowserAction},
     renderer::LayeredView,
-    Resource,
+    state::theme::Theme,
+    subscription::Subscription,
+    widgets::file_browser::{FileBrowserAction, FileBrowserState},
+    widgets::list::{ListItem, ListState},
+    widgets::{
+        AutocompleteEvent, AutocompleteField, FileBrowserEvent, MultiSelectEvent, MultiSelectField,
+        TextInputEvent, TextInputField,
+    },
 };
-use dynamics_lib_macros::Validate;
-use crate::config::repository::migrations::SavedComparison;
+use crate::{button_row, col, error_display, row, spacer, use_constraints};
 use crossterm::event::KeyCode;
+use dynamics_lib_macros::Validate;
 use ratatui::{
     prelude::Stylize,
     style::Style,
     text::{Line, Span},
 };
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::collections::{HashMap, HashSet};
-use crate::{col, row, spacer, button_row, use_constraints, error_display};
+use std::path::PathBuf;
 
 pub struct MigrationComparisonSelectApp;
 
@@ -222,20 +225,29 @@ pub enum Msg {
 impl ListItem for SavedComparison {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let theme = &crate::global_runtime_config().theme;
         let (fg_color, bg_style) = if is_selected {
-            (theme.accent_primary, Some(Style::default().bg(theme.bg_surface)))
+            (
+                theme.accent_primary,
+                Some(Style::default().bg(theme.bg_surface)),
+            )
         } else {
             (theme.text_primary, None)
         };
 
-        let mut builder = Element::styled_text(Line::from(vec![
-            Span::styled(
-                format!("  {} ({} -> {})", self.name, self.source_entity, self.target_entity),
-                Style::default().fg(fg_color),
+        let mut builder = Element::styled_text(Line::from(vec![Span::styled(
+            format!(
+                "  {} ({} -> {})",
+                self.name, self.source_entity, self.target_entity
             ),
-        ]));
+            Style::default().fg(fg_color),
+        )]));
 
         if let Some(bg) = bg_style {
             builder = builder.background(bg);
@@ -315,9 +327,8 @@ impl State {
         self.import_browser = FileBrowserState::new(home_dir);
 
         // Set filter to show .json files and directories
-        self.import_browser.set_filter(|entry| {
-            entry.is_dir || entry.name.ends_with(".json")
-        });
+        self.import_browser
+            .set_filter(|entry| entry.is_dir || entry.name.ends_with(".json"));
 
         self.show_import_browser = true;
     }
@@ -419,15 +430,21 @@ impl App for MigrationComparisonSelectApp {
                         match config.get_entity_cache(&source_env, 24).await {
                             Ok(Some(cached)) => Ok::<Vec<String>, String>(cached),
                             _ => {
-                                let client = manager.get_client(&source_env).await.map_err(|e| e.to_string())?;
-                                let metadata_xml = client.fetch_metadata().await.map_err(|e| e.to_string())?;
-                                let entities = parse_entity_list(&metadata_xml).map_err(|e| e.to_string())?;
-                                let _ = config.set_entity_cache(&source_env, entities.clone()).await;
+                                let client = manager
+                                    .get_client(&source_env)
+                                    .await
+                                    .map_err(|e| e.to_string())?;
+                                let metadata_xml =
+                                    client.fetch_metadata().await.map_err(|e| e.to_string())?;
+                                let entities =
+                                    parse_entity_list(&metadata_xml).map_err(|e| e.to_string())?;
+                                let _ =
+                                    config.set_entity_cache(&source_env, entities.clone()).await;
                                 Ok(entities)
                             }
                         }
                     }
-                }
+                },
             )
             .add_task(
                 format!("Loading target entities ({})", params.target_env),
@@ -441,15 +458,21 @@ impl App for MigrationComparisonSelectApp {
                         match config.get_entity_cache(&target_env, 24).await {
                             Ok(Some(cached)) => Ok::<Vec<String>, String>(cached),
                             _ => {
-                                let client = manager.get_client(&target_env).await.map_err(|e| e.to_string())?;
-                                let metadata_xml = client.fetch_metadata().await.map_err(|e| e.to_string())?;
-                                let entities = parse_entity_list(&metadata_xml).map_err(|e| e.to_string())?;
-                                let _ = config.set_entity_cache(&target_env, entities.clone()).await;
+                                let client = manager
+                                    .get_client(&target_env)
+                                    .await
+                                    .map_err(|e| e.to_string())?;
+                                let metadata_xml =
+                                    client.fetch_metadata().await.map_err(|e| e.to_string())?;
+                                let entities =
+                                    parse_entity_list(&metadata_xml).map_err(|e| e.to_string())?;
+                                let _ =
+                                    config.set_entity_cache(&target_env, entities.clone()).await;
                                 Ok(entities)
                             }
                         }
                     }
-                }
+                },
             )
             .with_title("Loading Migration Data")
             .on_complete(AppId::MigrationComparisonSelect)
@@ -490,7 +513,10 @@ impl App for MigrationComparisonSelectApp {
                     Command::perform(
                         async move {
                             let config = crate::global_config();
-                            config.get_comparisons(&migration_name).await.map_err(|e| e.to_string())
+                            config
+                                .get_comparisons(&migration_name)
+                                .await
+                                .map_err(|e| e.to_string())
                         },
                         Msg::ComparisonsLoaded,
                     )
@@ -518,16 +544,24 @@ impl App for MigrationComparisonSelectApp {
             }
             Msg::ListNavigate(key) => {
                 let visible_height = 20;
-                state.list_state.handle_key(key, state.comparisons.len(), visible_height);
+                state
+                    .list_state
+                    .handle_key(key, state.comparisons.len(), visible_height);
                 Command::None
             }
             Msg::SelectComparison => {
-                log::info!("SelectComparison triggered - list size: {}, selected: {:?}",
-                    state.comparisons.len(), state.list_state.selected());
+                log::info!(
+                    "SelectComparison triggered - list size: {}, selected: {:?}",
+                    state.comparisons.len(),
+                    state.list_state.selected()
+                );
                 if let Some(selected_idx) = state.list_state.selected() {
                     if let Some(comparison) = state.comparisons.get(selected_idx) {
-                        log::info!("Opening comparison: {:?} -> {:?}",
-                            comparison.source_entities, comparison.target_entities);
+                        log::info!(
+                            "Opening comparison: {:?} -> {:?}",
+                            comparison.source_entities,
+                            comparison.target_entities
+                        );
                         let params = super::entity_comparison::EntityComparisonParams {
                             migration_name: state.migration_name.clone().unwrap_or_default(),
                             source_env: state.source_env.clone().unwrap_or_default(),
@@ -557,31 +591,52 @@ impl App for MigrationComparisonSelectApp {
                 Command::None
             }
             Msg::CreateFormSourceEvent(event) => {
-                let options = state.source_entities.as_ref().ok().cloned().unwrap_or_default();
-                state.create_form.source_entities.handle_event(event, &options)
+                let options = state
+                    .source_entities
+                    .as_ref()
+                    .ok()
+                    .cloned()
+                    .unwrap_or_default();
+                state
+                    .create_form
+                    .source_entities
+                    .handle_event(event, &options)
             }
             Msg::CreateFormTargetEvent(event) => {
-                let options = state.target_entities.as_ref().ok().cloned().unwrap_or_default();
-                state.create_form.target_entities.handle_event(event, &options)
+                let options = state
+                    .target_entities
+                    .as_ref()
+                    .ok()
+                    .cloned()
+                    .unwrap_or_default();
+                state
+                    .create_form
+                    .target_entities
+                    .handle_event(event, &options)
             }
             Msg::CreateFormSubmit => {
                 let name = state.create_form.name.value().trim().to_string();
-                let source_entities: Vec<String> = state.create_form.source_entities.selected_items().to_vec();
-                let target_entities: Vec<String> = state.create_form.target_entities.selected_items().to_vec();
+                let source_entities: Vec<String> =
+                    state.create_form.source_entities.selected_items().to_vec();
+                let target_entities: Vec<String> =
+                    state.create_form.target_entities.selected_items().to_vec();
 
                 // Validation
                 if name.is_empty() {
-                    state.create_form.validation_error = Some("Comparison name is required".to_string());
+                    state.create_form.validation_error =
+                        Some("Comparison name is required".to_string());
                     return Command::None;
                 }
 
                 if source_entities.is_empty() {
-                    state.create_form.validation_error = Some("At least one source entity is required".to_string());
+                    state.create_form.validation_error =
+                        Some("At least one source entity is required".to_string());
                     return Command::None;
                 }
 
                 if target_entities.is_empty() {
-                    state.create_form.validation_error = Some("At least one target entity is required".to_string());
+                    state.create_form.validation_error =
+                        Some("At least one target entity is required".to_string());
                     return Command::None;
                 }
 
@@ -589,7 +644,8 @@ impl App for MigrationComparisonSelectApp {
                 if let Resource::Success(source_list) = &state.source_entities {
                     for entity in &source_entities {
                         if !source_list.contains(entity) {
-                            state.create_form.validation_error = Some(format!("Source entity '{}' not found", entity));
+                            state.create_form.validation_error =
+                                Some(format!("Source entity '{}' not found", entity));
                             return Command::None;
                         }
                     }
@@ -598,7 +654,8 @@ impl App for MigrationComparisonSelectApp {
                 if let Resource::Success(target_list) = &state.target_entities {
                     for entity in &target_entities {
                         if !target_list.contains(entity) {
-                            state.create_form.validation_error = Some(format!("Target entity '{}' not found", entity));
+                            state.create_form.validation_error =
+                                Some(format!("Target entity '{}' not found", entity));
                             return Command::None;
                         }
                     }
@@ -627,29 +684,29 @@ impl App for MigrationComparisonSelectApp {
                             created_at: chrono::Utc::now(),
                             last_used: chrono::Utc::now(),
                         };
-                        config.add_comparison(comparison).await
+                        config
+                            .add_comparison(comparison)
+                            .await
                             .map_err(|e| e.to_string())
                     },
-                    Msg::ComparisonCreated
+                    Msg::ComparisonCreated,
                 )
             }
             Msg::CreateFormCancel => {
                 state.close_create_modal();
                 Command::None
             }
-            Msg::ComparisonCreated(result) => {
-                match result {
-                    Ok(id) => {
-                        log::info!("Created comparison with ID: {}", id);
-                        let migration_name = state.migration_name.clone().unwrap_or_default();
-                        reload_comparisons(migration_name)
-                    }
-                    Err(e) => {
-                        log::error!("Failed to create comparison: {}", e);
-                        Command::None
-                    }
+            Msg::ComparisonCreated(result) => match result {
+                Ok(id) => {
+                    log::info!("Created comparison with ID: {}", id);
+                    let migration_name = state.migration_name.clone().unwrap_or_default();
+                    reload_comparisons(migration_name)
                 }
-            }
+                Err(e) => {
+                    log::error!("Failed to create comparison: {}", e);
+                    Command::None
+                }
+            },
             Msg::RequestDelete => {
                 if let Some(selected_idx) = state.list_state.selected() {
                     if let Some(comparison) = state.comparisons.get(selected_idx) {
@@ -665,9 +722,12 @@ impl App for MigrationComparisonSelectApp {
                     Command::perform(
                         async move {
                             let config = crate::global_config();
-                            config.delete_comparison(id).await.map_err(|e| e.to_string())
+                            config
+                                .delete_comparison(id)
+                                .await
+                                .map_err(|e| e.to_string())
                         },
-                        Msg::ComparisonDeleted
+                        Msg::ComparisonDeleted,
                     )
                 } else {
                     Command::None
@@ -677,19 +737,17 @@ impl App for MigrationComparisonSelectApp {
                 state.close_delete_modal();
                 Command::None
             }
-            Msg::ComparisonDeleted(result) => {
-                match result {
-                    Ok(_) => {
-                        state.close_delete_modal();
-                        let migration_name = state.migration_name.clone().unwrap_or_default();
-                        reload_comparisons(migration_name)
-                    }
-                    Err(e) => {
-                        log::error!("Failed to delete comparison: {}", e);
-                        Command::None
-                    }
+            Msg::ComparisonDeleted(result) => match result {
+                Ok(_) => {
+                    state.close_delete_modal();
+                    let migration_name = state.migration_name.clone().unwrap_or_default();
+                    reload_comparisons(migration_name)
                 }
-            }
+                Err(e) => {
+                    log::error!("Failed to delete comparison: {}", e);
+                    Command::None
+                }
+            },
             Msg::RequestRename => {
                 if let Some(selected_idx) = state.list_state.selected() {
                     if let Some(comparison) = state.comparisons.get(selected_idx) {
@@ -716,29 +774,29 @@ impl App for MigrationComparisonSelectApp {
                 Command::perform(
                     async move {
                         let config = crate::global_config();
-                        config.rename_comparison(id, &new_name).await
+                        config
+                            .rename_comparison(id, &new_name)
+                            .await
                             .map_err(|e| e.to_string())
                     },
-                    Msg::ComparisonRenamed
+                    Msg::ComparisonRenamed,
                 )
             }
             Msg::RenameFormCancel => {
                 state.close_rename_modal();
                 Command::None
             }
-            Msg::ComparisonRenamed(result) => {
-                match result {
-                    Ok(_) => {
-                        state.close_rename_modal();
-                        let migration_name = state.migration_name.clone().unwrap_or_default();
-                        reload_comparisons(migration_name)
-                    }
-                    Err(e) => {
-                        log::error!("Failed to rename comparison: {}", e);
-                        Command::None
-                    }
+            Msg::ComparisonRenamed(result) => match result {
+                Ok(_) => {
+                    state.close_rename_modal();
+                    let migration_name = state.migration_name.clone().unwrap_or_default();
+                    reload_comparisons(migration_name)
                 }
-            }
+                Err(e) => {
+                    log::error!("Failed to rename comparison: {}", e);
+                    Command::None
+                }
+            },
             Msg::PreloadAllComparisons => {
                 if state.comparisons.is_empty() {
                     return Command::None;
@@ -762,10 +820,13 @@ impl App for MigrationComparisonSelectApp {
                                 let env = source_env.clone();
                                 let entity = source_entity.clone();
                                 async move {
-                                    use crate::tui::apps::migration::entity_comparison::{FetchType, fetch_with_cache};
-                                    fetch_with_cache(&env, &entity, FetchType::SourceFields, true).await
+                                    use crate::tui::apps::migration::entity_comparison::{
+                                        FetchType, fetch_with_cache,
+                                    };
+                                    fetch_with_cache(&env, &entity, FetchType::SourceFields, true)
+                                        .await
                                 }
-                            }
+                            },
                         )
                         .add_task(
                             format!("Loading {} forms ({})", source_entity, source_env),
@@ -773,10 +834,13 @@ impl App for MigrationComparisonSelectApp {
                                 let env = source_env.clone();
                                 let entity = source_entity.clone();
                                 async move {
-                                    use crate::tui::apps::migration::entity_comparison::{FetchType, fetch_with_cache};
-                                    fetch_with_cache(&env, &entity, FetchType::SourceForms, true).await
+                                    use crate::tui::apps::migration::entity_comparison::{
+                                        FetchType, fetch_with_cache,
+                                    };
+                                    fetch_with_cache(&env, &entity, FetchType::SourceForms, true)
+                                        .await
                                 }
-                            }
+                            },
                         )
                         .add_task(
                             format!("Loading {} views ({})", source_entity, source_env),
@@ -784,10 +848,13 @@ impl App for MigrationComparisonSelectApp {
                                 let env = source_env.clone();
                                 let entity = source_entity.clone();
                                 async move {
-                                    use crate::tui::apps::migration::entity_comparison::{FetchType, fetch_with_cache};
-                                    fetch_with_cache(&env, &entity, FetchType::SourceViews, true).await
+                                    use crate::tui::apps::migration::entity_comparison::{
+                                        FetchType, fetch_with_cache,
+                                    };
+                                    fetch_with_cache(&env, &entity, FetchType::SourceViews, true)
+                                        .await
                                 }
-                            }
+                            },
                         )
                         .add_task(
                             format!("Loading {} fields ({})", target_entity, target_env),
@@ -795,10 +862,13 @@ impl App for MigrationComparisonSelectApp {
                                 let env = target_env.clone();
                                 let entity = target_entity.clone();
                                 async move {
-                                    use crate::tui::apps::migration::entity_comparison::{FetchType, fetch_with_cache};
-                                    fetch_with_cache(&env, &entity, FetchType::TargetFields, true).await
+                                    use crate::tui::apps::migration::entity_comparison::{
+                                        FetchType, fetch_with_cache,
+                                    };
+                                    fetch_with_cache(&env, &entity, FetchType::TargetFields, true)
+                                        .await
                                 }
-                            }
+                            },
                         )
                         .add_task(
                             format!("Loading {} forms ({})", target_entity, target_env),
@@ -806,10 +876,13 @@ impl App for MigrationComparisonSelectApp {
                                 let env = target_env.clone();
                                 let entity = target_entity.clone();
                                 async move {
-                                    use crate::tui::apps::migration::entity_comparison::{FetchType, fetch_with_cache};
-                                    fetch_with_cache(&env, &entity, FetchType::TargetForms, true).await
+                                    use crate::tui::apps::migration::entity_comparison::{
+                                        FetchType, fetch_with_cache,
+                                    };
+                                    fetch_with_cache(&env, &entity, FetchType::TargetForms, true)
+                                        .await
                                 }
-                            }
+                            },
                         )
                         .add_task(
                             format!("Loading {} views ({})", target_entity, target_env),
@@ -817,10 +890,13 @@ impl App for MigrationComparisonSelectApp {
                                 let env = target_env.clone();
                                 let entity = target_entity.clone();
                                 async move {
-                                    use crate::tui::apps::migration::entity_comparison::{FetchType, fetch_with_cache};
-                                    fetch_with_cache(&env, &entity, FetchType::TargetViews, true).await
+                                    use crate::tui::apps::migration::entity_comparison::{
+                                        FetchType, fetch_with_cache,
+                                    };
+                                    fetch_with_cache(&env, &entity, FetchType::TargetViews, true)
+                                        .await
                                 }
-                            }
+                            },
                         );
 
                     // Add example pair fetch tasks
@@ -882,7 +958,10 @@ impl App for MigrationComparisonSelectApp {
                 match key {
                     KeyCode::Enter => {
                         // Handle Enter key specially - activate the selected item
-                        if let Some(action) = state.export_browser.handle_event(FileBrowserEvent::Activate) {
+                        if let Some(action) = state
+                            .export_browser
+                            .handle_event(FileBrowserEvent::Activate)
+                        {
                             match action {
                                 FileBrowserAction::DirectoryEntered(path) => {
                                     // Enter the directory
@@ -909,7 +988,9 @@ impl App for MigrationComparisonSelectApp {
                 Command::None
             }
             Msg::ExportConfirm => {
-                if let (Some(id), Some(_name)) = (state.export_comparison_id, &state.export_comparison_name) {
+                if let (Some(id), Some(_name)) =
+                    (state.export_comparison_id, &state.export_comparison_name)
+                {
                     let directory = state.export_browser.current_path().to_path_buf();
                     let filename = state.export_filename.value().trim().to_string();
 
@@ -924,10 +1005,8 @@ impl App for MigrationComparisonSelectApp {
 
                     // Perform export asynchronously
                     Command::perform(
-                        async move {
-                            export_comparison(id, file_path).await
-                        },
-                        Msg::ExportComplete
+                        async move { export_comparison(id, file_path).await },
+                        Msg::ExportComplete,
                     )
                 } else {
                     Command::None
@@ -959,7 +1038,10 @@ impl App for MigrationComparisonSelectApp {
                 match key {
                     KeyCode::Enter => {
                         // Handle Enter key specially - activate the selected item
-                        if let Some(action) = state.import_browser.handle_event(FileBrowserEvent::Activate) {
+                        if let Some(action) = state
+                            .import_browser
+                            .handle_event(FileBrowserEvent::Activate)
+                        {
                             match action {
                                 FileBrowserAction::FileSelected(path) => {
                                     // File selected, open import config
@@ -1003,10 +1085,8 @@ impl App for MigrationComparisonSelectApp {
 
                         if let Some(path) = file_path {
                             Command::perform(
-                                async move {
-                                    import_comparison(path, migration_name, name).await
-                                },
-                                Msg::ImportComplete
+                                async move { import_comparison(path, migration_name, name).await },
+                                Msg::ImportComplete,
                             )
                         } else {
                             Command::None
@@ -1043,25 +1123,26 @@ impl App for MigrationComparisonSelectApp {
                 state.open_batch_export_modal();
                 Command::set_focus(FocusId::new("batch-export-file-browser"))
             }
-            Msg::BatchExportBrowseNavigate(key) => {
-                match key {
-                    KeyCode::Enter => {
-                        if let Some(action) = state.batch_export_browser.handle_event(FileBrowserEvent::Activate) {
-                            match action {
-                                FileBrowserAction::DirectoryEntered(path) => {
-                                    let _ = state.batch_export_browser.set_path(path);
-                                }
-                                _ => {}
+            Msg::BatchExportBrowseNavigate(key) => match key {
+                KeyCode::Enter => {
+                    if let Some(action) = state
+                        .batch_export_browser
+                        .handle_event(FileBrowserEvent::Activate)
+                    {
+                        match action {
+                            FileBrowserAction::DirectoryEntered(path) => {
+                                let _ = state.batch_export_browser.set_path(path);
                             }
+                            _ => {}
                         }
-                        Command::None
                     }
-                    _ => {
-                        state.batch_export_browser.handle_navigation_key(key);
-                        Command::None
-                    }
+                    Command::None
                 }
-            }
+                _ => {
+                    state.batch_export_browser.handle_navigation_key(key);
+                    Command::None
+                }
+            },
             Msg::BatchExportDirectoryEntered(_path) => {
                 // No longer used since we handle Enter in Navigate
                 Command::None
@@ -1074,7 +1155,11 @@ impl App for MigrationComparisonSelectApp {
                 let directory = state.batch_export_browser.current_path().to_path_buf();
                 let filename = state.batch_export_filename.value().trim().to_string();
 
-                log::info!("📦 Batch export confirm - directory: {:?}, filename: {}", directory, filename);
+                log::info!(
+                    "📦 Batch export confirm - directory: {:?}, filename: {}",
+                    directory,
+                    filename
+                );
 
                 if filename.is_empty() {
                     log::warn!("Batch export cancelled: empty filename");
@@ -1084,7 +1169,11 @@ impl App for MigrationComparisonSelectApp {
                 let file_path = directory.join(&filename);
                 let comparisons = state.comparisons.clone();
 
-                log::info!("📦 Starting batch export of {} comparisons to {:?}", comparisons.len(), file_path);
+                log::info!(
+                    "📦 Starting batch export of {} comparisons to {:?}",
+                    comparisons.len(),
+                    file_path
+                );
 
                 // Close modal immediately
                 state.close_batch_export_modal();
@@ -1094,12 +1183,17 @@ impl App for MigrationComparisonSelectApp {
                     async move {
                         log::info!("📦 Batch export async task started");
                         let config = crate::global_config();
-                        let result = super::batch_export::export_all_comparisons_to_excel(&config.pool, &comparisons, file_path).await
-                            .map_err(|e| e.to_string());
+                        let result = super::batch_export::export_all_comparisons_to_excel(
+                            &config.pool,
+                            &comparisons,
+                            file_path,
+                        )
+                        .await
+                        .map_err(|e| e.to_string());
                         log::info!("📦 Batch export async task completed: {:?}", result.is_ok());
                         result
                     },
-                    Msg::BatchExportComplete
+                    Msg::BatchExportComplete,
                 )
             }
             Msg::BatchExportCancel => {
@@ -1130,8 +1224,11 @@ impl App for MigrationComparisonSelectApp {
         use_constraints!();
         let theme = &crate::global_runtime_config().theme;
 
-        log::trace!("MigrationComparisonSelectApp::view() - migration_name={:?}, comparisons={}",
-            state.migration_name, state.comparisons.len());
+        log::trace!(
+            "MigrationComparisonSelectApp::view() - migration_name={:?}, comparisons={}",
+            state.migration_name,
+            state.comparisons.len()
+        );
         let list_content = if state.comparisons.is_empty() {
             Element::text("")
         } else {
@@ -1147,9 +1244,7 @@ impl App for MigrationComparisonSelectApp {
             .build()
         };
 
-        let main_ui = Element::panel(list_content)
-            .title("Comparisons")
-            .build();
+        let main_ui = Element::panel(list_content).title("Comparisons").build();
 
         if state.show_delete_confirm {
             // Render delete confirmation modal
@@ -1196,11 +1291,11 @@ impl App for MigrationComparisonSelectApp {
                 Element::text_input(
                     "rename-name-input",
                     state.rename_form.new_name.value(),
-                    &state.rename_form.new_name.state
+                    &state.rename_form.new_name.state,
                 )
                 .placeholder("Comparison name")
                 .on_event(Msg::RenameFormNameEvent)
-                .build()
+                .build(),
             )
             .title("New Name")
             .build();
@@ -1213,15 +1308,13 @@ impl App for MigrationComparisonSelectApp {
 
             // Modal content
             let modal_content = Element::panel(
-                Element::container(
-                    col![
-                        name_input => Length(3),
-                        spacer!() => Length(1),
-                        buttons => Length(3),
-                    ]
-                )
+                Element::container(col![
+                    name_input => Length(3),
+                    spacer!() => Length(1),
+                    buttons => Length(3),
+                ])
                 .padding(2)
-                .build()
+                .build(),
             )
             .title("Rename Comparison")
             .width(60)
@@ -1239,7 +1332,7 @@ impl App for MigrationComparisonSelectApp {
                 )
                 .placeholder("Comparison name")
                 .on_event(Msg::CreateFormNameEvent)
-                .build()
+                .build(),
             )
             .title("Name")
             .build();
@@ -1248,12 +1341,17 @@ impl App for MigrationComparisonSelectApp {
             let source_multi_select = Element::panel(
                 Element::multi_select(
                     "create-source-multi-select",
-                    state.source_entities.as_ref().ok().cloned().unwrap_or_default(),
+                    state
+                        .source_entities
+                        .as_ref()
+                        .ok()
+                        .cloned()
+                        .unwrap_or_default(),
                     &mut state.create_form.source_entities.state,
                 )
                 .placeholder("Select source entities...")
                 .on_event(Msg::CreateFormSourceEvent)
-                .build()
+                .build(),
             )
             .title("Source Entities")
             .build();
@@ -1262,12 +1360,17 @@ impl App for MigrationComparisonSelectApp {
             let target_multi_select = Element::panel(
                 Element::multi_select(
                     "create-target-multi-select",
-                    state.target_entities.as_ref().ok().cloned().unwrap_or_default(),
+                    state
+                        .target_entities
+                        .as_ref()
+                        .ok()
+                        .cloned()
+                        .unwrap_or_default(),
                     &mut state.create_form.target_entities.state,
                 )
                 .placeholder("Select target entities...")
                 .on_event(Msg::CreateFormTargetEvent)
-                .build()
+                .build(),
             )
             .title("Target Entities")
             .build();
@@ -1302,38 +1405,34 @@ impl App for MigrationComparisonSelectApp {
                 ]
             };
 
-            let modal_content = Element::panel(
-                Element::container(modal_body)
-                .padding(2)
-                .build()
-            )
-            .title("Create New Comparison")
-            .width(80)
-            .height(if state.create_form.validation_error.is_some() { 23 } else { 21 })
-            .build();
+            let modal_content = Element::panel(Element::container(modal_body).padding(2).build())
+                .title("Create New Comparison")
+                .width(80)
+                .height(if state.create_form.validation_error.is_some() {
+                    23
+                } else {
+                    21
+                })
+                .build();
 
             LayeredView::new(main_ui).with_app_modal(modal_content, crate::tui::Alignment::Center)
         } else if state.show_export_modal {
             // Export modal with file browser and filename input
-            let current_path_str = state.export_browser.current_path()
+            let current_path_str = state
+                .export_browser
+                .current_path()
                 .to_str()
                 .unwrap_or("")
                 .to_string();
 
-            let path_display = Element::panel(
-                Element::text(current_path_str)
-            )
-            .title("Current Directory")
-            .build();
+            let path_display = Element::panel(Element::text(current_path_str))
+                .title("Current Directory")
+                .build();
 
             let file_browser = Element::panel(
-                Element::file_browser(
-                    "export-file-browser",
-                    &state.export_browser,
-                    theme
-                )
-                .on_navigate(Msg::ExportBrowseNavigate)
-                .build()
+                Element::file_browser("export-file-browser", &state.export_browser, theme)
+                    .on_navigate(Msg::ExportBrowseNavigate)
+                    .build(),
             )
             .title("Select Directory")
             .build();
@@ -1342,11 +1441,11 @@ impl App for MigrationComparisonSelectApp {
                 Element::text_input(
                     "export-filename-input",
                     state.export_filename.value(),
-                    &state.export_filename.state
+                    &state.export_filename.state,
                 )
                 .placeholder("filename.json")
                 .on_event(Msg::ExportFilenameEvent)
-                .build()
+                .build(),
             )
             .title("Filename")
             .build();
@@ -1357,19 +1456,17 @@ impl App for MigrationComparisonSelectApp {
             ];
 
             let modal_content = Element::panel(
-                Element::container(
-                    col![
-                        path_display => Length(3),
-                        spacer!() => Length(1),
-                        file_browser => Fill(1),
-                        spacer!() => Length(1),
-                        filename_input => Length(3),
-                        spacer!() => Length(1),
-                        buttons => Length(3),
-                    ]
-                )
+                Element::container(col![
+                    path_display => Length(3),
+                    spacer!() => Length(1),
+                    file_browser => Fill(1),
+                    spacer!() => Length(1),
+                    filename_input => Length(3),
+                    spacer!() => Length(1),
+                    buttons => Length(3),
+                ])
                 .padding(2)
-                .build()
+                .build(),
             )
             .title("Export Comparison")
             .width(100)
@@ -1379,47 +1476,39 @@ impl App for MigrationComparisonSelectApp {
             LayeredView::new(main_ui).with_app_modal(modal_content, crate::tui::Alignment::Center)
         } else if state.show_import_browser {
             // Import file browser modal
-            let current_path_str = state.import_browser.current_path()
+            let current_path_str = state
+                .import_browser
+                .current_path()
                 .to_str()
                 .unwrap_or("")
                 .to_string();
 
-            let path_display = Element::panel(
-                Element::text(current_path_str)
-            )
-            .title("Current Directory")
-            .build();
+            let path_display = Element::panel(Element::text(current_path_str))
+                .title("Current Directory")
+                .build();
 
             let file_browser = Element::panel(
-                Element::file_browser(
-                    "import-file-browser",
-                    &state.import_browser,
-                    theme
-                )
-                .on_navigate(Msg::ImportBrowseNavigate)
-                .build()
+                Element::file_browser("import-file-browser", &state.import_browser, theme)
+                    .on_navigate(Msg::ImportBrowseNavigate)
+                    .build(),
             )
             .title("Select JSON File")
             .build();
 
-            let buttons = button_row![
-                ("import-browse-cancel", "Cancel", Msg::ImportFormCancel),
-            ];
+            let buttons = button_row![("import-browse-cancel", "Cancel", Msg::ImportFormCancel),];
 
             let modal_content = Element::panel(
-                Element::container(
-                    col![
-                        path_display => Length(3),
-                        spacer!() => Length(1),
-                        file_browser => Fill(1),
-                        spacer!() => Length(1),
-                        Element::text("Press Enter to select file") => Length(1),
-                        spacer!() => Length(1),
-                        buttons => Length(3),
-                    ]
-                )
+                Element::container(col![
+                    path_display => Length(3),
+                    spacer!() => Length(1),
+                    file_browser => Fill(1),
+                    spacer!() => Length(1),
+                    Element::text("Press Enter to select file") => Length(1),
+                    spacer!() => Length(1),
+                    buttons => Length(3),
+                ])
                 .padding(2)
-                .build()
+                .build(),
             )
             .title("Import Comparison")
             .width(100)
@@ -1437,7 +1526,7 @@ impl App for MigrationComparisonSelectApp {
                 )
                 .placeholder("Comparison name")
                 .on_event(Msg::ImportFormNameEvent)
-                .build()
+                .build(),
             )
             .title("Comparison Name")
             .build();
@@ -1466,38 +1555,38 @@ impl App for MigrationComparisonSelectApp {
                 ]
             };
 
-            let modal_content = Element::panel(
-                Element::container(modal_body)
-                .padding(2)
-                .build()
-            )
-            .title("Import Comparison")
-            .width(60)
-            .height(if state.import_form.validation_error.is_some() { 15 } else { 13 })
-            .build();
+            let modal_content = Element::panel(Element::container(modal_body).padding(2).build())
+                .title("Import Comparison")
+                .width(60)
+                .height(if state.import_form.validation_error.is_some() {
+                    15
+                } else {
+                    13
+                })
+                .build();
 
             LayeredView::new(main_ui).with_app_modal(modal_content, crate::tui::Alignment::Center)
         } else if state.show_batch_export_modal {
             // Batch export modal with file browser and filename input
-            let current_path_str = state.batch_export_browser.current_path()
+            let current_path_str = state
+                .batch_export_browser
+                .current_path()
                 .to_str()
                 .unwrap_or("")
                 .to_string();
 
-            let path_display = Element::panel(
-                Element::text(current_path_str)
-            )
-            .title("Current Directory")
-            .build();
+            let path_display = Element::panel(Element::text(current_path_str))
+                .title("Current Directory")
+                .build();
 
             let file_browser = Element::panel(
                 Element::file_browser(
                     "batch-export-file-browser",
                     &state.batch_export_browser,
-                    theme
+                    theme,
                 )
                 .on_navigate(Msg::BatchExportBrowseNavigate)
-                .build()
+                .build(),
             )
             .title("Select Directory")
             .build();
@@ -1506,38 +1595,40 @@ impl App for MigrationComparisonSelectApp {
                 Element::text_input(
                     "batch-export-filename-input",
                     state.batch_export_filename.value(),
-                    &state.batch_export_filename.state
+                    &state.batch_export_filename.state,
                 )
                 .placeholder("filename.xlsx")
                 .on_event(Msg::BatchExportFilenameEvent)
-                .build()
+                .build(),
             )
             .title("Filename")
             .build();
 
             let buttons = button_row![
                 ("batch-export-cancel", "Cancel", Msg::BatchExportCancel),
-                ("batch-export-confirm", "Export All", Msg::BatchExportConfirm),
+                (
+                    "batch-export-confirm",
+                    "Export All",
+                    Msg::BatchExportConfirm
+                ),
             ];
 
             let modal_content = Element::panel(
-                Element::container(
-                    col![
-                        path_display => Length(3),
-                        spacer!() => Length(1),
-                        file_browser => Fill(1),
-                        spacer!() => Length(1),
-                        filename_input => Length(3),
-                        spacer!() => Length(1),
-                        Element::text(format!("Will export mappings from {} comparison(s)",
-                            state.comparisons.len())) => Length(1),
-                        Element::text("(Comparisons without mappings will be skipped)") => Length(1),
-                        spacer!() => Length(1),
-                        buttons => Length(3),
-                    ]
-                )
+                Element::container(col![
+                    path_display => Length(3),
+                    spacer!() => Length(1),
+                    file_browser => Fill(1),
+                    spacer!() => Length(1),
+                    filename_input => Length(3),
+                    spacer!() => Length(1),
+                    Element::text(format!("Will export mappings from {} comparison(s)",
+                        state.comparisons.len())) => Length(1),
+                    Element::text("(Comparisons without mappings will be skipped)") => Length(1),
+                    spacer!() => Length(1),
+                    buttons => Length(3),
+                ])
                 .padding(2)
-                .build()
+                .build(),
             )
             .title("Batch Export All Mappings")
             .width(100)
@@ -1553,13 +1644,26 @@ impl App for MigrationComparisonSelectApp {
     fn subscriptions(state: &Self::State) -> Vec<Subscription<Self::Msg>> {
         let mut subs = vec![];
 
-        if !state.show_create_modal && !state.show_delete_confirm && !state.show_rename_modal
-            && !state.show_export_modal && !state.show_import_browser && !state.show_import_config
-            && !state.show_batch_export_modal {
+        if !state.show_create_modal
+            && !state.show_delete_confirm
+            && !state.show_rename_modal
+            && !state.show_export_modal
+            && !state.show_import_browser
+            && !state.show_import_config
+            && !state.show_batch_export_modal
+        {
             let config = crate::global_runtime_config();
 
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Back to migration list", Msg::Back));
-            subs.push(Subscription::keyboard(config.get_keybind("migration_comparison.back"), "Back to migration list", Msg::Back));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Back to migration list",
+                Msg::Back,
+            ));
+            subs.push(Subscription::keyboard(
+                config.get_keybind("migration_comparison.back"),
+                "Back to migration list",
+                Msg::Back,
+            ));
 
             if !state.comparisons.is_empty() {
                 subs.push(Subscription::keyboard(
@@ -1570,41 +1674,97 @@ impl App for MigrationComparisonSelectApp {
             }
 
             let create_kb = config.get_keybind("migration_comparison.create");
-            subs.push(Subscription::keyboard(create_kb, "Create comparison", Msg::CreateComparison));
+            subs.push(Subscription::keyboard(
+                create_kb,
+                "Create comparison",
+                Msg::CreateComparison,
+            ));
 
             let delete_kb = config.get_keybind("migration_comparison.delete");
-            subs.push(Subscription::keyboard(delete_kb, "Delete comparison", Msg::RequestDelete));
+            subs.push(Subscription::keyboard(
+                delete_kb,
+                "Delete comparison",
+                Msg::RequestDelete,
+            ));
 
             let rename_kb = config.get_keybind("migration_comparison.rename");
-            subs.push(Subscription::keyboard(rename_kb, "Rename comparison", Msg::RequestRename));
+            subs.push(Subscription::keyboard(
+                rename_kb,
+                "Rename comparison",
+                Msg::RequestRename,
+            ));
 
             let preload_kb = config.get_keybind("migration_comparison.preload");
-            subs.push(Subscription::keyboard(preload_kb, "Preload all comparisons", Msg::PreloadAllComparisons));
+            subs.push(Subscription::keyboard(
+                preload_kb,
+                "Preload all comparisons",
+                Msg::PreloadAllComparisons,
+            ));
 
             // Export/Import hotkeys
             if state.list_state.selected().is_some() {
-                subs.push(Subscription::keyboard(KeyCode::Char('e'), "Export comparison", Msg::RequestExport));
+                subs.push(Subscription::keyboard(
+                    KeyCode::Char('e'),
+                    "Export comparison",
+                    Msg::RequestExport,
+                ));
             }
-            subs.push(Subscription::keyboard(KeyCode::Char('i'), "Import comparison", Msg::RequestImport));
+            subs.push(Subscription::keyboard(
+                KeyCode::Char('i'),
+                "Import comparison",
+                Msg::RequestImport,
+            ));
 
             // Batch export hotkey (always available if comparisons exist)
             if !state.comparisons.is_empty() {
-                subs.push(Subscription::keyboard(KeyCode::Char('E'), "Batch export all", Msg::RequestBatchExport));
+                subs.push(Subscription::keyboard(
+                    KeyCode::Char('E'),
+                    "Batch export all",
+                    Msg::RequestBatchExport,
+                ));
             }
         } else if state.show_create_modal {
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::CreateFormCancel));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Close modal",
+                Msg::CreateFormCancel,
+            ));
         } else if state.show_delete_confirm {
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel delete", Msg::CancelDelete));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Cancel delete",
+                Msg::CancelDelete,
+            ));
         } else if state.show_rename_modal {
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Close modal", Msg::RenameFormCancel));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Close modal",
+                Msg::RenameFormCancel,
+            ));
         } else if state.show_export_modal {
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel export", Msg::ExportCancel));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Cancel export",
+                Msg::ExportCancel,
+            ));
         } else if state.show_import_browser {
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel import", Msg::ImportFormCancel));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Cancel import",
+                Msg::ImportFormCancel,
+            ));
         } else if state.show_import_config {
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel import", Msg::ImportFormCancel));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Cancel import",
+                Msg::ImportFormCancel,
+            ));
         } else if state.show_batch_export_modal {
-            subs.push(Subscription::keyboard(KeyCode::Esc, "Cancel batch export", Msg::BatchExportCancel));
+            subs.push(Subscription::keyboard(
+                KeyCode::Esc,
+                "Cancel batch export",
+                Msg::BatchExportCancel,
+            ));
         }
 
         subs
@@ -1615,7 +1775,10 @@ impl App for MigrationComparisonSelectApp {
     }
 
     fn status(state: &Self::State) -> Option<Line<'static>> {
-        log::trace!("MigrationComparisonSelectApp::status() - migration_name={:?}", state.migration_name);
+        log::trace!(
+            "MigrationComparisonSelectApp::status() - migration_name={:?}",
+            state.migration_name
+        );
         let theme = &crate::global_runtime_config().theme;
         if let Some(ref migration_name) = state.migration_name {
             let source = state.source_env.as_deref().unwrap_or("?");
@@ -1636,7 +1799,10 @@ impl App for MigrationComparisonSelectApp {
             };
 
             Some(Line::from(vec![
-                Span::styled(migration_name.clone(), Style::default().fg(theme.text_primary)),
+                Span::styled(
+                    migration_name.clone(),
+                    Style::default().fg(theme.text_primary),
+                ),
                 Span::styled(
                     format!(" ({} → {})", source, target),
                     Style::default().fg(theme.text_secondary),
@@ -1647,9 +1813,10 @@ impl App for MigrationComparisonSelectApp {
                 ),
             ]))
         } else {
-            Some(Line::from(vec![
-                Span::styled("Loading migration data...", Style::default().fg(theme.text_secondary))
-            ]))
+            Some(Line::from(vec![Span::styled(
+                "Loading migration data...",
+                Style::default().fg(theme.text_secondary),
+            )]))
         }
     }
 }
@@ -1660,9 +1827,12 @@ fn reload_comparisons(migration_name: String) -> Command<Msg> {
     Command::perform(
         async move {
             let config = crate::global_config();
-            config.get_comparisons(&migration_name).await.map_err(|e| e.to_string())
+            config
+                .get_comparisons(&migration_name)
+                .await
+                .map_err(|e| e.to_string())
         },
-        Msg::ComparisonsLoaded
+        Msg::ComparisonsLoaded,
     )
 }
 
@@ -1673,7 +1843,8 @@ async fn export_comparison(comparison_id: i64, file_path: PathBuf) -> Result<(),
     let config = crate::global_config();
 
     // Fetch comparison from database
-    let comparison = config.get_comparison_by_id(comparison_id)
+    let comparison = config
+        .get_comparison_by_id(comparison_id)
         .await
         .map_err(|e| format!("Failed to fetch comparison: {}", e))?
         .ok_or_else(|| "Comparison not found".to_string())?;
@@ -1683,11 +1854,18 @@ async fn export_comparison(comparison_id: i64, file_path: PathBuf) -> Result<(),
         if let Some(json_str) = &comparison.entity_comparison {
             parse_entity_comparison_json(json_str)?
         } else {
-            (HashMap::new(), HashMap::new(), HashMap::new(), None, Vec::new())
+            (
+                HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
+                None,
+                Vec::new(),
+            )
         };
 
     // Fetch example pairs
-    let example_pairs = config.get_example_pairs(&comparison.source_entity, &comparison.target_entity)
+    let example_pairs = config
+        .get_example_pairs(&comparison.source_entity, &comparison.target_entity)
         .await
         .map_err(|e| format!("Failed to fetch example pairs: {}", e))?
         .into_iter()
@@ -1717,8 +1895,7 @@ async fn export_comparison(comparison_id: i64, file_path: PathBuf) -> Result<(),
         .map_err(|e| format!("Failed to serialize: {}", e))?;
 
     // Write to file
-    std::fs::write(&file_path, json)
-        .map_err(|e| format!("Failed to write file: {}", e))?;
+    std::fs::write(&file_path, json).map_err(|e| format!("Failed to write file: {}", e))?;
 
     log::info!("Successfully exported comparison to {:?}", file_path);
     Ok(())
@@ -1733,12 +1910,12 @@ async fn import_comparison(
     log::info!("Importing comparison from {:?}", file_path);
 
     // Read file
-    let json = std::fs::read_to_string(&file_path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+    let json =
+        std::fs::read_to_string(&file_path).map_err(|e| format!("Failed to read file: {}", e))?;
 
     // Parse JSON
-    let import_data: ComparisonExportData = serde_json::from_str(&json)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let import_data: ComparisonExportData =
+        serde_json::from_str(&json).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
     // Get entities from JSON file
     let source_entity = import_data.source_entity.clone();
@@ -1761,19 +1938,21 @@ async fn import_comparison(
         migration_name,
         source_entity: source_entity.clone(),
         target_entity: target_entity.clone(),
-        source_entities: vec![source_entity.clone()],  // Single entity for now
-        target_entities: vec![target_entity.clone()],  // Single entity for now
+        source_entities: vec![source_entity.clone()], // Single entity for now
+        target_entities: vec![target_entity.clone()], // Single entity for now
         entity_comparison: Some(entity_comparison_json),
         created_at: chrono::Utc::now(),
         last_used: chrono::Utc::now(),
     };
 
-    let comparison_id = config.add_comparison(comparison)
+    let comparison_id = config
+        .add_comparison(comparison)
         .await
         .map_err(|e| format!("Failed to save comparison: {}", e))?;
 
     // Get existing example pairs to avoid duplicates
-    let existing_pairs = config.get_example_pairs(&source_entity, &target_entity)
+    let existing_pairs = config
+        .get_example_pairs(&source_entity, &target_entity)
         .await
         .map_err(|e| format!("Failed to get existing example pairs: {}", e))?;
 
@@ -1786,7 +1965,11 @@ async fn import_comparison(
         });
 
         if already_exists {
-            log::debug!("Skipping duplicate example pair: {} -> {}", pair.source_record_id, pair.target_record_id);
+            log::debug!(
+                "Skipping duplicate example pair: {} -> {}",
+                pair.source_record_id,
+                pair.target_record_id
+            );
             continue;
         }
 
@@ -1797,23 +1980,32 @@ async fn import_comparison(
             label: pair.label,
         };
 
-        config.save_example_pair(&source_entity, &target_entity, &example_pair)
+        config
+            .save_example_pair(&source_entity, &target_entity, &example_pair)
             .await
             .map_err(|e| format!("Failed to save example pair: {}", e))?;
     }
 
-    log::info!("Successfully imported comparison with ID: {}", comparison_id);
+    log::info!(
+        "Successfully imported comparison with ID: {}",
+        comparison_id
+    );
     Ok(comparison_id)
 }
 
 /// Parse entity_comparison JSON string from database
-fn parse_entity_comparison_json(json_str: &str) -> Result<(
-    HashMap<String, Vec<String>>,
-    HashMap<String, Vec<String>>,
-    HashMap<String, Vec<String>>,
-    Option<String>,
-    Vec<String>,
-), String> {
+fn parse_entity_comparison_json(
+    json_str: &str,
+) -> Result<
+    (
+        HashMap<String, Vec<String>>,
+        HashMap<String, Vec<String>>,
+        HashMap<String, Vec<String>>,
+        Option<String>,
+        Vec<String>,
+    ),
+    String,
+> {
     #[derive(Deserialize)]
     struct EntityComparisonData {
         field_mappings: Option<HashMap<String, Vec<String>>>,

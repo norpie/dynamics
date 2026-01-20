@@ -6,10 +6,10 @@
 //! - Filter out system fields that should be skipped
 //! - Generate a complete schema diff report
 
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 
-use crate::api::metadata::{FieldMetadata, FieldType, EntityMetadata};
+use crate::api::metadata::{EntityMetadata, FieldMetadata, FieldType};
 use crate::tui::apps::sync::types::{
     EntitySchemaDiff, FieldDiffEntry, FieldSyncStatus, is_system_field,
 };
@@ -105,10 +105,14 @@ pub fn compare_schemas(
     }
 
     // Sort all lists by field name for consistent display
-    diff.fields_in_both.sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
-    diff.fields_to_add.sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
-    diff.fields_target_only.sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
-    diff.fields_type_mismatch.sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
+    diff.fields_in_both
+        .sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
+    diff.fields_to_add
+        .sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
+    diff.fields_target_only
+        .sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
+    diff.fields_type_mismatch
+        .sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
 
     diff
 }
@@ -177,13 +181,29 @@ pub struct SchemaDiffStats {
 
 impl SchemaDiffStats {
     pub fn from_diff(diff: &EntitySchemaDiff) -> Self {
-        let system_skipped = diff.fields_in_both.iter().filter(|f| f.is_system_field).count()
-            + diff.fields_to_add.iter().filter(|f| f.is_system_field).count()
-            + diff.fields_target_only.iter().filter(|f| f.is_system_field).count();
+        let system_skipped = diff
+            .fields_in_both
+            .iter()
+            .filter(|f| f.is_system_field)
+            .count()
+            + diff
+                .fields_to_add
+                .iter()
+                .filter(|f| f.is_system_field)
+                .count()
+            + diff
+                .fields_target_only
+                .iter()
+                .filter(|f| f.is_system_field)
+                .count();
 
         Self {
-            total_origin_fields: diff.fields_in_both.len() + diff.fields_to_add.len() + diff.fields_type_mismatch.len(),
-            total_target_fields: diff.fields_in_both.len() + diff.fields_target_only.len() + diff.fields_type_mismatch.len(),
+            total_origin_fields: diff.fields_in_both.len()
+                + diff.fields_to_add.len()
+                + diff.fields_type_mismatch.len(),
+            total_target_fields: diff.fields_in_both.len()
+                + diff.fields_target_only.len()
+                + diff.fields_type_mismatch.len(),
             fields_matching: diff.fields_in_both.len(),
             fields_to_add: diff.fields_to_add.len(),
             fields_target_only: diff.fields_target_only.len(),
@@ -249,9 +269,7 @@ mod tests {
             make_field("name", FieldType::String),
             make_field("new_field", FieldType::Integer),
         ];
-        let target = vec![
-            make_field("name", FieldType::String),
-        ];
+        let target = vec![make_field("name", FieldType::String)];
 
         let diff = compare_schemas("test_entity", &origin, &target, None);
 
@@ -263,9 +281,7 @@ mod tests {
 
     #[test]
     fn test_compare_target_only_fields() {
-        let origin = vec![
-            make_field("name", FieldType::String),
-        ];
+        let origin = vec![make_field("name", FieldType::String)];
         let target = vec![
             make_field("name", FieldType::String),
             make_field("old_field", FieldType::Integer),
@@ -281,12 +297,8 @@ mod tests {
 
     #[test]
     fn test_compare_type_mismatch() {
-        let origin = vec![
-            make_field("amount", FieldType::Decimal),
-        ];
-        let target = vec![
-            make_field("amount", FieldType::Integer),
-        ];
+        let origin = vec![make_field("amount", FieldType::Decimal)];
+        let target = vec![make_field("amount", FieldType::Integer)];
 
         let diff = compare_schemas("test_entity", &origin, &target, None);
 
@@ -307,7 +319,11 @@ mod tests {
 
         let diff = compare_schemas("test_entity", &origin, &target, None);
 
-        let system_count = diff.fields_in_both.iter().filter(|f| f.is_system_field).count();
+        let system_count = diff
+            .fields_in_both
+            .iter()
+            .filter(|f| f.is_system_field)
+            .count();
         assert_eq!(system_count, 2); // createdby and modifiedon
     }
 

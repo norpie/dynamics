@@ -5,10 +5,10 @@
 
 use super::config::MonitoringConfig;
 use super::logging::OperationMetrics;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use serde::{Serialize, Deserialize};
 
 /// Global performance metrics collector
 #[derive(Debug, Clone)]
@@ -135,13 +135,15 @@ impl MetricsCollector {
         let uptime = inner.start_time.elapsed(); // Calculate uptime before mutable borrows
 
         // Update operation type metrics
-        let op_metrics = inner.operation_metrics
+        let op_metrics = inner
+            .operation_metrics
             .entry(operation_type.to_string())
             .or_insert_with(|| OperationTypeMetrics::new(operation_type));
         op_metrics.record_operation(metrics);
 
         // Update entity metrics
-        let entity_metrics = inner.entity_metrics
+        let entity_metrics = inner
+            .entity_metrics
             .entry(entity.to_string())
             .or_insert_with(|| EntityMetrics::new(entity));
         entity_metrics.record_operation(operation_type, metrics);
@@ -191,7 +193,9 @@ impl MetricsCollector {
         operations.sort_by(|a, b| {
             let a_rate = a.success_rate();
             let b_rate = b.success_rate();
-            b_rate.partial_cmp(&a_rate).unwrap_or(std::cmp::Ordering::Equal)
+            b_rate
+                .partial_cmp(&a_rate)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         operations.into_iter().take(limit).collect()
@@ -294,10 +298,15 @@ impl EntityMetrics {
         }
 
         // Update running average duration
-        let new_avg_ms = ((self.average_duration.as_millis() as u64 * (self.total_operations - 1)) + metrics.duration.as_millis() as u64) / self.total_operations;
+        let new_avg_ms = ((self.average_duration.as_millis() as u64 * (self.total_operations - 1))
+            + metrics.duration.as_millis() as u64)
+            / self.total_operations;
         self.average_duration = Duration::from_millis(new_avg_ms);
 
-        *self.operation_types.entry(operation_type.to_string()).or_insert(0) += 1;
+        *self
+            .operation_types
+            .entry(operation_type.to_string())
+            .or_insert(0) += 1;
     }
 
     /// Calculate success rate as percentage
@@ -338,7 +347,10 @@ impl GlobalMetrics {
         }
 
         // Update running average response time
-        let new_avg_ms = ((self.average_response_time.as_millis() as u64 * (self.total_operations - 1)) + metrics.duration.as_millis() as u64) / self.total_operations;
+        let new_avg_ms = ((self.average_response_time.as_millis() as u64
+            * (self.total_operations - 1))
+            + metrics.duration.as_millis() as u64)
+            / self.total_operations;
         self.average_response_time = Duration::from_millis(new_avg_ms);
 
         // Calculate operations per second
@@ -367,7 +379,7 @@ impl GlobalMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::resilience::config::{MonitoringConfig, LogLevel};
+    use crate::api::resilience::config::{LogLevel, MonitoringConfig};
 
     #[test]
     fn test_metrics_collection() {

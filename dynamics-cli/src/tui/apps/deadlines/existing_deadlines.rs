@@ -5,9 +5,9 @@
 //! - Expanding N:N associations in the same query
 //! - Building a lookup map for matching by (name, date)
 
-use std::collections::{HashMap, HashSet};
 use chrono::NaiveDate;
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 
 use crate::api::QueryBuilder;
 use crate::api::query::orderby::OrderBy;
@@ -39,9 +39,7 @@ mod nrq_nav_props {
 /// Fetch all existing deadlines with their associations.
 ///
 /// Returns a lookup map keyed by (name_lowercase, date) for matching.
-pub async fn fetch_existing_deadlines(
-    entity_type: &str,
-) -> Result<DeadlineLookupMap, String> {
+pub async fn fetch_existing_deadlines(entity_type: &str) -> Result<DeadlineLookupMap, String> {
     let manager = crate::client_manager();
     let client = manager
         .get_current_client()
@@ -49,7 +47,11 @@ pub async fn fetch_existing_deadlines(
         .map_err(|e| format!("Failed to get client: {}", e))?;
 
     let is_cgk = entity_type == "cgk_deadline";
-    let entity_set = if is_cgk { "cgk_deadlines" } else { "nrq_deadlines" };
+    let entity_set = if is_cgk {
+        "cgk_deadlines"
+    } else {
+        "nrq_deadlines"
+    };
 
     // Build the $expand expressions for N:N relationships
     let expand_expressions = build_expand_expressions(entity_type);
@@ -84,19 +86,32 @@ pub async fn fetch_existing_deadlines(
     };
 
     // Order by field
-    let orderby_field = if is_cgk { "cgk_date" } else { "nrq_deadlinedate" };
+    let orderby_field = if is_cgk {
+        "cgk_date"
+    } else {
+        "nrq_deadlinedate"
+    };
 
     let mut all_deadlines: Vec<ExistingDeadline> = Vec::new();
 
     // Initial query (no $skip - use @odata.nextLink for pagination)
     let query = QueryBuilder::new(entity_set)
         .select(&select_fields)
-        .expand(&expand_expressions.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+        .expand(
+            &expand_expressions
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>(),
+        )
         .orderby(OrderBy::desc(orderby_field))
         .top(FETCH_CHUNK_SIZE)
         .build();
 
-    log::debug!("Fetching existing deadlines, entity={}, params={:?}", entity_set, query.to_query_params());
+    log::debug!(
+        "Fetching existing deadlines, entity={}, params={:?}",
+        entity_set,
+        query.to_query_params()
+    );
 
     let mut result = client
         .execute_query(&query)
@@ -107,7 +122,11 @@ pub async fn fetch_existing_deadlines(
         let records = result.records().cloned().unwrap_or_default();
         let record_count = records.len();
 
-        log::debug!("Fetched {} deadline records, has_next={}", record_count, result.has_more());
+        log::debug!(
+            "Fetched {} deadline records, has_next={}",
+            record_count,
+            result.has_more()
+        );
 
         // Parse each record into ExistingDeadline
         for record in records {
@@ -151,16 +170,31 @@ fn build_expand_expressions(entity_type: &str) -> Vec<String> {
     if entity_type == "cgk_deadline" {
         vec![
             format!("{}($select=cgk_supportid,cgk_name)", cgk_nav_props::SUPPORT),
-            format!("{}($select=cgk_categoryid,cgk_name)", cgk_nav_props::CATEGORY),
+            format!(
+                "{}($select=cgk_categoryid,cgk_name)",
+                cgk_nav_props::CATEGORY
+            ),
             format!("{}($select=cgk_lengthid,cgk_name)", cgk_nav_props::LENGTH),
-            format!("{}($select=cgk_flemishshareid,cgk_name)", cgk_nav_props::FLEMISHSHARE),
+            format!(
+                "{}($select=cgk_flemishshareid,cgk_name)",
+                cgk_nav_props::FLEMISHSHARE
+            ),
         ]
     } else {
         // NRQ: no support in expand (uses custom junction)
         vec![
-            format!("{}($select=nrq_categoryid,nrq_name)", nrq_nav_props::CATEGORY),
-            format!("{}($select=nrq_subcategoryid,nrq_name)", nrq_nav_props::SUBCATEGORY),
-            format!("{}($select=nrq_flemishshareid,nrq_name)", nrq_nav_props::FLEMISHSHARE),
+            format!(
+                "{}($select=nrq_categoryid,nrq_name)",
+                nrq_nav_props::CATEGORY
+            ),
+            format!(
+                "{}($select=nrq_subcategoryid,nrq_name)",
+                nrq_nav_props::SUBCATEGORY
+            ),
+            format!(
+                "{}($select=nrq_flemishshareid,nrq_name)",
+                nrq_nav_props::FLEMISHSHARE
+            ),
         ]
     }
 }
@@ -170,15 +204,27 @@ fn parse_deadline_record(record: &Value, entity_type: &str) -> Option<ExistingDe
     let is_cgk = entity_type == "cgk_deadline";
 
     // Extract ID
-    let id_field = if is_cgk { "cgk_deadlineid" } else { "nrq_deadlineid" };
+    let id_field = if is_cgk {
+        "cgk_deadlineid"
+    } else {
+        "nrq_deadlineid"
+    };
     let id = record.get(id_field)?.as_str()?.to_string();
 
     // Extract name
-    let name_field = if is_cgk { "cgk_deadlinename" } else { "nrq_deadlinename" };
+    let name_field = if is_cgk {
+        "cgk_deadlinename"
+    } else {
+        "nrq_deadlinename"
+    };
     let name = record.get(name_field)?.as_str()?.to_string();
 
     // Extract date (parse from ISO string, extract date portion only)
-    let date_field = if is_cgk { "cgk_date" } else { "nrq_deadlinedate" };
+    let date_field = if is_cgk {
+        "cgk_date"
+    } else {
+        "nrq_deadlinedate"
+    };
     let date_str = record.get(date_field)?.as_str()?;
     let date = parse_date_from_iso(date_str)?;
 
@@ -188,11 +234,7 @@ fn parse_deadline_record(record: &Value, entity_type: &str) -> Option<ExistingDe
     // Store all fields for later diffing
     let fields = record
         .as_object()
-        .map(|obj| {
-            obj.iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect()
-        })
+        .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
         .unwrap_or_default();
 
     Some(ExistingDeadline {
@@ -321,7 +363,12 @@ async fn fetch_nrq_support_junctions(
 
     // Fetch all junction records using @odata.nextLink pagination
     let query = QueryBuilder::new("nrq_deadlinesupports")
-        .select(&["nrq_deadlinesupportid", "_nrq_deadlineid_value", "_nrq_supportid_value", "nrq_name"])
+        .select(&[
+            "nrq_deadlinesupportid",
+            "_nrq_deadlineid_value",
+            "_nrq_supportid_value",
+            "nrq_name",
+        ])
         .top(FETCH_CHUNK_SIZE)
         .build();
 
@@ -336,7 +383,11 @@ async fn fetch_nrq_support_junctions(
         let records = result.records().cloned().unwrap_or_default();
         let record_count = records.len();
 
-        log::debug!("Fetched {} junction records, has_next={}", record_count, result.has_more());
+        log::debug!(
+            "Fetched {} junction records, has_next={}",
+            record_count,
+            result.has_more()
+        );
 
         // Associate junction records with their deadlines
         for record in records {
@@ -353,8 +404,14 @@ async fn fetch_nrq_support_junctions(
                         .unwrap_or("")
                         .to_string();
 
-                    deadlines[idx].associations.support_ids.insert(support_id.to_string());
-                    deadlines[idx].associations.support_names.insert(support_id.to_string(), name.clone());
+                    deadlines[idx]
+                        .associations
+                        .support_ids
+                        .insert(support_id.to_string());
+                    deadlines[idx]
+                        .associations
+                        .support_names
+                        .insert(support_id.to_string(), name.clone());
                     deadlines[idx].associations.custom_junction_records.push(
                         ExistingJunctionRecord {
                             junction_id: junction_id.to_string(),
@@ -414,10 +471,7 @@ fn build_lookup_map(deadlines: Vec<ExistingDeadline>) -> DeadlineLookupMap {
     let mut map = DeadlineLookupMap::new();
 
     for deadline in deadlines {
-        let key: DeadlineLookupKey = (
-            deadline.name.trim().to_lowercase(),
-            deadline.date,
-        );
+        let key: DeadlineLookupKey = (deadline.name.trim().to_lowercase(), deadline.date);
 
         map.entry(key).or_insert_with(Vec::new).push(deadline);
     }
@@ -474,7 +528,10 @@ mod tests {
         assert_eq!(map.len(), 2);
 
         // Lookup is case-insensitive
-        let key = ("test deadline".to_string(), NaiveDate::from_ymd_opt(2026, 1, 15).unwrap());
+        let key = (
+            "test deadline".to_string(),
+            NaiveDate::from_ymd_opt(2026, 1, 15).unwrap(),
+        );
         assert!(map.contains_key(&key));
     }
 }

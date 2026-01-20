@@ -3,9 +3,8 @@
 pub mod models;
 
 pub use models::{
-    EntityMetadata, FieldMetadata, FieldType, FormMetadata, FormStructure, FormTab,
-    FormSection, FormField, OptionSetValue, RelationshipMetadata, RelationshipType,
-    ViewMetadata, ViewColumn,
+    EntityMetadata, FieldMetadata, FieldType, FormField, FormMetadata, FormSection, FormStructure,
+    FormTab, OptionSetValue, RelationshipMetadata, RelationshipType, ViewColumn, ViewMetadata,
 };
 
 use anyhow::Result;
@@ -13,7 +12,10 @@ use roxmltree::Document;
 
 /// Parse Dynamics 365 metadata XML and extract all entity names
 pub fn parse_entity_list(metadata_xml: &str) -> Result<Vec<String>> {
-    log::info!("Starting metadata XML parsing, XML length: {} bytes", metadata_xml.len());
+    log::info!(
+        "Starting metadata XML parsing, XML length: {} bytes",
+        metadata_xml.len()
+    );
 
     let doc = Document::parse(metadata_xml)
         .map_err(|e| anyhow::anyhow!("Failed to parse metadata XML: {}", e))?;
@@ -24,7 +26,10 @@ pub fn parse_entity_list(metadata_xml: &str) -> Result<Vec<String>> {
 
     // Find all EntityType elements
     // In EDMX, entities are defined as <EntityType Name="account">
-    for entity_type in doc.descendants().filter(|node| node.has_tag_name("EntityType")) {
+    for entity_type in doc
+        .descendants()
+        .filter(|node| node.has_tag_name("EntityType"))
+    {
         if let Some(name) = entity_type.attribute("Name") {
             entities.push(name.to_string());
         }
@@ -33,7 +38,10 @@ pub fn parse_entity_list(metadata_xml: &str) -> Result<Vec<String>> {
     // Sort alphabetically
     entities.sort();
 
-    log::info!("Successfully parsed {} entities from metadata", entities.len());
+    log::info!(
+        "Successfully parsed {} entities from metadata",
+        entities.len()
+    );
     Ok(entities)
 }
 

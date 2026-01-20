@@ -1,10 +1,10 @@
 //! Tree node implementations for the operation queue
 
-use crate::api::operations::Operation;
-use crate::tui::{Element, Theme};
-use crate::tui::widgets::{TreeItem, TableTreeItem};
-use ratatui::layout::Constraint;
 use super::models::QueueItem;
+use crate::api::operations::Operation;
+use crate::tui::widgets::{TableTreeItem, TreeItem};
+use crate::tui::{Element, Theme};
+use ratatui::layout::Constraint;
 use std::sync::Arc;
 
 /// Message type for queue app
@@ -14,9 +14,7 @@ pub type Msg = super::app::Msg;
 #[derive(Clone)]
 pub enum QueueTreeNode {
     /// Parent node representing a queue item (Arc = cheap clone, thread-safe)
-    Parent {
-        item: Arc<QueueItem>,
-    },
+    Parent { item: Arc<QueueItem> },
     /// Child node representing an individual operation
     Child {
         operation: Operation,
@@ -41,7 +39,9 @@ impl QueueTreeNode {
 
         // Determine type: single operation or batch
         let op_type = if item.operations.len() == 1 {
-            first_op.map(|op| op.operation_type().to_string()).unwrap_or_else(|| "Unknown".to_string())
+            first_op
+                .map(|op| op.operation_type().to_string())
+                .unwrap_or_else(|| "Unknown".to_string())
         } else {
             "BATCH".to_string()
         };
@@ -79,7 +79,9 @@ impl TreeItem for QueueTreeNode {
     fn id(&self) -> String {
         match self {
             Self::Parent { item, .. } => item.id.clone(),
-            Self::Child { parent_id, index, .. } => format!("{}_{}", parent_id, index),
+            Self::Child {
+                parent_id, index, ..
+            } => format!("{}_{}", parent_id, index),
         }
     }
 
@@ -142,7 +144,7 @@ impl TableTreeItem for QueueTreeNode {
                     "".to_string(),           // No status for children
                     format!("└─ {}", entity), // Indented entity name
                     op_type.to_string(),
-                    "".to_string(),           // No time for children
+                    "".to_string(), // No time for children
                 ]
             }
         }

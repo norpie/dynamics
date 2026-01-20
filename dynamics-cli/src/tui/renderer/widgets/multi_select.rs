@@ -1,10 +1,19 @@
-use ratatui::{Frame, style::{Style, Stylize}, widgets::Paragraph, layout::Rect, text::{Line, Span}};
-use crossterm::event::{KeyCode, KeyEvent};
-use crate::tui::{Element, Theme};
-use crate::tui::element::FocusId;
 use crate::tui::command::DispatchTarget;
+use crate::tui::element::FocusId;
+use crate::tui::renderer::{
+    DropdownCallback, DropdownInfo, DropdownRegistry, FocusRegistry, FocusableInfo,
+    InteractionRegistry,
+};
 use crate::tui::widgets::MultiSelectEvent;
-use crate::tui::renderer::{InteractionRegistry, FocusRegistry, DropdownRegistry, DropdownInfo, DropdownCallback, FocusableInfo};
+use crate::tui::{Element, Theme};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Style, Stylize},
+    text::{Line, Span},
+    widgets::Paragraph,
+};
 
 /// Create on_key handler for multi-select elements
 pub fn multi_select_on_key_event<Msg: Clone + Send + 'static>(
@@ -105,7 +114,7 @@ pub fn render_multi_select<Msg: Clone + Send + 'static>(
         dropdown_registry.register(DropdownInfo {
             select_area: area,
             options: filtered_options.to_vec(),
-            selected: None,  // No checkmark for multi-select (selected items shown as chips)
+            selected: None, // No checkmark for multi-select (selected items shown as chips)
             highlight,
             on_select: DropdownCallback::MultiSelectEvent(Some(on_event_fn)),
         });

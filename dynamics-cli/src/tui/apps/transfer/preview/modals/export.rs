@@ -13,10 +13,17 @@ use super::super::state::{Msg, State};
 /// Render the export modal with file browser and filename input
 pub fn render(state: &State, theme: &Theme) -> Element<Msg> {
     // Current directory display
-    let dir_path = state.export_file_browser.current_path().to_string_lossy().to_string();
+    let dir_path = state
+        .export_file_browser
+        .current_path()
+        .to_string_lossy()
+        .to_string();
     let dir_label = Element::styled_text(Line::from(vec![
         Span::styled("Directory: ", Style::default().fg(theme.text_secondary)),
-        Span::styled(truncate_str(&dir_path, 60), Style::default().fg(theme.text_primary)),
+        Span::styled(
+            truncate_str(&dir_path, 60),
+            Style::default().fg(theme.text_primary),
+        ),
     ]))
     .build();
 
@@ -56,12 +63,12 @@ pub fn render(state: &State, theme: &Theme) -> Element<Msg> {
     .placeholder("filename.xlsx")
     .build();
 
-    let filename_panel = Element::panel(filename_input)
-        .title("Filename")
-        .build();
+    let filename_panel = Element::panel(filename_input).title("Filename").build();
 
     // Full path preview
-    let full_path = state.export_file_browser.current_path()
+    let full_path = state
+        .export_file_browser
+        .current_path()
         .join(state.export_filename.value())
         .to_string_lossy()
         .to_string();
@@ -105,7 +112,12 @@ struct FileBrowserListItem {
 impl ListItem for FileBrowserListItem {
     type Msg = Msg;
 
-    fn to_element(&self, is_selected: bool, _is_multi_selected: bool, _is_hovered: bool) -> Element<Self::Msg> {
+    fn to_element(
+        &self,
+        is_selected: bool,
+        _is_multi_selected: bool,
+        _is_hovered: bool,
+    ) -> Element<Self::Msg> {
         let (icon, color) = if self.is_dir {
             ("📁 ", self.theme.accent_secondary)
         } else {
@@ -121,8 +133,7 @@ impl ListItem for FileBrowserListItem {
         // Clone name to avoid lifetime issues with the returned Element
         let display = format!("{}{}", icon, self.name);
 
-        Element::styled_text(Line::from(Span::styled(display, style)))
-            .build()
+        Element::styled_text(Line::from(Span::styled(display, style))).build()
     }
 }
 

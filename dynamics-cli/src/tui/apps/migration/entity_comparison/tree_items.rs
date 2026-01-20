@@ -1,9 +1,13 @@
 //! TreeItem implementations for entity comparison
 
-use crate::tui::{Element, Theme, widgets::TreeItem};
-use crate::api::{FieldMetadata, RelationshipMetadata, ViewMetadata, FormMetadata};
-use ratatui::{style::Style, text::{Line, Span}, prelude::Stylize};
 use super::{MatchInfo, MatchType};
+use crate::api::{FieldMetadata, FormMetadata, RelationshipMetadata, ViewMetadata};
+use crate::tui::{Element, Theme, widgets::TreeItem};
+use ratatui::{
+    prelude::Stylize,
+    style::Style,
+    text::{Line, Span},
+};
 
 /// Unified tree item that can represent any metadata type
 #[derive(Clone)]
@@ -45,7 +49,11 @@ impl TreeItem for ComparisonTreeItem {
         match self {
             Self::Container(node) => node.children.clone(),
             Self::Field(node) => node.children().into_iter().map(Self::Field).collect(),
-            Self::Relationship(node) => node.children().into_iter().map(Self::Relationship).collect(),
+            Self::Relationship(node) => node
+                .children()
+                .into_iter()
+                .map(Self::Relationship)
+                .collect(),
             Self::View(node) => node.children().into_iter().map(Self::View).collect(),
             Self::Form(node) => node.children().into_iter().map(Self::Form).collect(),
             Self::Entity(node) => node.children().into_iter().map(Self::Entity).collect(),
@@ -72,7 +80,10 @@ impl TreeItem for ComparisonTreeItem {
 
                 // Multi-select checkmark indicator
                 if is_multi_selected {
-                    spans.push(Span::styled("✓ ", Style::default().fg(theme.accent_primary)));
+                    spans.push(Span::styled(
+                        "✓ ",
+                        Style::default().fg(theme.accent_primary),
+                    ));
                 }
 
                 // Use stored container_match_type for color (keep color even when selected)
@@ -90,17 +101,16 @@ impl TreeItem for ComparisonTreeItem {
 
                 // Show match info if container has a mapping
                 if let Some(match_info) = &node.match_info {
-                    spans.push(Span::styled(" → ", Style::default().fg(theme.border_primary)));
+                    spans.push(Span::styled(
+                        " → ",
+                        Style::default().fg(theme.border_primary),
+                    ));
 
                     // Extract just the container name from target paths and format as comma-separated
-                    let target_displays: Vec<String> = match_info.target_fields
+                    let target_displays: Vec<String> = match_info
+                        .target_fields
                         .iter()
-                        .map(|tf| {
-                            tf.split('/')
-                                .last()
-                                .unwrap_or(tf)
-                                .to_string()
-                        })
+                        .map(|tf| tf.split('/').last().unwrap_or(tf).to_string())
                         .collect();
 
                     let target_display = target_displays.join(", ");
@@ -132,11 +142,17 @@ impl TreeItem for ComparisonTreeItem {
 
                 builder.build()
             }
-            Self::Field(node) => node.to_element(depth, is_selected, is_multi_selected, is_expanded),
-            Self::Relationship(node) => node.to_element(depth, is_selected, is_multi_selected, is_expanded),
+            Self::Field(node) => {
+                node.to_element(depth, is_selected, is_multi_selected, is_expanded)
+            }
+            Self::Relationship(node) => {
+                node.to_element(depth, is_selected, is_multi_selected, is_expanded)
+            }
             Self::View(node) => node.to_element(depth, is_selected, is_multi_selected, is_expanded),
             Self::Form(node) => node.to_element(depth, is_selected, is_multi_selected, is_expanded),
-            Self::Entity(node) => node.to_element(depth, is_selected, is_multi_selected, is_expanded),
+            Self::Entity(node) => {
+                node.to_element(depth, is_selected, is_multi_selected, is_expanded)
+            }
         }
     }
 }
@@ -154,9 +170,9 @@ pub struct ContainerNode {
 /// Container match type (aggregated from children)
 #[derive(Clone, Debug, PartialEq)]
 pub enum ContainerMatchType {
-    NoMatch,    // Container not matched
-    FullMatch,  // Container matched AND all children matched
-    Mixed,      // Container matched BUT not all children matched
+    NoMatch,   // Container not matched
+    FullMatch, // Container matched AND all children matched
+    Mixed,     // Container matched BUT not all children matched
 }
 
 /// Truncate a value string to a maximum length for display
@@ -211,39 +227,40 @@ impl TreeItem for FieldNode {
 
         // Multi-select checkmark indicator
         if is_multi_selected {
-            spans.push(Span::styled("✓ ", Style::default().fg(theme.accent_primary)));
+            spans.push(Span::styled(
+                "✓ ",
+                Style::default().fg(theme.accent_primary),
+            ));
         }
 
         // Field name - colored by match state (keep color even when selected)
         // If ignored, override with gray
         let field_name_color = if self.is_ignored {
-            theme.text_tertiary  // Gray for ignored items
+            theme.text_tertiary // Gray for ignored items
         } else if let Some(match_info) = &self.match_info {
             // Get match type of primary target
-            let primary_match_type = match_info.primary_target()
+            let primary_match_type = match_info
+                .primary_target()
                 .and_then(|primary| match_info.match_types.get(primary))
                 .cloned();
 
             match primary_match_type {
-                Some(MatchType::Exact) => theme.accent_success,        // Exact name + type match
-                Some(MatchType::Prefix) => theme.accent_success,       // Prefix name + type match
-                Some(MatchType::Manual) => theme.accent_success,       // User override
-                Some(MatchType::Import) => theme.accent_success,       // Imported from C# file
-                Some(MatchType::ExampleValue) => theme.palette_4,   // Example value match
+                Some(MatchType::Exact) => theme.accent_success, // Exact name + type match
+                Some(MatchType::Prefix) => theme.accent_success, // Prefix name + type match
+                Some(MatchType::Manual) => theme.accent_success, // User override
+                Some(MatchType::Import) => theme.accent_success, // Imported from C# file
+                Some(MatchType::ExampleValue) => theme.palette_4, // Example value match
                 Some(MatchType::TypeMismatch(_)) => theme.accent_warning, // Name match but type differs
-                None => theme.accent_error,  // No match
+                None => theme.accent_error,                               // No match
             }
         } else {
-            theme.accent_error  // No match
+            theme.accent_error // No match
         };
 
         let field_name_style = Style::default().fg(field_name_color);
 
         // Use the pre-computed display name (which can be either technical/logical or user-friendly)
-        spans.push(Span::styled(
-            self.display_name.clone(),
-            field_name_style,
-        ));
+        spans.push(Span::styled(self.display_name.clone(), field_name_style));
 
         // Required indicator (red asterisk)
         if self.metadata.is_required {
@@ -252,17 +269,16 @@ impl TreeItem for FieldNode {
 
         // Mapping arrow and target fields (if mapped)
         if let Some(match_info) = &self.match_info {
-            spans.push(Span::styled(" → ", Style::default().fg(theme.border_primary)));
+            spans.push(Span::styled(
+                " → ",
+                Style::default().fg(theme.border_primary),
+            ));
 
             // Extract just the field name from target paths and format as comma-separated
-            let target_displays: Vec<String> = match_info.target_fields
+            let target_displays: Vec<String> = match_info
+                .target_fields
                 .iter()
-                .map(|tf| {
-                    tf.split('/')
-                        .last()
-                        .unwrap_or(tf)
-                        .to_string()
-                })
+                .map(|tf| tf.split('/').last().unwrap_or(tf).to_string())
                 .collect();
 
             let target_display = target_displays.join(", ");
@@ -294,7 +310,10 @@ impl TreeItem for FieldNode {
 
         // Example value (if present)
         if let Some(example) = &self.example_value {
-            spans.push(Span::styled(" | ", Style::default().fg(theme.border_primary)));
+            spans.push(Span::styled(
+                " | ",
+                Style::default().fg(theme.border_primary),
+            ));
             spans.push(Span::styled(
                 truncate_value(example, 60),
                 Style::default().fg(theme.palette_4),
@@ -355,30 +374,34 @@ impl TreeItem for RelationshipNode {
 
         // Multi-select checkmark indicator
         if is_multi_selected {
-            spans.push(Span::styled("✓ ", Style::default().fg(theme.accent_primary)));
+            spans.push(Span::styled(
+                "✓ ",
+                Style::default().fg(theme.accent_primary),
+            ));
         }
 
         // Relationship name - colored by match state
         // If ignored, override with gray
         let rel_name_color = if self.is_ignored {
-            theme.text_tertiary  // Gray for ignored items
+            theme.text_tertiary // Gray for ignored items
         } else if let Some(match_info) = &self.match_info {
             // Get match type of primary target
-            let primary_match_type = match_info.primary_target()
+            let primary_match_type = match_info
+                .primary_target()
                 .and_then(|primary| match_info.match_types.get(primary))
                 .cloned();
 
             match primary_match_type {
-                Some(MatchType::Exact) => theme.accent_success,        // Exact name + type match
-                Some(MatchType::Prefix) => theme.accent_success,       // Prefix name + type match
-                Some(MatchType::Manual) => theme.accent_success,       // User override
-                Some(MatchType::Import) => theme.accent_success,       // Imported from C# file
-                Some(MatchType::ExampleValue) => theme.palette_4,   // Example value match
+                Some(MatchType::Exact) => theme.accent_success, // Exact name + type match
+                Some(MatchType::Prefix) => theme.accent_success, // Prefix name + type match
+                Some(MatchType::Manual) => theme.accent_success, // User override
+                Some(MatchType::Import) => theme.accent_success, // Imported from C# file
+                Some(MatchType::ExampleValue) => theme.palette_4, // Example value match
                 Some(MatchType::TypeMismatch(_)) => theme.accent_warning, // Name match but type differs
-                None => theme.accent_error,  // No match
+                None => theme.accent_error,                               // No match
             }
         } else {
-            theme.accent_error  // No match
+            theme.accent_error // No match
         };
 
         spans.push(Span::styled(
@@ -388,7 +411,10 @@ impl TreeItem for RelationshipNode {
 
         // Mapping arrow and target relationships (if mapped)
         if let Some(match_info) = &self.match_info {
-            spans.push(Span::styled(" → ", Style::default().fg(theme.border_primary)));
+            spans.push(Span::styled(
+                " → ",
+                Style::default().fg(theme.border_primary),
+            ));
 
             // Show comma-separated targets
             let target_display = match_info.target_fields.join(", ");
@@ -407,7 +433,9 @@ impl TreeItem for RelationshipNode {
             crate::api::metadata::RelationshipType::ManyToMany => "N:N",
         };
 
-        let entity_display = if self.metadata.related_entity == "unknown" || self.metadata.related_entity.is_empty() {
+        let entity_display = if self.metadata.related_entity == "unknown"
+            || self.metadata.related_entity.is_empty()
+        {
             format!(" <{}>", rel_type_label)
         } else {
             format!(" <{} {}>", self.metadata.related_entity, rel_type_label)
@@ -614,38 +642,39 @@ impl TreeItem for EntityNode {
 
         // Multi-select checkmark indicator
         if is_multi_selected {
-            spans.push(Span::styled("✓ ", Style::default().fg(theme.accent_primary)));
+            spans.push(Span::styled(
+                "✓ ",
+                Style::default().fg(theme.accent_primary),
+            ));
         }
 
         // Entity name - colored by match state (keep color even when selected)
         // If ignored, override with gray
         let entity_name_color = if self.is_ignored {
-            theme.text_tertiary  // Gray for ignored items
+            theme.text_tertiary // Gray for ignored items
         } else if let Some(match_info) = &self.match_info {
             // Get match type of primary target
-            let primary_match_type = match_info.primary_target()
+            let primary_match_type = match_info
+                .primary_target()
                 .and_then(|primary| match_info.match_types.get(primary))
                 .cloned();
 
             match primary_match_type {
-                Some(MatchType::Exact) => theme.accent_success,        // Exact name match
-                Some(MatchType::Prefix) => theme.accent_success,       // Prefix name match
-                Some(MatchType::Manual) => theme.accent_success,       // User override
-                Some(MatchType::Import) => theme.accent_success,       // Imported from C# file
-                Some(MatchType::ExampleValue) => theme.palette_4,   // Example value match
+                Some(MatchType::Exact) => theme.accent_success, // Exact name match
+                Some(MatchType::Prefix) => theme.accent_success, // Prefix name match
+                Some(MatchType::Manual) => theme.accent_success, // User override
+                Some(MatchType::Import) => theme.accent_success, // Imported from C# file
+                Some(MatchType::ExampleValue) => theme.palette_4, // Example value match
                 Some(MatchType::TypeMismatch(_)) => theme.accent_warning, // Should not happen for entities
-                None => theme.accent_error,  // No match
+                None => theme.accent_error,                               // No match
             }
         } else {
-            theme.accent_error  // No match
+            theme.accent_error // No match
         };
 
         let entity_name_style = Style::default().fg(entity_name_color);
 
-        spans.push(Span::styled(
-            self.name.clone(),
-            entity_name_style,
-        ));
+        spans.push(Span::styled(self.name.clone(), entity_name_style));
 
         // Usage count
         spans.push(Span::styled(
@@ -655,7 +684,10 @@ impl TreeItem for EntityNode {
 
         // Mapping arrow and target entities (if mapped)
         if let Some(match_info) = &self.match_info {
-            spans.push(Span::styled(" → ", Style::default().fg(theme.border_primary)));
+            spans.push(Span::styled(
+                " → ",
+                Style::default().fg(theme.border_primary),
+            ));
 
             // Show comma-separated targets
             let target_display = match_info.target_fields.join(", ");

@@ -1,6 +1,6 @@
 use crate::tui::Element;
 use crate::tui::element::FocusId;
-use crate::tui::widgets::{ColorPickerState, ColorPickerMode, ColorPickerEvent};
+use crate::tui::widgets::{ColorPickerEvent, ColorPickerMode, ColorPickerState};
 use ratatui::style::Color;
 
 /// Builder for color picker elements

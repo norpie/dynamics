@@ -1,6 +1,6 @@
-use crate::tui::command::{AppId, Command};
-use super::super::{Msg, ActiveTab};
 use super::super::app::State;
+use super::super::{ActiveTab, Msg};
+use crate::tui::command::{AppId, Command};
 
 pub fn handle_back(state: &mut State) -> Command<Msg> {
     state.show_back_confirmation = true;

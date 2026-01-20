@@ -1,10 +1,10 @@
 //! Registration of all application options
 
 pub mod api;
-pub mod tui;
-pub mod themes;
 pub mod keybinds;
 pub mod keys;
+pub mod themes;
+pub mod tui;
 pub mod update;
 
 use super::OptionsRegistry;
