@@ -4,8 +4,8 @@ use super::super::super::models::{CopyError, CopyPhase};
 use super::super::entity_sets;
 use super::super::error::build_error;
 use super::super::execution::BATCH_CHUNK_SIZE;
+use crate::api::ResilienceConfig;
 use crate::api::operations::{Operation, Operations};
-use crate::api::{ResilienceConfig, constants};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -32,11 +32,7 @@ pub async fn step10_create_classifications(
             entity: entity_sets::QUESTIONNAIRES.to_string(),
             entity_ref: new_questionnaire_id.clone(),
             navigation_property: "nrq_questionnaire_nrq_Category_nrq_Category".to_string(),
-            target_ref: format!(
-                "{}/nrq_categories({})",
-                constants::api_path(),
-                category_ref.id
-            ),
+            target_ref: format!("/nrq_categories({})", category_ref.id),
         });
         classifications_count += 1;
     }
@@ -47,7 +43,7 @@ pub async fn step10_create_classifications(
             entity: entity_sets::QUESTIONNAIRES.to_string(),
             entity_ref: new_questionnaire_id.clone(),
             navigation_property: "nrq_questionnaire_nrq_Domain_nrq_Domain".to_string(),
-            target_ref: format!("{}/nrq_domains({})", constants::api_path(), domain_ref.id),
+            target_ref: format!("/nrq_domains({})", domain_ref.id),
         });
         classifications_count += 1;
     }
@@ -58,7 +54,7 @@ pub async fn step10_create_classifications(
             entity: entity_sets::QUESTIONNAIRES.to_string(),
             entity_ref: new_questionnaire_id.clone(),
             navigation_property: "nrq_questionnaire_nrq_Fund_nrq_Fund".to_string(),
-            target_ref: format!("{}/nrq_funds({})", constants::api_path(), fund_ref.id),
+            target_ref: format!("/nrq_funds({})", fund_ref.id),
         });
         classifications_count += 1;
     }
@@ -69,7 +65,7 @@ pub async fn step10_create_classifications(
             entity: entity_sets::QUESTIONNAIRES.to_string(),
             entity_ref: new_questionnaire_id.clone(),
             navigation_property: "nrq_questionnaire_nrq_Support_nrq_Support".to_string(),
-            target_ref: format!("{}/nrq_supports({})", constants::api_path(), support_ref.id),
+            target_ref: format!("/nrq_supports({})", support_ref.id),
         });
         classifications_count += 1;
     }
@@ -80,7 +76,7 @@ pub async fn step10_create_classifications(
             entity: entity_sets::QUESTIONNAIRES.to_string(),
             entity_ref: new_questionnaire_id.clone(),
             navigation_property: "nrq_questionnaire_nrq_Type_nrq_Type".to_string(),
-            target_ref: format!("{}/nrq_types({})", constants::api_path(), type_ref.id),
+            target_ref: format!("/nrq_types({})", type_ref.id),
         });
         classifications_count += 1;
     }
@@ -91,11 +87,7 @@ pub async fn step10_create_classifications(
             entity: entity_sets::QUESTIONNAIRES.to_string(),
             entity_ref: new_questionnaire_id.clone(),
             navigation_property: "nrq_questionnaire_nrq_Subcategory_nrq_Subcategory".to_string(),
-            target_ref: format!(
-                "{}/nrq_subcategories({})",
-                constants::api_path(),
-                subcategory_ref.id
-            ),
+            target_ref: format!("/nrq_subcategories({})", subcategory_ref.id),
         });
         classifications_count += 1;
     }
@@ -106,11 +98,7 @@ pub async fn step10_create_classifications(
             entity: entity_sets::QUESTIONNAIRES.to_string(),
             entity_ref: new_questionnaire_id.clone(),
             navigation_property: "nrq_questionnaire_nrq_FlemishShare_nrq_FlemishShare".to_string(),
-            target_ref: format!(
-                "{}/nrq_flemishshares({})",
-                constants::api_path(),
-                flemish_share_ref.id
-            ),
+            target_ref: format!("/nrq_flemishshares({})", flemish_share_ref.id),
         });
         classifications_count += 1;
     }
@@ -149,7 +137,7 @@ pub async fn step10_create_classifications(
         )
     })?;
 
-    let resilience = ResilienceConfig::default();
+    let resilience = ResilienceConfig::migration();
 
     // Execute with automatic chunking (same as other steps)
     let all_operations = operations.operations();

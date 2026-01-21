@@ -68,7 +68,7 @@ where
         .await
         .map_err(|e| build_error(e.to_string(), phase.clone(), step, created_ids))?;
 
-    let resilience = ResilienceConfig::default();
+    let resilience = ResilienceConfig::migration();
 
     // 2. Build operations (unique per step)
     log::debug!("Building operations for {} entities", expected_count);

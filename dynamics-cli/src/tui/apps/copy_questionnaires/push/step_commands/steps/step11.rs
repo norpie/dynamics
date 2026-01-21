@@ -88,7 +88,7 @@ pub async fn step11_publish_conditions(
         )
     })?;
 
-    let resilience = ResilienceConfig::default();
+    let resilience = ResilienceConfig::migration();
 
     // Execute with automatic chunking (same pattern as classifications)
     let all_operations = operations.operations();

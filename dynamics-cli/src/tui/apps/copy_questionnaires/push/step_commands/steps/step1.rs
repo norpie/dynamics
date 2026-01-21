@@ -44,7 +44,7 @@ pub async fn step1_create_questionnaire(
         .await
         .map_err(|e| build_error(e.to_string(), CopyPhase::CreatingQuestionnaire, 1, &[]))?;
 
-    let resilience = ResilienceConfig::default();
+    let resilience = ResilienceConfig::migration();
 
     log::debug!("Preparing questionnaire data");
     let shared_entities = get_shared_entities();

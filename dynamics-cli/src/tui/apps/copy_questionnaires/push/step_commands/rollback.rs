@@ -80,7 +80,7 @@ pub async fn rollback_created_entities(created_ids: Vec<(String, String)>) -> Re
         }
     };
 
-    let resilience = ResilienceConfig::default();
+    let resilience = ResilienceConfig::migration();
     let mut operations = Operations::new();
 
     // Delete in REVERSE order (bottom-up to respect dependencies)
