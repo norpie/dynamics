@@ -68,7 +68,16 @@ where
         .await
         .map_err(|e| build_error(e.to_string(), phase.clone(), step, created_ids))?;
 
-    let resilience = ResilienceConfig::migration();
+    let resilience = match ResilienceConfig::load_from_options().await {
+        Ok(config) => config,
+        Err(e) => {
+            log::warn!(
+                "Failed to load resilience config from options: {}, using defaults",
+                e
+            );
+            ResilienceConfig::default()
+        }
+    };
 
     // 2. Build operations (unique per step)
     log::debug!("Building operations for {} entities", expected_count);

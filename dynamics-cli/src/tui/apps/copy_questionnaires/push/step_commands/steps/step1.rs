@@ -44,7 +44,16 @@ pub async fn step1_create_questionnaire(
         .await
         .map_err(|e| build_error(e.to_string(), CopyPhase::CreatingQuestionnaire, 1, &[]))?;
 
-    let resilience = ResilienceConfig::migration();
+    let resilience = match ResilienceConfig::load_from_options().await {
+        Ok(config) => config,
+        Err(e) => {
+            log::warn!(
+                "Failed to load resilience config from options: {}, using defaults",
+                e
+            );
+            ResilienceConfig::default()
+        }
+    };
 
     log::debug!("Preparing questionnaire data");
     let shared_entities = get_shared_entities();

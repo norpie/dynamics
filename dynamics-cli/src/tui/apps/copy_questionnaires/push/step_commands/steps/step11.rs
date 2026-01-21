@@ -88,7 +88,16 @@ pub async fn step11_publish_conditions(
         )
     })?;
 
-    let resilience = ResilienceConfig::migration();
+    let resilience = match ResilienceConfig::load_from_options().await {
+        Ok(config) => config,
+        Err(e) => {
+            log::warn!(
+                "Failed to load resilience config from options: {}, using defaults",
+                e
+            );
+            ResilienceConfig::default()
+        }
+    };
 
     // Execute with automatic chunking (same pattern as classifications)
     let all_operations = operations.operations();

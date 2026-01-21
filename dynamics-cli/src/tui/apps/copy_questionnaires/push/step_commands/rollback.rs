@@ -80,7 +80,16 @@ pub async fn rollback_created_entities(created_ids: Vec<(String, String)>) -> Re
         }
     };
 
-    let resilience = ResilienceConfig::migration();
+    let resilience = match ResilienceConfig::load_from_options().await {
+        Ok(config) => config,
+        Err(e) => {
+            log::warn!(
+                "Failed to load resilience config from options: {}, using defaults",
+                e
+            );
+            ResilienceConfig::default()
+        }
+    };
     let mut operations = Operations::new();
 
     // Delete in REVERSE order (bottom-up to respect dependencies)
