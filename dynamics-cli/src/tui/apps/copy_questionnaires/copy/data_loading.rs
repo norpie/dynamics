@@ -429,7 +429,10 @@ async fn load_conditions(
     }
 
     let mut query = Query::new("nrq_questionconditions");
-    query.filter = Some(Filter::any_of("_nrq_questionid_value", question_ids));
+    query.filter = Some(Filter::and(vec![
+        Filter::any_of("_nrq_questionid_value", question_ids),
+        Filter::eq("statecode", FilterValue::Integer(0)),
+    ]));
 
     let result = client
         .execute_query(&query)
@@ -449,10 +452,10 @@ async fn load_condition_actions(
     }
 
     let mut query = Query::new("nrq_questionconditionactions");
-    query.filter = Some(Filter::any_of(
-        "_nrq_questionconditionid_value",
-        condition_ids,
-    ));
+    query.filter = Some(Filter::and(vec![
+        Filter::any_of("_nrq_questionconditionid_value", condition_ids),
+        Filter::eq("statecode", FilterValue::Integer(0)),
+    ]));
 
     let result = client
         .execute_query(&query)
