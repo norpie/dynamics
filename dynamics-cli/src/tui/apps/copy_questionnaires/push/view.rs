@@ -1,5 +1,5 @@
 use super::models::{CopyError, CopyPhase, CopyProgress, CopyResult, EntityType, PushState, State};
-use crate::tui::{Element, LayoutConstraint, renderer::LayeredView};
+use crate::tui::{renderer::LayeredView, Element, LayoutConstraint};
 use crate::{button_row, col, spacer, use_constraints};
 use ratatui::{
     prelude::Stylize,
@@ -439,10 +439,18 @@ fn render_failure_screen(
                 Span::styled("Error:", Style::default().fg(theme.accent_error).bold()),
             ])).build(),
 
+            // Wrap error message to ~80 chars per line for readability
             Element::panel(
-                Element::styled_text(Line::from(vec![
-                    Span::styled(error.error_message.clone(), Style::default().fg(theme.text_primary)),
-                ])).build()
+                Element::column(
+                    wrap_text(&error.error_message, 80)
+                        .into_iter()
+                        .map(|line| {
+                            Element::styled_text(Line::from(vec![
+                                Span::styled(line, Style::default().fg(theme.text_primary)),
+                            ])).build()
+                        })
+                        .collect()
+                ).spacing(0).build()
             ).build(),
 
             spacer!(),
@@ -625,4 +633,65 @@ fn render_undo_confirmation_modal(theme: &crate::tui::Theme) -> Element<super::m
     .build();
 
     Element::panel(content).title("Confirm Undo").build()
+}
+
+/// Wrap text to a maximum width, breaking at word boundaries when possible
+fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    // First split by existing newlines
+    for paragraph in text.split('\n') {
+        if paragraph.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+
+        let mut current_line = String::new();
+
+        for word in paragraph.split_whitespace() {
+            if current_line.is_empty() {
+                // First word on the line
+                if word.len() > max_width {
+                    // Word is too long, need to split it
+                    let mut remaining = word;
+                    while remaining.len() > max_width {
+                        lines.push(remaining[..max_width].to_string());
+                        remaining = &remaining[max_width..];
+                    }
+                    current_line = remaining.to_string();
+                } else {
+                    current_line = word.to_string();
+                }
+            } else if current_line.len() + 1 + word.len() <= max_width {
+                // Word fits on current line
+                current_line.push(' ');
+                current_line.push_str(word);
+            } else {
+                // Word doesn't fit, start a new line
+                lines.push(current_line);
+                if word.len() > max_width {
+                    // Word is too long, need to split it
+                    let mut remaining = word;
+                    while remaining.len() > max_width {
+                        lines.push(remaining[..max_width].to_string());
+                        remaining = &remaining[max_width..];
+                    }
+                    current_line = remaining.to_string();
+                } else {
+                    current_line = word.to_string();
+                }
+            }
+        }
+
+        if !current_line.is_empty() {
+            lines.push(current_line);
+        }
+    }
+
+    // Ensure at least one line
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    lines
 }
