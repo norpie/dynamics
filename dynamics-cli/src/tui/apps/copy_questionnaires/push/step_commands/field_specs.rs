@@ -162,6 +162,11 @@ pub const QUESTION_FIELDS: &[FieldSpec] = &[
         "nrq_questiontemplates"
     ),
     lookup_field!("_nrq_contactrole_value", "nrq_ContactRole", "nrq_roles"),
+    lookup_field!(
+        "_nrq_questionpage_value",
+        "nrq_QuestionPage",
+        "nrq_questionnairepages"
+    ),
 ];
 
 /// Step 7: Template Line fields

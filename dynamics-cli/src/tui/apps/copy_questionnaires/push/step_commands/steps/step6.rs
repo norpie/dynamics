@@ -6,6 +6,7 @@ use super::super::execution::{EntityInfo, execute_creation_step, process_creatio
 use super::super::field_specs;
 use super::super::helpers::{build_payload, get_shared_entities};
 use crate::api::operations::Operations;
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -40,15 +41,26 @@ pub async fn step6_create_questions(
             let mut entity_info = Vec::new();
 
             for page in &q.pages {
+                // Get the new page ID for setting nrq_QuestionPage on questions
+                let new_page_id = id_map.get(&page.id).ok_or_else(|| {
+                    format!("Page ID {} not found in id_map", page.id)
+                })?;
+
                 for group in &page.groups {
                     for question in &group.questions {
-                        let data = build_payload(
+                        let mut data = build_payload(
                             &question.raw,
                             field_specs::QUESTION_FIELDS,
                             &id_map,
                             &shared_entities,
                         )
                         .map_err(|e| format!("Failed to build question payload: {}", e))?;
+
+                        // Always set the question's page from iteration context
+                        // This fills in missing values or corrects existing ones
+                        // (a group can appear on multiple pages, so we use the current page context)
+                        data["nrq_QuestionPage@odata.bind"] =
+                            json!(format!("/nrq_questionnairepages({})", new_page_id));
 
                         operations = operations.create(entity_sets::QUESTIONS, data);
                         entity_info.push(EntityInfo {
