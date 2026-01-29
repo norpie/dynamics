@@ -1184,11 +1184,77 @@ impl DynamicsClient {
                 status_code,
                 response_text
             );
-            anyhow::bail!(
-                "Batch request failed (status {}): {}",
-                status_code,
-                response_text
-            )
+
+            // Try to parse the batch response to extract meaningful error details
+            // Even failed batch requests often contain parseable error information
+            let error_message = if let Ok(results) =
+                BatchResponseParser::parse(&response_text, operations)
+            {
+                // Collect error messages from failed operations
+                let errors: Vec<String> = results
+                    .iter()
+                    .filter(|r| !r.success)
+                    .filter_map(|r| r.error.clone())
+                    .collect();
+
+                if !errors.is_empty() {
+                    errors.join("; ")
+                } else {
+                    // No specific errors found, try to extract from raw response
+                    Self::extract_error_from_response(&response_text)
+                }
+            } else {
+                // Parsing failed, try to extract error from raw response
+                Self::extract_error_from_response(&response_text)
+            };
+
+            anyhow::bail!("Batch request failed (status {}): {}", status_code, error_message)
+        }
+    }
+
+    /// Extract error message from raw batch response text
+    /// 
+    /// Attempts to find JSON error objects in the response and extract meaningful messages
+    fn extract_error_from_response(response_text: &str) -> String {
+        // Try to find JSON error objects in the response
+        // Look for patterns like {"error":{"code":"...","message":"..."}}
+        for line in response_text.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with('{') && trimmed.contains("\"error\"") {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                    if let Some(error_obj) = json.get("error") {
+                        if let Some(message) = error_obj.get("message").and_then(|m| m.as_str()) {
+                            let code = error_obj
+                                .get("code")
+                                .and_then(|c| c.as_str())
+                                .unwrap_or("Unknown");
+                            return format!("Dynamics 365 Error [{}]: {}", code, message);
+                        }
+                    }
+                }
+            }
+        }
+
+        // If no JSON error found, return a truncated version of the response
+        // to avoid showing the full multipart boundary mess
+        let clean_lines: Vec<&str> = response_text
+            .lines()
+            .filter(|l| {
+                let t = l.trim();
+                !t.is_empty()
+                    && !t.starts_with("--batch")
+                    && !t.starts_with("--changeset")
+                    && !t.starts_with("Content-Type:")
+                    && !t.starts_with("Content-Transfer-Encoding:")
+                    && !t.starts_with("Content-ID:")
+            })
+            .take(5)
+            .collect();
+
+        if clean_lines.is_empty() {
+            "Unknown error (check logs for details)".to_string()
+        } else {
+            clean_lines.join(" | ")
         }
     }
 
